@@ -1,0 +1,43 @@
+export P4EST_CONF = CC=mpicc CXX=mpicxx FC=mpif90 F77=mpif77  --enable-p6est --enable-mpi --enable-static --disable-shared
+
+borah-config:
+	$(eval P4EST_CONF = 	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	--disable-shared \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77 \
+	LDFLAGS="-L/cm/local/apps/lua/5.3.4/lib64" \
+	CPPFLAGS="-I/cm/local/apps/lua/5.3.4/" \
+	CFLAGS="-O2 -Wall")
+borah-debug-config:
+	$(eval P4EST_CONF = 	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	--disable-shared \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77 \
+	LDFLAGS="-L/cm/local/apps/lua/5.3.4/lib64" \
+	CPPFLAGS="-I/cm/local/apps/lua/5.3.4/" \
+	CFLAGS="-O2 -Wall")
+falcon-config:
+	$(eval P4EST_CONF = 	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	--disable-shared \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77)
+
+macbook-p4est-brew-config:
+ 	$(eval P4EST_CONF += )
+	
+macbook-p4est-intel-dbg-config:		 
+ 	$(eval P4EST_CONF += --enable-debug)
+
+

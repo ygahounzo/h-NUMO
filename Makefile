@@ -1,0 +1,60 @@
+RM = /bin/rm -rf
+MV = /bin/mv -f
+CP = /bin/cp -f
+
+export PLATFORMS:= macbook-p4est-intel borah borah-debug macbook-p4est-brew falcon
+
+export NUMA_DIR    := $(CURDIR)
+export DEPEND_FILE := $(NUMA_DIR)/depend.mk
+export CONFIG_USER := $(NUMA_DIR)/config.user
+export P4EST_LOC   := $(NUMA_DIR)/p4est
+
+export TARGET=$(NUMA_DIR)/bin/numa3d
+
+include $(NUMA_DIR)/config.p4est
+
+SUBDIR := $(NUMA_DIR)/bin
+SUBDIR += $(NUMA_DIR)/include
+SUBDIR += $(NUMA_DIR)/libs
+
+.NOTPARALLEL:
+
+.PHONY: p4est
+
+$(PLATFORMS): %: %-config p4est/local/lib/libp4est.a depend $(SUBDIR)
+	$(MAKE) -C src $@ TARGET=$(TARGET)
+
+$(SUBDIR):
+	if [ ! -d $@ ]; then mkdir -p $@;fi
+
+p4est:
+	$(NUMA_DIR)/p4est/get_p4est_install_dir.sh $(P4EST_LOC)
+
+p4est/local/lib/libp4est.a:
+	cd $(NUMA_DIR)/p4est && \
+	tar -xjf p4est_feature.tar.bj && \
+	./configure $(P4EST_CONF) && \
+	make -j && \
+	make check && \
+	make install
+
+p4est_clean:
+	cd $(NUMA_DIR)/p4est && \
+	mv p4est_feature.tar.bj ../unused/. && \
+	mv get_* ../unused/. && \
+	rm -rf * && \
+	mv ../unused/p4est_feature.tar.bj . && \
+	mv ../unused/get_p4est* .
+
+depend:
+	$(NUMA_DIR)/make_depend.pl -s -l -o $(DEPEND_FILE) $(NUMA_DIR)/src
+
+emptyrule:
+
+clean : depend
+	$(MAKE) -C src $@
+	for dir in $(SUBDIRS); do (echo $(RM) $$dir ; $(RM) $$dir) ; done
+
+deepclean : clean depend p4est_clean occa_clean
+	$(MAKE) -C src $@
+	(if [ -e $(DEPEND_FILE) ] ; then $(RM) $(DEPEND_FILE) ; fi )

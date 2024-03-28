@@ -1,0 +1,158 @@
+!----------------------------------------------------------------------!
+!>@brief This subroutine prints out Diagnostics
+!>@author  Francis X. Giraldo on 11/2009
+!>           Department of Applied Mathematics
+!>           Naval Postgraduate School
+!>           Monterey, CA 93943-5216
+!----------------------------------------------------------------------!
+
+subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
+    ae01_g,ae02_g,cfl,cflu,ntime)
+  
+    use mpi
+
+    use mod_constants, only: nnorm
+
+    use mod_convert_variables, only: mod_convert_variables_eqnset_to_set2nc
+
+    use mod_global_grid, only: npoin_g
+
+    use mod_grid, only: npoin, ncol
+
+    use mod_initial, only: nvar, q_ref, rho_layers, q_ref_layers
+  
+    use mod_input, only: lprint_diagnostics, si_dimension, ti_method, delta, &
+        icase, fname_root, time_scale, ladapt_timestep, lkessler,            &
+        ljenkins_test, lcheck_all_conserved, nlayers, dt_btp
+
+    use mod_mpi_utilities, only: MPI_PRECISION
+
+    implicit none
+
+    !global arrays
+    real, intent(in)  :: q_mlswe(5,npoin,nlayers), qb(4,npoin)
+    real, intent(in)  :: time, dt, ae01_g, ae02_g
+    integer, intent(in) :: itime, idone, ntime
+  
+    !local arrays
+    real, dimension(:,:), allocatable :: q
+    real, dimension(nvar,nlayers) :: qmax_layers, qmin_layers
+    real, dimension(4,nlayers) :: cfl_vector_layers
+    real :: qmax(nvar),   qmin(nvar), qbmax(4), qbmin(4)
+    real :: qmax_g(nvar), qmin_g(nvar), qbmax_g(4), qbmin_g(4)
+    real :: cfl_vector(5), cfl_vector_g(5), cfl, cflu
+    real :: min_dx_vec(2),min_dx_vec_g(2)
+    real :: epart(3)
+    real :: ae1, ae2, ae1_g, ae2_g, xm1, xm2
+    integer :: ierr, irank, i, j, ncol_g, m, ll
+    real :: kiter_g, kiter
+    character :: fname_conservation*72,fname_qmax_qmin*72
+
+    allocate(q(nvar,npoin))
+
+    !Get Processor ID number
+    call mpi_comm_rank(mpi_comm_world,irank,ierr)
+  
+
+    !possibly start layers loop here 
+
+    do ll=1,nlayers
+
+       q = q_mlswe(:,:,ll)
+
+       !Compute Mass and Energy
+       !hack for now
+       !call compute_energy(ae1,ae2,epart,q)
+       ae1 = 0
+       ae2=0
+       call mpi_reduce(ae1,ae1_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+       call mpi_reduce(ae2,ae2_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+       
+       !Calculate max on processor
+       
+       do i=1,nvar
+          qmax(i)=maxval(q(i,:))
+          qmin(i)=minval(q(i,:))
+       end do !i
+       
+       
+       !Get Global Max
+       call mpi_reduce(qmax,qmax_g,nvar,MPI_PRECISION,&
+            mpi_max,0,mpi_comm_world,ierr)
+       
+       !Get Global Min
+       call mpi_reduce(qmin,qmin_g,nvar,MPI_PRECISION,&
+            mpi_min,0,mpi_comm_world,ierr)
+       
+       qmax_layers(:,ll) = qmax_g
+       qmin_layers(:,ll) = qmin_g
+
+    end do
+
+    do i = 1,4
+       qbmax(i)=maxval(qb(i,:))
+       qbmin(i)=minval(qb(i,:))
+    end do
+
+    !Get Global Max
+    call mpi_reduce(qbmax,qbmax_g,4,MPI_PRECISION,&
+        mpi_max,0,mpi_comm_world,ierr)
+    
+    !Get Global Min
+    call mpi_reduce(qbmin,qbmin_g,4,MPI_PRECISION,&
+        mpi_min,0,mpi_comm_world,ierr)
+
+
+    !Each Proc. computes a CFL
+    ! call courant_mlswe(cfl_vector,q_mlswe,dt,nlayers,min_dx_vec)
+    call courant_mlswe(cfl_vector,q_mlswe,qb,dt,dt_btp,nlayers,min_dx_vec)
+       
+    call mpi_reduce(cfl_vector,cfl_vector_g,5,MPI_PRECISION,&
+         mpi_max,0,mpi_comm_world,ierr)
+    cfl=max(cfl_vector_g(1),cfl_vector_g(2))
+    cflu=max(cfl_vector_g(3),cfl_vector_g(4))
+
+    call mpi_reduce(min_dx_vec,min_dx_vec_g,2,MPI_PRECISION,&
+         mpi_min,0,mpi_comm_world,ierr)
+    
+    !cfl_vector_layers(:,ll) = cfl_vector_g
+
+    if (irank == 0 .and. idone == 0) then
+        print*,'==============================================================='
+        write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime,time/time_scale, dt, dt_btp
+        write(*,'("CFL_H = ",e11.4," CFL_B = ",e11.4," CFL = ",f9.4)')cfl_vector_g(1),cfl_vector_g(2), cfl_vector_g(5)
+        write(*,'("CFLU_H = ",e11.4," CFLU_B = ",e11.4)')cfl_vector_g(3),cfl_vector_g(4)
+        write(*,'("dx_min = ",e11.4," dy_min = ",e11.4)')min_dx_vec_g(1),min_dx_vec_g(2)
+        print*,'---------------------------------------------------------------'
+        do ll = 1,nlayers
+           write(*,'("Layer = ",i8)')ll
+           do i=1,nvar
+              write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), qmin_layers(i,ll)
+           end do !i
+           print*,'---------------------------------------------------------------'
+        end do
+        print*,'---------------------------------------------------------------'
+        write(*,*)'Barotropic'
+        do i=1,4
+           write(*,'("Qb: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qbmax_g(i), qbmin_g(i)
+        end do !i
+        
+        print*,'==============================================================='
+    else if (irank == 0 .and. idone == 1) then
+        print*,'---------------------------------------------------------------'
+        write(*,'(" **Simulation Finished**")')
+        write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime,time/time_scale,dt, dt_btp
+
+        write(*,'("CFL_H = ",f9.4," CFL_V = ",f9.4)')cfl_vector_g(1),cfl_vector_g(2)
+        write(*,'("CFLU_H= ",f9.4," CFLU_V= ",f9.4)')cfl_vector_g(3),cfl_vector_g(4)
+        print*,'---------------------------------------------------------------'
+        do i=1,nvar
+            write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_g(i), qmin_g(i)
+        end do !i
+        print*,'---------------------------------------------------------------'
+
+     end if !irank=0
+        
+        deallocate(q)
+  
+end subroutine print_diagnostics_mlswe

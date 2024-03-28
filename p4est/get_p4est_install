@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+#following will configure and install p4est
+
+if [ -f "p4est_feature.tar.bj" ]; then
+    tar -xjf p4est_feature.tar.bj
+else
+    echo "---> p4est_feature.tar.bj missing! To get the tarfile run ./get_p4est_tar"
+    exit
+fi
+
+#MIRA
+if [ "$1" = "mira" ]; then
+./configure CC=mpixlc_r CXX=mpixlcxx_r FC=mpixlf90_r F77=mpixlf77_r --enable-p6est --enable-mpi --without-lapack --without-blas --disable-shared CPPFLAGS="-I/soft/libraries/alcf/current/xl/ZLIB/include" LDFLAGS="-L/soft/libraries/alcf/current/xl/ZLIB/lib"
+fi
+
+#HAMMING
+if [ "$1" = "hamming" ]; then
+    ./configure CC=mpicc CXX=mpicxx FC=mpif90 F77=mpif77 --enable-p6est --enable-mpi 
+#--without-lapack --without-blas --disable-shared
+    make
+    make install
+fi
+
+#R2
+if [ "$1" = "r2" ]; then
+    ./configure \
+	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77 \
+	LDFLAGS="-L/cm/local/apps/lua/5.3.4/lib64 -L/scratch/makopera-shared/metis_r2/lib" \
+	CPPFLAGS="-I/cm/local/apps/lua/5.3.4/ -I/scratch/makopera-shared/metis_r2/include"\
+	CFLAGS="-O2 -Wall"\
+        LIBS="-L/scratch/makopera-shared/metis_r2/lib -lmetis" --with-metis
+
+    make
+    make check
+    make install
+fi
+
+
+#BORAH
+if [ "$1" = "borah" ]; then
+    ./configure \
+	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	--without-lapack \
+	--disable-shared \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77 \
+	LDFLAGS="-L/cm/local/apps/lua/current/lib64 -L/usr/lib64" \
+	CPPFLAGS="-I/cm/local/apps/lua/current/inlcude/lua/"\
+	CFLAGS="-O2 -Wall"
+
+    make
+    make check
+    make install
+fi
+
+
+#DEFAULT
+if [ "$1" = "" ]; then
+    ./configure CC=mpicc CXX=mpicxx FC=mpif90 F77=mpif77 --enable-p6est --enable-mpi 
+#--without-lapack --without-blas --disable-shared
+    make
+    make install
+fi
