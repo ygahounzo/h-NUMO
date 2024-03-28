@@ -7,6 +7,9 @@
 !>@update September 9, 2016 by F.X. Giraldo to always use optimal communication.
 !>In this case here we use non-blocking sends-receives for DG Overlapping 
 !>computation and communication
+!>@modified by   Yao Gahounzo
+!>     Computing PhD
+!>     Boise State University
 !----------------------------------------------------------------------!
 
 subroutine create_rhs_precommunicator_quad(q_face,nvarb)
@@ -156,6 +159,69 @@ subroutine create_communicator_quad(q_face,nvarb)
     endif
 
 end subroutine create_communicator_quad
+
+subroutine create_communicator_df(q_df_face,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
+
+    use mod_viscosity, only: q_visc, rhs_visc
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,2,ngl,nface), intent(inout) :: q_df_face
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    !MPI Variables
+    integer :: i,j,k,iv,e,ip
+    real :: recv_data_dg_df1(nvarb*ngl*nboun)
+    real :: send_data_dg_df1(nvarb*ngl*nboun)
+    real :: q_recv_df1(nvarb,ngl,nboun), q_send_df1(nvarb,ngl,nboun)
+
+    recv_data_dg_df1 = 0.0
+    send_data_dg_df1 = 0.0
+    q_recv_df1 = 0.0
+    q_send_df1 = 0.0
+
+    !-----------------------------------
+    ! DG - Discontinuous communicator
+    !-----------------------------------
+    if (space_method(1:2)  == 'dg') then
+
+        !Load all the boundary data into a vector
+        call pack_data_dg_df(send_data_dg_df1,q_df_face,nvarb)
+
+        !non-blocking sends-receives: message size=nmessage
+        call send_bound_dg_general_df(send_data_dg_df1,recv_data_dg_df1,nvarb,nreq,ireq,status)
+
+        !To build inter-processor fluxes, All Procs Must Wait
+        call mpi_waitall(nreq,ireq,status,ierr)
+
+        !Map Recv buffer to the boundary of the Receiver (unpack data)
+        call unpack_data_dg_general_df(q_send_df1,q_recv_df1,send_data_dg_df1,recv_data_dg_df1,nvarb)
+
+        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+        call create_nbhs_face_df(q_df_face,q_send_df1,q_recv_df1,nvarb,0)
+
+    endif
+
+end subroutine create_communicator_df
 
 subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 

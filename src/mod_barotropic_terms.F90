@@ -23,7 +23,7 @@ module mod_barotropic_terms
                 btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, btp_mass_advection_terms, &
                 btp_bcl_coeffs, btp_mom_boundary_df, compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, &
                 evaluate_quprime2, restart_mlswe, massinv_rhs, compute_gradient_uv, compute_btp_mom_terms, &
-                btp_laplacian_terms, btp_evaluate_mom_dp_graduvdp_face, btp_laplacian_terms_v1
+                btp_laplacian_terms, btp_evaluate_mom_dp_graduvdp_face, btp_laplacian_terms_v1, btp_extract_df_face, btp_interpolate_face
 
     contains
 
@@ -712,6 +712,127 @@ module mod_barotropic_terms
         end do
       
     end subroutine btp_evaluate_mom_dp_face 
+
+    subroutine btp_extract_df_face(qb_df_face, qb_df)
+
+        implicit none
+
+        real, intent(inout) :: qb_df_face(4,2,ngl,nface)
+        real, intent(in) :: qb_df(4,npoin)
+
+        integer :: iface, n, il, jl, ir, jr, el, er, I, kl, kr
+
+        ! Compute values of certain barotropic functions at quadrature points
+        ! in each cell and endpoints of each cell, at barotropic
+        ! time level m+1.
+        ! The values at endpoints should be interpreted as one-sided limits.
+      
+        ! In the case of  pbub,  pbvb,  and  pbpert,  use degrees of freedom 
+        ! and basis functions.  In the case of  ub  and  vb,  use division.
+      
+        qb_df_face = 0.0
+      
+        ! Evaluate  pbub  and  pbvb.
+      
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do n = 1, ngl
+
+                ! Left
+                il=imapl(1,n,1,iface)
+                jl=imapl(2,n,1,iface)
+                kl=imapl(3,n,1,iface)
+                I=intma(il,jl,kl,el)
+
+                qb_df_face(1:4,1,n,iface) = qb_df(1:4,I)
+
+                if(er > 0) then
+                    ! Right
+                    ir=imapr(1,n,1,iface)
+                    jr=imapr(2,n,1,iface)
+                    kr=imapr(3,n,1,iface)
+                    I=intma(ir,jr,kr,er)
+
+                    qb_df_face(1:4,2,n,iface) = qb_df(1:4,I)
+                else
+
+                    qb_df_face(1:4,2,n,iface) = qb_df_face(1:4,1,n,iface)
+                end if
+
+            end do
+      
+        end do
+      
+    end subroutine btp_extract_df_face 
+
+    subroutine btp_interpolate_face(qb_face, qb_df_face)
+
+        implicit none
+
+        real, intent(in) :: qb_df_face(4,2,ngl,nface)
+        real, intent(out) :: qb_face(4,2,nq,nface)
+
+        integer :: iface, ilr, iquad,jquad, n, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,plane_ij,nq_i,nq_j
+        real :: un, nx, ny, hi
+
+        ! Compute values of certain barotropic functions at quadrature points
+        ! in each cell and endpoints of each cell, at barotropic
+        ! time level m+1.
+        ! The values at endpoints should be interpreted as one-sided limits.
+      
+        ! In the case of  pbub,  pbvb,  and  pbpert,  use degrees of freedom 
+        ! and basis functions.  In the case of  ub  and  vb,  use division.
+      
+        qb_face = 0.0
+      
+        ! Evaluate  pbub  and  pbvb.
+      
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                do n = 1,ngl
+
+                    hi = psiq(n,iquad)
+
+                    ! Left
+                    qb_face(1:4,1,iquad,iface) = qb_face(1:4,1,iquad,iface) + hi*qb_df_face(1:4,1,n,iface)
+
+                    ! Right
+                    qb_face(1:4,2,iquad,iface) = qb_face(1:4,2,iquad,iface) + hi*qb_df_face(1:4,2,n,iface)
+
+                end do
+            end do
+
+            if(er == -4) then
+
+                do iquad = 1,nq
+
+                    nx = normal_vector_q(1,iquad,1,iface)
+                    ny = normal_vector_q(2,iquad,1,iface)
+
+                    un = nx*qb_face(3,1,iquad,iface) + ny*qb_face(3,2,iquad,iface)
+
+                    qb_face(3,2,iquad,iface) = qb_face(3,1,iquad,iface) - 2.0*un*nx
+                    qb_face(4,2,iquad,iface) = qb_face(4,1,iquad,iface) - 2.0*un*ny
+                end do
+
+            elseif(er == -2) then 
+                do iquad = 1,nq
+                    qb_face(3:4,2,iquad,iface) = -qb_face(3:4,1,iquad,iface)
+                end do
+            end if
+        end do
+      
+    end subroutine btp_interpolate_face 
 
     subroutine btp_evaluate_mom_dp_graduvdp_face(qb_face, grad_uvdp_face, qb, grad_uvdp)
 

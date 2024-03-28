@@ -343,6 +343,86 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_quad
 
+ subroutine create_nbhs_face_df(q_face,q_send,q_recv,nvarb,multirate)
+
+   use mod_basis, only: ngl, FACE_CHILDREN,nq
+ 
+   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
+ 
+   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
+ 
+   use mod_initial, only: nvar
+ 
+   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
+ 
+   use mod_metrics, only: jac
+ 
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+ 
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+ 
+   use mod_ref, only: nmessage
+ 
+   implicit none
+ 
+   !global arrays
+   real, intent(inout) :: q_face(nvarb,2,ngl,nface)
+   real,intent(in):: q_send(nvarb,ngl,nboun)
+   real,intent(in):: q_recv(nvarb,ngl,nboun)
+   integer, intent(in) :: nvarb
+ 
+   !local variables
+ 
+   real :: wq, a_constant, iflux
+   integer ::iface,k
+   integer :: iel, ier, ilocl, ilocr
+   integer :: ifaceb, nq_i, nq_j, plane_ij
+ 
+   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
+   integer :: ftype, pface, subface, imulti
+   integer :: multirate
+ 
+   !Constants
+ 
+   jj=1
+   kk=1
+   imm = 0
+
+   ! do ifaceb =1,nboun
+   !    iface = face_send(ifaceb)  ! Get Local Face
+ 
+   do inbh = 1, num_nbh
+      do ib=1,num_send_recv(inbh)
+         iface = nbh_send_recv(jj)
+         imulti = nbh_send_recv_multi(jj)
+ 
+         ftype = face_type(iface)
+ 
+         do im = 1,imulti
+ 
+            !-------------------------------------
+            !Store Left Side Variables
+            !-------------------------------------
+            
+            do k=1,nvarb
+               !Left Element
+               q_face(k,1,:,iface)=q_send(k,:,kk)
+
+               !Right Element
+               q_face(k,2,:,iface)=q_recv(k,:,kk)
+            end do
+ 
+            kk=kk+1
+
+            ! end if
+         end do
+         jj=jj+1
+      end do
+ 
+   end do !iface
+ 
+ end subroutine create_nbhs_face_df
+
  subroutine create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send,q_recv,nvarb,multirate)
 
    use mod_basis, only: ngl, FACE_CHILDREN,nq

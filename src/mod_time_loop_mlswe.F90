@@ -208,13 +208,15 @@ contains
         idone = 0
         if (lprint_diagnostics) then
                
-            !call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            !ae01_g,ae02_g,cfl,cflu,ntime)
+            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+            ae01_g,ae02_g,cfl,cflu,ntime)
         end if
 
         if (irank == irank0) then
             print *, "--------------"
             print *, "Begin Time Integration: "
+
+            print *, "Time step"
         end if
 
         !Recompute LAMBDA and ALHS for direct solver if DT changed
@@ -224,8 +226,12 @@ contains
         !------------------------------
         idone=0
         rhs_time = 0.0
+
+        print*, 'Time step'
         
         do while (time < time_final)
+
+            print*, 'Time step'
 
             !--- Update time counters
             itime = itime + 1
