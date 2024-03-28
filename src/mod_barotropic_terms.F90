@@ -201,6 +201,127 @@ module mod_barotropic_terms
 
     end subroutine compute_btp_terms
 
+    subroutine compute_btp_terms_face(Qu_face,Qv_face,H_face,one_plus_eta_edge_2, &
+        one_plus_eta_face, flux_edge,qb_face,Q_uu_dp_edge,Q_uv_dp_edge,Q_vv_dp_edge, &
+        H_bcl_edge)
+
+        implicit none
+
+        real, dimension(2,nq,nface), intent(in) :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
+        real, dimension(4,2,nq,nface), intent(in) :: qb_face
+
+
+        real, dimension(2,nq,nface), intent(out) :: Qu_face, Qv_face, one_plus_eta_face, flux_edge
+        real, dimension(nq,nface), intent(out) :: H_face, one_plus_eta_edge_2
+
+        integer :: iface, iquad, Iq
+        real, dimension(nq) :: ul, ur, vl, vr, upl, upr, vpl, vpr
+        real :: pbub_left, pbvb_left, pbpert_left
+        real :: pbub_right, pbvb_right, pbpert_right
+        real :: pU_L, pU_R, nxl, nyl, nxr, nyr, rho
+        real :: pbpert_edge, eta_edge, speed1
+        integer :: ir, jr, kr, kl, ier, jquad, el, er, jl, il
+        real, dimension(nq,nface) :: one_plus_eta_edge
+
+        ! Compute eta
+
+        do iface = 1, nface
+
+            el = face(7,iface)
+            er = face(8,iface)
+
+            ! Use a Riemann problem to determine interpolated values of 
+            ! pbpert = p'_b*eta at element faces.
+            ! Here, eta iface the relative perturbation in bottom pressure, 
+            ! relative to the global rest state that iface used to define the 
+            ! barotropic-baroclinic splitting.
+
+            ! Regard the interpolation process as Lax-Friedrichs interpolation,
+            ! or a generalization thereof.
+            ! Then compute the relative perturbations in bottom pressure 
+            ! at each cell edge.  That is, 
+            ! eta_edge(i) = pbpert_edge i / (p'_b at edge i)
+            ! Also compute  (1 + eta_edge)**2 . 
+
+            ! Compute pbpert_edge, eta_edge, and one_plus_eta_edge_2
+
+            do iquad = 1, nq
+                nxl = normal_vector_q(1,iquad,1,iface)
+                nyl = normal_vector_q(2,iquad,1,iface)
+        
+                nxr = -nxl
+                nyr = -nyl
+        
+                pbub_left = qb_face(3, 1, iquad, iface)
+                pbvb_left = qb_face(4, 1, iquad, iface)
+                pbpert_left = qb_face(2, 1, iquad, iface)
+        
+                pbub_right = qb_face(3, 2, iquad, iface)
+                pbvb_right = qb_face(4, 2, iquad, iface)
+                pbpert_right = qb_face(2, 2, iquad, iface)
+        
+                pU_L = nxl * pbub_left + nyl * pbvb_left
+                pU_R = nxr * pbub_right + nyr * pbvb_right
+        
+                pbpert_edge = coeff_pbpert_L(iquad, iface) * pbpert_left &
+                                            + coeff_pbpert_R(iquad, iface) * pbpert_right &
+                                            + coeff_pbub_LR(iquad, iface) * (pU_L + pU_R)
+        
+                eta_edge = pbpert_edge * one_over_pbprime_edge(iquad, iface)
+                one_plus_eta_edge(iquad, iface) = 1.0 + eta_edge
+                one_plus_eta_edge_2(iquad, iface) = (1.0 + eta_edge)
+
+                ! Compute mass fluxes at each element face.
+
+                flux_edge(1,iquad,iface) = coeff_mass_pbub_L(iquad,iface) * pbub_left &
+                                            + coeff_mass_pbub_R(iquad,iface) * pbub_right &
+                                            + coeff_mass_pbpert_LR(iquad,iface) * (nxl * pbpert_left + nxr * pbpert_right)
+
+                flux_edge(2,iquad,iface) = coeff_mass_pbub_L(iquad,iface) * pbvb_left &
+                                            + coeff_mass_pbub_R(iquad,iface) * pbvb_right &
+                                            + coeff_mass_pbpert_LR(iquad,iface) * (nyl * pbpert_left + nyr * pbpert_right)
+            end do
+
+            ! Compute (1 + eta) and (1 + eta)**2 at each element faces( 1 = left & 2=right side).
+
+            one_plus_eta_face(1,:,iface) = 1.0 + qb_face(2,1,:,iface) * one_over_pbprime_face(1,:,iface)
+            one_plus_eta_face(2,:,iface) = 1.0 + qb_face(2,2,:,iface) * one_over_pbprime_face(2,:,iface)
+
+            ! Compute H_face at each element face.
+
+            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
+
+            if(er ==-4) then 
+
+                do iquad = 1, nq
+
+                    il = imapl_q(1,iquad,1,iface)
+                    jl = imapl_q(2,iquad,1,iface)
+                    kl = imapl_q(3,iquad,1,iface)
+
+                    Iq = intma_dg_quad(il,jl,kl,el)
+
+                    H_face(iquad,iface) = H(Iq)
+                    
+                end do
+            end if
+
+            ul = qb_face(3,1,:,iface)/qb_face(1,1,:,iface); ur = qb_face(3,2,:,iface)/qb_face(1,2,:,iface)
+            vl = qb_face(4,1,:,iface)/qb_face(1,1,:,iface); vr = qb_face(4,2,:,iface)/qb_face(1,2,:,iface)
+
+            upl = qb_face(3, 1, :, iface); upr = qb_face(3, 2, :, iface)
+            vpl = qb_face(4, 1, :, iface); vpr = qb_face(4, 2, :, iface)
+
+            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uu_dp_edge(1,:, iface) + Q_uu_dp_edge(2,:, iface))
+            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+
+            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_vv_dp_edge(1,:, iface) + Q_vv_dp_edge(2,:, iface))
+
+        end do
+
+    end subroutine compute_btp_terms_face
+
     subroutine compute_btp_mom_terms(Quu,Qvv,Quv,Qu_face,Qv_face, H, H_face,tau_bot, one_plus_eta,one_plus_eta_edge_2, one_plus_eta_df, &
         one_plus_eta_face, qb,Q_uu_dp,Q_uv_dp,Q_vv_dp,qb_face,Q_uu_dp_edge,Q_uv_dp_edge,Q_vv_dp_edge, qprime, &
         H_bcl, H_bcl_edge, qb_df)
@@ -819,7 +940,7 @@ module mod_barotropic_terms
                     nx = normal_vector_q(1,iquad,1,iface)
                     ny = normal_vector_q(2,iquad,1,iface)
 
-                    un = nx*qb_face(3,1,iquad,iface) + ny*qb_face(3,2,iquad,iface)
+                    un = nx*qb_face(3,1,iquad,iface) + ny*qb_face(4,2,iquad,iface)
 
                     qb_face(3,2,iquad,iface) = qb_face(3,1,iquad,iface) - 2.0*un*nx
                     qb_face(4,2,iquad,iface) = qb_face(4,1,iquad,iface) - 2.0*un*ny

@@ -13,6 +13,6 @@ source /etc/profile
 source ~/.bashrc
 source ~/.bash_profile
 
-cp ~/numo/bin/numa3d .
+cp ~/h-NUMO/bin/numa3d .
 
 mpirun -np 48 ./numa3d

@@ -13,7 +13,7 @@ module mod_laplacian_quad
     implicit none
 
     public :: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_v3, &
-                create_laplacian_mlswe_v4, create_laplacian_mlswe_v5
+                create_laplacian_mlswe_v4, create_laplacian_mlswe_v5, create_laplacian_mlswe_v6
 
     contains 
 
@@ -265,6 +265,30 @@ module mod_laplacian_quad
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine create_laplacian_mlswe_v5
+
+    subroutine create_laplacian_mlswe_v6(rhs_lap,grad_uvdp,grad_uvdp_face)
+
+        real, intent (out) :: rhs_lap(2,npoin)
+        
+        real, dimension(4,2,nq,nface), intent (in) :: grad_uvdp_face
+        real, dimension(2,2,npoin_q), intent(in) :: grad_uvdp
+
+        real :: rhs_temp(2,npoin)
+
+        rhs_lap = 0.0
+
+        call create_lap_precommunicator_quad(grad_uvdp_face,4)
+
+        call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp(1,:,:),grad_uvdp(2,:,:))
+
+        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
+
+        call create_lap_postcommunicator_quad(rhs_temp,4)
+
+        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
+        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
+
+    end subroutine create_laplacian_mlswe_v6
 
     subroutine create_laplacian_mlswe_layer_v3(rhs_lap,qprime,qprime_face,uvb,uvb_face)
 

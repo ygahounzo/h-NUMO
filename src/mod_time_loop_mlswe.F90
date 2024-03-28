@@ -215,8 +215,6 @@ contains
         if (irank == irank0) then
             print *, "--------------"
             print *, "Begin Time Integration: "
-
-            print *, "Time step"
         end if
 
         !Recompute LAMBDA and ALHS for direct solver if DT changed
@@ -226,12 +224,8 @@ contains
         !------------------------------
         idone=0
         rhs_time = 0.0
-
-        print*, 'Time step'
         
         do while (time < time_final)
-
-            print*, 'Time step'
 
             !--- Update time counters
             itime = itime + 1

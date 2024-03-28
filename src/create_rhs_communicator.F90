@@ -544,3 +544,56 @@ subroutine create_lap_postcommunicator_quad(rhs,nvarb)
 
 end subroutine create_lap_postcommunicator_quad
 
+subroutine create_lap_precommunicator_quad(q_face,nvarb)
+
+    use mod_basis, only: nq
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
+
+    use mod_viscosity, only: q_visc, rhs_visc
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,2,nq,nface), intent(in) :: q_face
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    !MPI Variables
+    integer :: i,j,k,iv,e,ip
+    real :: recv_data_dg_quad1(nvarb*nq*nboun)
+    real :: send_data_dg_quad1(nvarb*nq*nboun)
+    real :: q_recv_quad1(nvarb,nq,nboun), q_send_quad1(nvarb,nq,nboun)
+
+    recv_data_dg_quad1 = 0.0
+    send_data_dg_quad1 = 0.0
+    q_recv_quad1 = 0.0
+    q_send_quad1 = 0.0
+
+    !-----------------------------------
+    ! DG - Discontinuous communicator
+    !-----------------------------------
+    if (space_method(1:2)  == 'dg') then
+
+        !Load all the boundary data into a vector
+        call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
+
+        !non-blocking sends-receives: message size=nmessage
+        call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
+    endif
+
+end subroutine create_lap_precommunicator_quad
+
