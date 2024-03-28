@@ -15,15 +15,14 @@ module mod_barotropic_terms
     use mod_Tensorproduct, only: compute_gradient_quad, interpolate_layer_from_quad_to_node_1d
     use mod_basis, only: dpsiq, dpsiqx, dpsiqy, dpsiqz
 
-
-
     implicit none
 
     public :: btp_evaluate_mom, &
                 btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, btp_mass_advection_terms, &
                 btp_bcl_coeffs, btp_mom_boundary_df, compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, &
                 evaluate_quprime2, restart_mlswe, massinv_rhs, compute_gradient_uv, compute_btp_mom_terms, &
-                btp_laplacian_terms, btp_evaluate_mom_dp_graduvdp_face, btp_laplacian_terms_v1, btp_extract_df_face, btp_interpolate_face
+                btp_laplacian_terms, btp_evaluate_mom_dp_graduvdp_face, btp_laplacian_terms_v1, btp_extract_df_face, &
+                btp_interpolate_face, btp_laplacian_terms_v2
 
     contains
 
@@ -290,21 +289,6 @@ module mod_barotropic_terms
             ! Compute H_face at each element face.
 
             H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
-
-            if(er ==-4) then 
-
-                do iquad = 1, nq
-
-                    il = imapl_q(1,iquad,1,iface)
-                    jl = imapl_q(2,iquad,1,iface)
-                    kl = imapl_q(3,iquad,1,iface)
-
-                    Iq = intma_dg_quad(il,jl,kl,el)
-
-                    H_face(iquad,iface) = H(Iq)
-                    
-                end do
-            end if
 
             ul = qb_face(3,1,:,iface)/qb_face(1,1,:,iface); ur = qb_face(3,2,:,iface)/qb_face(1,2,:,iface)
             vl = qb_face(4,1,:,iface)/qb_face(1,1,:,iface); vr = qb_face(4,2,:,iface)/qb_face(1,2,:,iface)
@@ -1511,7 +1495,7 @@ module mod_barotropic_terms
     subroutine btp_laplacian_terms(grad_uvdp,grad_uvdp_face,qprime_df,qb_df, dpprime)
 
         real, dimension(4,2,nq,nface), intent (out) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q), intent(out) :: grad_uvdp
+        real, dimension(4,npoin_q), intent(out) :: grad_uvdp
 
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
@@ -1533,11 +1517,11 @@ module mod_barotropic_terms
             call compute_gradient_uv(graduv, Uk)
 
 
-            grad_uvdp(1,1,:) = grad_uvdp(1,1,:) + dpprime(:,k)*graduv(1,1,:)
-            grad_uvdp(1,2,:) = grad_uvdp(1,2,:) + dpprime(:,k)*graduv(1,2,:)
+            grad_uvdp(1,:) = grad_uvdp(1,:) + dpprime(:,k)*graduv(1,1,:)
+            grad_uvdp(2,:) = grad_uvdp(2,:) + dpprime(:,k)*graduv(1,2,:)
 
-            grad_uvdp(2,1,:) = grad_uvdp(2,1,:) + dpprime(:,k)*graduv(2,1,:)
-            grad_uvdp(2,2,:) = grad_uvdp(2,2,:) + dpprime(:,k)*graduv(2,2,:)
+            grad_uvdp(3,:) = grad_uvdp(3,:) + dpprime(:,k)*graduv(2,1,:)
+            grad_uvdp(4,:) = grad_uvdp(4,:) + dpprime(:,k)*graduv(2,2,:)
 
         end do
             
@@ -1558,11 +1542,11 @@ module mod_barotropic_terms
                 Iq = intma_dg_quad(il,jl,kl,iel)
 
                 !Variables
-                grad_uvdp_face(1,1,iquad,iface) = grad_uvdp(1,1,Iq)
-                grad_uvdp_face(2,1,iquad,iface) = grad_uvdp(1,2,Iq)
+                grad_uvdp_face(1,1,iquad,iface) = grad_uvdp(1,Iq)
+                grad_uvdp_face(2,1,iquad,iface) = grad_uvdp(2,Iq)
 
-                grad_uvdp_face(3,1,iquad,iface) = grad_uvdp(2,1,Iq)
-                grad_uvdp_face(4,1,iquad,iface) = grad_uvdp(2,2,Iq)
+                grad_uvdp_face(3,1,iquad,iface) = grad_uvdp(3,Iq)
+                grad_uvdp_face(4,1,iquad,iface) = grad_uvdp(4,Iq)
 
                 if (ier > 0 ) then
 
@@ -1573,11 +1557,11 @@ module mod_barotropic_terms
                     Iq=intma_dg_quad(ir,jr,kr,ier)
 
                     !Variables
-                    grad_uvdp_face(1,2,iquad,iface) = grad_uvdp(1,1,Iq)
-                    grad_uvdp_face(2,2,iquad,iface) = grad_uvdp(1,2,Iq)
+                    grad_uvdp_face(1,2,iquad,iface) = grad_uvdp(1,Iq)
+                    grad_uvdp_face(2,2,iquad,iface) = grad_uvdp(2,Iq)
 
-                    grad_uvdp_face(3,2,iquad,iface) = grad_uvdp(2,1,Iq)
-                    grad_uvdp_face(4,2,iquad,iface) = grad_uvdp(2,2,Iq)
+                    grad_uvdp_face(3,2,iquad,iface) = grad_uvdp(3,Iq)
+                    grad_uvdp_face(4,2,iquad,iface) = grad_uvdp(4,Iq)
 
                 else
                     !default values
@@ -1592,15 +1576,15 @@ module mod_barotropic_terms
                         nx = normal_vector_q(1,iquad,1,iface)
                         ny = normal_vector_q(2,iquad,1,iface)
 
-                        un = grad_uvdp(1,1,Iq)*nx + grad_uvdp(1,2,Iq)*ny
+                        un = grad_uvdp(1,Iq)*nx + grad_uvdp(2,Iq)*ny
 
-                        grad_uvdp_face(1,2,iquad,iface) = grad_uvdp(1,1,Iq) - 2.0*un*nx
-                        grad_uvdp_face(2,2,iquad,iface) = grad_uvdp(1,2,Iq) - 2.0*un*ny
+                        grad_uvdp_face(1,2,iquad,iface) = grad_uvdp(1,Iq) - 2.0*un*nx
+                        grad_uvdp_face(2,2,iquad,iface) = grad_uvdp(2,Iq) - 2.0*un*ny
 
-                        un = grad_uvdp(2,1,Iq)*nx + grad_uvdp(2,2,Iq)*ny
+                        un = grad_uvdp(3,Iq)*nx + grad_uvdp(4,Iq)*ny
 
-                        grad_uvdp_face(3,2,iquad,iface) = grad_uvdp(1,1,Iq) - 2.0*un*nx
-                        grad_uvdp_face(4,2,iquad,iface) = grad_uvdp(2,2,Iq) - 2.0*un*ny
+                        grad_uvdp_face(3,2,iquad,iface) = grad_uvdp(3,Iq) - 2.0*un*nx
+                        grad_uvdp_face(4,2,iquad,iface) = grad_uvdp(4,Iq) - 2.0*un*ny
 
                     end if 
                 end if
@@ -1609,6 +1593,38 @@ module mod_barotropic_terms
         end do
 
     end subroutine btp_laplacian_terms
+
+    subroutine btp_laplacian_terms_v2(grad_uvdp,qprime_df,qb_df, dpprime)
+
+        real, dimension(4,npoin_q), intent(out) :: grad_uvdp
+
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+        real, dimension(4,npoin), intent(in) :: qb_df
+        real, dimension(npoin_q, nlayers), intent(in) :: dpprime
+
+        real, dimension(2,npoin) :: Uk
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, k
+        real :: un, nx, ny
+        real, dimension(2,2, npoin_q) :: graduv
+
+        grad_uvdp = 0.0
+
+        do k = 1,nlayers
+
+            Uk(1,:) = qprime_df(2,:,k) + qb_df(3,:)/qb_df(1,:)
+            Uk(2,:) = qprime_df(3,:,k) + qb_df(4,:)/qb_df(1,:)
+
+            call compute_gradient_uv(graduv, Uk)
+
+            grad_uvdp(1,:) = grad_uvdp(1,:) + dpprime(:,k)*graduv(1,1,:)
+            grad_uvdp(2,:) = grad_uvdp(2,:) + dpprime(:,k)*graduv(1,2,:)
+
+            grad_uvdp(3,:) = grad_uvdp(3,:) + dpprime(:,k)*graduv(2,1,:)
+            grad_uvdp(4,:) = grad_uvdp(4,:) + dpprime(:,k)*graduv(2,2,:)
+
+        end do
+
+    end subroutine btp_laplacian_terms_v2
 
     subroutine btp_laplacian_terms_v1(grad_uvdp,qprime_df,qb_df, dpprime)
 

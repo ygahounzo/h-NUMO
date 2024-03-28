@@ -410,7 +410,7 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
   
 end subroutine pack_data_dg_quad_all
 
-subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
+subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
   
     use mod_basis, only: ngl, FACE_CHILDREN, nq
 
@@ -432,7 +432,7 @@ subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
   
     !Global Variables
     real, intent(out) :: q_send(nvarb*nq*nboun)
-    real, intent(in) :: q(nvarb,npoin_q)
+    real, intent(in) :: grad_uvdp(nvarb,npoin_q)
     integer, intent(in) :: nvarb
 
     !Local Variables
@@ -454,7 +454,7 @@ subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
             imulti = nbh_send_recv_multi(jj)
             ! jj = jj + 1
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            !if(face_type(iface) == 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -470,10 +470,10 @@ subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
                     ! Load primitive variables
                     do ivar=1,nvarb
                         ii = ii + 1
-                        q_send(ii)=q(ivar,ip) 
+                        q_send(ii)=grad_uvdp(ivar,ip) 
                     end do
                 end do
-            end if
+            !end if
             jj = jj + 1
         end do
     end do

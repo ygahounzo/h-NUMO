@@ -86,7 +86,7 @@ module mod_rk_mlswe
         real, dimension(2,npoin) :: q_vic, uvb_df
         real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
         real, dimension(4,2,nq,nface) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q) :: grad_uvdp
+        real, dimension(4,npoin_q) :: grad_uvdp
 
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
         real, dimension(npoin) :: fdt_btp1, fdt2_btp1, a_btp1, b_btp1
@@ -609,7 +609,7 @@ module mod_rk_mlswe
         real, dimension(2,npoin) :: q_vic, uvb_df
         real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
         real, dimension(4,2,nq,nface) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q) :: grad_uvdp
+        real, dimension(4,npoin_q) :: grad_uvdp
 
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
         real, dimension(npoin) :: fdt_btp1, fdt2_btp1, a_btp1, b_btp1
@@ -1156,7 +1156,7 @@ module mod_rk_mlswe
         real, dimension(3,npoin) :: rhs_mom
         real, dimension(4,npoin) :: qb0_df, qb1_df
         real, dimension(4,2,nq,nface) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q) :: grad_uvdp
+        real, dimension(4,npoin_q) :: grad_uvdp
 
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
         real :: N_inv, dtt
@@ -1358,7 +1358,7 @@ module mod_rk_mlswe
         ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
         ! ===========================================================================================================================
 
-        use mod_barotropic_terms, only: btp_extract_df_face, btp_interpolate_face
+        use mod_barotropic_terms, only: btp_extract_df_face, btp_interpolate_face, btp_laplacian_terms_v2
         use mod_create_rhs_mlswe, only:  create_rhs_btp_dynamics_volume_new1, Apply_btp_fluxes_new
         use mod_laplacian_quad, only: create_laplacian_mlswe_v6
 
@@ -1395,7 +1395,7 @@ module mod_rk_mlswe
         real, dimension(3,npoin) :: rhs_mom
         real, dimension(4,npoin) :: qb0_df, qb1_df
         real, dimension(4,2,nq,nface) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q) :: grad_uvdp
+        real, dimension(4,npoin_q) :: grad_uvdp
         real, dimension(4,2,ngl,nface) :: qb_df_face, qb_df_face1
 
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
@@ -1464,7 +1464,9 @@ module mod_rk_mlswe
                     ! Compute the gradient of uprime and vrime and multiple by dpprime. 
                     ! These values will be used in the LDG method for the Laplacian term
                     
-                    call btp_laplacian_terms(grad_uvdp,grad_uvdp_face,qprime_df,qb_df, qprime(1,:,:))
+                    !call btp_laplacian_terms(grad_uvdp,grad_uvdp_face,qprime_df,qb_df, qprime(1,:,:))
+
+                    call btp_laplacian_terms_v2(grad_uvdp,qprime_df,qb_df, qprime(1,:,:))
 
                     call create_laplacian_mlswe_v6(rhs_visc_btp,grad_uvdp,grad_uvdp_face)
                 end if
