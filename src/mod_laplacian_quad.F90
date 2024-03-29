@@ -277,13 +277,10 @@ module mod_laplacian_quad
 
         rhs_lap = 0.0
 
-        call create_lap_precommunicator_quad_v1(grad_uvdp,4)
+        call create_lap_precommunicator_quad(grad_uvdp_face,4)
 
         call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp)
-
-        !call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
-
-        call create_rhs_laplacian_flux_SIPG_quad_v1(rhs_temp,grad_uvdp)
+        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
 
         call create_lap_postcommunicator_quad(rhs_temp,4)
 

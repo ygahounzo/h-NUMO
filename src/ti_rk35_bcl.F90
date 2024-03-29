@@ -6,7 +6,7 @@ subroutine ti_rk35_bcl(q_df,qb_df,qp_df_out)
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df, pbprime_df
 	use mod_basis, only: nq
-	use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe, ti_barotropic_rk_mlswe2, ti_barotropic_rk_mlswe3, ti_barotropic_ssprk_mlswe2
+	use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe, ti_barotropic_rk_mlswe2, ti_barotropic_rk_mlswe3
     use mod_barotropic_terms, only: btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
     use mod_layer_terms, only: evaluate_mom_mass, evaluate_mom_mass_face
 
@@ -99,7 +99,7 @@ subroutine ti_rk35_bcl(q_df,qb_df,qp_df_out)
 	!	Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
 	!	qbp_df,qprime,qprime_face, qprime_df, flag_pred, uvb_df_ave)
 
-	call ti_barotropic_ssprk_mlswe2(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
+	call ti_barotropic_rk_mlswe3(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
@@ -135,7 +135,7 @@ subroutine ti_rk35_bcl(q_df,qb_df,qp_df_out)
 	!	Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
 	!	qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred, uvb_df_ave)
 
-	call ti_barotropic_ssprk_mlswe2(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
+	call ti_barotropic_rk_mlswe3(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
