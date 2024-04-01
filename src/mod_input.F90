@@ -168,7 +168,7 @@ module mod_input
         imass, &
         ad_mlswe, explt_coriolis, cd_mlswe, dp_cutoff1, dp_cutoff2, &
         dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
-        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact
+        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data
  
    public :: nsmall, ti_alpha, ti_beta, dd_alpha
  
@@ -798,12 +798,13 @@ module mod_input
    logical :: mass_exact = .false. !added by Yao Gahounzo
    logical :: mlswe_bc_strong = .false. !added by Yao Gahounzo
    logical :: dg_integ_exact = .true. ! added by Yao Gahounzo
+   logical :: dump_data = .true. ! added by Yao Gahounzo
 
  
    !-----------------------------------------------------------------------
    ! Parameters
    !-----------------------------------------------------------------------
-   character(len=*), parameter :: namelist_input='numa3d.in'
+   character(len=*), parameter :: namelist_input='numo3d.in'
  
    !-----------------------------------------------------------------------
    ! Split-Explicit Parameters from Alex Reinecke
@@ -1099,7 +1100,7 @@ module mod_input
           cms_coefficient, cms_coefficient2, n_corrections, imass, &
           ad_mlswe, explt_coriolis, cd_mlswe, dp_cutoff1, dp_cutoff2, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
           visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, is_mlswe_linear, botfr, &
-          mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact
+          mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &

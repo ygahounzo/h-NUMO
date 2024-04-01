@@ -9,7 +9,7 @@ export DEPEND_FILE := $(NUMA_DIR)/depend.mk
 export CONFIG_USER := $(NUMA_DIR)/config.user
 export P4EST_LOC   := $(NUMA_DIR)/p4est
 
-export TARGET=$(NUMA_DIR)/bin/numa3d
+export TARGET=$(NUMA_DIR)/bin/numo3d
 
 include $(NUMA_DIR)/config.p4est
 
