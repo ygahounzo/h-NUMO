@@ -15,10 +15,15 @@
 !> @date March       2015, S. Marras added a lvisc_dynamics, lvisc_tracers, lnazarov_tracers
 !> @date June 14, 2015, F.X. Giraldo added checks to the input data - space_method and explicit and si_dimension compatibilit
 !> @date April 4, 2017, F.X. Giraldo added Incompressible NSE flags for LVISC_RECIPROCAL and others (forgot to update this line but PISO_TYPE was also added).
+!
+!>
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 03, 2024
 !----------------------------------------------------------------------!
 module mod_input
 
-   !    use mod_utilities, only : get_unit
    use mod_types, only : r8
  
    use mod_utilities, only : get_unit, lowercase, uppercase
@@ -1193,21 +1198,13 @@ module mod_input
      decomp_type = lowercase(decomp_type)
      ti_method = lowercase(ti_method)
      ti_method_btp = lowercase(ti_method_btp) !added by YaoG
-     ark2_type = lowercase(ark2_type)
      si_method = lowercase(si_method)
      si_dimension = lowercase(si_dimension)
-     Iter_Type = uppercase(Iter_Type)
-     precon_mode = uppercase(precon_mode)
-     precon_type = uppercase(precon_type)
-     solver_type = lowercase(solver_type)
      filter_weight_type = lowercase(filter_weight_type)
      filter_basis_type = lowercase(filter_basis_type)
      out_type = lowercase(out_type)
      format_vtk = uppercase(format_vtk)
      vtk_cell_type = uppercase(vtk_cell_type)
-     sponge_type = lowercase(sponge_type)
-     pert_type   = lowercase(pert_type)
-     pert_type_tracers = lowercase(pert_type_tracers)
  
      !Add DT to FNAME
      write(real_string,'(f9.4)') dt
@@ -1219,134 +1216,6 @@ module mod_input
         fname_root=trim(fname_root) // '_' // trim(real_string(3:9))
      else
         fname_root=trim(fname_root) // '_' // trim(real_string(4:9))
-     end if
- 
-     if(lburgers1d) then
-        pi_trig = 3.1415926535897932346_r8
-        if(lpi_fraction) then
-           dt = dt/pi_trig
-           time_final = time_final/pi_trig
-           time_restart = time_restart/pi_trig
-        end if
-     end if
- 
-     !More Viscosity Options
-     if (visc>0 .and. nlaplacian==1) then
-        visc2=visc
-     end if
-     if (visc>0 .and. nlaplacian==2) then
-        visc4=visc
-     end if
-     if (visc2 > 0) then
-        visc=visc2
-        nlaplacian=1
-     end if
-     if (visc4 > 0) then
-        visc=visc4
-        nlaplacian=2
-     end if
- 
-     if (.not.lvisc_anisotropic) then
-        visc_h=visc
-        visc_v=visc
-     else if (lvisc_anisotropic) then
-        visc=max(visc_h,visc_v)
-     end if    
- 
-     !If full stress, then laplacian should not be added
-     if(ladd_full_stress_tensor) then
-        full_stress_flg = 1
-        nlaplacian = 0
-     end if
-         
-     !Default values for viscosity coefficient:
-     if(nlaplacian > 0) then
-        
-        !If the anisotropic values of viscx,viscy,viscz
-        !are > 0.0, then, force visc=1.0 so that it is
-        !not accounted for in the computation and only
-        !only viscx, viscy, and viscz are used:
- 
-        if(viscx > 0.0 .or. viscy > 0.0 .or. viscz > 0.0) then
-           lanisotropic_laplacian=.true.
-           visc = 1.0
-        else
-           !Set viscx,viscy,viscz to 1.0 so that the only visc coefficient
-           !that is accounted for by default is visc...
-           viscx = 1.0
-           viscy = 1.0
-           viscz = 1.0
- 
-           if(visc <= 0.0) then
-              print*, ' STOP: YOU DEFINED nlaplacian= ', nlaplacian, ' but you did not gave a positive value to visc.'
-              print*, ' Assign a value to visc in your input file and RELAUNCH the program.'
-              print*, ' The program will STOP here (mod_input).'
-              stop
-           end if
-           !in this case, visc is the only valueviscosity coefficient that
-           !is used and it has the value given by the use in input.
-           !the
-        end if
- 
- !       if (visc2 > 0 .or. visc4 > 0) then
- !          print*, ' STOP: YOU DEFINED nlaplacian= ', nlaplacian, ' but also defined VISC2 and VISC4.'
- !          print*, ' Choose either VISC2 and VISC4, or VISC and NAPLACIAN in the input file and RELAUNCH the program.'
- !          print*, ' The program will STOP here (mod_input).'
- !          stop
- !       end if
- 
-        !
-        ! nlaplacian_flg is used by compute_strain_derivative_IBP
-        ! to subtract dtau_ii/dx_i from the full stress if AD is also used
-        nlaplacian_flg = 2       
-     end if
-     
-     !Define VISC_T: if negative, then should be equal to VISC
-     if (diff_T < 0) then
-        diff_T=visc
-     end if
- 
-     !Define VISC_S: if negative, then should be equal to VISC
-     if (diff_S < 0) then
-        diff_S=visc
-     end if
- 
-     if (lincompressible) then
-        if(.not.lvisc_anisotropic) then
-           diff_Th=diff_T
-           diff_Tv=diff_T
-           diff_Sh=diff_S
-           diff_Sv=diff_S
-        else if(diff_Th<0.or.diff_Tv<0.or.diff_Sh<0.or.diff_Sv<0) then
-           print*, " STOP: You asked for anisotropic thermal or salinity diffusivity, but did not specify values anisotropic."
-           print*, ' The program will STOP here (mod_input).'
-           stop
-        end if
-     end if
- 
-     !Switch off salinity when not doing incompressible
-     if(.not.(lhelmholtz.and.piso_type=='fxg')) then
-        lsalinity=.false.
-        locean=.false.
-     end if
- 
-     !some LAV options
-     if (lLAV) then
-        
-        if (visc < epsilon(1.0)) then
-           visc=epsilon(1.0) !touch viscosity to make it greater than 1 to form necessary arrays
-        end if
-        
-        if (.not.ladd_full_stress_tensor) then
-           if (nlaplacian == 0) then
-              if (irank == 0) then
-                 print*,' Error in MOD_INPUT; Incompatible input data.'
-                 print*,' You selected lLAV=True but did not specificy NLAPLACIAN'
-              end if
-              stop
-           end if
-        end if
-        
      end if
  
      !Add EQN_SET to FNAME
@@ -1372,103 +1241,13 @@ module mod_input
      end if
  
      !Add TI_METHOD to FNAME
-     if(is_mlswe) then
-         if (ti_method_btp /= 'rk35' .and. ti_method_btp /= 'rk34' .and. ti_method_btp /= 'lsrk') then
-            ti_method_btp = 'explicit'
-         endif
-        fname_root=trim(fname_root) // '_' // trim(ti_method) // '_' // trim(ti_method_btp)
-     elseif (ti_method(1:2) == 'rk') then
-        fname_root=trim(fname_root) // '_' // trim(ti_method)
-        si_dimension = '0d' !to avoid issues with IMEX solver arrays being built
-     else
-        fname_root=trim(fname_root) // '_' // trim(ti_method) // '_' // trim(si_method) // '_' // trim(si_dimension)
-     end if
+
+      if (ti_method_btp /= 'rk35' .and. ti_method_btp /= 'rk34' .and. ti_method_btp /= 'lsrk') then
+         ti_method_btp = 'explicit'
+      endif
+      fname_root=trim(fname_root) // '_' // trim(ti_method) // '_' // trim(ti_method_btp)
+
  
-     !Preconditioning File
-     if (si_dimension == '3d' .and. delta >= 0) then
-        precon_fname=trim(fname_root) // '.precon'
-     end if
-     if (precon_order == 0) precon_mode = 'SKIP'
-     if (precon_mode == 'SKIP') precon_order = 0
- 
-     !Setup some Solver Defaults
-     if (si_dimension == '1d') then
-        !       solver_tol=1e-9
-     else if (si_dimension == '3d') then
-        !       solver_tol=1e-2
-     end if
-     if (si_method == 'schur'.and.(.not.lincompressible)) then
-        gamma1=+1
-     else if (si_method == 'no_schur') then
-        gamma1=-1
-     end if
- 
-     !Some options for grid-dependent schemes such as Nazarov
-     min_length_flg = 0.0
-     max_length_flg = 1.0
-     if(luse_min_element_length .or. icase==71 .or. icase==7) then
-        min_length_flg = 1.0
-        max_length_flg = 0.0
-     end if
-     mass_stabilize_flg = 0.0
-     if(lstabilize_mass_eqn) mass_stabilize_flg = 1.0
- 
-     !Some options for turbulence forcing:
-     momentum_forcing_flg = 0.0
-     momentum_forcing_LES_flg = 0.0
-     if(lforce_turb_momentum) then
-        if(lSMAG .or. lnazarov .or. lLES) then
-           momentum_forcing_flg = 0.0
-           momentum_forcing_LES_flg = 1.0
-        else
-           momentum_forcing_flg = 1.0
-           momentum_forcing_LES_flg = 0.0
-        end if
-     end if
-     
-     time_residual_flg = 0.0
-     if(ltime_residual) time_residual_flg = 1.0
-     
-     !Set LAM_flg and GCM_flg
-     if (geometry_type == 'cube') then
-        LAM_flg = 1.0
-        GCM_flg = 0.0
-     else if(geometry_type(1:6) == 'sphere') then
-        LAM_flg = 0.0
-        GCM_flg = 1.0
-        is_sphere=.true.
-     end if
- 
-     !Damping function for turbulence modeling (wall laws):
-     damping_function_flg = 0.0
-     if(ldamping_function) damping_function_flg = 1.0
- 
-     !Options for cloud microphysics like Kessler:
-     buoyancy_flg = 1.0
-     if(lpassive) buoyancy_flg = 0.0
-     moist_nocolumn_flg = 1.0
-     if(lmoist_column) moist_nocolumn_flg = 0.0
-     if(.not. lkessler) lrain = .false.
-     if(lkessler .or. lphysics) then
-        lpassive = .false.
-     end if
- 
-     ! lmoist_column always includes rain:
-     if(.not. lrain) lmoist_column = .false.
-     moist_forcing_flg = 0.0
-     if(lmoist_forcing) moist_forcing_flg = 1.0
-     rain_flg = 0.0
-     if(lrain) rain_flg = 1.0
- 
-     !Setup some Solver checks
-     if (si_dimension == '3d') then
-        solver_type = 'iterative'
-     else if (si_dimension == '1d') then
-        !       solver_type = 'direct'
-        !Iter_Type   = 'LU'
-     end if
- 
-     !
      ! Perform some checks on the Initial Data
      !
      if (irank == 0) then
@@ -1528,33 +1307,6 @@ module mod_input
         end if
      end if
  
-     !Run checks on the time averaging parameters:
-     if(lwrite_time_averaging) then
-        if(interval_start < 0.0 .or. interval_end < 0.0) then
-           lwrite_time_averaging = .false.
- 
-           if(irank == 0) then
-              print*, '---------------------------------------------------'
-              print*,' INPUT WARNING:'
-              print*,' lwrite_time_averaging = TRUE'
-              print*,' however, interval_start or interval_start are < 0'
-              print*,' CAREFUL: interval_start and interval_end are lengths and canNOT be negative'
-              print*,' Please, correct your input'
-              print*,' NO time Averaging will be performed'
-              print*, '---------------------------------------------------'
-           end if
-        end if
- 
-        dt_meas = interval_end - interval_start
-        if(dt > dt_meas) lwrite_time_averaging = .false.
- 
-     end if
- 
-     !
-     !lviscous_bottom=lviscous_ground
-     !just in case the user uses the keyword 'lviscous_bottom' instead of 'lviscous_ground'
-     lviscous_bottom=lviscous_ground
- 
      !Grid Generation and Graph Partitioning
      if (lp4est .or. lp6est) then
         lserial_grid_creation=.false.
@@ -1571,48 +1323,11 @@ module mod_input
            nelz=nel_root_v
         endif
      end if
- 
-     !
-     ! What viscosity are we using for dynamics and tracers?
-     ! here you chose:
-     !1) Dynamics:
-     if(lnazarov) then
-        visc_dyn_flg = 0 !FXG 10/7/16: This flag is no longer used by any piece of code
-     end if
-     !2) Tracers
-     if(lnazarov_tracers) then
-        visc_tracers_flg = 0
-        naza_tracers_flg = 1
-     end if
- 
-     !Andreas' flags for Marcin's test case:
-     if(lpassive) then
-        lmoist_forcing = .false.
-        if(icase==6001) lmoist_column  = .true. !Steve Guimond's test case
-     end if
- 
-     !Limiter flags:
-     if(llimit) then
-        llimit_below = .false.
-        llimit_above = .false.
-     end if
- 
-     if(llimit_below .or. llimit_above) llimit = .false.
+
  
      read_external_grid_flg = 0
      if(lread_external_grid) read_external_grid_flg = 1
  
- 
-     !Flags for APPLY_BOUNDARY_CONDITIONS
-     if (lincompressible .or. cgdg_method == 'separate' .or. is_sphere .or. equations == 'shallow') then
-        lapply_bcs_velocity=.true.
-     end if
- 
-     !1D-IMEX Needs to APPLY BCs Strongly: otherwise, not stable
-     if (si_dimension == '1d') then
-        lapply_bcs_velocity=.true.
-     end if
-     
      if (x_boundary(1) == 3 .or. x_boundary(2) == 3 .or. x_periodic > 0) then
         x_periodic    = 1
         x_boundary(1) = 3
@@ -1648,80 +1363,6 @@ module mod_input
      if (equations(1:7) == 'shallow') is_shallow=.true.
      if (.not. llimit) limit_threshold=-1e8 !large number will keep checks in the code from changing the water height.
  
-     !check if Shallow Water tests are 1D
-     if (is_shallow) then
-        select case(icase)
-        case(25,26,27)
-           is_1d=.true.
-        end select
-     end if
- 
-     !Implicit Flag
-     if (ti_method == 'rk') delta=-1.0
-     is_implicit = (int(delta) >= 0 .and. ldynamics)
-     is_imex = (is_implicit .and. ti_method(6:9) /= 'jfnk')
- 
-     !Checks on Space_Method and Equation_Sets for Implicit
-     if (.not. lincompressible) then
- !!$       if (space_method /= 'cgc' .and. eqn_set == 'set2nc' .and. is_imex) then
- !!$          if (irank == 0) then
- !!$             print*, '---------------------------------------------------'
- !!$             print*,' INPUT WARNING:'
- !!$             print*,' Space_Method and Eqn_Set conflict for IMEX!'
- !!$             print*,' space_method = ',space_method
- !!$             print*,' eqn_set = ',eqn_set
- !!$             print*,' Please, correct your input and rerun'
- !!$             print*, '---------------------------------------------------'
- !!$          end if
- !!$          stop
- !!$       end if
- !!$       if (space_method == 'cgc' .and. cgdg_method== 'unified' .and. is_imex) then
- !!$          if (irank == 0) then
- !!$             print*, '---------------------------------------------------'
- !!$             print*,' INPUT WARNING:'
- !!$             print*,' CGC-Unified currently does not work with IMEX'
- !!$             print*, '---------------------------------------------------'
- !!$          end if
- !!$          stop
- !!$       end if
-        if ( (space_method == 'cgd' .and. cgdg_method == 'unified') .or. space_method == 'dg') then
-           if (is_implicit .and. si_method == 'schur') then
-              if (irank == 0) then
-                 print*, '---------------------------------------------------'
-                 print*,' INPUT WARNING:'
-                 print*,' CGD-Unified and DG do not currently work with Schur form!'
-                 print*, '---------------------------------------------------'
-              end if
-              stop
-           end if
-        end if
-     end if
- 
- !!$    !SET2NC does not work for CGD/DG and IMEX (CGD explicit should work)
- !!$    if (.not. lincompressible) then
- !!$       if (space_method /= 'cgc' .and. eqn_set == 'set2nc') then
- !!$          if (si_dimension /= '0d') then
- !!$             if (irank == 0) then
- !!$                print*, '---------------------------------------------------'
- !!$                print*,' INPUT WARNING:'
- !!$                print*,' Space_Method, Equation Sets, and IMEX solver conflict!'
- !!$                print*,' lincompressible = ',lincompressible
- !!$                print*,' space_method = ',space_method
- !!$                print*,' eqn_set = ',eqn_set
- !!$                print*,' si_dimension = ',si_dimension
- !!$                print*,' Please, correct your input and rerun'
- !!$                print*, '---------------------------------------------------'
- !!$             end if
- !!$             stop
- !!$          end if
- !!$       end if
- !!$    end if
- 
-     !Checks on Viscosity for Incompressible
-     if (lincompressible) then
-        if (icase == 9001 .or. icase == 9002) lvisc_reciprocal=.true.
-     end if
- 
      !1D-IMEX and P6est
      if (si_dimension == '1d') then
         if (lp4est) then
@@ -1735,34 +1376,6 @@ module mod_input
            stop
         end if
      end if
- 
-     !Viscosity Flags
-     !!    if (lvisc_anisotropic) vertical_viscosity=0
- 
-     !Checks on Space_Method and IMEX Forms
-     !    if (delta >= 0 .and. ti_method(1:2) /= 'rk' .and. si_method == 'schur') then
-     !       if (space_method == 'dg' .or. (space_method == 'cgd' .and. cgdg_method /= 'separate') ) then
- !!!       icheck = 0
- !!!       if (space_method == 'dg') then
- !!!          icheck = 1
- !!!       else if (space_method == 'cgd') then
- !!!          if (eqn_set == 'set2c' .or. eqn_set == 'set3c') icheck = 1
- !!!       end if
- !!!       if (icheck == 1) then
-     !
-     !          if(irank == 0) then
-     !             print*, '---------------------------------------------------'
-     !             print*,' INPUT WARNING:'
-     !             print*,' Space_Method and IMEX Forms conflict!'
-     !             print*,' space_method = ',space_method
-     !             print*,' si_method = ',si_method
-     !             print*,' cgdg_method = ',cgdg_method
-     !             print*,' Please, correct your input and rerun'
-     !             print*, '---------------------------------------------------'
-     !          end if
-     !          stop
-     !       end if
-     !    end if
  
    end subroutine mod_input_create
  

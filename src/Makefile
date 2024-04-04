@@ -96,13 +96,10 @@ SOURCEF += initial_conditions_mlswe.F90
 SOURCEF += mod_create_rhs_mlswe.F90
 SOURCEF += mod_splitting.F90
 SOURCEF += ti_mlswe.F90
-SOURCEF += ti_mlswe1.F90
 SOURCEF += diagnostics.F90
 SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90
 SOURCEF += ti_rk35_mlswe.F90
-SOURCEF += ti_rk35_bcl.F90
-SOURCEF += mod_splitting_v2.F90
 
 
 OBJS += $(addsuffix .o, $(basename $(SOURCEF) $(SOURCEC)))

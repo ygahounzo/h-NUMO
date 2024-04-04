@@ -4,55 +4,57 @@
 !>           Department of Applied Mathematics
 !>           Naval Postgraduate School
 !>           Monterey, CA 93943-5216
+!>
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 03, 2024
 !----------------------------------------------------------------------!
 
 subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
-    ae01_g,ae02_g,cfl,cflu,ntime)
-  
-    use mpi
+   ae01_g,ae02_g,cfl,cflu,ntime)
 
-    use mod_constants, only: nnorm
+   use mpi
 
-    use mod_convert_variables, only: mod_convert_variables_eqnset_to_set2nc
+   use mod_constants, only: nnorm
 
-    use mod_global_grid, only: npoin_g
+   use mod_global_grid, only: npoin_g
 
-    use mod_grid, only: npoin, ncol
+   use mod_grid, only: npoin, ncol
 
-    use mod_initial, only: nvar, q_ref, rho_layers, q_ref_layers
-  
-    use mod_input, only: lprint_diagnostics, si_dimension, ti_method, delta, &
-        icase, fname_root, time_scale, ladapt_timestep, lkessler,            &
-        ljenkins_test, lcheck_all_conserved, nlayers, dt_btp
+   use mod_initial, only: nvar
 
-    use mod_mpi_utilities, only: MPI_PRECISION
+   use mod_input, only: lprint_diagnostics, si_dimension, ti_method, delta, &
+      icase, fname_root, time_scale, nlayers, dt_btp
 
-    implicit none
+   use mod_mpi_utilities, only: MPI_PRECISION
 
-    !global arrays
-    real, intent(in)  :: q_mlswe(5,npoin,nlayers), qb(4,npoin)
-    real, intent(in)  :: time, dt, ae01_g, ae02_g
-    integer, intent(in) :: itime, idone, ntime
-  
-    !local arrays
-    real, dimension(:,:), allocatable :: q
-    real, dimension(nvar,nlayers) :: qmax_layers, qmin_layers
-    real, dimension(4,nlayers) :: cfl_vector_layers
-    real :: qmax(nvar),   qmin(nvar), qbmax(4), qbmin(4)
-    real :: qmax_g(nvar), qmin_g(nvar), qbmax_g(4), qbmin_g(4)
-    real :: cfl_vector(5), cfl_vector_g(5), cfl, cflu
-    real :: min_dx_vec(2),min_dx_vec_g(2)
-    real :: epart(3)
-    real :: ae1, ae2, ae1_g, ae2_g, xm1, xm2
-    integer :: ierr, irank, i, j, ncol_g, m, ll
-    real :: kiter_g, kiter
-    character :: fname_conservation*72,fname_qmax_qmin*72
+   implicit none
 
-    allocate(q(nvar,npoin))
+   !global arrays
+   real, intent(in)  :: q_mlswe(5,npoin,nlayers), qb(4,npoin)
+   real, intent(in)  :: time, dt, ae01_g, ae02_g
+   integer, intent(in) :: itime, idone, ntime
 
-    !Get Processor ID number
-    call mpi_comm_rank(mpi_comm_world,irank,ierr)
-  
+   !local arrays
+   real, dimension(:,:), allocatable :: q
+   real, dimension(nvar,nlayers) :: qmax_layers, qmin_layers
+   real, dimension(4,nlayers) :: cfl_vector_layers
+   real :: qmax(nvar),   qmin(nvar), qbmax(4), qbmin(4)
+   real :: qmax_g(nvar), qmin_g(nvar), qbmax_g(4), qbmin_g(4)
+   real :: cfl_vector(5), cfl_vector_g(5), cfl, cflu
+   real :: min_dx_vec(2),min_dx_vec_g(2)
+   real :: epart(3)
+   real :: ae1, ae2, ae1_g, ae2_g, xm1, xm2
+   integer :: ierr, irank, i, j, ncol_g, m, ll
+   real :: kiter_g, kiter
+   character :: fname_conservation*72,fname_qmax_qmin*72
+
+   allocate(q(nvar,npoin))
+
+   !Get Processor ID number
+   call mpi_comm_rank(mpi_comm_world,irank,ierr)
+
 
     !possibly start layers loop here 
 
@@ -104,7 +106,6 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
 
 
     !Each Proc. computes a CFL
-    ! call courant_mlswe(cfl_vector,q_mlswe,dt,nlayers,min_dx_vec)
     call courant_mlswe(cfl_vector,q_mlswe,qb,dt,dt_btp,nlayers,min_dx_vec)
        
     call mpi_reduce(cfl_vector,cfl_vector_g,5,MPI_PRECISION,&

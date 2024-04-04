@@ -13,7 +13,7 @@ module mod_laplacian_quad
     implicit none
 
     public :: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_v3, &
-                create_laplacian_mlswe_v4, create_laplacian_mlswe_v5, create_laplacian_mlswe_v6
+                create_laplacian_mlswe_v4
 
     contains 
 
@@ -159,7 +159,6 @@ module mod_laplacian_quad
 
             call compute_gradient_uv(graduv, Uk)
 
-
             flux_uv_visc(1,:) = flux_uv_visc(1,:) + dpprime(:,k)*graduv(1,1,:)
             flux_uv_visc(2,:) = flux_uv_visc(2,:) + dpprime(:,k)*graduv(1,2,:)
 
@@ -245,49 +244,6 @@ module mod_laplacian_quad
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine create_laplacian_mlswe_v4
-
-    subroutine create_laplacian_mlswe_v5(rhs_lap,grad_uvdp,grad_uvdp_face)
-
-        real, intent (out) :: rhs_lap(2,npoin)
-        
-        real, dimension(4,2,nq,nface), intent (in) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q), intent(in) :: grad_uvdp
-
-        real :: rhs_temp(2,npoin)
-
-        rhs_lap = 0.0
-
-        call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp)
-
-        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
-
-        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
-        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
-
-    end subroutine create_laplacian_mlswe_v5
-
-    subroutine create_laplacian_mlswe_v6(rhs_lap,grad_uvdp,grad_uvdp_face)
-
-        real, intent (out) :: rhs_lap(2,npoin)
-        
-        real, dimension(4,2,nq,nface), intent (in) :: grad_uvdp_face
-        real, dimension(4,npoin_q), intent(in) :: grad_uvdp
-
-        real :: rhs_temp(2,npoin)
-
-        rhs_lap = 0.0
-
-        call create_lap_precommunicator_quad(grad_uvdp_face,4)
-
-        call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp)
-        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
-
-        call create_lap_postcommunicator_quad(rhs_temp,4)
-
-        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
-        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
-
-    end subroutine create_laplacian_mlswe_v6
 
     subroutine create_laplacian_mlswe_layer_v3(rhs_lap,qprime,qprime_face,uvb,uvb_face)
 
@@ -489,141 +445,6 @@ module mod_laplacian_quad
         end do !iface
     
     end subroutine create_rhs_laplacian_flux_SIPG_quad
-
-    subroutine create_rhs_laplacian_flux_SIPG_quad_v1(rhs,grad_uvdp)
-    
-        implicit none
-    
-        !global arrays
-        real, intent(inout) :: rhs(2,npoin)
-        real, intent(in)    :: grad_uvdp(4,npoin_q)
-    
-        !local arrays
-        real, dimension(2) :: qu_mean, qv_mean
-        real, dimension(nq) :: uxl,uxr,uyl,uyr,vxl,vxr,vyl,vyr
-    
-        !local variables
-        real nx, ny, nz
-        real wq, un
-        integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er
-        integer iel, ier, ilocl, ilocr, ip
-        integer iquad, jquad, Iq
-    
-        real :: flux_qu, flux_qv, hi, mul, mur,c_jump
-      
-        !Construct FVM-type Operators
-        do iface=1,nface
-            !-------------------------------------
-            !Store Left and Right Side Variables
-            !-------------------------------------
-            ilocl=face(5,iface)
-            iel=face(7,iface)
-            ier=face(8,iface)
-
-            do iquad = 1,nq
-
-                !Get Pointers
-                il=imapl_q(1,iquad,1,iface)
-                jl=imapl_q(2,iquad,1,iface)
-                kl=imapl_q(3,iquad,1,iface)
-                Iq = intma_dg_quad(il,jl,kl,iel)
-
-                uxl(iquad) = grad_uvdp(1,Iq)
-                uyl(iquad) = grad_uvdp(2,Iq)
-                vxl(iquad) = grad_uvdp(3,Iq)
-                vyl(iquad) = grad_uvdp(4,Iq)
-
-                if (ier > 0 ) then
-
-                    !Get Pointers
-                    ir=imapr_q(1,iquad,1,iface)
-                    jr=imapr_q(2,iquad,1,iface)
-                    kr=imapr_q(3,iquad,1,iface)
-                    Iq=intma_dg_quad(ir,jr,kr,ier)
-
-                    uxr(iquad) = grad_uvdp(1,Iq)
-                    uyr(iquad) = grad_uvdp(2,Iq)
-                    vxr(iquad) = grad_uvdp(3,Iq)
-                    vyr(iquad) = grad_uvdp(4,Iq)
-
-                else
-                    !default values
-
-                    uxr(iquad) = uxl(iquad)
-                    uyr(iquad) = uyl(iquad)
-                    vxr(iquad) = vxl(iquad)
-                    vyr(iquad) = vyl(iquad)
-
-                    if(ier == -4) then 
-                        nx = normal_vector_q(1,iquad,1,iface)
-                        ny = normal_vector_q(2,iquad,1,iface)
-
-                        un = uxl(iquad)*nx + uyl(iquad)*ny
-
-                        uxr(iquad) = uxl(iquad) - 2.0*un*nx
-                        uyr(iquad) = uyl(iquad) - 2.0*un*ny
-
-                        un = vxl(iquad)*nx + vyl(iquad)*ny
-
-                        vxr(iquad) = vxl(iquad) - 2.0*un*nx
-                        vxr(iquad) = vyl(iquad) - 2.0*un*ny
-                    end if 
-
-                endif 
-            end do 
-    
-            !----------------------------Left Element
-            do iquad = 1,nq
-
-                wq=jac_faceq(iquad,1,iface)
-
-                !Store normals
-                nx = normal_vector_q(1,iquad,1,iface)
-                ny = normal_vector_q(2,iquad,1,iface)
-
-                flux_qu = nx*0.5*(uxl(iquad) + uxr(iquad)) + ny*0.5*(uyl(iquad) + uyr(iquad))
-                flux_qv = nx*0.5*(vxl(iquad) + vxr(iquad)) + ny*0.5*(vyl(iquad) + vyr(iquad))
-
-                !---------------------------------
-                !  Do Gauss-Lobatto Integration
-                !---------------------------------
-                !--------------Left Side------------------!
-
-                do i=1,ngl
-
-                    hi = psiq(i,iquad)
-
-                    !Pointers
-                    il=imapl(1,i,1,iface)
-                    jl=imapl(2,i,1,iface)
-                    kl=imapl(3,i,1,iface)
-                    
-                    ip=intma(il,jl,kl,iel)
-                    
-                    !Update Flux
-                    rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
-                    rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
-
-                    if (ier > 0) then
-                        !Pointers
-                        ir=imapr(1,i,1,iface)
-                        jr=imapr(2,i,1,iface)
-                        kr=imapr(3,i,1,iface)
-
-                        ip=intma(ir,jr,kr,ier)
-
-                        !Update Flux
-                        rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
-                        rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
-                    end if !ier
-
-                end do !i
-            
-            end do !iquad
-    
-        end do !iface
-    
-    end subroutine create_rhs_laplacian_flux_SIPG_quad_v1
 
     subroutine compute_laplacian_IBP_set2nc_quad(lap_q,grad_dpuvp)
 
