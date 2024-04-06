@@ -1,20 +1,20 @@
-NUMO INSTALLATION INSTRUCTIONS FOR R2 (and possibly other machines)
+h-NUMO INSTALLATION INSTRUCTIONS FOR Borah (and possibly other machines)
 Sometimes simple make does not work, and you need to compile p4est (and possibly Metis) manually.
-Here is how to compile NUMO on R2, assuming Metis is already installed and linked
+Here is how to compile h-NUMO on Borah, assuming Metis is already installed and linked
 
 1) Compile p4est by going to p4est directory and typing
-./get_p4est_install r2
+./get_p4est_install borah
 
 2) Export path to the p4est library
 To make sure this is exported every time you log-in, put the following line to ~/.bash_profile file:
 
-export LD_LIBRARY_PATH=$PATH:<path_to_numo>/p4est/local/lib
+export LD_LIBRARY_PATH=$PATH:<path_to_h-NUMO>/p4est/local/lib
 
-where <path_to_numo> is the location where you have installed NUMO
+where <path_to_h-NUMO> is the location where you have installed h-NUMO
 
 Just in case type source ~./bash_profile, and it is not a bad idea to include this source command in your run scripts
 
 3) Compile NUMO by going to its directory and typing:
-make r2
+make borah (check the config.user if you want to compile on different platforms)
 
 

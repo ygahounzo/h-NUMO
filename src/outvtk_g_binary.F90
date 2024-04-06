@@ -124,7 +124,7 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
         !
         call vtk_ini(output_format = format_vtk, &
             filename      = fname,               &
-            title         = 'NUMA3d data',     &
+            title         = 'NUMO3d data',     &
             mesh_topology = 'UNSTRUCTURED_GRID', &
             time_value    = time)
 
@@ -433,7 +433,7 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
         !
         call vtk_ini(output_format = format_vtk, &
             filename      = fname,               &
-            title         = 'NUMA3d data',     &
+            title         = 'NUMO3d data',     &
             mesh_topology = 'UNSTRUCTURED_GRID', &
             time_value    = time)
 

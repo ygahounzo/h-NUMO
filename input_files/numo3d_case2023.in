@@ -28,7 +28,7 @@ refinement_levels_v = 0, !refinement levels in vertical
 lp4est=T,
 lp6est=F,
 lio_grid_ascii=F,
-lread_external_grid=T,
+lread_external_grid=F,
 
 !Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
@@ -58,7 +58,6 @@ decomp_type='metis2d',
 &input
 dt= 50,
 dt_btp = 0.5,
-!dt_safety_factor = 0.5,
 time_initial = 0.0,
 time_final   = 10000,
 time_restart = 10.0,
@@ -107,7 +106,7 @@ si_dimension = '3d',
 filter_mux=0.05,
 filter_muy=0.05,
 filter_muz=0.05,
-ifilter=1,
+ifilter=0,
 filter_weight_type='erf',
 !filter_basis_type='modal',
 filter_basis_type='legendre',

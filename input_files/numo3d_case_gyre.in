@@ -7,14 +7,14 @@ nonlinear_swe=0
 /
 
 &gridnl
-nelx  = 10,
-nely  = 10,
+nelx  = 48,
+nely  = 48,
 nelz  = 1,
-nopx  = 4,
-nopy  = 4,
+nopx  = 2,
+nopy  = 2,
 nopz  = 0,
-xdims = 0.0,2e3,
-ydims = 0.0,2e3,
+xdims = 0.0,2e6,
+ydims = 0.0,2e6,
 ztop  =  0.0,
 nlayers = 2,
 
@@ -28,7 +28,6 @@ refinement_levels_v = 0, !refinement levels in vertical
 lp4est=T,
 lp6est=F,
 lio_grid_ascii=F,
-lread_external_grid=T,
 
 !Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
@@ -56,21 +55,20 @@ decomp_type='metis2d',
 /
 
 &input
-dt= 50,
-dt_btp = 0.5,
-!dt_safety_factor = 0.5,
+dt= 600,
+dt_btp = 30,
 time_initial = 0.0,
-time_final   = 10000,
+time_final   = 7200,
 time_restart = 10.0,
-time_scale = 1, !1=seconds, 3600=hours, 86400=days
+time_scale = 86400, !1=seconds, 3600=hours, 86400=days
 lrestart_file = .false.,
 
 ! mlswe parameter
 ad_mlswe = 0.0, 
-botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
-cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
-method_visc = 0,  !0=no viscosity
-visc_mlswe = 1.0,
+botfr = 1, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
+cd_mlswe = 1.0e-7, !(cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction)
+method_visc = 2,  !0=no viscosity
+visc_mlswe = 50.0,
 dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,
 matlab_viz = T,
@@ -80,7 +78,7 @@ dg_integ_exact = T,
 dump_data = T,
 
 !----case
-icase=2023,
+icase=1100,
 	   !Euler Test Cases------------------------------------
 	   !case0=advection; 
 	   !case1 = igw; 
@@ -104,9 +102,9 @@ si_dimension = '3d',
 	       	     !1d IMEX in the vertical/radial direction; 
 	       	     !3d IMEX
 
-filter_mux=0.05,
-filter_muy=0.05,
-filter_muz=0.05,
+filter_mux=0.01,
+filter_muy=0.01,
+filter_muz=0.01,
 ifilter=1,
 filter_weight_type='erf',
 !filter_basis_type='modal',
@@ -120,7 +118,7 @@ out_type='vtk',
 	       	  !vtk=Visual ToolKit (Paraview) output
 	       	  !none=No Output
 
-lprint_diagnostics=T, 
+lprint_diagnostics=F, 
 			   !T=true=print diagnostics
 			   !F=false=do NOT print diagnostics
 /

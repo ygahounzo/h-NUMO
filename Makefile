@@ -4,18 +4,18 @@ CP = /bin/cp -f
 
 export PLATFORMS:= macbook-p4est-intel borah borah-debug macbook-p4est-brew falcon
 
-export NUMA_DIR    := $(CURDIR)
-export DEPEND_FILE := $(NUMA_DIR)/depend.mk
-export CONFIG_USER := $(NUMA_DIR)/config.user
-export P4EST_LOC   := $(NUMA_DIR)/p4est
+export NUMO_DIR    := $(CURDIR)
+export DEPEND_FILE := $(NUMO_DIR)/depend.mk
+export CONFIG_USER := $(NUMO_DIR)/config.user
+export P4EST_LOC   := $(NUMO_DIR)/p4est
 
-export TARGET=$(NUMA_DIR)/bin/numo3d
+export TARGET=$(NUMO_DIR)/bin/numo3d
 
-include $(NUMA_DIR)/config.p4est
+include $(NUMO_DIR)/config.p4est
 
-SUBDIR := $(NUMA_DIR)/bin
-SUBDIR += $(NUMA_DIR)/include
-SUBDIR += $(NUMA_DIR)/libs
+SUBDIR := $(NUMO_DIR)/bin
+SUBDIR += $(NUMO_DIR)/include
+SUBDIR += $(NUMO_DIR)/libs
 
 .NOTPARALLEL:
 
@@ -28,10 +28,10 @@ $(SUBDIR):
 	if [ ! -d $@ ]; then mkdir -p $@;fi
 
 p4est:
-	$(NUMA_DIR)/p4est/get_p4est_install_dir.sh $(P4EST_LOC)
+	$(NUMO_DIR)/p4est/get_p4est_install_dir.sh $(P4EST_LOC)
 
 p4est/local/lib/libp4est.a:
-	cd $(NUMA_DIR)/p4est && \
+	cd $(NUMO_DIR)/p4est && \
 	tar -xjf p4est_feature.tar.bj && \
 	./configure $(P4EST_CONF) && \
 	make -j && \
@@ -39,7 +39,7 @@ p4est/local/lib/libp4est.a:
 	make install
 
 p4est_clean:
-	cd $(NUMA_DIR)/p4est && \
+	cd $(NUMO_DIR)/p4est && \
 	mv p4est_feature.tar.bj ../unused/. && \
 	mv get_* ../unused/. && \
 	rm -rf * && \
@@ -47,7 +47,7 @@ p4est_clean:
 	mv ../unused/get_p4est* .
 
 depend:
-	$(NUMA_DIR)/make_depend.pl -s -l -o $(DEPEND_FILE) $(NUMA_DIR)/src
+	$(NUMO_DIR)/make_depend.pl -s -l -o $(DEPEND_FILE) $(NUMO_DIR)/src
 
 emptyrule:
 
