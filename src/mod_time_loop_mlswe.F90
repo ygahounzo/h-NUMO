@@ -49,7 +49,7 @@ contains
 
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             icase, ifilter, fname_root, lprint_diagnostics, &
-            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp
+            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data
 
         use mod_papi, only: papi_start, papi_update, papi_print, papi_stop
 
@@ -153,21 +153,23 @@ contains
            fnp1='0000'
 
            !write layers output
-            if(matlab_viz) then
-                call diagnostics(qout_mlswe,qb0_df_mlswe(1:4,:),itime)
-            else
-                do l=1,nlayers
-                    !Write Snapshot File
-                    ifnp= l
-                    write(fnp1,'(i3)')ifnp
-                    iloop=2 - int(log10(real(ifnp)))
-                    do j=1,iloop
-                    fnp1(j:j)='0'
-                    end do
-                    write(fnp2,'(a1,a3,a5)')"l",fnp1,"_0000"
-                    call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
+           if(dump_data) then 
+                if(matlab_viz) then
+                    call diagnostics(qout_mlswe,qb0_df_mlswe(1:4,:),itime)
+                else
+                    do l=1,nlayers
+                        !Write Snapshot File
+                        ifnp= l
+                        write(fnp1,'(i3)')ifnp
+                        iloop=2 - int(log10(real(ifnp)))
+                        do j=1,iloop
+                        fnp1(j:j)='0'
+                        end do
+                        write(fnp2,'(a1,a3,a5)')"l",fnp1,"_0000"
+                        call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
 
-                end do
+                    end do
+                end if
             end if
 
            if (irank == irank0) then
@@ -208,8 +210,8 @@ contains
         idone = 0
         if (lprint_diagnostics) then
                
-            !call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            !ae01_g,ae02_g,cfl,cflu,ntime)
+            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+            ae01_g,ae02_g,cfl,cflu,ntime)
         end if
 
         if (irank == irank0) then
@@ -239,10 +241,6 @@ contains
             if(ti_method_btp == 'rk35') then 
                 call ti_rk35_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
                     qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
-
-            elseif(ti_method_btp == 'rk34') then 
-
-                call ti_rk35_bcl(q0_df_mlswe,qb0_df_mlswe,qout_mlswe)
             else 
 
                 call ti_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
@@ -257,7 +255,7 @@ contains
             !rhs_time = rhs_time + (wtime() - time2)
             
             !Write Out Restart File
-            if (mod(itime,irestart) == 0) then
+            if (mod(itime,irestart) == 0 .and. dump_data) then
                 inorm=inorm + 1
 
                 !Print PAPI counters

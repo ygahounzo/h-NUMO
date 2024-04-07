@@ -13,7 +13,7 @@ module mod_laplacian_quad
     implicit none
 
     public :: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_v3, &
-                create_laplacian_mlswe_v4, create_laplacian_mlswe_v5
+                create_laplacian_mlswe_v4
 
     contains 
 
@@ -27,7 +27,7 @@ module mod_laplacian_quad
 
 
         real, dimension(2,npoin_q) :: Uk
-        real, dimension(2,npoin_q) :: flux_u_visc, flux_v_visc
+        real, dimension(4,npoin_q) :: flux_uv_visc
         real, dimension(2,2,nq,nface) :: Uk_face
         real :: flux_uv_visc_face(4,2,nq,nface)
         integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k
@@ -35,7 +35,7 @@ module mod_laplacian_quad
         real :: rhs_temp(2,npoin), un, nx, ny
 
         rhs_lap = 0.0
-        flux_u_visc = 0.0
+        flux_uv_visc = 0.0
 
         do k = 1,nlayers
             Uk(1,:) = qprime(2,:,k) + qb(3,:)/qb(1,:)
@@ -46,11 +46,11 @@ module mod_laplacian_quad
             call evaluate_quprime2(graduv, Uk, Uk_face)
 
 
-            flux_u_visc(1,:) = flux_u_visc(1,:) + qprime(1,:,k)*graduv(1,1,:)
-            flux_u_visc(2,:) = flux_u_visc(2,:) + qprime(1,:,k)*graduv(1,2,:)
+            flux_uv_visc(1,:) = flux_uv_visc(1,:) + qprime(1,:,k)*graduv(1,1,:)
+            flux_uv_visc(2,:) = flux_uv_visc(2,:) + qprime(1,:,k)*graduv(1,2,:)
 
-            flux_v_visc(1,:) = flux_v_visc(1,:) + qprime(1,:,k)*graduv(2,1,:)
-            flux_v_visc(2,:) = flux_v_visc(2,:) + qprime(1,:,k)*graduv(2,2,:)
+            flux_uv_visc(3,:) = flux_uv_visc(3,:) + qprime(1,:,k)*graduv(2,1,:)
+            flux_uv_visc(4,:) = flux_uv_visc(4,:) + qprime(1,:,k)*graduv(2,2,:)
 
         end do
             
@@ -70,11 +70,11 @@ module mod_laplacian_quad
                 Iq = intma_dg_quad(il,jl,kl,iel)
 
                 !Variables
-                flux_uv_visc_face(1,1,iquad,iface) = flux_u_visc(1,Iq)
-                flux_uv_visc_face(2,1,iquad,iface) = flux_u_visc(2,Iq)
+                flux_uv_visc_face(1,1,iquad,iface) = flux_uv_visc(1,Iq)
+                flux_uv_visc_face(2,1,iquad,iface) = flux_uv_visc(2,Iq)
 
-                flux_uv_visc_face(3,1,iquad,iface) = flux_v_visc(1,Iq)
-                flux_uv_visc_face(4,1,iquad,iface) = flux_v_visc(2,Iq)
+                flux_uv_visc_face(3,1,iquad,iface) = flux_uv_visc(3,Iq)
+                flux_uv_visc_face(4,1,iquad,iface) = flux_uv_visc(4,Iq)
 
                 if (ier > 0 ) then
 
@@ -85,11 +85,11 @@ module mod_laplacian_quad
                     Iq=intma_dg_quad(ir,jr,kr,ier)
 
                     !Variables
-                    flux_uv_visc_face(1,2,iquad,iface) = flux_u_visc(1,Iq)
-                    flux_uv_visc_face(2,2,iquad,iface) = flux_u_visc(2,Iq)
+                    flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq)
+                    flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq)
 
-                    flux_uv_visc_face(3,2,iquad,iface) = flux_v_visc(1,Iq)
-                    flux_uv_visc_face(4,2,iquad,iface) = flux_v_visc(2,Iq)
+                    flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq)
+                    flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq)
 
                 else
                     !default values
@@ -104,15 +104,15 @@ module mod_laplacian_quad
                         nx = normal_vector_q(1,iquad,1,iface)
                         ny = normal_vector_q(2,iquad,1,iface)
 
-                        un = flux_u_visc(1,Iq)*nx + flux_u_visc(2,Iq)*ny
+                        un = flux_uv_visc(1,Iq)*nx + flux_uv_visc(2,Iq)*ny
 
-                        flux_uv_visc_face(1,2,iquad,iface) = flux_u_visc(1,Iq) - 2.0*un*nx
-                        flux_uv_visc_face(2,2,iquad,iface) = flux_u_visc(2,Iq) - 2.0*un*ny
+                        flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq) - 2.0*un*nx
+                        flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq) - 2.0*un*ny
 
-                        un = flux_v_visc(1,Iq)*nx + flux_v_visc(2,Iq)*ny
+                        un = flux_uv_visc(3,Iq)*nx + flux_uv_visc(4,Iq)*ny
 
-                        flux_uv_visc_face(3,2,iquad,iface) = flux_v_visc(1,Iq) - 2.0*un*nx
-                        flux_uv_visc_face(4,2,iquad,iface) = flux_v_visc(2,Iq) - 2.0*un*ny
+                        flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq) - 2.0*un*nx
+                        flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq) - 2.0*un*ny
 
                     end if 
                 end if
@@ -122,7 +122,7 @@ module mod_laplacian_quad
 
         call create_communicator_quad(flux_uv_visc_face,4)
 
-        call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_u_visc(:,:),flux_v_visc(:,:))
+        call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc)
 
         call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face)
 
@@ -144,14 +144,14 @@ module mod_laplacian_quad
         real, dimension(4,2,nq,nface), intent(in) :: qb_face
 
         real, dimension(2,npoin) :: Uk
-        real, dimension(2,npoin_q) :: flux_u_visc, flux_v_visc
+        real, dimension(4,npoin_q) :: flux_uv_visc
         real :: flux_uv_visc_face(4,2,nq,nface)
         integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k
         real, dimension(2,2, npoin_q) :: graduv
         real :: rhs_temp(2,npoin), un, nx, ny, ul, ur, vl, vr, dpp
 
         rhs_lap = 0.0
-        flux_u_visc = 0.0
+        flux_uv_visc = 0.0
 
         do k = 1,nlayers
 
@@ -159,12 +159,11 @@ module mod_laplacian_quad
 
             call compute_gradient_uv(graduv, Uk)
 
+            flux_uv_visc(1,:) = flux_uv_visc(1,:) + dpprime(:,k)*graduv(1,1,:)
+            flux_uv_visc(2,:) = flux_uv_visc(2,:) + dpprime(:,k)*graduv(1,2,:)
 
-            flux_u_visc(1,:) = flux_u_visc(1,:) + dpprime(:,k)*graduv(1,1,:)
-            flux_u_visc(2,:) = flux_u_visc(2,:) + dpprime(:,k)*graduv(1,2,:)
-
-            flux_v_visc(1,:) = flux_v_visc(1,:) + dpprime(:,k)*graduv(2,1,:)
-            flux_v_visc(2,:) = flux_v_visc(2,:) + dpprime(:,k)*graduv(2,2,:)
+            flux_uv_visc(3,:) = flux_uv_visc(3,:) + dpprime(:,k)*graduv(2,1,:)
+            flux_uv_visc(4,:) = flux_uv_visc(4,:) + dpprime(:,k)*graduv(2,2,:)
 
         end do
             
@@ -185,11 +184,11 @@ module mod_laplacian_quad
                 Iq = intma_dg_quad(il,jl,kl,iel)
 
                 !Variables
-                flux_uv_visc_face(1,1,iquad,iface) = flux_u_visc(1,Iq)
-                flux_uv_visc_face(2,1,iquad,iface) = flux_u_visc(2,Iq)
+                flux_uv_visc_face(1,1,iquad,iface) = flux_uv_visc(1,Iq)
+                flux_uv_visc_face(2,1,iquad,iface) = flux_uv_visc(2,Iq)
 
-                flux_uv_visc_face(3,1,iquad,iface) = flux_v_visc(1,Iq)
-                flux_uv_visc_face(4,1,iquad,iface) = flux_v_visc(2,Iq)
+                flux_uv_visc_face(3,1,iquad,iface) = flux_uv_visc(3,Iq)
+                flux_uv_visc_face(4,1,iquad,iface) = flux_uv_visc(4,Iq)
 
                 if (ier > 0 ) then
 
@@ -200,11 +199,11 @@ module mod_laplacian_quad
                     Iq=intma_dg_quad(ir,jr,kr,ier)
 
                     !Variables
-                    flux_uv_visc_face(1,2,iquad,iface) = flux_u_visc(1,Iq)
-                    flux_uv_visc_face(2,2,iquad,iface) = flux_u_visc(2,Iq)
+                    flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq)
+                    flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq)
 
-                    flux_uv_visc_face(3,2,iquad,iface) = flux_v_visc(1,Iq)
-                    flux_uv_visc_face(4,2,iquad,iface) = flux_v_visc(2,Iq)
+                    flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq)
+                    flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq)
 
                 else
                     !default values
@@ -219,15 +218,15 @@ module mod_laplacian_quad
                         nx = normal_vector_q(1,iquad,1,iface)
                         ny = normal_vector_q(2,iquad,1,iface)
 
-                        un = flux_u_visc(1,Iq)*nx + flux_u_visc(2,Iq)*ny
+                        un = flux_uv_visc(1,Iq)*nx + flux_uv_visc(2,Iq)*ny
 
-                        flux_uv_visc_face(1,2,iquad,iface) = flux_u_visc(1,Iq) - 2.0*un*nx
-                        flux_uv_visc_face(2,2,iquad,iface) = flux_u_visc(2,Iq) - 2.0*un*ny
+                        flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq) - 2.0*un*nx
+                        flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq) - 2.0*un*ny
 
-                        un = flux_v_visc(1,Iq)*nx + flux_v_visc(2,Iq)*ny
+                        un = flux_uv_visc(3,Iq)*nx + flux_uv_visc(4,Iq)*ny
 
-                        flux_uv_visc_face(3,2,iquad,iface) = flux_v_visc(1,Iq) - 2.0*un*nx
-                        flux_uv_visc_face(4,2,iquad,iface) = flux_v_visc(2,Iq) - 2.0*un*ny
+                        flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq) - 2.0*un*nx
+                        flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq) - 2.0*un*ny
 
                     end if 
                 end if
@@ -237,7 +236,7 @@ module mod_laplacian_quad
 
         call create_communicator_quad(flux_uv_visc_face,4)
 
-        call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_u_visc(:,:),flux_v_visc(:,:))
+        call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc)
 
         call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face)
 
@@ -245,26 +244,6 @@ module mod_laplacian_quad
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine create_laplacian_mlswe_v4
-
-    subroutine create_laplacian_mlswe_v5(rhs_lap,grad_uvdp,grad_uvdp_face)
-
-        real, intent (out) :: rhs_lap(2,npoin)
-        
-        real, dimension(4,2,nq,nface), intent (in) :: grad_uvdp_face
-        real, dimension(2,2,npoin_q), intent(in) :: grad_uvdp
-
-        real :: rhs_temp(2,npoin)
-
-        rhs_lap = 0.0
-
-        call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp(1,:,:),grad_uvdp(2,:,:))
-
-        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
-
-        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
-        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
-
-    end subroutine create_laplacian_mlswe_v5
 
     subroutine create_laplacian_mlswe_layer_v3(rhs_lap,qprime,qprime_face,uvb,uvb_face)
 
@@ -276,7 +255,7 @@ module mod_laplacian_quad
 
 
         real, dimension(2,npoin_q) :: Uk
-        real, dimension(2,npoin_q,nlayers) :: flux_u_visc, flux_v_visc
+        real, dimension(4,npoin_q,nlayers) :: flux_uv_visc
         real, dimension(2,2,nq,nface) :: Uk_face
         real :: flux_uv_visc_face(4,2,nq,nface,nlayers)
         integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k
@@ -291,11 +270,11 @@ module mod_laplacian_quad
 
             call evaluate_quprime2(graduv, Uk, Uk_face)
             
-            flux_u_visc(1,:,k) = qprime(1,:,k)*graduv(1,1,:)
-            flux_u_visc(2,:,k) = qprime(1,:,k)*graduv(1,2,:)
+            flux_uv_visc(1,:,k) = qprime(1,:,k)*graduv(1,1,:)
+            flux_uv_visc(2,:,k) = qprime(1,:,k)*graduv(1,2,:)
 
-            flux_v_visc(1,:,k) = qprime(1,:,k)*graduv(2,1,:)
-            flux_v_visc(2,:,k) = qprime(1,:,k)*graduv(2,2,:)
+            flux_uv_visc(3,:,k) = qprime(1,:,k)*graduv(2,1,:)
+            flux_uv_visc(4,:,k) = qprime(1,:,k)*graduv(2,2,:)
 
         end do
             
@@ -315,11 +294,11 @@ module mod_laplacian_quad
                 Iq = intma_dg_quad(il,jl,kl,iel)
 
                 !Variables
-                flux_uv_visc_face(1,1,iquad,iface,:) = flux_u_visc(1,Iq,:)
-                flux_uv_visc_face(2,1,iquad,iface,:) = flux_u_visc(2,Iq,:)
+                flux_uv_visc_face(1,1,iquad,iface,:) = flux_uv_visc(1,Iq,:)
+                flux_uv_visc_face(2,1,iquad,iface,:) = flux_uv_visc(2,Iq,:)
 
-                flux_uv_visc_face(3,1,iquad,iface,:) = flux_v_visc(1,Iq,:)
-                flux_uv_visc_face(4,1,iquad,iface,:) = flux_v_visc(2,Iq,:)
+                flux_uv_visc_face(3,1,iquad,iface,:) = flux_uv_visc(3,Iq,:)
+                flux_uv_visc_face(4,1,iquad,iface,:) = flux_uv_visc(4,Iq,:)
 
                 if (ier > 0 ) then
 
@@ -330,11 +309,11 @@ module mod_laplacian_quad
                     Iq=intma_dg_quad(ir,jr,kr,ier)
 
                     !Variables
-                    flux_uv_visc_face(1,2,iquad,iface,:) = flux_u_visc(1,Iq,:)
-                    flux_uv_visc_face(2,2,iquad,iface,:) = flux_u_visc(2,Iq,:)
+                    flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc(1,Iq,:)
+                    flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc(2,Iq,:)
 
-                    flux_uv_visc_face(3,2,iquad,iface,:) = flux_v_visc(1,Iq,:)
-                    flux_uv_visc_face(4,2,iquad,iface,:) = flux_v_visc(2,Iq,:)
+                    flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc(3,Iq,:)
+                    flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc(4,Iq,:)
 
                 else
                     !default values
@@ -348,15 +327,15 @@ module mod_laplacian_quad
                         nx = normal_vector_q(1,iquad,1,iface)
                         ny = normal_vector_q(2,iquad,1,iface)
 
-                        un = flux_u_visc(1,Iq,:)*nx + flux_u_visc(2,Iq,:)*ny
+                        un = flux_uv_visc(1,Iq,:)*nx + flux_uv_visc(2,Iq,:)*ny
 
-                        flux_uv_visc_face(1,2,iquad,iface,:) = flux_u_visc(1,Iq,:) - 2.0*un*nx
-                        flux_uv_visc_face(2,2,iquad,iface,:) = flux_u_visc(2,Iq,:) - 2.0*un*ny
+                        flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc(1,Iq,:) - 2.0*un*nx
+                        flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc(2,Iq,:) - 2.0*un*ny
 
-                        un = flux_v_visc(1,Iq,:)*nx + flux_v_visc(2,Iq,:)*ny
+                        un = flux_uv_visc(3,Iq,:)*nx + flux_uv_visc(4,Iq,:)*ny
 
-                        flux_uv_visc_face(3,2,iquad,iface,:) = flux_v_visc(1,Iq,:) - 2.0*un*nx
-                        flux_uv_visc_face(4,2,iquad,iface,:) = flux_v_visc(2,Iq,:) - 2.0*un*ny
+                        flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc(3,Iq,:) - 2.0*un*nx
+                        flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc(4,Iq,:) - 2.0*un*ny
 
                     end if 
                 end if
@@ -368,7 +347,7 @@ module mod_laplacian_quad
 
         do k = 1,nlayers
 
-            call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_u_visc(:,:,k),flux_v_visc(:,:,k))
+            call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc(:,:,k))
 
             call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face(:,:,:,:,k))
 
@@ -467,13 +446,13 @@ module mod_laplacian_quad
     
     end subroutine create_rhs_laplacian_flux_SIPG_quad
 
-    subroutine compute_laplacian_IBP_set2nc_quad(lap_q,grad_dpup, grad_dpvp)
+    subroutine compute_laplacian_IBP_set2nc_quad(lap_q,grad_dpuvp)
 
         implicit none
 
         !Global Arrays
         real, intent(out) :: lap_q(2,npoin)
-        real, dimension(2,npoin_q), intent(in) :: grad_dpup, grad_dpvp
+        real, dimension(4,npoin_q), intent(in) :: grad_dpuvp
 
         integer :: Iq, I, ip
         real :: wq, u_visc, v_visc
@@ -491,8 +470,8 @@ module mod_laplacian_quad
 
                 I = indexq(Iq,ip)
 
-                u_visc = dpsidx(Iq,ip)*grad_dpup(1,Iq) + dpsidy(Iq,ip)*grad_dpup(2,Iq)
-                v_visc = dpsidx(Iq,ip)*grad_dpvp(1,Iq) + dpsidy(Iq,ip)*grad_dpvp(2,Iq)
+                u_visc = dpsidx(Iq,ip)*grad_dpuvp(1,Iq) + dpsidy(Iq,ip)*grad_dpuvp(2,Iq)
+                v_visc = dpsidx(Iq,ip)*grad_dpuvp(3,Iq) + dpsidy(Iq,ip)*grad_dpuvp(4,Iq)
 
                 lap_q(1,I) = lap_q(1,I) - wq*u_visc
                 lap_q(2,I) = lap_q(2,I) - wq*v_visc

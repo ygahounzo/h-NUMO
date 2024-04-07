@@ -3,7 +3,7 @@ module mod_splitting
 
     ! ===========================================================================================================================
     ! This module contains the routines for the barotropic-baroclinic splitting
-    !   Author: Yao Gahounzo 
+    !   Author: Yao GAhounzo 
     !   Date: March 27, 2023
     ! It contains the following routines:
     ! - ti_barotropic: barotropic substem for splitting system using two-level time integration (see Higdon et al. 2005)
@@ -12,30 +12,7 @@ module mod_splitting
     !
     ! ===========================================================================================================================
 
-    use mod_initial, only: coriolis_df, coriolis_quad, tau_wind, pbprime, pbprime_face
-    use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, alpha_mlswe
-    use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
-    use mod_basis, only: nqx, nqy, nqz, nq, ngl
-    use mod_input, only: nlayers, dt_btp, ifilter, nlayers, dt, ad_mlswe
-    use mod_create_rhs_mlswe, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_momentum_new, &
-                                    layer_mass_advection_rhs, layer_mass_advection_rhs1
-    use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                    btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
-
-    use mod_input, only: method_visc
-    use mod_barotropic_terms, only: btp_mom_boundary_df, compute_btp_terms, compute_btp_mom_terms
-    use mod_layer_terms, only: filter_mlswe, layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, consistency_mass_terms1
-    use mod_laplacian_quad, only: create_laplacian_mlswe_v3, create_laplacian_mlswe_v4
-
-    use mod_initial, only: zbot_face, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,  coriolis_quad, a_bclp, b_bclp
-    use mod_create_rhs_mlswe, only: layer_momentum_rhs, interpolate_layer_from_quad_to_node, rhs_layer_shear_stress
-    use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
-                                shear_stress_system, layer_mom_boundary_df, &
-                                filter_mlswe, evaluate_mom, velocity_df, evaluate_mom_face
-
-    use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
-    use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
-    use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
+    use mod_initial, only: coriolis_df, coriolis_quad, tau_wind
         
     implicit none
 
@@ -61,6 +38,22 @@ module mod_splitting
         ! 
         ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
         ! ===========================================================================================================================
+
+        use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind
+        use mod_grid, only: npoin, npoin_q, nface
+        use mod_basis, only: nqx, nqy, nqz, nq
+        use mod_input, only: nlayers, dt_btp, explt_coriolis, ifilter, nlayers
+        use mod_create_rhs_mlswe, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_momentum_new, create_rhs_btp_momentum1, create_rhs_btp_momentum_new1, create_rhs_btp_momentum_new2
+        use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
+                                        btp_mass_advection_terms, btp_bcl_coeffs, limiter_Positivity_Preserving_mom, &
+                                        limiter_Positivity_Preserving_mass, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
+
+        use mod_input, only: method_visc
+        use mod_barotropic_terms, only: btp_mom_boundary_df, evaluate_quprime, compute_btp_terms, &
+                                        evaluate_quprime2, evaluate_visc_terms, compute_btp_mom_terms
+        use mod_layer_terms, only: filter_mlswe
+        use mod_laplacian_quad, only: create_laplacian_mlswe_v3, create_laplacian_mlswe_v4
+
 
         implicit none
 
@@ -167,6 +160,8 @@ module mod_splitting
             qb_df_pred(3,:) = qb_df(3,:) + fdt_btp(:)*qb_df(4,:) + dt_btp*(rhs_mom1(1,:) + rhs_visc_bcl(1,:))
             qb_df_pred(4,:) = qb_df(4,:) - fdt_btp(:)*qb_df(3,:) + dt_btp*(rhs_mom1(2,:) + rhs_visc_bcl(2,:))
 
+            ! call limiter_Positivity_Preserving_mass(qb_df_pred(2,:))
+
             call btp_mom_boundary_df(qb_df_pred(3:4,:))
 
             ! ********** Barotropic mass equation ***********
@@ -220,6 +215,8 @@ module mod_splitting
             qb_df(2,:) = qb_df(2,:) + 0.5*dt_btp * (pb_advec(:) + rhs_mom1(3,:))
             qb_df(1,:) = qb_df(2,:) + pbprime_df(:)
 
+            ! call limiter_Positivity_Preserving_mass(qb_df(2,:))
+
             ! Evaluate the corrected barotropic mass at the quadrature points and face 
 
             call btp_evaluate_pb(qb, qb_df)
@@ -266,6 +263,8 @@ module mod_splitting
 
             qb_df(3,:) = a_btp(:) * tempu + b_btp(:) * tempv
             qb_df(4,:) = -b_btp(:) * tempu + a_btp(:) * tempv
+
+            ! call limiter_Positivity_Preserving_mom(qb_df(3:4,:))
 
             call btp_mom_boundary_df(qb_df(3:4,:))
 
@@ -364,6 +363,18 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
 
+        use mod_input, only: nlayers, dt, icase, ifilter
+        use mod_grid, only: npoin, npoin_q, nface
+        use mod_basis, only: nq
+        use mod_initial, only: pbprime_df, pbprime, pbprime_face, q_df_mlswe_init, alpha_mlswe
+        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs, layer_mass_advection_rhs1
+        use mod_layer_terms, only: layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, consistency_mass_terms1, &
+                                    filter_mlswe, limiter_Positivity_Preserving_layers_mass
+
+        use mod_mpi_utilities, only : irank
+        use mod_constants, only: gravity
+
+
         implicit none
     
         ! Input variables
@@ -397,6 +408,7 @@ module mod_splitting
 
         ! Compute RHS for layer thickness, return the result in array  dp_advec .
 
+        ! call layer_mass_advection_rhs(dp_advec, uvdp_temp, flux_edge)
         call layer_mass_advection_rhs1(dp_advec, uvdp_temp, flux_edge, q_face, disp)
 
         ! Compute the tentative values of the predicted or corrected 
@@ -458,6 +470,19 @@ module mod_splitting
         ! The quadrature points of the layer momentum are stored in qb(2:5,:,:)
         ! The face values of the layer momentum are stored in qb_face(2:5,:,:,:)
         ! ===========================================================================================================================
+
+        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
+        use mod_basis, only: nq, ngl
+        use mod_input, only: nlayers, dt, ad_mlswe, explt_coriolis, method_visc, ifilter, is_mlswe_linear
+        use mod_initial, only: coriolis_df, zbot_face, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,  coriolis_quad, a_bclp, b_bclp
+        use mod_create_rhs_mlswe, only: layer_momentum_rhs, interpolate_layer_from_quad_to_node, rhs_layer_shear_stress
+        use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
+                                    shear_stress_system, layer_mom_boundary_df, &
+                                    limiter_Positivity_Preserving_layers_mom, filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face
+
+        use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
+        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
         implicit none
 
@@ -599,14 +624,28 @@ module mod_splitting
         
         ! Add the Coriolis term
 
-        do k = 1,nlayers
+        ! if(flag_pred == 1) then 
 
-            tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-            tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
+        !     do k = 1, nlayers
 
-            q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
-            q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
-        end do
+        !         tempu1(:) = q_df_temp(1,:,k) + fdt_bcl(:)*q_df(3,:,k)
+        !         tempv1(:) = q_df_temp(2,:,k) - fdt_bcl(:)*q_df(2,:,k)
+
+        !         q_df(2,:,k) = tempu1(:)
+        !         q_df(3,:,k) = tempv1(:)
+        !     end do
+
+        ! else 
+
+            do k = 1,nlayers
+
+                tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+                tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
+
+                q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
+                q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
+            end do
+        ! end if
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
@@ -654,7 +693,7 @@ module mod_splitting
         use mod_create_rhs_mlswe, only: layer_momentum_rhs, interpolate_layer_from_quad_to_node, rhs_layer_shear_stress
         use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
                                     shear_stress_system, layer_mom_boundary_df, &
-                                    filter_mlswe, evaluate_mom, velocity_df, &
+                                    limiter_Positivity_Preserving_layers_mom, filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, &
                                     evaluate_mom_face, evaluate_dp, evaluate_dp_face
 
         use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
@@ -817,14 +856,28 @@ module mod_splitting
         
         ! Add the Coriolis term
 
-        do k = 1,nlayers
+        ! if(flag_pred == 1) then 
 
-            tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-            tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
+        !     do k = 1, nlayers
 
-            q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
-            q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
-        end do
+        !         tempu1(:) = q_df_temp(1,:,k) + fdt_bcl(:)*q_df(3,:,k)
+        !         tempv1(:) = q_df_temp(2,:,k) - fdt_bcl(:)*q_df(2,:,k)
+
+        !         q_df(2,:,k) = tempu1(:)
+        !         q_df(3,:,k) = tempv1(:)
+        !     end do
+
+        ! else 
+
+            do k = 1,nlayers
+
+                tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+                tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
+
+                q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
+                q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
+            end do
+        ! end if
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 

@@ -58,6 +58,55 @@ subroutine unpack_data_dg_general_quad(q_send,q_recv,send_data,recv_data,nvarb)
 
 end subroutine unpack_data_dg_general_quad
 
+subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
+
+    use mod_basis, only: ngl, FACE_CHILDREN
+
+    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
+
+    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    
+    !use mod_ref, only: nfields => nmessage
+
+    implicit none
+
+    !Global Variables
+    real, dimension(nvarb,ngl,nboun), intent(out) :: q_send,q_recv
+    real, dimension(nvarb*ngl*nboun), intent(in)  :: send_data, recv_data
+    integer, intent(in) :: nvarb
+
+    !Local Variables
+    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer nq_i, nq_j, plane_ij, iface, imulti, ftype
+
+    ii = 0
+    jj = 1
+    kk = 1
+    
+    do inbh = 1,num_nbh
+        do ib = 1,num_send_recv(inbh)
+            iface = nbh_send_recv(jj)
+            imulti = nbh_send_recv_multi(jj)
+            ftype = face_type(iface)
+
+            ! if (ftype == 2 .and. imulti>0) then
+                ilocl = face(5,iface)
+
+                do inode = 1,ngl
+                    do ivar = 1,nvarb
+                        ii = ii + 1
+                        q_send(ivar,inode,kk) = send_data(ii)
+                        q_recv(ivar,inode,kk) = recv_data(ii)
+                    end do
+                end do
+                kk=kk+1
+            ! end if
+            jj = jj + 1
+        end do
+    end do
+
+end subroutine unpack_data_dg_general_df
+
 subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,nvarb,nlayers)
 
     use mod_basis, only: nq, FACE_CHILDREN
@@ -227,6 +276,70 @@ subroutine pack_data_dg_quad(q_send,q_face,nvarb)
   
 end subroutine pack_data_dg_quad
 
+subroutine pack_data_dg_df(q_send,q_face,nvarb)
+  
+    use mod_basis, only: ngl, FACE_CHILDREN
+
+    use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
+
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+
+    use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
+
+    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
+
+    use mod_metrics, only: jac
+
+    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+  
+    use mod_viscosity, only: grad_q
+
+    implicit none
+  
+    !Global Variables
+    real, intent(out) :: q_send(nvarb*ngl*nboun)
+    real, intent(in) :: q_face(nvarb,2,ngl,nface)
+    integer, intent(in) :: nvarb
+
+    !Local Variables
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
+    logical :: is_set2nc
+
+    !check for Set2NC which is Non-Conservative
+    is_set2nc = (eqn_set == 'set2nc')
+
+    ii = 0
+    jj = 1
+    do inbh = 1,num_nbh
+        do ib = 1,num_send_recv(inbh)
+            iface = nbh_send_recv(jj)
+            imulti = nbh_send_recv_multi(jj)
+            ! jj = jj + 1
+
+            if(face_type(iface) == 2 .and. imulti > 0) then
+
+                ilocl=face(5,iface)
+                el = face(7,iface)      ! Get Element
+
+                do inode = 1,ngl
+                    
+                    ! Load primitive variables
+                    do ivar=1,nvarb
+                        ii = ii + 1
+                        q_send(ii)=q_face(ivar,1,inode,iface) 
+                    end do
+                end do
+            end if
+            jj = jj + 1
+        end do
+    end do
+  
+end subroutine pack_data_dg_df
+
 subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
   
     use mod_basis, only: ngl, FACE_CHILDREN, nq
@@ -297,7 +410,7 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
   
 end subroutine pack_data_dg_quad_all
 
-subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
+subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
   
     use mod_basis, only: ngl, FACE_CHILDREN, nq
 
@@ -319,7 +432,7 @@ subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
   
     !Global Variables
     real, intent(out) :: q_send(nvarb*nq*nboun)
-    real, intent(in) :: q(nvarb,npoin_q)
+    real, intent(in) :: grad_uvdp(nvarb,npoin_q)
     integer, intent(in) :: nvarb
 
     !Local Variables
@@ -341,7 +454,7 @@ subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
             imulti = nbh_send_recv_multi(jj)
             ! jj = jj + 1
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            !if(face_type(iface) == 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -357,10 +470,10 @@ subroutine pack_data_dg_quad_lap(q_send,q,nvarb)
                     ! Load primitive variables
                     do ivar=1,nvarb
                         ii = ii + 1
-                        q_send(ii)=q(ivar,ip) 
+                        q_send(ii)=grad_uvdp(ivar,ip) 
                     end do
                 end do
-            end if
+            !end if
             jj = jj + 1
         end do
     end do
@@ -1091,6 +1204,87 @@ subroutine send_bound_dg_general_quad(send_data,recv_data,nvarb,nreq,ireq,status
     
 
 end subroutine send_bound_dg_general_quad
+
+subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
+
+    use mod_basis, only: ngl
+
+    use mod_face, only: face_send
+
+    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
+
+    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+
+    use mod_ref, only: nmessage
+
+    use mpi
+
+    use mod_mpi_utilities, only: MPI_PRECISION
+
+    implicit none
+
+    !global variables
+    real, intent(in)  :: send_data(nvarb*ngl*nboun)
+    real, intent(out) :: recv_data(nvarb*ngl*nboun)
+    integer, intent(out) :: nreq
+    integer, intent(out) :: ireq(2*num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
+    integer, intent(in) :: nvarb
+
+    !local variables
+    integer inbh, idest, istart, iend, ierr, nqp
+    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+
+    !recv_data=0.0
+
+    nreq = 0
+    iend = 0
+    jj = 1
+    status=0
+
+    do inbh = 1, num_nbh
+
+        !Determine size
+        nqp = 0
+        do ib = 1,num_send_recv(inbh)
+            iface = nbh_send_recv(jj)
+            ftype = face_type(iface)
+
+            ilocl = face(5,iface)
+            ! if(ftype==21) ilocl = face(6,iface)
+
+            do i=1,nbh_send_recv_multi(jj)
+                nqp = nqp + ngl *  nvarb !NSIZE is the size of the message
+            end do
+            jj = jj + 1
+        end do
+
+        !Get Neighboring Processor
+        idest = nbh_proc(inbh)
+
+        !Send to NBHs
+        nreq = nreq + 1
+        istart = iend + 1
+        iend = istart + nqp - 1
+
+        if(nqp > 0) then
+          call mpi_irecv(recv_data(istart:iend), nqp, &
+            MPI_PRECISION,idest-1,99,mpi_comm_world, &
+            ireq(nreq),ierr)
+
+          call mpi_isend(send_data(istart:iend), nqp, &
+            MPI_PRECISION,idest-1,99,mpi_comm_world, &
+            ireq(nreq+1),ierr)
+        else
+          ireq(nreq) = MPI_REQUEST_NULL
+
+          ireq(nreq+1) = MPI_REQUEST_NULL
+        endif
+
+        nreq = nreq + 1
+    end do
+
+end subroutine send_bound_dg_general_df
 
 subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nreq,ireq,status)
 

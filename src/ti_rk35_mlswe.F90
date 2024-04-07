@@ -4,9 +4,9 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	use mod_input, only: nlayers, dt, dt_btp, dpprime_visc_min, ti_method_btp
 	use mod_grid, only: npoin, npoin_q, nface
 	use mod_constants, only: gravity
-	use mod_initial, only: alpha_mlswe, zbot_df, one_over_pbprime_df
+	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
-	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe2
+	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe
 
 	implicit none
 
@@ -83,7 +83,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qbp_df = qb_df
 
 
-	call ti_barotropic_rk_mlswe2(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
+	call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
@@ -118,7 +118,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	
 	flag_pred = 0
 
-	call ti_barotropic_rk_mlswe2(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
+	call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
@@ -179,9 +179,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qp_df_out(4,:,1) = qb_df(3,:)
 	qp_df_out(4,:,2) = qb_df(3,:)
 
-	!qp_df_out(5,:,1) = one_plus_eta(:)-1.0!mslwe_elevation(:,1)
-	!qp_df_out(5,:,1) = mslwe_elevation(:,1)
-	qp_df_out(5,:,1) = qb_df(2,:) * one_over_pbprime_df(:)
+	qp_df_out(5,:,1) = one_plus_eta(:)-1.0!mslwe_elevation(:,1)
 	qp_df_out(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
 end subroutine ti_rk35_mlswe

@@ -1,5 +1,5 @@
-#NUMALIBS=-L$(NUMA_DIR)/libs -lRRTM
-NUMALIBS=-L$(NUMA_DIR)/libs
+#NUMOLIBS=-L$(NUMO_DIR)/libs -lRRTM
+NUMOLIBS=-L$(NUMO_DIR)/libs
 
 #-------------------
 # Single precision
@@ -9,9 +9,9 @@ NUMALIBS=-L$(NUMA_DIR)/libs
 R8=-r8
 
 #BORAH_P4EST_DIR := /bsushare/mkopera-shared/p4est-2.2/local
-BORAH_P4EST_DIR := $(NUMA_DIR)/p4est/local
-BORAH_OCCA_DIR := $(NUMA_DIR)/occa
-BORAH_METIS := $(NUMA_DIR)/metis
+BORAH_P4EST_DIR := $(NUMO_DIR)/p4est/local
+BORAH_OCCA_DIR := $(NUMO_DIR)/occa
+BORAH_METIS := $(NUMO_DIR)/metis
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$BORAH_P4EST_DIR/lib"
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$BORAH_P4EST_DIR/local"
 borah:
@@ -21,8 +21,8 @@ borah:
 	"CC=mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${BORAH_P4EST_DIR}/local/include" \
-	"INCLUDE= -I${BORAH_P4EST_DIR}/include  -I${NUMA_DIR}/include -I${BORAH_METIS}/include" \
-	"LIBS=$(NUMALIBS) -L${BORAH_P4EST_DIR}/lib  -L/usr/lib -L${BORAH_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${BORAH_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${BORAH_METIS}/include" \
+	"LIBS=$(NUMOLIBS) -L${BORAH_P4EST_DIR}/lib  -L/usr/lib -L${BORAH_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 borah-debug:
@@ -32,13 +32,13 @@ borah-debug:
 	"CC=mpicc" \
 	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
 	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE= -I${BORAH_P4EST_DIR}/include  -I${NUMA_DIR}/include -I${BORAH_METIS}/include" \
-	"LIBS=$(NUMALIBS) -L${BORAH_P4EST_DIR}/lib  -L/usr/lib -L${BORAH_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${BORAH_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${BORAH_METIS}/include" \
+	"LIBS=$(NUMOLIBS) -L${BORAH_P4EST_DIR}/lib  -L/usr/lib -L${BORAH_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
-FALCON_P4EST_DIR := $(NUMA_DIR)/p4est/local
-FALCON_OCCA_DIR := $(NUMA_DIR)/occa
-FALCON_METIS := $(NUMA_DIR)/metis
+FALCON_P4EST_DIR := $(NUMO_DIR)/p4est/local
+FALCON_OCCA_DIR := $(NUMO_DIR)/occa
+FALCON_METIS := $(NUMO_DIR)/metis
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FALCON_P4EST_DIR/lib"
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FALCON_P4EST_DIR/local"
 falcon:
@@ -48,19 +48,19 @@ falcon:
 	"CC=mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Wl,--allow-multiple-definition" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -Wl,--allow-multiple-definition" \
-	"INCLUDE= -I${FALCON_P4EST_DIR}/include  -I${NUMA_DIR}/include -I${FALCON_METIS}/include" \
-	"LIBS=$(NUMALIBS) -L${FALCON_P4EST_DIR}/lib  -L/usr/lib -L${FALCON_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${FALCON_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${FALCON_METIS}/include" \
+	"LIBS=$(NUMOLIBS) -L${FALCON_P4EST_DIR}/lib  -L/usr/lib -L${FALCON_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
-# Flags for building NUMA on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
+# Flags for building NUMO on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
 # user must install gcc openmpi metis netcdf vtk using Homebrew
 #------------------------------------------------------------------------------
 OMPI_COMPILE_BREW := /usr/local/bin
-P4EST_DIR_BREW := $(NUMA_DIR)/p4est/local
+P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
 NETCDF_DIR_BREW := /usr/local
 METIS_DIR_BREW := /usr/local/lib
-SUPERLU_DIR_BREW := $(NUMA_DIR)/superlu
+SUPERLU_DIR_BREW := $(NUMO_DIR)/superlu
 
 macbook-p4est-brew:	
 	$(MAKE) $(TARGET) \
@@ -69,8 +69,8 @@ macbook-p4est-brew:
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMA_DIR)/include" \
-	"LIBS=$(NUMALIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -L${METIS_DIR_BREW} -lmetis -lp4est -lsc -llapack -lblas" \
+	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -L${METIS_DIR_BREW} -lmetis -lp4est -lsc -llapack -lblas" \
 	"AR=ar rv"
 
 macbook-p4est-brew-dbg:	
@@ -80,8 +80,8 @@ macbook-p4est-brew-dbg:
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMA_DIR)/include" \
-	"LIBS=$(NUMALIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -L${METIS_DIR_BREW} -lmetis -lp4est -lsc -llapack -lblas" \
+	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -L${METIS_DIR_BREW} -lmetis -lp4est -lsc -llapack -lblas" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
@@ -104,7 +104,7 @@ macbook-p4est-brew-dbg:
 
 modmv:
 	mods=`ls *.mod 2> /dev/null` ; \
-    if [ "$${mods}" != "" ]; then /bin/mv $${mods} $(NUMA_DIR)/include ; fi
+    if [ "$${mods}" != "" ]; then /bin/mv $${mods} $(NUMO_DIR)/include ; fi
 #------------------------------------------------------------------------------
 # End default rules
 #------------------------------------------------------------------------------
