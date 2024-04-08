@@ -41,8 +41,6 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
         lout_thetae , lout_press , lout_temperature, lout_vorticity, lout_qvapor, lout_qcloud, lout_qrain, lout_tau, &
         lout_radius, eqn_set, lLAV, lSMAG, lkessler, lpassive, format_vtk, space_method, equations, is_swe_layers, is_mlswe
 
-    use mod_interface, only : compute_curl
-
     use mod_mpi_utilities, only: irank, irank0
   
     use mod_parallel, only: nproc, num_send_recv_total
@@ -351,8 +349,6 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
         lout_rho , lout_uvelo , lout_vvelo , lout_wvelo , lout_velo , lout_dvelo, lout_theta , lout_sponge, &
         lout_thetae , lout_press , lout_temperature, lout_vorticity, lout_qvapor, lout_qcloud, lout_qrain, lout_tau, &
         lout_radius, eqn_set, lLAV, lSMAG, lkessler, lpassive, format_vtk, space_method, equations, is_swe_layers, is_mlswe
-
-    use mod_interface, only : compute_curl
 
     use mod_mpi_utilities, only: irank, irank0
   

@@ -89,7 +89,6 @@ contains
 
     !Convert Variables to Primitive Perturbation form
     q_limiter=q
-    if (.not. is_shallow) call mod_convert_variables_eqnset_to_primitive_perturbation(q_limiter,q,q_ref)
 
     !Apply Limiter
     if (limiter_type == "qoi") then
@@ -104,15 +103,6 @@ contains
        print*,'----------Warning from MOD_LIMITER.F90------------'
        print*,' limiter_type = ',limiter_type,' not supported '
        print*,' No Limiter will be Applied '
-    end if
-
-    !Convert back to EQNSET form
-    q=q_limiter
-    if (.not. is_shallow) call mod_convert_variables_primitive_perturbation_to_eqnset(q,q_limiter,q_ref)
-    
-    !Apply DSS -> Similar to Filter call except the F-matrix is the I-matrix: just to volume integrate
-    if (space_method(1:2) == 'cg') then
-       call filter_limiter_dss(q)
     end if
 
   end subroutine mod_limiter_apply

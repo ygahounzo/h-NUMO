@@ -1189,8 +1189,6 @@ contains
 
     use mod_grid, only: npoin
 
-    use mod_convert_variables, only: mod_convert_variables_eqnset_to_set2nc
-
     implicit none
     real, dimension(:, :), allocatable, intent(inout):: q
     real, dimension(:, :), allocatable, intent(inout), optional :: q1, q2, q3, &
@@ -1248,14 +1246,9 @@ contains
     !----------------------------------!
     ! (2) Mark elements for refinement !
     !----------------------------------!
-    if (amr_mark_set2nc .and.  eqn_set(1:6) .ne. 'set2nc') then
-      allocate(q_aux(nvar,npoin))
-      call mod_convert_variables_eqnset_to_set2nc(q_aux,q,q_ref)
-      call mod_p4est_mark_elements(q_aux, lvl_src)
-      deallocate(q_aux)
-    else
-      call mod_p4est_mark_elements(q, lvl_src)
-    endif
+
+    call mod_p4est_mark_elements(q, lvl_src)
+
 
     !----------------------------------------!
     ! (3) Coarsen, refine, and balance p4est !
