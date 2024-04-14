@@ -1,4 +1,4 @@
-NUMOLIBS=-L$(NUMO_DIR)/libs
+NUMOLIBS=-L$(NUMO_DIR)/lib
 
 #-------------------
 # Single precision
