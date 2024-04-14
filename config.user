@@ -1,4 +1,3 @@
-#NUMOLIBS=-L$(NUMO_DIR)/libs -lRRTM
 NUMOLIBS=-L$(NUMO_DIR)/libs
 
 #-------------------
@@ -8,48 +7,30 @@ NUMOLIBS=-L$(NUMO_DIR)/libs
 #R8=-DSINGLE
 R8=-r8
 
-#BORAH_P4EST_DIR := /bsushare/mkopera-shared/p4est-2.2/local
-BORAH_P4EST_DIR := $(NUMO_DIR)/p4est/local
-BORAH_OCCA_DIR := $(NUMO_DIR)/occa
-BORAH_METIS := $(NUMO_DIR)/metis
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$BORAH_P4EST_DIR/lib"
-export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$BORAH_P4EST_DIR/local"
-borah:
-	$(MAKE) $(TARGET) \
-	"FC=mpif90" \
-	"LD=mpif90" \
-	"CC=mpicc" \
-	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
-	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${BORAH_P4EST_DIR}/local/include" \
-	"INCLUDE= -I${BORAH_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${BORAH_METIS}/include" \
-	"LIBS=$(NUMOLIBS) -L${BORAH_P4EST_DIR}/lib  -L/usr/lib -L${BORAH_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
-	"AR=ar rv"
-
-borah-debug:
-	$(MAKE) $(TARGET) \
-	"FC=mpif90" \
-	"LD=mpif90" \
-	"CC=mpicc" \
-	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
-	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE= -I${BORAH_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${BORAH_METIS}/include" \
-	"LIBS=$(NUMOLIBS) -L${BORAH_P4EST_DIR}/lib  -L/usr/lib -L${BORAH_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
-	"AR=ar rv"
-
-FALCON_P4EST_DIR := $(NUMO_DIR)/p4est/local
-FALCON_OCCA_DIR := $(NUMO_DIR)/occa
-FALCON_METIS := $(NUMO_DIR)/metis
-#export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FALCON_P4EST_DIR/lib"
-#export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$FALCON_P4EST_DIR/local"
-falcon:
+NUMO_P4EST_DIR := $(NUMO_DIR)/p4est/local
+NUMO_METIS := $(NUMO_DIR)/metis
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/lib"
+export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/local"
+hnumo:
 	$(MAKE) $(TARGET) \
 	"FC=mpif90" \
 	"LD=mpif90 -Wl,--allow-multiple-definition" \
 	"CC=mpicc" \
-	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Wl,--allow-multiple-definition" \
-	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -Wl,--allow-multiple-definition" \
-	"INCLUDE= -I${FALCON_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${FALCON_METIS}/include" \
-	"LIBS=$(NUMOLIBS) -L${FALCON_P4EST_DIR}/lib  -L/usr/lib -L${FALCON_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${NUMO_METIS}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -L${NUMO_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"AR=ar rv"
+
+hnumo-debug:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90" \
+	"LD=mpif90 -Wl,--allow-multiple-definition" \
+	"CC=mpicc" \
+	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
+	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${NUMO_METIS}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -L${NUMO_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------

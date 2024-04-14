@@ -1,9 +1,9 @@
-h-NUMO INSTALLATION INSTRUCTIONS FOR Borah (and possibly other machines)
+h-NUMO INSTALLATION INSTRUCTIONS
 Sometimes simple make does not work, and you need to compile p4est (and possibly Metis) manually.
-Here is how to compile h-NUMO on Borah, assuming Metis is already installed and linked
+Here is how to compile h-NUMO, assuming Metis is already installed and linked
 
 1) Compile p4est by going to p4est directory and typing
-./get_p4est_install borah
+./get_p4est_install
 
 2) Export path to the p4est library
 To make sure this is exported every time you log-in, put the following line to ~/.bash_profile file:
@@ -15,6 +15,6 @@ where <path_to_h-NUMO> is the location where you have installed h-NUMO
 Just in case type source ~./bash_profile, and it is not a bad idea to include this source command in your run scripts
 
 3) Compile NUMO by going to its directory and typing:
-make borah (check the config.user if you want to compile on different platforms)
+make hnumo (check the config.user if you want to compile on different platforms)
 
 
