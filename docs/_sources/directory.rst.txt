@@ -50,7 +50,7 @@ This directory contains a collection of the input files that may be used to run 
 Metis
 ---------
 
-This directory contains the METIS libraries that are used in h-NUMO. Note that Metis version 5.1.0 has been compiled. You may have to generate your own METIS libraries.
+This directory contains the `METIS libraries <http://glaros.dtc.umn.edu/gkhome/views/metis>`_ that are used in h-NUMO. Note that Metis version 5.1.0 has been compiled. You may have to generate your own METIS libraries.
 
 lib
 -----
@@ -75,7 +75,7 @@ This is the heart of the code and contains all of the source files actively used
 p4est
 ------
 
-The p4est library was used for the data structures and algorithms for parallel mesh generation, partitioning, and load balancing in h-NUMO.
+The p4est library :cite:p:`BursteddeWilcoxGhattas11` was used for the data structures and algorithms for parallel mesh generation, partitioning, and load balancing in h-NUMO.
 
 
-
+.. bibliography:: refs.bib
