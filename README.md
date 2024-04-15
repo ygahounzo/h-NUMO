@@ -6,7 +6,7 @@ model.
 
 h-NUMO is 
 
-- [Easy to install](https://ygahounzo.github.io/h-NUMO/installation.html) either of laptop or HPC systems.
+- [Easy to install](https://ygahounzo.github.io/h-NUMO/installation.html) either on laptop or HPC systems.
 
 - Easy to configure: all the parameters are specified in a single [input file](https://ygahounzo.github.io/h-NUMO/running.html). The user can also define their own initial conditions.
 
