@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2. Installation &mdash; h-NUMO 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.min.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/documentation_options.js?v=2709fde1"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="3. h-NUMO Directory Structure" href="directory.html" />
+    <link rel="prev" title="1. The h-NUMO Model" href="numo_model.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            h-NUMO
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="numo_model.html">1. The h-NUMO Model</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">2. Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#libraries">2.1. Libraries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation-instructions">2.2. Installation instructions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="directory.html">3. h-NUMO Directory Structure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running.html">4. Running h-NUMO</a></li>
+<li class="toctree-l1"><a class="reference internal" href="test.html">5. Test cases (benchmarking)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bc_time_method.html">6. Boundary conditions and time intergration methods</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">7. Some numerical results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="papers.html">8. Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">h-NUMO</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active"><span class="section-number">2. </span>Installation</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/installation.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="installation">
+<h1><span class="section-number">2. </span>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h1>
+<section id="libraries">
+<h2><span class="section-number">2.1. </span>Libraries<a class="headerlink" href="#libraries" title="Link to this heading">¶</a></h2>
+<p>To compile the h-NUMO model, one needs the following modules</p>
+<div class="line-block">
+<div class="line"><code class="code highlight bash docutils literal highlight-bash">gcc<span class="w"> </span>version<span class="w"> </span><span class="m">8</span><span class="w"> </span>and<span class="w"> </span>above</code></div>
+<div class="line"><code class="code highlight bash docutils literal highlight-bash">openmpi</code></div>
+<div class="line"><code class="code highlight bash docutils literal highlight-bash">make</code></div>
+</div>
+</section>
+<section id="installation-instructions">
+<h2><span class="section-number">2.2. </span>Installation instructions<a class="headerlink" href="#installation-instructions" title="Link to this heading">¶</a></h2>
+<p>h-NUMO will need the <code class="code highlight bash docutils literal highlight-bash">mpi90</code> command in order to compile. It is up to the user to ensure that these packages exist on his computing platform.</p>
+<ol class="arabic simple">
+<li><p>Clone the repository to a local directory</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">clone</span> <span class="pre">git&#64;github.com:ygahounzo/h-NUMO.git</span></code></p></li>
+</ul>
+</li>
+<li><p>Go to the base directory of the repository</p>
+<ul class="simple">
+<li><p>cd <code class="docutils literal notranslate"><span class="pre">h-NUMO</span></code></p></li>
+</ul>
+</li>
+</ol>
+<ol class="arabic" start="2">
+<li><p>Install and compile h-NUMO</p>
+<p>Inside the <code class="docutils literal notranslate"><span class="pre">h-NUMO</span></code> directory type the following command to compile p4est and h-NUMO</p>
+<p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">hnumo</span></code></p>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>Sometimes simple make does not work, and you need to compile p4est (and possibly Metis) manually.
+Here is how to compile h-NUMO, assuming Metis is already installed and linked</p>
+<ul>
+<li><dl class="simple">
+<dt>Compile p4est by going to p4est directory and typing</dt><dd><p><code class="docutils literal notranslate"><span class="pre">./get_p4est_install</span></code></p>
+</dd>
+</dl>
+</li>
+<li><dl>
+<dt>Export path to the p4est library</dt><dd><p>To make sure this is exported every time you log-in, put the following line to <code class="code highlight bash docutils literal highlight-bash">~/.bash_profile</code> file:</p>
+<p><code class="docutils literal notranslate"><span class="pre">export</span> <span class="pre">LD_LIBRARY_PATH=$PATH:&lt;path_to_h-NUMO&gt;/p4est/local/lib</span></code></p>
+<p>where &lt;path_to_h-NUMO&gt; is the location where you have installed h-NUMO</p>
+<p>Just in case type source ~./bash_profile, and it is not a bad idea to include this source command in your run scripts</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>Compile NUMO by going to its directory and typing:</dt><dd><p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">hnumo</span></code> (check the config.user if you want to compile on a specific platforms)</p>
+</dd>
+</dl>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+<p>Once you successfully make h-NUMO, additional directories will result. These are:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="code highlight bash docutils literal highlight-bash">bin</code></p></li>
+<li><p><code class="code highlight bash docutils literal highlight-bash">depend.mk</code></p></li>
+<li><p><code class="code highlight bash docutils literal highlight-bash">include</code></p></li>
+</ul>
+</div></blockquote>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="numo_model.html" class="btn btn-neutral float-left" title="1. The h-NUMO Model" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="directory.html" class="btn btn-neutral float-right" title="3. h-NUMO Directory Structure" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Yao Gahounzo.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -9,40 +9,6 @@ else
     exit
 fi
 
-#MIRA
-if [ "$1" = "mira" ]; then
-./configure CC=mpixlc_r CXX=mpixlcxx_r FC=mpixlf90_r F77=mpixlf77_r --enable-p6est --enable-mpi --without-lapack --without-blas --disable-shared CPPFLAGS="-I/soft/libraries/alcf/current/xl/ZLIB/include" LDFLAGS="-L/soft/libraries/alcf/current/xl/ZLIB/lib"
-fi
-
-#HAMMING
-if [ "$1" = "hamming" ]; then
-    ./configure CC=mpicc CXX=mpicxx FC=mpif90 F77=mpif77 --enable-p6est --enable-mpi 
-#--without-lapack --without-blas --disable-shared
-    make
-    make install
-fi
-
-#R2
-if [ "$1" = "r2" ]; then
-    ./configure \
-	--enable-mpi \
-	--enable-p6est\
-	--without-blas \
-	CC=mpicc \
-	CXX=mpicxx \
-	F77=mpif90 \
-	FC=mpif77 \
-	LDFLAGS="-L/cm/local/apps/lua/5.3.4/lib64 -L/scratch/makopera-shared/metis_r2/lib" \
-	CPPFLAGS="-I/cm/local/apps/lua/5.3.4/ -I/scratch/makopera-shared/metis_r2/include"\
-	CFLAGS="-O2 -Wall"\
-        LIBS="-L/scratch/makopera-shared/metis_r2/lib -lmetis" --with-metis
-
-    make
-    make check
-    make install
-fi
-
-
 #BORAH
 if [ "$1" = "borah" ]; then
     ./configure \
@@ -64,11 +30,30 @@ if [ "$1" = "borah" ]; then
     make install
 fi
 
-
 #DEFAULT
 if [ "$1" = "" ]; then
-    ./configure CC=mpicc CXX=mpicxx FC=mpif90 F77=mpif77 --enable-p6est --enable-mpi 
-#--without-lapack --without-blas --disable-shared
+    ./configure \
+	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	--without-lapack \
+	--disable-shared \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77 \
+	CFLAGS="-O2 -Wall"
+
     make
+	# make check
     make install
 fi
+
+
+#DEFAULT
+# if [ "$1" = "" ]; then
+#     ./configure CC=mpicc CXX=mpicxx FC=mpif90 F77=mpif77 --enable-p6est --enable-mpi 
+# #--without-lapack --without-blas --disable-shared
+#     make
+#     make install
+# fi

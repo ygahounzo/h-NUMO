@@ -10,8 +10,6 @@
 subroutine write_output_mlswe(qp,qb,fnp1,time,layer)
 
     use mod_constants, only: gravity
-  
-      use mod_convert_variables, only: mod_convert_variables_eqnset_to_set2nc
       
       use mod_grid, only: npoin
   
@@ -21,8 +19,6 @@ subroutine write_output_mlswe(qp,qb,fnp1,time,layer)
           zlevel_out, lout_spherical_shell, lout_nc_3d, lincompressible, locean, lsalinity, write_mesh, is_swe_layers, equations
   
       use mod_p4est, only: mod_p4est_dump_mesh
-  
-      use mod_interface, only: compute_curl, compute_vorticity
   
       use mod_mpi_utilities, only: irank0, irank
     

@@ -44,7 +44,9 @@ module mod_layer_terms
         integer :: k, iface, iquad
         real :: nxl, nyl, h_l, h_r, claml, clamr, clam, h1_l, h1_r, h2_l, h2_r, Ucl, Ucr, hgl, hgr, gprime, h1, h2, hg, UU
         real, dimension(nlayers) :: unl, unr, u, v
-        real :: clam1, clam2
+        real :: clam1, clam2, s1_l, s1_r, s2_l, s2_r, alph
+
+        alph = alpha_mlswe(1)/alpha_mlswe(2)
 
         gprime = gravity *alpha_mlswe(2)*(1.0/alpha_mlswe(2) - 1.0/alpha_mlswe(1))
 
@@ -92,8 +94,11 @@ module mod_layer_terms
                 nxl = normal_vector_q(1,iquad,1,iface)
                 nyl = normal_vector_q(2,iquad,1,iface)
                 
-                unl(:) = u_edge(1,iquad,iface,:)*nxl + v_edge(1,iquad,iface,:)*nyl
-                unr(:) = u_edge(2,iquad,iface,:)*nxl + v_edge(2,iquad,iface,:)*nyl
+                !unl(:) = u_edge(1,iquad,iface,:)*nxl + v_edge(1,iquad,iface,:)*nyl
+                !unr(:) = u_edge(2,iquad,iface,:)*nxl + v_edge(2,iquad,iface,:)*nyl
+
+                unl(:) = qprime_face(2,1,iquad,iface,:)*nxl + qprime_face(3,1,iquad,iface,:)*nyl
+                unr(:) = qprime_face(2,2,iquad,iface,:)*nxl + qprime_face(3,2,iquad,iface,:)*nyl
 
                 h1_l = (alpha_mlswe(1)/gravity)*dp_left(iquad)
                 h1_r = (alpha_mlswe(1)/gravity)*dp_right(iquad)
@@ -106,13 +111,35 @@ module mod_layer_terms
                 hgl = sqrt(gprime*(h1_l * h2_l)/(h1_l + h2_l))
                 hgr = sqrt(gprime*(h1_r * h2_r)/(h1_r + h2_r))
 
-                claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
-                clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
+                !claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
+                !clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
+
+                claml = max(sqrt(gravity*h1_l*(1.0-alph)), sqrt(gravity*h1_l*(1.0+alph)))
+                clamr = max(sqrt(gravity*h2_r*(1.0-alph)), sqrt(gravity*h1_r*(1.0+alph)))
+
+                !claml = abs(Ucl) + hgl
+                !clamr = abs(Ucr) + hgr
+
+                !s1_l = abs(unl(1)) + sqrt(qprime_face(1,1,iquad,iface,1))
+                !s1_r = abs(unr(1)) + sqrt(qprime_face(1,2,iquad,iface,1))
+
+                !s2_l = abs(unl(2)) + sqrt(qprime_face(1,1,iquad,iface,1))
+                !s2_r = abs(unr(2)) + sqrt(10qprime_face(1,2,iquad,iface,1))
+
+                s1_l = unl(1) + sqrt((1.0/(2.0*nlayers))*gprime*(h1_l + h2_l))
+                s1_r = unr(1) + sqrt((1.0/(2.0*nlayers))*gprime*(h1_r + h2_r))
+
+                s2_l = unl(1) - sqrt((1.0/(2.0*nlayers))*gprime*(h1_l + h2_l))
+                s2_r = unr(1) - sqrt((1.0/(2.0*nlayers))*gprime*(h1_r + h2_r))
 
                 clam = 0.5*max(claml, clamr)
+                !clam = 0.5*max(abs(s1_l), abs(s1_r), abs(s2_l), abs(s2_r))
                 
+                !disp(iquad,iface,1) = bcl_flux*max(s1_l, s1_r)
+                !disp(iquad,iface,2) = bcl_flux*max(s2_l, s2_r)
+
                 disp(iquad,iface,1) = bcl_flux*clam
-                disp(iquad,iface,2) = bcl_flux*clam
+                disp(iquad,iface,2) = bcl_flux*clam   
 
             end do
 
@@ -289,7 +316,7 @@ module mod_layer_terms
 
     end subroutine consistency_mass_terms1
 
-    subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave, disp)
+    subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  nface
@@ -306,7 +333,7 @@ module mod_layer_terms
         real, dimension(2,2,nq,nface), intent(in) :: uvb_face_ave
         
         ! Output variables
-        real, dimension(nq,nface,nlayers), intent(out) :: udp_left, vdp_left, udp_right, vdp_right, disp
+        real, dimension(nq,nface,nlayers), intent(out) :: udp_left, vdp_left, udp_right, vdp_right
         
         ! Local variables
         integer :: k, iface, iquad
@@ -339,46 +366,6 @@ module mod_layer_terms
                 
                 udp_right(:,iface,k) = u_right * dp_right
                 vdp_right(:,iface,k) = v_right * dp_right
-            end do
-
-            do iquad = 1,nq
-
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
-                
-                ul(1) = qprime_face(2,1,iquad,iface,1) + uvb_face_ave(1,1,iquad,iface)
-                ul(2) = qprime_face(2,1,iquad,iface,2) + uvb_face_ave(1,1,iquad,iface)
-                vl(1) = qprime_face(3,1,iquad,iface,1) + uvb_face_ave(2,1,iquad,iface)
-                vl(2) = qprime_face(3,1,iquad,iface,2) + uvb_face_ave(2,1,iquad,iface)
-
-                ur(1) = qprime_face(2,2,iquad,iface,1) + uvb_face_ave(1,2,iquad,iface)
-                ur(2) = qprime_face(2,2,iquad,iface,2) + uvb_face_ave(1,2,iquad,iface)
-                vr(1) = qprime_face(3,2,iquad,iface,1) + uvb_face_ave(2,2,iquad,iface)
-                vr(2) = qprime_face(3,2,iquad,iface,2) + uvb_face_ave(2,2,iquad,iface)
-
-                unl = ul(:)*nxl + vl(:)*nyl
-                unr = ur(:)*nxl + vr(:)*nyl
-                
-
-                h1_l = (alpha_mlswe(1)/gravity)*dp_left(iquad)
-                h1_r = (alpha_mlswe(1)/gravity)*dp_right(iquad)
-                h2_l = (alpha_mlswe(2)/gravity)*dp_left(iquad)
-                h2_r = (alpha_mlswe(2)/gravity)*dp_right(iquad)
-
-                Ucl = (h1_l*unl(2) + h2_l*unl(1))/(h1_l + h2_l)
-                Ucr = (h1_r*unr(2) + h2_r*unr(1))/(h1_r + h2_r)
-                
-                hgl = sqrt(gprime*(h1_l * h2_l)/(h1_l + h2_l))
-                hgr = sqrt(gprime*(h1_r * h2_r)/(h1_r + h2_r))
-
-                claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
-                clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
-
-                clam = 0.5*max(claml, clamr)
-                
-                disp(iquad,iface,1) = bcl_flux*clam
-                disp(iquad,iface,2) = bcl_flux*clam
-                
             end do
         end do
         

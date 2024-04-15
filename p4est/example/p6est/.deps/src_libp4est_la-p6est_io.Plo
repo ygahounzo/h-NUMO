@@ -1,4 +1,0 @@
-example/p6est/src_libp4est_la-p6est_io.lo: example/p6est/p6est_io.c \
- /usr/include/stdc-predef.h
-
-/usr/include/stdc-predef.h:

@@ -130,14 +130,9 @@ subroutine initialize_fields()
        Iter_Type, space_method, &
        lp4est, lp6est, is_non_conforming_flg
 
-
-  use mod_limiter, only: mod_limiter_create
-
   use mod_metrics, only: mod_metrics_create_metrics, mod_metrics_create_mass
 
   use mod_mpi_utilities
-
-  use mod_norms, only: mod_norms_create
 
   use mod_parallel, only: nproc, mod_parallel_create_send_recv, mod_parallel_reorder
 
@@ -204,13 +199,6 @@ subroutine initialize_fields()
    !Create Hyper-Viscosity Arrays
    call mod_viscosity_create()
    if (irank == irank0) print *, "Viscosity Arrays Created"
-
-   !Create norms arrays
-   call mod_norms_create()
-
-   !Create LAV arrays
-   call mod_limiter_create()
-   if (irank == irank0) print *, "Limiter Arrays Created"
 
    ! Initialize local 2D and 3D arrays
    call get_dimensions()

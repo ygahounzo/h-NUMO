@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>5. Test cases (benchmarking) &mdash; h-NUMO 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.min.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/documentation_options.js?v=2709fde1"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.js"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="6. Boundary conditions and time intergration methods" href="bc_time_method.html" />
+    <link rel="prev" title="4. Running h-NUMO" href="running.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            h-NUMO
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="numo_model.html">1. The h-NUMO Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">2. Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="directory.html">3. h-NUMO Directory Structure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running.html">4. Running h-NUMO</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">5. Test cases (benchmarking)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#icase-2023-perturbation-of-the-lake-at-rest">5.1. icase = 2023: Perturbation of the lake-at-rest</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#icase-2024-lake-at-rest">5.2. icase = 2024: Lake-at-rest</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#icase-1100-double-gyre-test">5.3. icase = 1100: Double-gyre test</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="bc_time_method.html">6. Boundary conditions and time intergration methods</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">7. Some numerical results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="papers.html">8. Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">h-NUMO</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active"><span class="section-number">5. </span>Test cases (benchmarking)</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/test.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="test-cases-benchmarking">
+<h1><span class="section-number">5. </span>Test cases (benchmarking)<a class="headerlink" href="#test-cases-benchmarking" title="Link to this heading">¶</a></h1>
+<p>In the input file filename{numo3d.in} the test cases are controlled by the
+input parameter ‘icase’. h-NUMO contains the following ready-to-use test cases:
+begin{enumerate}
+item icase = 2023 is the perturbation in the bottom layer for the two-layer.
+item icase = 1100 is the double-gyre test case.
+item icase = 2024 lake-at-rest test case.
+end{enumerate}</p>
+<section id="icase-2023-perturbation-of-the-lake-at-rest">
+<h2><span class="section-number">5.1. </span>icase = 2023: Perturbation of the lake-at-rest<a class="headerlink" href="#icase-2023-perturbation-of-the-lake-at-rest" title="Link to this heading">¶</a></h2>
+<p>This test case consists of a two-layer system. To test whether our model captures the wave propagation speeds correctly, we consider a small perturbation in the interface between layers of the lake-at-rest case with a flat bottom topography. The layer initial interface positions are <span class="math notranslate nohighlight">\(z_0 = 0\)</span> m, <span class="math notranslate nohighlight">\(z_1 = -20 + 0.5\left( 1 + \cos\left(\frac{\pi r}{250} \right)\right)\)</span> m and <span class="math notranslate nohighlight">\(z_2 = -40\)</span> m. This test can be run with no-slip or free-slip boundary conditions, and more on these boundary conditions are in Sec.ref{sec:boundary_conditions}.</p>
+</section>
+<section id="icase-2024-lake-at-rest">
+<h2><span class="section-number">5.2. </span>icase = 2024: Lake-at-rest<a class="headerlink" href="#icase-2024-lake-at-rest" title="Link to this heading">¶</a></h2>
+<p>This test case is used to validate the well-balanced property of the DG scheme for the multilayer equations. We have initialized the layers fluid domain with densities  <span class="math notranslate nohighlight">\(\rho_k = 1027.01037 + 0.2110\times (k-1) \frac{kg}{m^3}, \ k = 1,\ldots,N_l\)</span> and the layer interface positions <span class="math notranslate nohighlight">\(z_k = -40/N_l\)</span> m, where <span class="math notranslate nohighlight">\(N_l\)</span> is the number of layers. The horizontal extend of the domain was <span class="math notranslate nohighlight">\((x,y)\in [0,\ 2000]\times[0,\ 2000]\)</span> m with wall boundary conditions on both ends, and the bottom topography is given by</p>
+<div class="math notranslate nohighlight" id="equation-test-0">
+ \begin{equation}
+     Z_b(x,y) = 3\left( 1 + \cos\left(\frac{\pi r}{250} \right)\right),
+ \end{equation}</div><p>where <span class="math notranslate nohighlight">\(r = \sqrt{(x-1000)^2 + (y-1000)^2}\)</span>.</p>
+</section>
+<section id="icase-1100-double-gyre-test">
+<h2><span class="section-number">5.3. </span>icase = 1100: Double-gyre test<a class="headerlink" href="#icase-1100-double-gyre-test" title="Link to this heading">¶</a></h2>
+<p>This test case consists of an idealized double-gyre benchmark test citep{bleck1986wind} to validate h-NUMO ability to simulate the mesoscale and submesoscale processes and compare the results with HYCOM. The domain is a closed rectangular ocean basin with a flat bottom. The forcing is spatially varying wind stress with intense western boundary currents, which, together with Coriolis force, results in a counter-clockwise circulation in the northern part and a clockwise circulation in the southern part of the domain.</p>
+<p>The horizontal extend is <span class="math notranslate nohighlight">\(D = 2000\ km\)</span> in both the zonal and the meridional direction. The depth of the basin is <span class="math notranslate nohighlight">\(10\ km\)</span> consisting of two layers, with the upper and lower layers initially having $:math:<cite>1.5km</cite> and <span class="math notranslate nohighlight">\(8.5\ km\)</span> depths respectively. The densities in the layers are <span class="math notranslate nohighlight">\(\rho_1 = 1027.01037\ \ kg/m^3\)</span> , <span class="math notranslate nohighlight">\(\rho_2 = 1027.22136\ \ kg/m^3\)</span>. The Coriolis force is prescribed using a beta-plane approximation centered at <span class="math notranslate nohighlight">\(45^\circ\)</span> N, with a parameter <span class="math notranslate nohighlight">\(f = f_0 + \beta(y-D/2)\)</span>, where <span class="math notranslate nohighlight">\(f_0 = 9.3 \times 10^{-4} \ s^{-1}\)</span> and <span class="math notranslate nohighlight">\(\beta = 2 \times 10^{-11} \ m/s\)</span>. We consider two different values of the horizontal viscosity <span class="math notranslate nohighlight">\(\nu = 50 \ m^2/s\)</span> and <span class="math notranslate nohighlight">\(\nu = 500 \ m^2/s\)</span>, the dimensionless bottom drag coefficient in the linear bottom stress is <span class="math notranslate nohighlight">\(c_d = 10^{-7} \ s^{-1}\)</span>, and we assume no shear stress between layers. The system is forced by a purely zonal wind stress <span class="math notranslate nohighlight">\(\tau = (\tau_x,\ \tau_y)\)</span>, where <span class="math notranslate nohighlight">\(\tau_x = -\tau_0\cos(2\pi y/D)\)</span>, <span class="math notranslate nohighlight">\(\tau_y = 0\ N/m^2\)</span>, and <span class="math notranslate nohighlight">\(\tau_0 = 0.1 \ N/m^2\)</span>. We considered two different boundary conditions: free-slip and no-slip. Each model year consists of 360 days, divided into 12 months, with 30 days per month.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="running.html" class="btn btn-neutral float-left" title="4. Running h-NUMO" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="bc_time_method.html" class="btn btn-neutral float-right" title="6. Boundary conditions and time intergration methods" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Yao Gahounzo.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

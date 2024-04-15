@@ -2,7 +2,7 @@ RM = /bin/rm -rf
 MV = /bin/mv -f
 CP = /bin/cp -f
 
-export PLATFORMS:= macbook-p4est-intel borah borah-debug macbook-p4est-brew falcon
+export PLATFORMS:= macbook-p4est-intel hnumo hnumo-debug macbook-p4est-brew
 
 export NUMO_DIR    := $(CURDIR)
 export DEPEND_FILE := $(NUMO_DIR)/depend.mk
@@ -27,15 +27,11 @@ $(PLATFORMS): %: %-config p4est/local/lib/libp4est.a depend $(SUBDIR)
 $(SUBDIR):
 	if [ ! -d $@ ]; then mkdir -p $@;fi
 
-p4est:
-	$(NUMO_DIR)/p4est/get_p4est_install_dir.sh $(P4EST_LOC)
-
 p4est/local/lib/libp4est.a:
 	cd $(NUMO_DIR)/p4est && \
 	tar -xjf p4est_feature.tar.bj && \
 	./configure $(P4EST_CONF) && \
 	make -j && \
-	make check && \
 	make install
 
 p4est_clean:
@@ -53,8 +49,8 @@ emptyrule:
 
 clean : depend
 	$(MAKE) -C src $@
-	for dir in $(SUBDIRS); do (echo $(RM) $$dir ; $(RM) $$dir) ; done
+	for dir in $(SUBDIR); do (echo $(RM) $$dir ; $(RM) $$dir) ; done
 
-deepclean : clean depend p4est_clean occa_clean
+deepclean : clean depend p4est_clean
 	$(MAKE) -C src $@
 	(if [ -e $(DEPEND_FILE) ] ; then $(RM) $(DEPEND_FILE) ; fi )

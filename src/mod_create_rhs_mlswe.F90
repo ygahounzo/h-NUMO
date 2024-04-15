@@ -561,8 +561,8 @@ contains
 
                 ! hy_k = 0.5*nyl*(h_l(iquad,:) + h_r(iquad,:))
     
-                flux_x = nxl*var_uudp(iquad,:) + nyl*var_uvdp(iquad,:) !- dispu(:)
-                flux_y = nxl*var_vudp(iquad,:) + nyl*var_vvdp(iquad,:) !- dispv(:)
+                flux_x = nxl*var_uudp(iquad,:) + nyl*var_uvdp(iquad,:) - dispu(:)
+                flux_y = nxl*var_vudp(iquad,:) + nyl*var_vvdp(iquad,:) - dispv(:)
 
                 do n = 1, ngl
 
@@ -765,7 +765,7 @@ contains
 
                 qx_k = var_x(iquad,:);  qy_k = var_y(iquad,:)
 
-                flux = nxl*qx_k + nyl*qy_k !- disp_temp(:)
+                flux(:) = nxl*qx_k(:) + nyl*qy_k(:) - disp_temp(:)
 
                 do n = 1, ngl
 

@@ -16,8 +16,6 @@ module mod_ref
     use mod_input, only: si_dimension, eqn_set, delta, space_method, is_shallow, lsalinity, &
          lincompressible, locean, is_swe_layers, nlayers, is_mlswe
 
-    use mod_interface, only: compute_divergence, compute_gradient
-
     use mod_parallel, only: num_send_recv_total
     
     use mod_basis, only: ngl, nq
@@ -82,8 +80,6 @@ contains
             q_recv_quad(3,nq,nboun), q_send_quad(3,nq,nboun),&
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
-        
-        allocate(q_temp(npoin), q_tempv(3,npoin))
 
         if (space_method(1:2) == 'dg') then
             if(allocated(recv_data_dg)) then
@@ -115,45 +111,6 @@ contains
             qb(3,i)=q_ref(3,i)
             qb(4,i)=q_ref(4,i)
         end do                    !i
-
-
-        deallocate(q_temp,q_tempv)
-
-        !-----------------------------------------------
-        ! Compute projected gradient of reference pressure
-        !-----------------------------------------------
-        if (eqn_set(1:6) == 'set2nc') then
-
-            !Compute Specific Semi-implicit routines
-            if (delta >= 0 .and. si_dimension == '3d') then
-                if(allocated(g0)) deallocate(g0,f0,h0)
-                allocate( g0(npoin), f0(npoin), h0(npoin), stat=AllocateStatus )
-                if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref:3D:Set2NC **"
-
-                !Semi-Implicit Constants
-                g0 = gamma*press_ref/q_ref(1,:)
-
-                h0 = 0
-                f0 = g0*grad_rho_ref(3,:)
-
-            end if !si_dimension
-
-        else if (eqn_set(1:5) == 'set2c' .or. eqn_set(1:5) == 'set3c') then
-
-            !Compute Specific Semi-implicit routines
-            if (delta >= 0 .and. si_dimension == '3d') then
-                if(allocated(f0_ref)) deallocate(f0_ref, g0_ref, grad_g0_ref)
-                allocate( f0_ref(npoin), g0_ref(npoin), grad_g0_ref(3,npoin), stat=AllocateStatus )
-                if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref:3D:Set2C **"
-
-                !Semi-Implicit Constants
-                f0_ref = 0
-                g0_ref = q_ref(5,:)/q_ref(1,:)
-                call compute_gradient(grad_g0_ref,g0_ref,1)
-
-            end if !si_dimension
-
-        end if !eqn_set
 
     end subroutine mod_ref_create
 

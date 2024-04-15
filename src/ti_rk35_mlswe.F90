@@ -61,6 +61,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	real, dimension(2,npoin,nlayers) :: uvdp_df
 	real, dimension(2,2,nq,nface,nlayers) :: qprime_face_mom
 	real, dimension(2,npoin) :: uvb_df_ave
+	real, dimension(nq,nface,nlayers) :: disp
 
 	integer :: k, Iq, iquad, iface, ilr, flag_pred
 
@@ -134,7 +135,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
 	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df)
+		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df, disp)
 
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
@@ -154,7 +155,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	call momentum(q,qprime_corr,q_df,q_face,qprime_face_corr,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
 		Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
 		qprime_df_corr,ope_ave_df,tau_bot_ave,tau_wind_ave, qprime_face2,flag_pred,&
-		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave,uvb_df_ave)
+		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave,uvb_df_ave, disp)
 
 	qprime(1,:,:) = qprime_avg(1,:,:)
 	qprime(2:3,:,:) = qprime_corr(2:3,:,:)

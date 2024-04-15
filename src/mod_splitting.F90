@@ -350,7 +350,7 @@ module mod_splitting
     end subroutine ti_barotropic
 
     subroutine thickness(q,qprime, q_df, q_face, qprime_face, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-        btp_mass_flux_face_ave,dpprime_df, flag_pred, qb_df)
+        btp_mass_flux_face_ave,dpprime_df, flag_pred, qb_df, disp)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -389,7 +389,7 @@ module mod_splitting
     
         ! Output variables
         real, dimension(2,nq, nface, nlayers), intent(out)   :: u_edge, v_edge
-        real, intent(out) :: dpprime_df(npoin,nlayers)
+        real, intent(out) :: dpprime_df(npoin,nlayers), disp(nq,nface,nlayers)
     
         ! Other variables
         real :: sum_layer_mass_flux(2,npoin_q), uvdp_temp(2,npoin_q,nlayers), flux_edge(2,nq,nface,nlayers), flux_adjustment(2,npoin_q,nlayers)
@@ -397,7 +397,6 @@ module mod_splitting
         real :: one_plus_eta_temp1
         integer :: k, I, iquad, iface, ilr,Iq
         real :: adjust_mass(npoin)
-        real :: disp(nq,nface,nlayers)
 
         ! =========================================== layer mass ===============================================================
     
@@ -460,7 +459,7 @@ module mod_splitting
     subroutine momentum(q,qprime,q_df,q_face,qprime_face,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,flag_pred,&
-        q2,q_face2,qb_df,qprime2, qprime_face3, ope2_ave, uvb_df_ave)
+        q2,q_face2,qb_df,qprime2, qprime_face3, ope2_ave, uvb_df_ave, disp)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
@@ -509,6 +508,7 @@ module mod_splitting
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime2
         real, dimension(2,npoin), intent(in) :: uvb_df_ave
+        real, dimension(nq,nface,nlayers), intent(in) :: disp
 
         ! Local variables
 
@@ -516,7 +516,7 @@ module mod_splitting
         real, dimension(2,npoin_q,nlayers)     :: coriolis, uvdp,uv
         real, dimension(2,npoin,nlayers)       :: q_df_temp
         real, dimension(npoin)                 :: fdt, fdt2, a, b, zk
-        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right, disp
+        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right
         real, dimension(npoin_q, nlayers)      :: u_udp_temp, v_vdp_temp
         real, dimension(2, npoin_q, nlayers)   :: u_vdp_temp
         real, dimension(2, nq, nface, nlayers) :: udp_flux_edge, vdp_flux_edge
@@ -562,7 +562,7 @@ module mod_splitting
 
         call layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, ope_ave, H_ave, ope_face_ave, zbot_face, H_face_ave, qprime_df, one_plus_eta_edge_2_ave, ope_ave_df, grad_z, ope2_ave)
 
-        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave, disp)
+        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave)
 
         call layer_momentum_advec_terms(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
             q2, qprime, uvb_ave, ope_ave, u_edge, v_edge, Qu_ave, Qv_ave, Quv_ave, &
@@ -747,12 +747,13 @@ module mod_splitting
         real, dimension(npoin) :: tempu1, tempv1
         real, dimension(2,nq,nface,nlayers) :: dprime_face_corr
         real :: sum_layer_mass_flux_face(2,nq,nface), sum_layer_mass_flux(2,npoin_q)
+        real, dimension(nq,nface,nlayers) :: disp
 
         q_df_temp = 0.0
 
         ! =========================================== layer mass ===============================================================
     
-        call rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face)
+        call rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face, disp)
 
         do k = 1, nlayers
 
@@ -811,7 +812,7 @@ module mod_splitting
         call rhs_momentum(rhs_mom, rhs_visc_bcl, qprime,q_face,qprime_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
             Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
             qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,&
-            q,qprime2, qprime_face, ope2_ave, uvb_df_ave)
+            q,qprime2, qprime_face, ope2_ave, uvb_df_ave, disp)
 
         ! Compute the momentum equation variables for the next time step
 
@@ -912,7 +913,7 @@ module mod_splitting
     end subroutine momentum_mass
 
 
-    subroutine rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face)
+    subroutine rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face, disp)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -944,6 +945,7 @@ module mod_splitting
         real, intent(in)    :: uvb_ave(2,npoin_q), ope_ave(npoin_q)
         real, intent(in)    :: uvb_face_ave(2,2,nq,nface), ope_face_ave(2,nq,nface)
         real, intent(in) :: q_face(3,2,nq,nface,nlayers)
+        real, dimension(nq,nface,nlayers), intent(out) :: disp
     
         ! Output variables
         real, dimension(2,nq, nface, nlayers), intent(out)   :: u_edge, v_edge
@@ -952,7 +954,6 @@ module mod_splitting
         ! Other variables
         real :: uvdp_temp(2,npoin_q,nlayers), flux_edge(2,nq,nface,nlayers)
         real :: flux_adjust_edge(2,nq,nface,nlayers)
-        real :: disp(nq,nface,nlayers)
 
         ! =========================================== layer mass ===============================================================
     
@@ -973,7 +974,7 @@ module mod_splitting
     subroutine rhs_momentum(rhs_mom, rhs_visc_bcl, qprime,q_face,qprime_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,&
-        q2,qprime2, qprime_face3, ope2_ave, uvb_df_ave)
+        q2,qprime2, qprime_face3, ope2_ave, uvb_df_ave, disp)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
@@ -1013,6 +1014,7 @@ module mod_splitting
         real, dimension(3,npoin_q,nlayers), intent(in) :: q2
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime2
         real, dimension(2,npoin), intent(in) :: uvb_df_ave
+        real, dimension(nq,nface,nlayers), intent(in) :: disp
 
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom, rhs_visc_bcl
 
@@ -1021,7 +1023,7 @@ module mod_splitting
         real, dimension(2,npoin_q,nlayers+1)   :: grad_z
         real, dimension(2,npoin_q,nlayers)     :: coriolis
         real, dimension(2,npoin,nlayers)       :: q_df_temp
-        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right, disp
+        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right
         real, dimension(npoin_q, nlayers)      :: u_udp_temp, v_vdp_temp
         real, dimension(2, npoin_q, nlayers)   :: u_vdp_temp
         real, dimension(2, nq, nface, nlayers) :: udp_flux_edge, vdp_flux_edge
@@ -1046,7 +1048,7 @@ module mod_splitting
         call layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, ope_ave, H_ave, ope_face_ave, &
             zbot_face, H_face_ave, qprime_df, one_plus_eta_edge_2_ave, ope_ave_df, grad_z, ope2_ave)
 
-        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave, disp)
+        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave)
 
         call layer_momentum_advec_terms(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
             q2, qprime, uvb_ave, ope_ave, u_edge, v_edge, Qu_ave, Qv_ave, Quv_ave, &
