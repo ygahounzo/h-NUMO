@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>h-NUMO &mdash; h-NUMO 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.min.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/documentation_options.js?v=2709fde1"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="1. The h-NUMO Model" href="numo_model.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="#" class="icon icon-home">
+            h-NUMO
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="numo_model.html">1. The h-NUMO Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">2. Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="directory.html">3. h-NUMO Directory Structure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="running.html">4. Running h-NUMO</a></li>
+<li class="toctree-l1"><a class="reference internal" href="test.html">5. Test cases (benchmarking)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bc_time_method.html">6. Boundary conditions and time intergration methods</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">7. Some numerical results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="papers.html">8. Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="#">h-NUMO</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="#" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">h-NUMO</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/index.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="h-numo">
+<h1>h-NUMO<a class="headerlink" href="#h-numo" title="Link to this heading">¶</a></h1>
+<p><strong>h-NUMO</strong> is isopycnal ocean circulation model developed  in the Galerkin Numerical Modeling Environment(GNuME) (Giraldo, 2016) framework. The GNuME framework uses an arbitrary polynomial basis function expansion and offers a choice of continuous Galerkin (CG) and discontinuous Galerkin (DG) methods Abdi and Giraldo (2016). The framework was previously used to construct the Non-Hydrostatic Unified Model of the Ocean Kopera et al. (2023). The h-NUMO model use arbitrary number of layers.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>This project is under active development.</p>
+</div>
+<p>h-NUMO is</p>
+<ul class="simple">
+<li><p><a class="reference external" href="installation.html">Easy to install and configure</a> on a compute node, including without administrative privileges.</p></li>
+<li><p>Easy to learn and understand, with online documentation, including a complete description of <a class="reference external" href="numo_model.html">the physisc and the numerics</a>.</p></li>
+<li><p>Verified with a suites of <a class="reference external" href="test.html">test cases</a>.</p></li>
+</ul>
+<div class="toctree-wrapper compound">
+<p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="numo_model.html">1. The h-NUMO Model</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="numo_model.html#the-physics">1.1. The Physics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="numo_model.html#discontinuous-galerkin-discretisation">1.2. Discontinuous Galerkin discretisation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="numo_model.html#numerical-algorithm">1.3. Numerical algorithm</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">2. Installation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#libraries">2.1. Libraries</a></li>
+<li class="toctree-l2"><a class="reference internal" href="installation.html#installation-instructions">2.2. Installation instructions</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="directory.html">3. h-NUMO Directory Structure</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#bin">3.1. bin</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#docs">3.2. docs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#graphics">3.3. Graphics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#include">3.4. include</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#input-files">3.5. input_files</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#metis">3.6. Metis</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#lib">3.7. lib</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#output">3.8. output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#run-scripts">3.9. run_scripts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#src">3.10. src</a></li>
+<li class="toctree-l2"><a class="reference internal" href="directory.html#p4est">3.11. p4est</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="running.html">4. Running h-NUMO</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="running.html#setting-up-the-workspace">4.1. Setting up the Workspace</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running.html#h-numo-output">4.2. h-NUMO Output</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="test.html">5. Test cases (benchmarking)</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="test.html#icase-2023-perturbation-of-the-lake-at-rest">5.1. icase = 2023: Perturbation of the lake-at-rest</a></li>
+<li class="toctree-l2"><a class="reference internal" href="test.html#icase-2024-lake-at-rest">5.2. icase = 2024: Lake-at-rest</a></li>
+<li class="toctree-l2"><a class="reference internal" href="test.html#icase-1100-double-gyre-test">5.3. icase = 1100: Double-gyre test</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="bc_time_method.html">6. Boundary conditions and time intergration methods</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="bc_time_method.html#boundary-conditions">6.1. Boundary Conditions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bc_time_method.html#time-integrators-label-sec-time-integrators">6.2. Time-Integrators}label{sec:time_integrators</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">7. Some numerical results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="papers.html">8. Publications</a></li>
+</ul>
+</div>
+</section>
+<section id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p><a class="reference internal" href="genindex.html"><span class="std std-ref">Index</span></a></p></li>
+<li><p><a class="reference internal" href="py-modindex.html"><span class="std std-ref">Module Index</span></a></p></li>
+<li><p><a class="reference internal" href="search.html"><span class="std std-ref">Search Page</span></a></p></li>
+</ul>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="numo_model.html" class="btn btn-neutral float-right" title="1. The h-NUMO Model" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Yao Gahounzo.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -27,9 +27,6 @@ $(PLATFORMS): %: %-config p4est/local/lib/libp4est.a depend $(SUBDIR)
 $(SUBDIR):
 	if [ ! -d $@ ]; then mkdir -p $@;fi
 
-#p4est:
-#	$(NUMO_DIR)/p4est/get_p4est_install_dir.sh $(P4EST_LOC)
-
 p4est/local/lib/libp4est.a:
 	cd $(NUMO_DIR)/p4est && \
 	tar -xjf p4est_feature.tar.bj && \

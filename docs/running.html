@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>4. Running h-NUMO &mdash; h-NUMO 0.1 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=fa44fd50" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=19f00094" />
+      <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.min.css" />
+
+  
+  <!--[if lt IE 9]>
+    <script src="_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script src="_static/documentation_options.js?v=2709fde1"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="https://cdn.jsdelivr.net/npm/pseudocode@latest/build/pseudocode.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.11.1/katex.min.js"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="5. Test cases (benchmarking)" href="test.html" />
+    <link rel="prev" title="3. h-NUMO Directory Structure" href="directory.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            h-NUMO
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="numo_model.html">1. The h-NUMO Model</a></li>
+<li class="toctree-l1"><a class="reference internal" href="installation.html">2. Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="directory.html">3. h-NUMO Directory Structure</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">4. Running h-NUMO</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#setting-up-the-workspace">4.1. Setting up the Workspace</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#input-file">4.1.1. Input file</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gridnl">4.1.2. gridnl</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#input">4.1.3. input</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#h-numo-output">4.2. h-NUMO Output</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="test.html">5. Test cases (benchmarking)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bc_time_method.html">6. Boundary conditions and time intergration methods</a></li>
+<li class="toctree-l1"><a class="reference internal" href="results.html">7. Some numerical results</a></li>
+<li class="toctree-l1"><a class="reference internal" href="papers.html">8. Publications</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">h-NUMO</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active"><span class="section-number">4. </span>Running h-NUMO</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/running.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="running-h-numo">
+<h1><span class="section-number">4. </span>Running h-NUMO<a class="headerlink" href="#running-h-numo" title="Link to this heading">¶</a></h1>
+<section id="setting-up-the-workspace">
+<h2><span class="section-number">4.1. </span>Setting up the Workspace<a class="headerlink" href="#setting-up-the-workspace" title="Link to this heading">¶</a></h2>
+<p>Once you have successfully compiled h-NUMO, we recommend the following steps to running h-NUMO.</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>In the home/root directory create a directory called <code class="docutils literal notranslate"><span class="pre">tests</span></code>. Inside <code class="docutils literal notranslate"><span class="pre">tests</span></code> create another directory for a specific simulation (for example, let’s call it <code class="docutils literal notranslate"><span class="pre">bump</span></code>.</p></li>
+<li><p>Inside of bump copy <code class="docutils literal notranslate"><span class="pre">numa3d.in.bump</span></code> from input_files and rename it <code class="docutils literal notranslate"><span class="pre">numa3d.in</span></code>.</p></li>
+<li><p>Inside of bump copy one of the <code class="docutils literal notranslate"><span class="pre">run_numo3d</span></code> from <code class="docutils literal notranslate"><span class="pre">run_scripts</span></code>. Make sure that the other batch submission commands make sense.</p></li>
+</ol>
+</div></blockquote>
+<section id="input-file">
+<h3><span class="section-number">4.1.1. </span>Input file<a class="headerlink" href="#input-file" title="Link to this heading">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span># h-NUMO 
+
+&amp;eqnset
+eqn_set=&#39;set2nc&#39;,
+equations=&#39;shallow&#39;,
+is_mlswe = T,
+nonlinear_swe=0
+/
+
+&amp;gridnl
+nelx  = 10,
+nely  = 10,
+nelz  = 1,
+nopx  = 4,
+nopy  = 4,
+nopz  = 0,
+xdims = 0.0,2e3,
+ydims = 0.0,2e3,
+ztop  =  0.0,
+nlayers = 2,
+
+!P4est Input
+!nelh=nel_root_h*(2^refinement_levels_h)
+!nelv=nel_root_v*(2^refinement_levels_v)
+!nel_root_h = 1, !number of elements per cubed-sphere edge in horizontal
+!nel_root_v = 1, !number of vertical layers in the initial mesh
+refinement_levels_h = 0, !refinement levels in horizontal
+refinement_levels_v = 0, !refinement levels in vertical
+lp4est=T,
+lp6est=F,
+lio_grid_ascii=F,
+lread_external_grid=F,
+
+!Dimension of the domain: (x,y) in (min,max), z in (0,ztop)
+x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
+y_boundary = 4, 4 !Left and Right (y=-1 and y=+1)
+z_boundary = 0, 0 !Bottom and Top (z=-1 and z=+1)
+   !These denote constant x,y, or z. 
+   !E.g. z_boundary(1) is the bottom and z_boundary(2) is the top
+   !BCs are: 0=do nothing
+
+x_periodic = 0,
+y_periodic = 0,
+
+geometry_type=&#39;cube&#39;, 
+  !cube=3D Box
+
+decomp_type=&#39;metis2d&#39;,
+  !metis3d=3D metis partitioning 
+  !metis2d=2D metis partitioning 
+
+/
+
+&amp;input
+dt= 100,
+dt_btp = 1.4,
+time_initial = 0.0,
+time_final   = 10000,
+time_restart = 100.0,
+time_scale = 1, !1=seconds, 3600=hours, 86400=days
+lrestart_file = .false.,
+
+! mlswe parameter
+ad_mlswe = 0.0, 
+botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
+cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
+method_visc = 2,  !0=no viscosity
+visc_mlswe = 1.0,
+dpprime_visc_min = 1.5e7,
+max_shear_dz = 20.0,
+matlab_viz = T,
+adjust_H_vertical_sum = 2,
+mlswe_bc_strong = T
+dg_integ_exact = T,
+dump_data = T,
+bcl_flux = 0.0,
+
+!----case
+icase=2023,
+    
+
+ti_method = &#39;btp_bcl&#39;, 
+  !rk35 (Optimized RK35)
+
+ti_method_btp = &#39;rk35&#39;, ! Default = &#39;explicit&#39; (two step method)
+kstages=5,
+
+space_method = &#39;dg&#39;,
+
+cgdg_method = &#39;separate&#39;, 
+
+si_dimension = &#39;3d&#39;, 
+
+filter_mux=0.05,
+filter_muy=0.05,
+filter_muz=0.05,
+ifilter=1,
+filter_weight_type=&#39;erf&#39;,
+!filter_basis_type=&#39;modal&#39;,
+filter_basis_type=&#39;legendre&#39;,
+fname_root=&#39;mlswe&#39;,
+format_vtk=&#39;ascii&#39;,
+out_type=&#39;vtk&#39;,
+  !gks2d=ascii 2d slice; 
+  !gks3d=ascii 3d output; 
+  !nc=netcdf 3d output; 
+  !vtk=Visual ToolKit (Paraview) output
+  !none=No Output
+
+lprint_diagnostics=T, 
+  !T=true=print diagnostics
+  !F=false=do NOT print diagnostics
+
+/
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Check the sections below for more details.</p>
+</div>
+</section>
+<section id="gridnl">
+<h3><span class="section-number">4.1.2. </span>gridnl<a class="headerlink" href="#gridnl" title="Link to this heading">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>
+<span class="n">This</span> <span class="n">namelist</span> <span class="n">contains</span> <span class="n">the</span> <span class="n">following</span> <span class="n">variables</span><span class="p">:</span>
+
+<span class="n">nelx</span> <span class="o">=</span> <span class="n">number</span> <span class="n">of</span> <span class="n">elements</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">x</span><span class="o">-</span><span class="n">direction</span><span class="o">.</span>
+<span class="n">nely</span> <span class="o">=</span> <span class="n">number</span> <span class="n">of</span> <span class="n">elements</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">y</span><span class="o">-</span><span class="n">direction</span><span class="o">.</span>
+<span class="n">nelz</span> <span class="o">=</span> <span class="n">number</span> <span class="n">of</span> <span class="n">elements</span> <span class="ow">in</span> <span class="n">the</span> <span class="n">z</span><span class="o">-</span><span class="n">direction</span><span class="o">.</span>
+<span class="n">nop</span> <span class="o">=</span> <span class="ow">is</span> <span class="n">the</span> <span class="n">polynomial</span> <span class="n">order</span> <span class="n">inside</span> <span class="n">each</span> <span class="n">element</span><span class="o">.</span>
+<span class="n">xdims</span> <span class="o">=</span> <span class="k">for</span> <span class="n">some</span> <span class="n">tests</span><span class="p">,</span> <span class="n">xdims</span> <span class="n">gives</span> <span class="n">the</span> <span class="n">minimum</span> <span class="ow">and</span> <span class="n">maximum</span> <span class="n">values</span> <span class="p">(</span><span class="ow">in</span> <span class="n">meters</span><span class="p">)</span> <span class="ow">in</span> <span class="n">that</span> <span class="n">direction</span><span class="o">.</span>
+<span class="n">ydims</span> <span class="o">=</span> <span class="k">for</span> <span class="n">some</span> <span class="n">tests</span><span class="p">,</span> <span class="n">ydims</span> <span class="n">gives</span> <span class="n">the</span> <span class="n">minimum</span> <span class="ow">and</span> <span class="n">maximum</span> <span class="n">values</span> <span class="p">(</span><span class="ow">in</span> <span class="n">meters</span><span class="p">)</span> <span class="ow">in</span> <span class="n">that</span> <span class="n">direction</span><span class="o">.</span>
+<span class="n">ztop</span> <span class="o">=</span> <span class="k">for</span> <span class="n">some</span> <span class="n">tests</span><span class="p">,</span> <span class="n">ztop</span> <span class="n">gives</span> <span class="n">the</span> <span class="n">maximum</span> <span class="n">vertical</span> <span class="n">height</span><span class="o">.</span> <span class="n">The</span> <span class="n">minimum</span> <span class="ow">is</span> <span class="n">assumed</span> <span class="n">to</span> <span class="n">be</span> <span class="n">zero</span> <span class="n">which</span> <span class="n">means</span> <span class="n">the</span> <span class="n">ground</span><span class="o">.</span>
+<span class="n">x_boundary</span> <span class="o">=</span> <span class="n">This</span> <span class="n">gives</span> <span class="n">the</span> <span class="n">boundary</span> <span class="n">condition</span> <span class="n">at</span> <span class="n">the</span> <span class="n">front</span> <span class="ow">and</span> <span class="n">back</span> <span class="n">of</span> <span class="n">the</span> <span class="n">x</span><span class="o">-</span><span class="n">direction</span> <span class="p">(</span><span class="n">more</span> <span class="n">on</span> <span class="n">boundary</span> <span class="n">conditions</span><span class="p">,</span> <span class="n">below</span><span class="p">)</span><span class="o">.</span>
+<span class="n">y_boundary</span> <span class="o">=</span> <span class="n">This</span> <span class="n">gives</span> <span class="n">the</span> <span class="n">boundary</span> <span class="n">condition</span> <span class="n">at</span> <span class="n">the</span> <span class="n">front</span> <span class="ow">and</span> <span class="n">back</span> <span class="n">of</span> <span class="n">the</span> <span class="n">y</span><span class="o">-</span><span class="n">direction</span> <span class="p">(</span><span class="n">more</span> <span class="n">on</span> <span class="n">boundary</span> <span class="n">conditions</span><span class="p">,</span> <span class="n">below</span><span class="p">)</span><span class="o">.</span>
+<span class="n">z_boundary</span> <span class="o">=</span> <span class="n">This</span> <span class="n">gives</span> <span class="n">the</span> <span class="n">boundary</span> <span class="n">condition</span> <span class="n">at</span> <span class="n">the</span> <span class="n">front</span> <span class="ow">and</span> <span class="n">back</span> <span class="n">of</span> <span class="n">the</span> <span class="n">z</span><span class="o">-</span><span class="n">direction</span> <span class="p">(</span><span class="n">more</span> <span class="n">on</span> <span class="n">boundary</span> <span class="n">conditions</span><span class="p">,</span> <span class="n">below</span><span class="p">)</span><span class="o">.</span>
+<span class="n">eometry_type</span> <span class="o">=</span> <span class="ow">is</span> <span class="n">the</span> <span class="nb">type</span> <span class="n">of</span> <span class="n">geometry</span> <span class="n">being</span> <span class="n">used</span><span class="o">.</span> <span class="s1">&#39;cube&#39;</span> <span class="n">means</span> <span class="n">flow</span> <span class="ow">in</span> <span class="n">a</span> <span class="n">Cartesian</span> <span class="n">box</span><span class="p">,</span> 
+<span class="n">decomp_type</span> <span class="o">=</span> <span class="n">calls</span> <span class="n">a</span> <span class="n">specific</span> <span class="nb">type</span> <span class="n">of</span> <span class="n">domain</span> <span class="n">decomposition</span><span class="o">.</span>
+</pre></div>
+</div>
+</section>
+<section id="input">
+<h3><span class="section-number">4.1.3. </span>input<a class="headerlink" href="#input" title="Link to this heading">¶</a></h3>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>This namelist contains the following variables:
+
+dt = the time-step in seconds.
+dt_btp = the time-step in seconds.
+time_initial = initial time (can be nonzero if it is a restart).
+time_final = final time (can be in seconds, minutes, hours, or days, depending on the test case.
+
+time_restart = time at which restart files are produced. The units of time depend on the test case as mentioned previously. The restart only works for &#39;txt&#39; outputs at the moment.
+
+cd_mlswe = is the bottom friction value.
+
+method_visc = is for the use of viscosity term. If it is 0, that means no use, otherwise, the viscosity solver is used.
+
+visc_mlswe = is the value of the viscosity in the Laplacian term.
+
+max_shear_dz = is used to discretize the vertical diffusion or friction between layer terms.
+
+matlab_viz = a logical flag that turns off and on to output ``txt`` file for Matlab visualizations.
+
+adjust_H_vertical_sum = is for applying consistency between barotropic and baroclinic pressure terms.
+
+dg_integ_exact = a logical flag that turns off and on whether you want to use 2N-1 quadrature points or 2N+1 for DG integrations.
+
+mlswe_bc_strong = a logical flag that turns off and on the strong boundary conditions for the free-slip boundary condition. We recommend you use ``True``.
+
+ump_data = a logical flag that turns off and on the dumping of the simulation data to a file
+
+icase = is the specific test case.  More on this in ``tests section``.
+
+ti_method =  is the time-integration method (only the predictor-corrector is available now).
+
+ti_method_btp = is the time-integration method for the barotropic equations
+
+kstages = number of Runge-Kutta stages if ti_method=&#39;rk&#39;. If ti_method=&#39;rk35&#39; then the 
+value of kstages does not matter.
+
+xmu = Boyd-Vandeven filter strength.
+
+ifilter = how often the filter will be called. ifilter=0 means it is never called and ifilter = 1 means it is called every time-step.
+
+fname_root = the root name of the output data (only for the vtk output). All data files for this run will have the prefix defined by fname_root.
+
+out_type = defines the type of output file.
+
+lprint_diagnostics = a logical flag that turns off and on the printing. For scalability 
+studies we turn off the printing to the screen.
+</pre></div>
+</div>
+</section>
+</section>
+<section id="h-numo-output">
+<h2><span class="section-number">4.2. </span>h-NUMO Output<a class="headerlink" href="#h-numo-output" title="Link to this heading">¶</a></h2>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>Inside of <code class="docutils literal notranslate"><span class="pre">bump</span></code> directory run h-NUMO using your run script.</p>
+<ul class="simple">
+<li><p><code class="code highlight bash docutils literal highlight-bash">sbatch<span class="w"> </span>run_script.sh</code></p></li>
+</ul>
+</li>
+<li><p>At the end of the run, you will have a collection of output files. In the input         file, you can dump the simulation data as a <code class="docutils literal notranslate"><span class="pre">vtk</span></code> file for Paraview visualizations or simply as a <code class="docutils literal notranslate"><span class="pre">txt</span></code> file for Matlab visualizations. For the Matlab visualization, turn matlab_viz to true; otherwise, it will output <code class="docutils literal notranslate"><span class="pre">vtk</span></code> files.</p></li>
+</ol>
+</div></blockquote>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="directory.html" class="btn btn-neutral float-left" title="3. h-NUMO Directory Structure" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="test.html" class="btn btn-neutral float-right" title="5. Test cases (benchmarking)" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Yao Gahounzo.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
