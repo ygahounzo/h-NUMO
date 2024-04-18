@@ -1,17 +1,19 @@
 module mod_layer_terms
 
     
-    use mod_grid, only: npoin_q, nface, intma_dg_quad, face
-    use mod_basis, only: nqx, nqy, nqz, nq
+    use mod_grid, only: npoin_q, nface, intma_dg_quad, face, npoin, intma
+    use mod_basis, only: nqx, nqy, nqz, nq, ngl, psiq
     use mod_input, only: nlayers
+    use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl, imapr, normal_vector, jac_faceq
         
     implicit none
 
     public :: layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, &
             compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
             shear_stress_system, consistency_mass_terms1, &
-            layer_mom_boundary_df, limiter_Positivity_Preserving_layers_mass, limiter_Positivity_Preserving_layers_mom, &
-            filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom
+            layer_mom_boundary_df, filter_mlswe, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom, &
+            evaluate_mom_mass, evaluate_mom_mass_face, bcl_extract_df_face, bcl_extract_dp_df_face, bcl_interpolate_face, bcl_dp_face, &
+            bcl_interpolate_face_v1, evaluate_mom_face_v1, bcl_evaluate_quprime
 
     contains
 
@@ -44,9 +46,7 @@ module mod_layer_terms
         integer :: k, iface, iquad
         real :: nxl, nyl, h_l, h_r, claml, clamr, clam, h1_l, h1_r, h2_l, h2_r, Ucl, Ucr, hgl, hgr, gprime, h1, h2, hg, UU
         real, dimension(nlayers) :: unl, unr, u, v
-        real :: clam1, clam2, s1_l, s1_r, s2_l, s2_r, alph
-
-        alph = alpha_mlswe(1)/alpha_mlswe(2)
+        real :: clam1, clam2
 
         gprime = gravity *alpha_mlswe(2)*(1.0/alpha_mlswe(2) - 1.0/alpha_mlswe(1))
 
@@ -94,11 +94,8 @@ module mod_layer_terms
                 nxl = normal_vector_q(1,iquad,1,iface)
                 nyl = normal_vector_q(2,iquad,1,iface)
                 
-                !unl(:) = u_edge(1,iquad,iface,:)*nxl + v_edge(1,iquad,iface,:)*nyl
-                !unr(:) = u_edge(2,iquad,iface,:)*nxl + v_edge(2,iquad,iface,:)*nyl
-
-                unl(:) = qprime_face(2,1,iquad,iface,:)*nxl + qprime_face(3,1,iquad,iface,:)*nyl
-                unr(:) = qprime_face(2,2,iquad,iface,:)*nxl + qprime_face(3,2,iquad,iface,:)*nyl
+                unl(:) = u_edge(1,iquad,iface,:)*nxl + v_edge(1,iquad,iface,:)*nyl
+                unr(:) = u_edge(2,iquad,iface,:)*nxl + v_edge(2,iquad,iface,:)*nyl
 
                 h1_l = (alpha_mlswe(1)/gravity)*dp_left(iquad)
                 h1_r = (alpha_mlswe(1)/gravity)*dp_right(iquad)
@@ -111,35 +108,13 @@ module mod_layer_terms
                 hgl = sqrt(gprime*(h1_l * h2_l)/(h1_l + h2_l))
                 hgr = sqrt(gprime*(h1_r * h2_r)/(h1_r + h2_r))
 
-                !claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
-                !clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
-
-                claml = max(sqrt(gravity*h1_l*(1.0-alph)), sqrt(gravity*h1_l*(1.0+alph)))
-                clamr = max(sqrt(gravity*h2_r*(1.0-alph)), sqrt(gravity*h1_r*(1.0+alph)))
-
-                !claml = abs(Ucl) + hgl
-                !clamr = abs(Ucr) + hgr
-
-                !s1_l = abs(unl(1)) + sqrt(qprime_face(1,1,iquad,iface,1))
-                !s1_r = abs(unr(1)) + sqrt(qprime_face(1,2,iquad,iface,1))
-
-                !s2_l = abs(unl(2)) + sqrt(qprime_face(1,1,iquad,iface,1))
-                !s2_r = abs(unr(2)) + sqrt(10qprime_face(1,2,iquad,iface,1))
-
-                s1_l = unl(1) + sqrt((1.0/(2.0*nlayers))*gprime*(h1_l + h2_l))
-                s1_r = unr(1) + sqrt((1.0/(2.0*nlayers))*gprime*(h1_r + h2_r))
-
-                s2_l = unl(1) - sqrt((1.0/(2.0*nlayers))*gprime*(h1_l + h2_l))
-                s2_r = unr(1) - sqrt((1.0/(2.0*nlayers))*gprime*(h1_r + h2_r))
+                claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
+                clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
 
                 clam = 0.5*max(claml, clamr)
-                !clam = 0.5*max(abs(s1_l), abs(s1_r), abs(s2_l), abs(s2_r))
                 
-                !disp(iquad,iface,1) = bcl_flux*max(s1_l, s1_r)
-                !disp(iquad,iface,2) = bcl_flux*max(s2_l, s2_r)
-
                 disp(iquad,iface,1) = bcl_flux*clam
-                disp(iquad,iface,2) = bcl_flux*clam   
+                disp(iquad,iface,2) = bcl_flux*clam
 
             end do
 
@@ -316,7 +291,7 @@ module mod_layer_terms
 
     end subroutine consistency_mass_terms1
 
-    subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave)
+    subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave, disp)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  nface
@@ -333,7 +308,7 @@ module mod_layer_terms
         real, dimension(2,2,nq,nface), intent(in) :: uvb_face_ave
         
         ! Output variables
-        real, dimension(nq,nface,nlayers), intent(out) :: udp_left, vdp_left, udp_right, vdp_right
+        real, dimension(nq,nface,nlayers), intent(out) :: udp_left, vdp_left, udp_right, vdp_right, disp
         
         ! Local variables
         integer :: k, iface, iquad
@@ -366,6 +341,46 @@ module mod_layer_terms
                 
                 udp_right(:,iface,k) = u_right * dp_right
                 vdp_right(:,iface,k) = v_right * dp_right
+            end do
+
+            do iquad = 1,nq
+
+                nxl = normal_vector_q(1,iquad,1,iface)
+                nyl = normal_vector_q(2,iquad,1,iface)
+                
+                ul(1) = qprime_face(2,1,iquad,iface,1) + uvb_face_ave(1,1,iquad,iface)
+                ul(2) = qprime_face(2,1,iquad,iface,2) + uvb_face_ave(1,1,iquad,iface)
+                vl(1) = qprime_face(3,1,iquad,iface,1) + uvb_face_ave(2,1,iquad,iface)
+                vl(2) = qprime_face(3,1,iquad,iface,2) + uvb_face_ave(2,1,iquad,iface)
+
+                ur(1) = qprime_face(2,2,iquad,iface,1) + uvb_face_ave(1,2,iquad,iface)
+                ur(2) = qprime_face(2,2,iquad,iface,2) + uvb_face_ave(1,2,iquad,iface)
+                vr(1) = qprime_face(3,2,iquad,iface,1) + uvb_face_ave(2,2,iquad,iface)
+                vr(2) = qprime_face(3,2,iquad,iface,2) + uvb_face_ave(2,2,iquad,iface)
+
+                unl = ul(:)*nxl + vl(:)*nyl
+                unr = ur(:)*nxl + vr(:)*nyl
+                
+
+                h1_l = (alpha_mlswe(1)/gravity)*dp_left(iquad)
+                h1_r = (alpha_mlswe(1)/gravity)*dp_right(iquad)
+                h2_l = (alpha_mlswe(2)/gravity)*dp_left(iquad)
+                h2_r = (alpha_mlswe(2)/gravity)*dp_right(iquad)
+
+                Ucl = (h1_l*unl(2) + h2_l*unl(1))/(h1_l + h2_l)
+                Ucr = (h1_r*unr(2) + h2_r*unr(1))/(h1_r + h2_r)
+                
+                hgl = sqrt(gprime*(h1_l * h2_l)/(h1_l + h2_l))
+                hgr = sqrt(gprime*(h1_r * h2_r)/(h1_r + h2_r))
+
+                claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
+                clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
+
+                clam = 0.5*max(claml, clamr)
+                
+                disp(iquad,iface,1) = bcl_flux*clam
+                disp(iquad,iface,2) = bcl_flux*clam
+                
             end do
         end do
         
@@ -542,7 +557,6 @@ module mod_layer_terms
         use mod_input, only : nlayers, adjust_H_vertical_sum
         use mod_face, only: imapl_q, imapr_q
         use mod_Tensorproduct, only: interpolate_layer_from_quad_to_node_1d, compute_gradient_quad
-        !use mod_barotropic_terms, only: evaluate_quprime1
 
         implicit none
 
@@ -774,25 +788,29 @@ module mod_layer_terms
         ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic 
         ! time interval.
 
-        do I = 1, npoin_q
+        if(adjust_H_vertical_sum == 1) then 
 
-            if(adjust_H_vertical_sum == 1) then 
+            do I = 1, npoin_q
 
                 acceleration = 0.0
                 if (pbprime(I) > 0.0) then
                     acceleration = (H_ave(I) - sum(H_r(I,:))) / pbprime(I)
                 end if
                 H_r(I,:) = H_r(I,:) + dpprime_H(I,:) * acceleration
-    
-            elseif(adjust_H_vertical_sum == 2) then 
+            end do
+
+        elseif(adjust_H_vertical_sum == 2) then 
+
+            do I = 1, npoin_q
                 weight = 1.0
                 acceleration = sum(H_r(I,:))
                 if(acceleration > 0.0) then 
                     weight = H_ave(I) / acceleration
                 end if
                 H_r(I,:) = H_r(I,:) * weight
-            end if
-        end do
+            end do
+        end if
+        
 
         do iface = 1, nface
             el = face(7,iface)
@@ -877,20 +895,6 @@ module mod_layer_terms
                     H_r_face(2,iquad,iface,:) = H_r_face(2,iquad,iface,:) * weight
                 end if
 
-                ! ! Wall Boundary conditions
-
-                ! if(er == -4) then 
-
-                !     il=imapl_q(1,iquad,1,iface)
-                !     jl=imapl_q(2,iquad,1,iface)
-                !     kl=imapl_q(3,iquad,1,iface)
-                !     I=intma_dg_quad(il,jl,kl,el)
-
-                !     H_r_face(1,iquad,iface,:) = H_r(I,:)
-                !     H_r_face(2,iquad,iface,:) = H_r(I,:)
-
-                ! end if
-
             end do
         end do
 
@@ -943,135 +947,6 @@ module mod_layer_terms
         tau_bot_int(2,:,nlayers) = tau_bot_ave(2,:)
     
     end subroutine layer_windbot_stress_terms
-
-    subroutine limiter_Positivity_Preserving_layers_mass(q_df)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
-        use mod_input, only : nlayers
-        
-        implicit none
-
-        !global arrays
-        real, intent(inout) :: q_df(3,npoin,nlayers)
-
-        !local arrays
-        real, dimension(npts) :: qlocal, qlim
-        real :: theta, qmean, qmin
-        real :: eps, rho
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !Define Constants
-        eps=1.0e-13
-
-        !loop through elements
-        do k = 1,nlayers
-            do e = 1,nelem
-
-                !Store local DOFs and compute Mean
-                ii=0
-                do j=1,ngly
-                    do i=1,nglx
-                        Ip = intma(i,j,1,e)
-                        ii=ii+1
-                        inodes(ii) = Ip
-                        !Store Primitive Variables
-                        qlocal(ii) = q_df(1,Ip,k)
-                    end do !i
-                end do !j
-
-                qmean = sum(qlocal(:))/npts !area of canonical element in 3D (4 in 2D)
-
-                !Compute Weight
-                qmin = minval(qlocal(:))
-                theta = min(1.0, (qmean - eps)/(abs(qmean - qmin)))
-
-                !Apply Weighted combination of Mean Value and High-Order Solution
-                do ii=1,npts
-                    qlim(ii) = qmean + theta*(qlocal(ii) - qmean)
-                    if (qmin == 0.0 .and. qmean == 0.0) qlim(ii) = 0.0
-                end do !ii
-
-                !Check for Positivity and Store Values
-                do ii=1,npts
-                    Ip = inodes(ii)
-                    qlim(ii) = max(0.0, qlim(ii))
-                    q_df(1,Ip,k) = qlim(ii) 
-                end do !ii
-
-            end do !e
-        end do !k
-
-    end subroutine limiter_Positivity_Preserving_layers_mass
-
-    subroutine limiter_Positivity_Preserving_layers_mom(q_df, dp_df)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
-        use mod_input, only : nlayers
-    
-
-        implicit none
-
-        !global arrays
-        real, intent(inout) :: q_df(2,npoin,nlayers)
-        real, intent(in) :: dp_df(npoin,nlayers)
-
-        !local arrays
-        real, dimension(3,npts) :: qlocal, qlim
-        real, dimension(3) :: qmean, qmin
-        real :: eps, rho, theta
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !Define Constants
-        eps=1.0e-13
-
-        !loop through elements
-        do k = 1,nlayers
-            do e=1,nelem
-
-                !Store local DOFs and compute Mean
-                ii=0
-                do j=1,ngly
-                    do i=1,nglx
-                        Ip = intma(i,j,1,e)
-                        ii=ii+1
-                        inodes(ii) = Ip
-                        !Store Primitive Variables
-                        qlocal(1,ii) = dp_df(Ip,k)
-                        do m = 2,3
-                            qlocal(m,ii) = q_df(m-1,Ip,k)
-                        end do !m
-                    end do !i
-                end do !j
-
-                qmean(:) = sum(qlocal(:,:),dim=2)/npts !area of canonical element in 3D (4 in 2D)
-
-                !Compute Weight
-                do m=1,3
-                    qmin(m) = minval(qlocal(m,:))
-                end do !m
-
-                theta = min(1.0, (qmean(1) - eps)/abs(qmean(1) - qmin(1)))
-
-                !Apply Weighted combination of Mean Value and High-Order Solution
-                do ii=1,npts
-                    do m=2,3
-                        qlim(m,ii) = qmean(m) + theta*(qlocal(m,ii) - qmean(m))
-                        if (qmin(m) == 0.0 .and. qmean(m) == 0.0) qlim(m,ii) = 0.0
-                    end do !m
-                end do !ii
-
-                !Check for Positivity and Store Values
-                do ii=1,npts
-                    Ip = inodes(ii)
-                    q_df(:,Ip,k) = qlim(2:3,ii)
-                end do !ii
-
-            end do !e
-        end do !k
-
-    end subroutine limiter_Positivity_Preserving_layers_mom
 
     subroutine velocity_df(q_df, qb_df, flag_pred)
 
@@ -1162,8 +1037,6 @@ module mod_layer_terms
         real, dimension(npoin_q) :: ubar, vbar
 
         q(2:3,:,:) = 0.0
-      
-        ! do k = 1, nlayers
 
         do Iq = 1,npoin_q
             do ip = 1,npts
@@ -1176,9 +1049,6 @@ module mod_layer_terms
 
             end do
         end do
-
-        ! call layer_mom_boundary(q)
-        ! end do
 
     end subroutine evaluate_mom
 
@@ -1250,6 +1120,132 @@ module mod_layer_terms
     
     end subroutine evaluate_mom_face
 
+    subroutine evaluate_mom_mass(q,qprime,q_df,qb)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
+        use mod_input, only: nlayers
+
+        use mod_initial, only: psih, indexq, alpha_mlswe, pbprime
+        use mod_constants, only: gravity
+
+        implicit none
+      
+        real, dimension(3,npoin,nlayers), intent(in) :: q_df
+        real, dimension(4,npoin_q), intent(in) :: qb
+        real, dimension(3,npoin_q,nlayers), intent(out) :: q, qprime
+        
+
+        integer :: k, e, kquad,jquad, iquad, Iq, m, n, l,I, ip
+        real :: hi
+        real, dimension(npoin_q) :: pb_temp, one_plus_eta_temp
+
+        q = 0.0
+        qprime = 0.0
+        pb_temp = 0.0
+
+        do Iq = 1,npoin_q
+            do ip = 1,npts
+
+                I = indexq(Iq,ip)
+                hi = psih(Iq,ip)
+                
+                q(1,Iq,:) = q(1,Iq,:) + q_df(1,I,:)*hi
+                q(2,Iq,:) = q(2,Iq,:) + q_df(2,I,:)*hi
+                q(3,Iq,:) = q(3,Iq,:) + q_df(3,I,:)*hi
+
+            end do 
+        end do
+
+        pb_temp(:) = sum(q(1,:,:),dim=2)
+      
+        one_plus_eta_temp(:) = pb_temp(:) / pbprime(:)
+        do k = 1, nlayers
+            qprime(1,:,k) = q(1,:,k) / one_plus_eta_temp(:)
+            qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
+            qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
+        end do
+
+    end subroutine evaluate_mom_mass
+
+    subroutine evaluate_mom_mass_face(q_face,qprime_face,q,qprime)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq
+        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        implicit none
+
+        real, dimension(3, 2, nq, nface, nlayers), intent(inout) :: q_face, qprime_face
+        real, dimension(3, npoin_q, nlayers), intent(in) :: q, qprime
+    
+        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, kl, kr, jquad
+        real :: nx, ny, un(nlayers)
+    
+        q_face = 0.0
+        qprime_face = 0.0
+    
+        ! do k = 1, nlayers
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il = imapl_q(1,iquad,1,iface)
+                jl = imapl_q(2,iquad,1,iface)
+                kl = imapl_q(3,iquad,1,iface)
+
+                I = intma_dg_quad(il,jl,kl,el)
+
+                q_face(:,1,iquad,iface,:) = q(:,I,:)
+                qprime_face(:,1,iquad,iface,:) = qprime(:,I,:)
+
+                if(er > 0) then
+
+                    ir = imapr_q(1,iquad,1,iface)
+                    jr = imapr_q(2,iquad,1,iface)
+                    kr = imapr_q(3,iquad,1,iface)
+
+                    I = intma_dg_quad(ir,jr,kr,er)
+
+                    q_face(:,2,iquad,iface,:) = q(:,I,:)
+                    qprime_face(:,2,iquad,iface,:) = qprime(:,I,:)
+
+                else 
+                    q_face(:,2,iquad,iface,:) = q_face(:,1,iquad,iface,:)
+                    qprime_face(:,2,iquad,iface,:) = qprime_face(:,1,iquad,iface,:)
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = q(2,I,:)*nx + q(3,I,:)*ny
+
+                        q_face(2,2,iquad,iface,:) = q(2,I,:) - 2.0*un*nx
+                        q_face(3,2,iquad,iface,:) = q(3,I,:) - 2.0*un*ny
+
+                        un = qprime(2,I,:)*nx + qprime(3,I,:)*ny
+
+                        qprime_face(2,2,iquad,iface,:) = qprime(2,I,:) - 2.0*un*nx
+                        qprime_face(3,2,iquad,iface,:) = qprime(3,I,:) - 2.0*un*ny
+
+                    elseif(er == -2) then 
+                        q_face(2:3,2,iquad,iface,:) = -q_face(2:3,1,iquad,iface,:)
+                        qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
+                        
+                    end if
+                end if
+
+            end do
+        end do
+        ! end do
+    
+    end subroutine evaluate_mom_mass_face
+
     subroutine layer_mom_boundary_df(q)
 
         use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl,nq
@@ -1265,102 +1261,39 @@ module mod_layer_terms
         integer :: iface, n, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,k
         real :: nx, ny, upnl(nlayers)
 
+        if(mlswe_bc_strong) then 
+            do iface = 1, nface                 
 
-        do iface = 1, nface                 
+                !Store Left Side Variables
+                ilocl = face(5,iface)
+                ilocr = face(6,iface)
+                el = face(7,iface)
+                er = face(8,iface)
 
-            !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
-            el = face(7,iface)
-            er = face(8,iface)
+                if(er == -4) then
+            
+                    do n = 1, ngl
 
-            if(er == -4) then
+                        il=imapl(1,n,1,iface)
+                        jl=imapl(2,n,1,iface)
+                        kl=imapl(3,n,1,iface)
+                        I=intma(il,jl,kl,el)
+
+                        nx = normal_vector(1,n,1,iface)
+                        ny = normal_vector(2,n,1,iface)
+
+                        upnl = q(1,I,:)*nx + q(2,I,:)*ny
+
+                        q(1,I,:) = q(1,I,:) - upnl*nx
+                        q(2,I,:) = q(2,I,:) - upnl*ny
+
+                    end do
+                end if
         
-                do n = 1, ngl
-
-                    il=imapl(1,n,1,iface)
-                    jl=imapl(2,n,1,iface)
-                    kl=imapl(3,n,1,iface)
-                    I=intma(il,jl,kl,el)
-
-                    nx = normal_vector(1,n,1,iface)
-                    ny = normal_vector(2,n,1,iface)
-
-                    upnl = q(1,I,:)*nx + q(2,I,:)*ny
-
-                    q(1,I,:) = q(1,I,:) - upnl*nx
-                    q(2,I,:) = q(2,I,:) - upnl*ny
-
-                end do
-            end if
-    
-        end do
+            end do
+        end if
       
     end subroutine layer_mom_boundary_df 
-
-    subroutine layer_mom_boundary(q)
-
-        use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl,nq
-        use mod_grid, only:  npoin_q, intma_dg_quad, nface, face,mod_grid_get_face_nq
-        use mod_initial, only: pbprime_face
-        use mod_face, only: imapl_q, imapr_q, normal_vector_q
-        use mod_input, only: nlayers
-
-        implicit none
-
-        real, intent(inout) :: q(3,npoin_q,nlayers)
-
-        integer :: iface, n, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,k
-        real :: nx, ny, upnl(nlayers)
-
-      
-        ! do k = 1,nlayers
-        do iface = 1, nface                 
-
-            !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
-            el = face(7,iface)
-            er = face(8,iface)
-
-            if(er == -4) then
-        
-                do n = 1, nq
-
-                    il=imapl_q(1,n,1,iface)
-                    jl=imapl_q(2,n,1,iface)
-                    kl=imapl_q(3,n,1,iface)
-                    I=intma_dg_quad(il,jl,kl,el)
-
-                    nx = normal_vector_q(1,n,1,iface)
-                    ny = normal_vector_q(2,n,1,iface)
-
-                    upnl = q(2,I,:)*nx + q(3,I,:)*ny
-
-                    q(2,I,:) = q(2,I,:) - upnl*nx
-                    q(3,I,:) = q(3,I,:) - upnl*ny
-
-                end do
-            elseif(er == -2) then
-        
-                do n = 1, nq
-
-                    il=imapl_q(1,n,1,iface)
-                    jl=imapl_q(2,n,1,iface)
-                    kl=imapl_q(3,n,1,iface)
-                    I=intma_dg_quad(il,jl,kl,el)
-
-                    q(2,I,:) = 0.0
-                    q(3,I,:) = 0.0
-
-                end do
-            end if
-    
-        end do
-
-        ! end do
-      
-    end subroutine layer_mom_boundary
 
     
     subroutine shear_stress_system(uv,q)
@@ -1610,84 +1543,6 @@ module mod_layer_terms
 
     end subroutine evaluate_grad_layers
 
-    subroutine bcl_wet_dry(q_df)
-
-        use mod_grid, only: npoin, npoin_q, nelem, intma
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-        use mod_constants, only: gravity
-        use mod_basis, only: npts, nglx, ngly
-    
-        implicit none
-        
-        real, intent(inout) :: q_df(3,npoin,nlayers)
-
-        integer :: Iq,e,k,ii,jj,Ip,i,j
-        real :: h_limit, h
-        real :: theta, qmin, depth_dry, hmean, eps
-        real, dimension(3,npts) :: qlocal
-        real, dimension(npts) :: hh
-        real, dimension(3) :: qmean
-        integer :: inode(npts)
-
-        !Define Constants
-        eps=1.0e-3
-
-        depth_dry = 2.0
-
-        do k = 1,nlayers
-
-            !loop through elements
-            do e=1,nelem
-
-                !Store local DOFs and compute Mean
-                ii=0
-                do j=1,ngly
-                    do i=1,nglx
-                        Ip = intma(i,j,1,e)
-                        ii=ii+1
-                        inode(ii) = Ip
-                        !Store Primitive Variables
-                        qlocal(1,ii) = q_df(1,Ip,k)
-                        qlocal(2,ii) = q_df(2,Ip,k)
-                        qlocal(3,ii) = q_df(3,Ip,k)
-                    end do !i
-                end do !j
-
-                !Compute Weight
-                hh = (sum(alpha_mlswe(:))/gravity)*qlocal(1,:)
-                qmin = minval(hh)
-
-                if(qmin < depth_dry) then 
-
-                    qmean(:) = sum(qlocal(:,:),dim=2)/npts !area of canonical element in 3D (4 in 2D)
-                    hmean = sum(hh) / npts
-
-                    if(hmean < depth_dry) then
-                        do ii=1,npts
-                            Ip = inode(ii)
-                            q_df(1,Ip,k) = (gravity/alpha_mlswe(nlayers)) * depth_dry
-                            q_df(2:3,Ip,k) = 0.0
-                        end do !ii
-                    else 
-
-                        theta = min(1.0, (hmean - eps)/abs(hmean - qmin))
-
-                        !Apply Weighted combination of Mean Value and High-Order Solution
-                        do ii=1,npts
-                            Ip = inode(ii)
-                            q_df(1,Ip,k) = qmean(1) + theta*(qlocal(1,ii) - qmean(1))
-                            q_df(2,Ip,k) = qmean(2) + theta*(qlocal(2,ii) - qmean(2))
-                            q_df(3,Ip,k) = qmean(3) + theta*(qlocal(3,ii) - qmean(3))
-                        end do !ii
-                    end if 
-                end if 
-
-            end do !e
-
-        end do
-    
-    end subroutine bcl_wet_dry
 
     subroutine bcl_wet_dry_mass(q,q_df,neg_pb_pos,neg_pb_pos_q)
 
@@ -1787,5 +1642,596 @@ module mod_layer_terms
         end do 
     
     end subroutine bcl_wet_dry_mom
+
+    subroutine bcl_extract_df_face(q_df_face, q_df)
+
+        implicit none
+
+        real, intent(inout) :: q_df_face(3,2,ngl,nface,nlayers)
+        real, intent(in) :: q_df(3,npoin, nlayers)
+
+        integer :: iface, n, il, jl, ir, jr, el, er, I, kl, kr
+
+        ! Compute values of certain barotropic functions at quadrature points
+        ! in each cell and endpoints of each cell, at barotropic
+        ! time level m+1.
+        ! The values at endpoints should be interpreted as one-sided limits.
+      
+        ! In the case of  pbub,  pbvb,  and  pbpert,  use degrees of freedom 
+        ! and basis functions.  In the case of  ub  and  vb,  use division.
+      
+        q_df_face = 0.0
+      
+      
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do n = 1, ngl
+
+                ! Left
+                il=imapl(1,n,1,iface)
+                jl=imapl(2,n,1,iface)
+                kl=imapl(3,n,1,iface)
+                I=intma(il,jl,kl,el)
+
+                q_df_face(1:3,1,n,iface,:) = q_df(1:3,I,:)
+
+                if(er > 0) then
+                    ! Right
+                    ir=imapr(1,n,1,iface)
+                    jr=imapr(2,n,1,iface)
+                    kr=imapr(3,n,1,iface)
+                    I=intma(ir,jr,kr,er)
+
+                    q_df_face(1:3,2,n,iface,:) = q_df(1:3,I,:)
+                else
+
+                    q_df_face(1:3,2,n,iface,:) = q_df_face(1:3,1,n,iface,:)
+                end if
+            end do
+      
+        end do
+      
+    end subroutine bcl_extract_df_face
+
+    subroutine bcl_extract_dp_df_face(dp_df_face, q_df)
+
+        implicit none
+
+        real, intent(inout) :: dp_df_face(1,2,ngl,nface,nlayers)
+        real, intent(in) :: q_df(3,npoin, nlayers)
+
+        integer :: iface, n, il, jl, ir, jr, el, er, I, kl, kr
+
+        ! Compute values of certain barotropic functions at quadrature points
+        ! in each cell and endpoints of each cell, at barotropic
+        ! time level m+1.
+        ! The values at endpoints should be interpreted as one-sided limits.
+      
+        ! In the case of  pbub,  pbvb,  and  pbpert,  use degrees of freedom 
+        ! and basis functions.  In the case of  ub  and  vb,  use division.
+      
+        dp_df_face = 0.0
+    
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do n = 1, ngl
+
+                ! Left
+                il=imapl(1,n,1,iface)
+                jl=imapl(2,n,1,iface)
+                kl=imapl(3,n,1,iface)
+                I=intma(il,jl,kl,el)
+
+                dp_df_face(1,1,n,iface,:) = q_df(1,I,:)
+
+                if(er > 0) then
+                    ! Right
+                    ir=imapr(1,n,1,iface)
+                    jr=imapr(2,n,1,iface)
+                    kr=imapr(3,n,1,iface)
+                    I=intma(ir,jr,kr,er)
+
+                    dp_df_face(1,2,n,iface,:) = q_df(1,I,:)
+                else
+                    dp_df_face(1,2,n,iface,:) = dp_df_face(1,1,n,iface,:)
+                end if
+
+            end do
+      
+        end do
+      
+    end subroutine bcl_extract_dp_df_face
+
+    subroutine bcl_interpolate_face(q_face, qprime_face, q_df_face, qb_face)
+
+        use mod_initial, only: pbprime_face
+
+        implicit none
+
+        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: q_df_face
+        real, dimension(3,2,nq,nface,nlayers), intent(out) :: q_face, qprime_face
+        real, dimension(4,2,nq,nface) :: qb_face
+
+        integer :: iface, ilr, iquad,jquad, n, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,plane_ij,nq_i,nq_j, k
+        real :: un(nlayers), nx, ny, hi
+        real, dimension(2,nq) :: dpf, opef
+
+        ! Compute values of bcl at elements edges (quad)
+      
+        q_face = 0.0
+        qprime_face = 0.0
+      
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            dpf = 0.0
+
+            do k = 1,nlayers
+
+                do iquad = 1, nq
+
+                    do n = 1,ngl
+
+                        hi = psiq(n,iquad)
+
+                        ! Left
+                        q_face(1:3,1,iquad,iface,k) = q_face(1:3,1,iquad,iface,k) + hi*q_df_face(1:3,1,n,iface,k)
+
+                        ! Right
+                        q_face(1:3,2,iquad,iface,k) = q_face(1:3,2,iquad,iface,k) + hi*q_df_face(1:3,2,n,iface,k)
+                    end do
+                end do
+
+                dpf(1,:) = dpf(1,:) + q_face(1,1,:,iface,k)
+                dpf(2,:) = dpf(2,:) + q_face(1,2,:,iface,k)
+            end do
+
+            if(er == -4) then
+
+                do iquad = 1,nq
+
+                    nx = normal_vector_q(1,iquad,1,iface)
+                    ny = normal_vector_q(2,iquad,1,iface)
+
+                    un = nx*q_face(2,1,iquad,iface,:) + ny*q_face(3,1,iquad,iface,:)
+
+                    q_face(2,2,iquad,iface,:) = q_face(2,1,iquad,iface,:) - 2.0*un*nx
+                    q_face(3,2,iquad,iface,:) = q_face(3,1,iquad,iface,:) - 2.0*un*ny
+                end do
+
+            elseif(er == -2) then 
+                do iquad = 1,nq
+                    q_face(2:3,2,iquad,iface,:) = -q_face(2:3,1,iquad,iface,:)
+                end do
+            end if
+
+            ! Face values for dpprime, uprime and vprime
+
+            opef(1,:) = dpf(1,:) / pbprime_face(1,:,iface) 
+            opef(2,:) = dpf(2,:) / pbprime_face(2,:,iface) 
+
+            do k = 1,nlayers
+                qprime_face(1,1,:,iface,k) = q_face(1,1,:,iface,k)/opef(1,:)
+                qprime_face(1,2,:,iface,k) = q_face(1,2,:,iface,k)/opef(2,:)
+
+                qprime_face(2,1,:,iface,k) = q_face(2,1,:,iface,k)/q_face(1,1,:,iface,k) - qb_face(3,1,:,iface)/qb_face(1,1,:,iface)
+                qprime_face(2,2,:,iface,k) = q_face(2,2,:,iface,k)/q_face(1,2,:,iface,k) - qb_face(3,2,:,iface)/qb_face(1,2,:,iface)
+
+                qprime_face(3,1,:,iface,k) = q_face(3,1,:,iface,k)/q_face(1,1,:,iface,k) - qb_face(4,1,:,iface)/qb_face(1,1,:,iface)
+                qprime_face(3,2,:,iface,k) = q_face(3,2,:,iface,k)/q_face(1,2,:,iface,k) - qb_face(4,2,:,iface)/qb_face(1,2,:,iface)
+            end do 
+        end do
+      
+    end subroutine bcl_interpolate_face 
+
+    subroutine bcl_interpolate_face_v1(q_face, qprime_face, q_df_face, qb_face, q_face1, q2)
+
+        use mod_initial, only: pbprime_face, psihg
+        use mod_basis, only: psiqx, psiqy, psiq
+
+        implicit none
+
+        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: q_df_face
+        real, dimension(3,2,nq,nface,nlayers), intent(out) :: q_face, qprime_face
+        real, dimension(4,2,nq,nface) :: qb_face
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face1
+        real, dimension(3,npoin_q,nlayers), intent(in) :: q2
+
+        integer :: iface, ilr, iquad,jquad, n, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,plane_ij,nq_i,nq_j, k, Iq
+        real :: un, nx, ny, hi, q3l(3), q3r(3)
+        real, dimension(2,nq) :: dpf, opef
+
+        ! Compute values of bcl at elements edges (quad)
+      
+        q_face = 0.0
+        qprime_face = 0.0
+      
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            dpf = 0.0
+
+            do k = 1,nlayers
+
+                do iquad = 1, nq
+
+                    do n = 1,ngl
+
+                        hi = psiq(n,iquad)
+
+                        ! Left
+                        q_face(1:3,1,iquad,iface,k) = q_face(1:3,1,iquad,iface,k) + hi*q_df_face(1:3,1,n,iface,k)
+
+                        ! Right
+                        q_face(1:3,2,iquad,iface,k) = q_face(1:3,2,iquad,iface,k) + hi*q_df_face(1:3,2,n,iface,k)
+                    end do
+                end do
+
+                dpf(1,:) = dpf(1,:) + q_face(1,1,:,iface,k)
+                dpf(2,:) = dpf(2,:) + q_face(1,2,:,iface,k)
+            end do
+
+            if(er == -4) then
+
+                q_face(1:3,2,iquad,iface,:) = q_face(1:3,1,iquad,iface,:)
+
+                do iquad = 1,nq
+
+                    nx = normal_vector_q(1,iquad,1,iface)
+                    ny = normal_vector_q(2,iquad,1,iface)
+
+                    do k = 1,nlayers
+                        un = nx*q_face(2,1,iquad,iface,k) + ny*q_face(3,1,iquad,iface,k)
+
+                        q_face(2,2,iquad,iface,k) = q_face(2,1,iquad,iface,k) - 2.0*un*nx
+                        q_face(3,2,iquad,iface,k) = q_face(3,1,iquad,iface,k) - 2.0*un*ny
+                    end do
+                end do
+
+            elseif(er == -2) then 
+                do iquad = 1,nq
+                    q_face(2:3,2,iquad,iface,:) = -q_face(2:3,1,iquad,iface,:)
+                end do
+            end if
+
+            ! Face values for dpprime, uprime and vprime
+
+            opef(1,:) = dpf(1,:) / pbprime_face(1,:,iface) 
+            opef(2,:) = dpf(2,:) / pbprime_face(2,:,iface) 
+
+            do k = 1,nlayers
+                qprime_face(1,1,:,iface,k) = q_face(1,1,:,iface,k)/opef(1,:)
+                qprime_face(1,2,:,iface,k) = q_face(1,2,:,iface,k)/opef(2,:)
+
+                qprime_face(2,:,:,iface,k) = q_face1(2,:,:,iface,k)/q_face1(1,:,:,iface,k) - qb_face(3,:,:,iface)/qb_face(1,:,:,iface)
+                qprime_face(3,:,:,iface,k) = q_face1(3,:,:,iface,k)/q_face1(1,:,:,iface,k) - qb_face(4,:,:,iface)/qb_face(1,:,:,iface)
+            end do 
+        end do
+      
+    end subroutine bcl_interpolate_face_v1
+
+    subroutine bcl_dp_face(dpprime_face, dp_df_face)
+
+        use mod_initial, only: pbprime_face
+
+        implicit none
+
+        real, dimension(1,2,ngl,nface,nlayers), intent(in) :: dp_df_face
+        real, dimension(2,nq,nface,nlayers), intent(out) :: dpprime_face
+
+        integer :: iface, ilr, iquad,jquad, n, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,plane_ij,nq_i,nq_j, k
+        real :: un(nlayers), nx, ny, hi
+        real, dimension(2,nq) :: dpf, opef
+        real :: dp_face(2,nq,nlayers)
+
+        ! Compute values of bcl at elements edges (quad)
+      
+        dpprime_face = 0.0
+      
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            dpf = 0.0
+            dp_face = 0.0
+
+            do k = 1,nlayers
+
+                do iquad = 1, nq
+
+                    do n = 1,ngl
+
+                        hi = psiq(n,iquad)
+
+                        ! Left
+                        dp_face(1,iquad,k) = dp_face(1,iquad,k) + hi*dp_df_face(1,1,n,iface,k)
+
+                        ! Right
+                        dp_face(2,iquad,k) = dp_face(2,iquad,k) + hi*dp_df_face(1,2,n,iface,k)
+                    end do
+                end do
+
+                dpf(1,:) = dpf(1,:) + dp_face(1,:,k)
+                dpf(2,:) = dpf(2,:) + dp_face(2,:,k)
+            end do
+
+            ! Face values for dpprime, uprime and vprime
+
+            opef(1,:) = dpf(1,:) / pbprime_face(1,:,iface) 
+            opef(2,:) = dpf(2,:) / pbprime_face(2,:,iface) 
+
+            do k = 1,nlayers
+                dpprime_face(1,:,iface,k) = dp_face(1,:,k)/opef(1,:)
+                dpprime_face(2,:,iface,k) = dp_face(2,:,k)/opef(2,:)
+            end do 
+        end do
+      
+    end subroutine bcl_dp_face
+
+    subroutine evaluate_mom_face_v1(q_face, qprime_face,q_df,q_df_face,qb_df_face)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq,ngl
+        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face, npoin, intma
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        implicit none
+
+        real, dimension(3, 2, nq, nface, nlayers), intent(inout) :: q_face, qprime_face
+        real, dimension(3, npoin, nlayers), intent(in) :: q_df
+        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: q_df_face
+        real, dimension(4,2,ngl,nface) :: qb_df_face
+    
+        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, kl, kr, jquad,n,Iq
+        real :: nx, ny, un(nlayers), hi
+    
+        q_face(2:3,:,:,:,:) = 0.0
+        qprime_face(2:3,:,:,:,:) = 0.0
+    
+        ! do k = 1, nlayers
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il = imapl_q(1,iquad,1,iface)
+                jl = imapl_q(2,iquad,1,iface)
+                kl = imapl_q(3,iquad,1,iface)
+
+                Iq = intma_dg_quad(il,jl,kl,el)
+
+                do k = 1,nlayers
+
+                    do n = 1,ngl
+
+                        hi = psiq(n,iquad)
+
+                        q_face(2:3,1,iquad,iface,k) = q_face(2:3,1,iquad,iface,k) + hi*q_df_face(2:3,1,n,iface,k)
+                        qprime_face(2,1,iquad,iface,k) = qprime_face(2,1,iquad,iface,k) + hi*(q_df_face(2,1,n,iface,k)/q_df_face(1,1,n,iface,k) &
+                                                                    - qb_df_face(3,1,n,iface)/qb_df_face(1,1,n,iface))
+                        qprime_face(3,1,iquad,iface,k) = qprime_face(3,1,iquad,iface,k) + hi*(q_df_face(3,1,n,iface,k)/q_df_face(1,1,n,iface,k) &
+                                                                    - qb_df_face(4,1,n,iface)/qb_df_face(1,1,n,iface))
+                    end do
+                end do
+
+                if(er > 0) then
+
+                    ir = imapr_q(1,iquad,1,iface)
+                    jr = imapr_q(2,iquad,1,iface)
+                    kr = imapr_q(3,iquad,1,iface)
+
+                    Iq = intma_dg_quad(ir,jr,kr,er)
+
+                    do n = 1,ngl
+
+                        hi = psiq(n,iquad)
+
+                        q_face(2:3,2,iquad,iface,k) = q_face(2:3,2,iquad,iface,k) + hi*q_df_face(2:3,2,n,iface,k)
+                        qprime_face(2,2,iquad,iface,k) = qprime_face(2,2,iquad,iface,k) + hi*(q_df_face(2,2,n,iface,k)/q_df_face(1,2,n,iface,k) &
+                                                                    - qb_df_face(3,2,n,iface)/qb_df_face(1,2,n,iface))
+                        qprime_face(3,2,iquad,iface,k) = qprime_face(3,2,iquad,iface,k) + hi*(q_df_face(3,2,n,iface,k)/q_df_face(1,1,n,iface,k) &
+                                                                    - qb_df_face(4,2,n,iface)/qb_df_face(1,2,n,iface))
+                    end do
+
+                else 
+                    q_face(2:3,2,iquad,iface,:) = q_face(2:3,1,iquad,iface,:)
+                    qprime_face(2:3,2,iquad,iface,:) = qprime_face(2:3,1,iquad,iface,:)
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = q_face(2,1,iquad,iface,:)*nx + q_face(3,1,iquad,iface,:)*ny
+
+                        q_face(2,2,iquad,iface,:) = q_face(2,1,iquad,iface,:) - 2.0*un*nx
+                        q_face(3,2,iquad,iface,:) = q_face(3,1,iquad,iface,:) - 2.0*un*ny
+
+                        un = qprime_face(2,1,iquad,iface,:)*nx + qprime_face(3,1,iquad,iface,:)*ny
+
+                        qprime_face(2,2,iquad,iface,:) = qprime_face(2,1,iquad,iface,:) - 2.0*un*nx
+                        qprime_face(3,2,iquad,iface,:) = qprime_face(3,1,iquad,iface,:) - 2.0*un*ny
+                    elseif(er == -2) then 
+                        q_face(2:3,2,iquad,iface,:) = -q_face(2:3,1,iquad,iface,:)
+                        qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
+                        
+                    end if
+                end if
+
+            end do
+        end do
+        ! end do
+    
+    end subroutine evaluate_mom_face_v1
+
+    subroutine bcl_evaluate_quprime(quv_df, graduvprime_df_face, qp, qp_face)
+
+        use mod_metrics, only: massinv
+        use mod_basis, only: nqx, nqy, nqz, nq, nglx, ngly, nglz, psiqx, psiqy, psiqz, npts, ngl, psiq
+        use mod_initial, only: psih, indexq, dpsidx, dpsidy, wjac
+
+        implicit none
+
+        real, dimension(4, npoin, nlayers), intent(out) :: quv_df
+        real, dimension(4,2,ngl,nface,nlayers), intent(out) :: graduvprime_df_face
+
+        real, dimension(2, npoin_q, nlayers), intent(in) :: qp
+        real, dimension(2, 2, nq, nface, nlayers), intent(in) :: qp_face
+
+        real :: nxl, nyl, dhdx, dhdy, wq, hi
+        integer :: Iq, ip, I, iface, el, er, iquad, ir, jr, kr, il, jl, kl, n,k
+        real, dimension(nlayers) :: var_u, var_v, um, vm
+
+        graduvprime_df_face = 0.0
+        quv_df = 0.0
+
+        do Iq = 1,npoin_q
+            
+            wq = wjac(Iq)
+            var_u = qp(1,Iq,:)
+            var_v = qp(2,Iq,:)
+
+            do ip = 1, npts
+
+                I = indexq(Iq,ip)
+
+                !Xi derivatives
+                dhdx = dpsidx(Iq,ip)
+                !Eta derivatives
+                dhdy = dpsidy(Iq,ip)
+
+                quv_df(1,I,:) = quv_df(1,I,:) - wq*dhdx*var_u(:)
+                quv_df(2,I,:) = quv_df(2,I,:) - wq*dhdy*var_u(:)
+
+                quv_df(3,I,:) = quv_df(3,I,:) - wq*dhdx*var_v(:)
+                quv_df(4,I,:) = quv_df(4,I,:) - wq*dhdy*var_v(:)
+
+            end do
+        end do
+
+        do iface = 1,nface 
+
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                wq = jac_faceq(iquad,1,iface)
+
+                nxl = normal_vector_q(1,iquad,1,iface)
+                nyl = normal_vector_q(2,iquad,1,iface)
+
+                um = 0.5*(qp_face(1,1,iquad,iface,:) + qp_face(1,2,iquad,iface,:))
+                vm = 0.5*(qp_face(2,1,iquad,iface,:) + qp_face(2,2,iquad,iface,:))
+
+                do n = 1, ngl
+
+                    hi = psiq(n,iquad)
+                    
+                    il = imapl(1,n,1,iface)
+                    jl = imapl(2,n,1,iface)
+                    kl = imapl(3,n,1,iface)
+
+                    I = intma(il,jl,kl,el)
+
+                    quv_df(1,I,:) = quv_df(1,I,:) + wq*hi*nxl*um(:)
+                    quv_df(2,I,:) = quv_df(2,I,:) + wq*hi*nyl*um(:)
+
+                    quv_df(3,I,:) = quv_df(3,I,:) + wq*hi*nxl*vm(:)
+                    quv_df(4,I,:) = quv_df(4,I,:) + wq*hi*nyl*vm(:)
+
+                    if(er > 0) then
+                            
+                        ir = imapr(1,n,1,iface)
+                        jr = imapr(2,n,1,iface)
+                        kr = imapr(3,n,1,iface)
+
+                        I = intma(ir,jr,kr,er)
+
+                        quv_df(1,I,:) = quv_df(1,I,:) - wq*hi*nxl*um(:)
+                        quv_df(2,I,:) = quv_df(2,I,:) - wq*hi*nyl*um(:)
+
+                        quv_df(3,I,:) = quv_df(3,I,:) - wq*hi*nxl*vm(:)
+                        quv_df(4,I,:) = quv_df(4,I,:) - wq*hi*nyl*vm(:)
+
+                    end if
+
+                end do
+            end do 
+        end do
+
+        do k = 1,nlayers
+
+            quv_df(1,:,k) = massinv(:)*quv_df(1,:,k)
+            quv_df(2,:,k) = massinv(:)*quv_df(2,:,k)
+            quv_df(3,:,k) = massinv(:)*quv_df(3,:,k)
+            quv_df(4,:,k) = massinv(:)*quv_df(4,:,k)
+        end do 
+
+        do iface = 1,nface 
+
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do n = 1, ngl
+
+                hi = psiq(n,iquad)
+                
+                il = imapl(1,n,1,iface)
+                jl = imapl(2,n,1,iface)
+                kl = imapl(3,n,1,iface)
+
+                I = intma(il,jl,kl,el)
+
+                graduvprime_df_face(1,1,n,iface,:) = quv_df(1,I,:)
+                graduvprime_df_face(2,1,n,iface,:) = quv_df(2,I,:)
+                graduvprime_df_face(3,1,n,iface,:) = quv_df(3,I,:)
+                graduvprime_df_face(4,1,n,iface,:) = quv_df(4,I,:)
+            end do
+
+            if(er > 0) then
+
+                do n = 1, ngl
+                    
+                    ir = imapr(1,n,1,iface)
+                    jr = imapr(2,n,1,iface)
+                    kr = imapr(3,n,1,iface)
+
+                    I = intma(ir,jr,kr,er)
+
+                    graduvprime_df_face(1,2,n,iface,:) = quv_df(1,I,:)
+                    graduvprime_df_face(2,2,n,iface,:) = quv_df(2,I,:)
+                    graduvprime_df_face(3,2,n,iface,:) = quv_df(3,I,:)
+                    graduvprime_df_face(4,2,n,iface,:) = quv_df(4,I,:)
+                end do 
+
+            else 
+
+                graduvprime_df_face(1,2,:,iface,:) = graduvprime_df_face(1,1,:,iface,:)
+                graduvprime_df_face(2,2,:,iface,:) = graduvprime_df_face(2,1,:,iface,:)
+                graduvprime_df_face(3,2,:,iface,:) = graduvprime_df_face(3,1,:,iface,:)
+                graduvprime_df_face(4,2,:,iface,:) = graduvprime_df_face(4,1,:,iface,:)
+            end if
+        end do
+
+    end subroutine bcl_evaluate_quprime
     
 end module mod_layer_terms

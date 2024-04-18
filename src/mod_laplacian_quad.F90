@@ -6,14 +6,16 @@ module mod_laplacian_quad
     use mod_face, only: imapl_q, imapr_q, normal_vector_q, jac_faceq, imapl, imapr
     use mod_input, only: visc_mlswe, nlayers, mass_exact, xdims, ydims, nelx
     use mod_basis, only: ngl, nq, psiq, npts
-    use mod_barotropic_terms, only: evaluate_quprime2, massinv_rhs, compute_gradient_uv
+    use mod_barotropic_terms, only: evaluate_quprime2, massinv_rhs, compute_gradient_uv, btp_evaluate_quprime
     use mod_metrics, only: massinv, jacq
     use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
+    use mod_layer_terms, only: bcl_evaluate_quprime
 
     implicit none
 
     public :: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_v3, &
-                create_laplacian_mlswe_v4
+                create_laplacian_mlswe_v4, create_laplacian_mlswe_v5, create_laplacian_mlswe_v6, &
+                create_laplacian_mlswe_layer_v5, btp_create_laplacian, bcl_create_laplacian
 
     contains 
 
@@ -159,6 +161,7 @@ module mod_laplacian_quad
 
             call compute_gradient_uv(graduv, Uk)
 
+
             flux_uv_visc(1,:) = flux_uv_visc(1,:) + dpprime(:,k)*graduv(1,1,:)
             flux_uv_visc(2,:) = flux_uv_visc(2,:) + dpprime(:,k)*graduv(1,2,:)
 
@@ -244,6 +247,141 @@ module mod_laplacian_quad
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine create_laplacian_mlswe_v4
+
+    subroutine create_laplacian_mlswe_v5(rhs_lap,grad_uvdp,grad_uvdp_face)
+
+        real, intent (out) :: rhs_lap(2,npoin)
+        
+        real, dimension(4,2,nq,nface), intent (in) :: grad_uvdp_face
+        real, dimension(2,2,npoin_q), intent(in) :: grad_uvdp
+
+        real :: rhs_temp(2,npoin)
+
+        rhs_lap = 0.0
+
+        call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp)
+
+        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
+
+        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
+        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
+
+    end subroutine create_laplacian_mlswe_v5
+
+    subroutine btp_create_laplacian(rhs_lap,qprime,qprime_face,qb,qb_face, dprime_df)
+
+        real, intent (out) :: rhs_lap(2,npoin)
+        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
+        real, dimension(4,npoin_q), intent(in) :: qb
+        real, dimension(4,2,nq,nface), intent(in) :: qb_face
+        real, dimension(npoin,nlayers), intent(in) :: dprime_df
+
+        real, dimension(2,npoin_q) :: Uk
+        real, dimension(4,npoin_q) :: flux_uv_visc
+        real, dimension(2,2,nq,nface) :: Uk_face
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, n,I
+        real, dimension(4, npoin) :: graduv_temp, graduv
+        real, dimension(4,2,ngl,nface) :: graduv_df_face
+        real :: rhs_temp(2,npoin), un(nlayers), nx, ny, ul, ur, vl, vr, dpp, hi
+
+        rhs_lap = 0.0
+
+        do k = 1,nlayers
+            Uk(1,:) = qprime(2,:,k) + qb(3,:)/qb(1,:)
+            Uk(2,:) = qprime(3,:,k) + qb(4,:)/qb(1,:)
+            Uk_face(1,:,:,:) = qprime_face(2,:,:,:,k) + qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            Uk_face(2,:,:,:) = qprime_face(3,:,:,:,k) + qb_face(4,:,:,:)/qb_face(1,:,:,:)
+
+            call btp_evaluate_quprime(graduv_temp,Uk, Uk_face)
+
+            graduv(1,:) = graduv(1,:) + dprime_df(:,k)*graduv_temp(1,:)
+            graduv(2,:) = graduv(2,:) + dprime_df(:,k)*graduv_temp(2,:)
+            graduv(3,:) = graduv(3,:) + dprime_df(:,k)*graduv_temp(3,:)
+            graduv(4,:) = graduv(4,:) + dprime_df(:,k)*graduv_temp(4,:)
+
+        end do
+
+        do iface = 1,nface 
+
+            iel = face(7,iface)
+            ier = face(8,iface)
+
+            do n = 1, ngl
+
+                hi = psiq(n,iquad)
+                
+                il = imapl(1,n,1,iface)
+                jl = imapl(2,n,1,iface)
+                kl = imapl(3,n,1,iface)
+
+                I = intma(il,jl,kl,iel)
+
+                graduv_df_face(1,1,n,iface) = graduv(1,I)
+                graduv_df_face(2,1,n,iface) = graduv(2,I)
+                graduv_df_face(3,1,n,iface) = graduv(3,I)
+                graduv_df_face(4,1,n,iface) = graduv(4,I)
+            end do
+
+            if(ier > 0) then
+
+                do n = 1, ngl
+                    
+                    ir = imapr(1,n,1,iface)
+                    jr = imapr(2,n,1,iface)
+                    kr = imapr(3,n,1,iface)
+
+                    I = intma(ir,jr,kr,ier)
+
+                    graduv_df_face(1,2,n,iface) = graduv(1,I)
+                    graduv_df_face(2,2,n,iface) = graduv(2,I)
+                    graduv_df_face(3,2,n,iface) = graduv(3,I)
+                    graduv_df_face(4,2,n,iface) = graduv(4,I)
+                end do 
+
+            else 
+
+                graduv_df_face(1,2,:,iface) = graduv_df_face(1,1,:,iface)
+                graduv_df_face(2,2,:,iface) = graduv_df_face(2,1,:,iface)
+                graduv_df_face(3,2,:,iface) = graduv_df_face(3,1,:,iface)
+                graduv_df_face(4,2,:,iface) = graduv_df_face(4,1,:,iface)
+            end if
+        end do
+
+        call create_communicator_df(graduv_df_face,4)
+
+        call btp_compute_laplacian_IBP(rhs_temp,graduv)
+        call btp_create_rhs_laplacian_flux(rhs_temp,graduv_df_face)
+
+        !Store Solution
+
+        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
+        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
+
+    end subroutine btp_create_laplacian
+
+    subroutine create_laplacian_mlswe_v6(rhs_lap,grad_uvdp,grad_uvdp_face)
+
+        real, intent (out) :: rhs_lap(2,npoin)
+        
+        real, dimension(4,2,nq,nface), intent (in) :: grad_uvdp_face
+        real, dimension(4,npoin_q), intent(in) :: grad_uvdp
+
+        real :: rhs_temp(2,npoin)
+
+        rhs_lap = 0.0
+
+        call create_lap_precommunicator_quad(grad_uvdp_face,4)
+
+        call compute_laplacian_IBP_set2nc_quad(rhs_temp,grad_uvdp)
+        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,grad_uvdp_face)
+
+        call create_lap_postcommunicator_quad(rhs_temp,4)
+
+        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
+        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
+
+    end subroutine create_laplacian_mlswe_v6
 
     subroutine create_laplacian_mlswe_layer_v3(rhs_lap,qprime,qprime_face,uvb,uvb_face)
 
@@ -343,7 +481,7 @@ module mod_laplacian_quad
 
         end do
 
-        call create_communicator_quad_layer(flux_uv_visc_face,4,nlayers)
+        call bcl_create_communicator(flux_uv_visc_face,4,nlayers,nq)
 
         do k = 1,nlayers
 
@@ -358,6 +496,142 @@ module mod_laplacian_quad
         end do
 
     end subroutine create_laplacian_mlswe_layer_v3
+
+    subroutine create_laplacian_mlswe_layer_v5(rhs_lap,qprime,qprime_face,uvb,uvb_face)
+
+        real, intent (out) :: rhs_lap(2,npoin,nlayers)
+        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
+        real, dimension(2,npoin_q), intent(in) :: uvb
+        real, dimension(2,2,nq,nface), intent(in) :: uvb_face
+
+
+        real, dimension(2,npoin_q, nlayers) :: Uk
+        real, dimension(4,npoin_q,nlayers) :: flux_uv_visc
+        real, dimension(2,2,nq,nface,nlayers) :: Uk_face
+        real :: flux_uv_visc_face(4,2,nq,nface,nlayers)
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, n
+        real, dimension(4, npoin,nlayers) :: graduv
+        real, dimension(4,2,ngl,nface,nlayers) :: graduv_df_face
+        real :: rhs_temp(2,npoin,nlayers), un(nlayers), nx, ny, ul, ur, vl, vr, dpp, hi
+
+        rhs_lap = 0.0
+
+        do k = 1,nlayers
+            Uk(:,:,k) = qprime(2:3,:,k) + uvb(:,:)
+            Uk_face(:,:,:,:,k) = qprime_face(2:3,:,:,:,k) + uvb_face(:,:,:,:)
+
+        end do
+
+        call bcl_evaluate_quprime(graduv, graduv_df_face,Uk, Uk_face)
+
+        call bcl_create_communicator(graduv_df_face,4,nlayers,ngl)
+
+        call compute_laplacian_IBP_set2nc_quad_v1(rhs_temp,graduv, qprime(1,:,:))
+        call create_rhs_laplacian_flux_SIPG_quad_v1(rhs_temp,graduv_df_face, qprime_face(1,:,:,:,:))
+
+        !Store Solution
+
+        do k = 1,nlayers
+            rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:,k)
+            rhs_lap(2,:,k) = visc_mlswe*massinv(:)*rhs_temp(2,:,k)
+        end do
+
+    end subroutine create_laplacian_mlswe_layer_v5
+
+    subroutine bcl_create_laplacian(rhs_lap,qprime,qprime_face,uvb,uvb_face, dprime_df)
+
+        real, intent (out) :: rhs_lap(2,npoin,nlayers)
+        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
+        real, dimension(2,npoin_q), intent(in) :: uvb
+        real, dimension(2,2,nq,nface), intent(in) :: uvb_face
+        real, dimension(npoin,nlayers), intent(in) :: dprime_df
+
+        real, dimension(2,npoin_q) :: Uk
+        real, dimension(4,npoin_q) :: flux_uv_visc
+        real, dimension(2,2,nq,nface) :: Uk_face
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, n,I
+        real, dimension(4, npoin) :: graduv_temp
+        real, dimension(4, npoin,nlayers) :: graduv
+        real, dimension(4,2,ngl,nface,nlayers) :: graduv_df_face
+        real :: rhs_temp(2,npoin), nx, ny, ul, ur, vl, vr, dpp, hi
+
+        rhs_lap = 0.0
+
+        do k = 1,nlayers
+            Uk(:,:) = qprime(2:3,:,k) + uvb(:,:)
+            Uk_face(:,:,:,:) = qprime_face(2:3,:,:,:,k) + uvb_face(:,:,:,:)
+
+            call btp_evaluate_quprime(graduv_temp,Uk, Uk_face)
+
+            graduv(1,:,k) = graduv(1,:,k) + dprime_df(:,k)*graduv_temp(1,:)
+            graduv(2,:,k) = graduv(2,:,k) + dprime_df(:,k)*graduv_temp(2,:)
+            graduv(3,:,k) = graduv(3,:,k) + dprime_df(:,k)*graduv_temp(3,:)
+            graduv(4,:,k) = graduv(4,:,k) + dprime_df(:,k)*graduv_temp(4,:)
+
+        end do
+
+        do iface = 1,nface 
+
+            iel = face(7,iface)
+            ier = face(8,iface)
+
+            do n = 1, ngl
+
+                hi = psiq(n,iquad)
+                
+                il = imapl(1,n,1,iface)
+                jl = imapl(2,n,1,iface)
+                kl = imapl(3,n,1,iface)
+
+                I = intma(il,jl,kl,iel)
+
+                graduv_df_face(1,1,n,iface,:) = graduv(1,I,:)
+                graduv_df_face(2,1,n,iface,:) = graduv(2,I,:)
+                graduv_df_face(3,1,n,iface,:) = graduv(3,I,:)
+                graduv_df_face(4,1,n,iface,:) = graduv(4,I,:)
+            end do
+
+            if(ier > 0) then
+
+                do n = 1, ngl
+                    
+                    ir = imapr(1,n,1,iface)
+                    jr = imapr(2,n,1,iface)
+                    kr = imapr(3,n,1,iface)
+
+                    I = intma(ir,jr,kr,ier)
+
+                    graduv_df_face(1,2,n,iface,:) = graduv(1,I,:)
+                    graduv_df_face(2,2,n,iface,:) = graduv(2,I,:)
+                    graduv_df_face(3,2,n,iface,:) = graduv(3,I,:)
+                    graduv_df_face(4,2,n,iface,:) = graduv(4,I,:)
+                end do 
+
+            else 
+
+                graduv_df_face(1,2,:,iface,:) = graduv_df_face(1,1,:,iface,:)
+                graduv_df_face(2,2,:,iface,:) = graduv_df_face(2,1,:,iface,:)
+                graduv_df_face(3,2,:,iface,:) = graduv_df_face(3,1,:,iface,:)
+                graduv_df_face(4,2,:,iface,:) = graduv_df_face(4,1,:,iface,:)
+            end if
+        end do
+
+        call bcl_create_communicator(graduv_df_face,4,nlayers,ngl)
+
+        do k = 1,nlayers
+
+            call btp_compute_laplacian_IBP(rhs_temp,graduv(:,:,k))
+            call btp_create_rhs_laplacian_flux(rhs_temp,graduv_df_face(:,:,:,:,k))
+
+            !Store Solution
+
+            rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:)
+            rhs_lap(2,:,k) = visc_mlswe*massinv(:)*rhs_temp(2,:)
+        end do 
+
+    end subroutine bcl_create_laplacian
 
     subroutine create_rhs_laplacian_flux_SIPG_quad(rhs,gradq_face)
     
@@ -446,6 +720,148 @@ module mod_laplacian_quad
     
     end subroutine create_rhs_laplacian_flux_SIPG_quad
 
+    subroutine create_rhs_laplacian_flux_SIPG_quad_v1(rhs,graduv_df_face, dp_face)
+    
+        implicit none
+    
+        !global arrays
+        real, intent(inout) :: rhs(2,npoin,nlayers)
+        real, intent(in)    :: graduv_df_face(4,2,ngl,nface,nlayers)
+        real, intent(in)    :: dp_face(2,nq,nface,nlayers)
+    
+        !local arrays
+        real, dimension(2) :: qu_mean, qv_mean
+        real, dimension(nq) :: uxl,uxr,uyl,uyr,vxl,vxr,vyl,vyr
+    
+        !local variables
+        real nx, ny, nz
+        real wq
+        integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er, n
+        integer iel, ier, ilocl, ilocr, ip
+        integer iquad, jquad, Iq
+        real, dimension(4,nq,nlayers) :: quvl, quvr
+        real, dimension(nlayers) :: un, flux_qu, flux_qv
+        real, dimension(nq,nlayers) :: dpl, dpr
+    
+        real :: hi, mul, mur,c_jump
+      
+        !Construct FVM-type Operators
+        do iface=1,nface
+            !-------------------------------------
+            !Store Left and Right Side Variables
+            !-------------------------------------
+            ilocl=face(5,iface)
+            iel=face(7,iface)
+            ier=face(8,iface)
+
+            quvl = 0.0; quvr = 0.0
+
+            do iquad = 1,nq
+
+                do n = 1,ngl 
+                    hi = psiq(n,iquad)
+
+                    quvl(1,iquad,:) = quvl(1,iquad,:) + hi*graduv_df_face(1,1,n,iface,:)
+                    quvl(2,iquad,:) = quvl(2,iquad,:) + hi*graduv_df_face(2,1,n,iface,:)
+                    quvl(3,iquad,:) = quvl(3,iquad,:) + hi*graduv_df_face(3,1,n,iface,:)
+                    quvl(4,iquad,:) = quvl(3,iquad,:) + hi*graduv_df_face(4,1,n,iface,:)
+                end do 
+
+                quvl(1,iquad,:) = quvl(1,iquad,:)*dp_face(1,iquad,iface,:)
+                quvl(2,iquad,:) = quvl(2,iquad,:)*dp_face(1,iquad,iface,:)
+                quvl(3,iquad,:) = quvl(3,iquad,:)*dp_face(1,iquad,iface,:)
+                quvl(4,iquad,:) = quvl(4,iquad,:)*dp_face(1,iquad,iface,:)
+
+                if (ier > 0 ) then
+
+                    do n = 1,ngl 
+                        hi = psiq(n,iquad)
+
+                        quvr(1,iquad,:) = quvr(1,iquad,:) + hi*graduv_df_face(1,2,n,iface,:)
+                        quvr(2,iquad,:) = quvr(2,iquad,:) + hi*graduv_df_face(2,2,n,iface,:)
+                        quvr(3,iquad,:) = quvr(3,iquad,:) + hi*graduv_df_face(3,2,n,iface,:)
+                        quvr(4,iquad,:) = quvr(3,iquad,:) + hi*graduv_df_face(4,2,n,iface,:)
+                    end do 
+
+                    quvr(1,iquad,:) = quvr(1,iquad,:)*dp_face(2,iquad,iface,:)
+                    quvr(2,iquad,:) = quvr(2,iquad,:)*dp_face(2,iquad,iface,:)
+                    quvr(3,iquad,:) = quvr(3,iquad,:)*dp_face(2,iquad,iface,:)
+                    quvr(4,iquad,:) = quvr(4,iquad,:)*dp_face(2,iquad,iface,:)
+
+                else
+                    !default values
+                    quvr(:,iquad,:) = quvl(:,iquad,:)
+
+                    if(ier == -4) then 
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = quvl(1,iquad,:)*nx + quvl(2,iquad,:)*ny
+
+                        quvr(1,iquad,:) = quvl(1,iquad,:) - 2.0*un*nx
+                        quvr(2,iquad,:) = quvl(2,iquad,:) - 2.0*un*ny
+
+                        un = quvl(3,iquad,:)*nx + quvl(4,iquad,:)*ny
+
+                        quvr(3,iquad,:) = quvl(3,iquad,:) - 2.0*un*nx
+                        quvr(4,iquad,:) = quvl(4,iquad,:) - 2.0*un*ny
+
+                    end if 
+                end if
+            end do 
+    
+            !----------------------------Left Element
+            do iquad = 1,nq
+
+                wq=jac_faceq(iquad,1,iface)
+
+                !Store normals
+                nx = normal_vector_q(1,iquad,1,iface)
+                ny = normal_vector_q(2,iquad,1,iface)
+
+                flux_qu = nx*0.5*(quvl(1,iquad,:) + quvr(1,iquad,:)) + ny*0.5*(quvl(2,iquad,:) + quvr(2,iquad,:))
+                flux_qv = nx*0.5*(quvl(3,iquad,:) + quvr(3,iquad,:)) + ny*0.5*(quvl(4,iquad,:) + quvr(4,iquad,:))
+
+                !---------------------------------
+                !  Do Gauss-Lobatto Integration
+                !---------------------------------
+
+                do i=1,ngl
+
+                    hi = psiq(i,iquad)
+
+                    !Pointers
+                    il=imapl(1,i,1,iface)
+                    jl=imapl(2,i,1,iface)
+                    kl=imapl(3,i,1,iface)
+                    
+                    ip=intma(il,jl,kl,iel)
+                    
+                    !Update Flux
+                    rhs(1,ip,:) = rhs(1,ip,:) + wq*hi*flux_qu
+                    rhs(2,ip,:) = rhs(2,ip,:) + wq*hi*flux_qv
+
+                    if (ier > 0) then
+                        !Pointers
+                        ir=imapr(1,i,1,iface)
+                        jr=imapr(2,i,1,iface)
+                        kr=imapr(3,i,1,iface)
+
+                        ip=intma(ir,jr,kr,ier)
+
+                        !Update Flux
+                        rhs(1,ip,:) = rhs(1,ip,:) - wq*hi*flux_qu
+                        rhs(2,ip,:) = rhs(2,ip,:) - wq*hi*flux_qv
+                    end if !ier
+
+                end do !i
+            
+            end do !iquad
+    
+        end do !iface
+    
+    end subroutine create_rhs_laplacian_flux_SIPG_quad_v1
+
     subroutine compute_laplacian_IBP_set2nc_quad(lap_q,grad_dpuvp)
 
         implicit none
@@ -480,5 +896,241 @@ module mod_laplacian_quad
         end do
 
     end subroutine compute_laplacian_IBP_set2nc_quad
+
+    subroutine compute_laplacian_IBP_set2nc_quad_v1(lap_q,graduv,dp)
+
+        implicit none
+
+        !Global Arrays
+        real, intent(out) :: lap_q(2,npoin,nlayers)
+        real, dimension(4,npoin,nlayers), intent(in) :: graduv
+        real, dimension(npoin_q,nlayers), intent(in) :: dp
+
+        integer :: Iq, I, ip
+        real :: wq, hi
+        real, dimension(nlayers) :: u_visc, v_visc
+        real, dimension(4,nlayers) :: quv
+        
+        !initialize
+        lap_q = 0.0
+
+        ! Compute the gradient of q
+
+        do Iq = 1,npoin_q
+
+            quv = 0.0
+
+            do ip = 1,npts
+
+                I = indexq(Iq,ip)
+                hi = psih(Iq,ip)
+
+                quv(1,:) = quv(1,:) + hi*graduv(1,I,:)
+                quv(2,:) = quv(2,:) + hi*graduv(2,I,:)
+                quv(3,:) = quv(3,:) + hi*graduv(3,I,:)
+                quv(4,:) = quv(4,:) + hi*graduv(4,I,:)
+            end do 
+
+            quv(1,:) = quv(1,:)*dp(Iq,:)
+            quv(2,:) = quv(2,:)*dp(Iq,:)
+            quv(3,:) = quv(3,:)*dp(Iq,:)
+            quv(4,:) = quv(4,:)*dp(Iq,:)
+
+            wq = wjac(Iq)
+
+            do ip = 1,npts
+
+                I = indexq(Iq,ip)
+
+                u_visc = dpsidx(Iq,ip)*quv(1,:) + dpsidy(Iq,ip)*quv(2,:)
+                v_visc = dpsidx(Iq,ip)*quv(3,:) + dpsidy(Iq,ip)*quv(4,:)
+
+                lap_q(1,I,:) = lap_q(1,I,:) - wq*u_visc(:)
+                lap_q(2,I,:) = lap_q(2,I,:) - wq*v_visc(:)
+
+            end do
+        end do
+
+    end subroutine compute_laplacian_IBP_set2nc_quad_v1
+
+    subroutine btp_compute_laplacian_IBP(lap_q,graduv)
+
+        implicit none
+
+        !Global Arrays
+        real, intent(out) :: lap_q(2,npoin)
+        real, dimension(4,npoin), intent(in) :: graduv
+
+        integer :: Iq, I, ip
+        real :: wq, hi
+        real :: u_visc, v_visc
+        real, dimension(4) :: quv
+        
+        !initialize
+        lap_q = 0.0
+
+        ! Compute the gradient of q
+
+        do Iq = 1,npoin_q
+
+            quv = 0.0
+
+            do ip = 1,npts
+
+                I = indexq(Iq,ip)
+                hi = psih(Iq,ip)
+
+                quv(1) = quv(1) + hi*graduv(1,I)
+                quv(2) = quv(2) + hi*graduv(2,I)
+                quv(3) = quv(3) + hi*graduv(3,I)
+                quv(4) = quv(4) + hi*graduv(4,I)
+            end do 
+
+            wq = wjac(Iq)
+
+            do ip = 1,npts
+
+                I = indexq(Iq,ip)
+
+                u_visc = dpsidx(Iq,ip)*quv(1) + dpsidy(Iq,ip)*quv(2)
+                v_visc = dpsidx(Iq,ip)*quv(3) + dpsidy(Iq,ip)*quv(4)
+
+                lap_q(1,I) = lap_q(1,I) - wq*u_visc
+                lap_q(2,I) = lap_q(2,I) - wq*v_visc
+
+            end do
+        end do
+
+    end subroutine btp_compute_laplacian_IBP
+
+    subroutine btp_create_rhs_laplacian_flux(rhs,graduv_df_face)
+    
+        implicit none
+    
+        !global arrays
+        real, intent(inout) :: rhs(2,npoin)
+        real, intent(in)    :: graduv_df_face(4,2,ngl,nface)
+    
+        !local arrays
+        real, dimension(2) :: qu_mean, qv_mean
+        real, dimension(nq) :: uxl,uxr,uyl,uyr,vxl,vxr,vyl,vyr
+    
+        !local variables
+        real nx, ny, nz
+        real wq
+        integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er, n
+        integer iel, ier, ilocl, ilocr, ip
+        integer iquad, jquad, Iq
+        real, dimension(4,nq) :: quvl, quvr
+        real :: un, flux_qu, flux_qv
+    
+        real :: hi, mul, mur,c_jump
+      
+        !Construct FVM-type Operators
+        do iface=1,nface
+            !-------------------------------------
+            !Store Left and Right Side Variables
+            !-------------------------------------
+            ilocl=face(5,iface)
+            iel=face(7,iface)
+            ier=face(8,iface)
+
+            quvl = 0.0; quvr = 0.0
+
+            do iquad = 1,nq
+
+                do n = 1,ngl 
+                    hi = psiq(n,iquad)
+
+                    quvl(1,iquad) = quvl(1,iquad) + hi*graduv_df_face(1,1,n,iface)
+                    quvl(2,iquad) = quvl(2,iquad) + hi*graduv_df_face(2,1,n,iface)
+                    quvl(3,iquad) = quvl(3,iquad) + hi*graduv_df_face(3,1,n,iface)
+                    quvl(4,iquad) = quvl(3,iquad) + hi*graduv_df_face(4,1,n,iface)
+                end do 
+
+                if (ier > 0 ) then
+
+                    do n = 1,ngl 
+                        hi = psiq(n,iquad)
+
+                        quvr(1,iquad) = quvr(1,iquad) + hi*graduv_df_face(1,2,n,iface)
+                        quvr(2,iquad) = quvr(2,iquad) + hi*graduv_df_face(2,2,n,iface)
+                        quvr(3,iquad) = quvr(3,iquad) + hi*graduv_df_face(3,2,n,iface)
+                        quvr(4,iquad) = quvr(3,iquad) + hi*graduv_df_face(4,2,n,iface)
+                    end do 
+
+                else
+                    !default values
+                    quvr(:,iquad) = quvl(:,iquad)
+
+                    if(ier == -4) then 
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = quvl(1,iquad)*nx + quvl(2,iquad)*ny
+
+                        quvr(1,iquad) = quvl(1,iquad) - 2.0*un*nx
+                        quvr(2,iquad) = quvl(2,iquad) - 2.0*un*ny
+
+                        un = quvl(3,iquad)*nx + quvl(4,iquad)*ny
+
+                        quvr(3,iquad) = quvl(3,iquad) - 2.0*un*nx
+                        quvr(4,iquad) = quvl(4,iquad) - 2.0*un*ny
+
+                    end if 
+                end if
+            end do 
+    
+            !----------------------------Left Element
+            do iquad = 1,nq
+
+                wq=jac_faceq(iquad,1,iface)
+
+                !Store normals
+                nx = normal_vector_q(1,iquad,1,iface)
+                ny = normal_vector_q(2,iquad,1,iface)
+
+                flux_qu = nx*0.5*(quvl(1,iquad) + quvr(1,iquad)) + ny*0.5*(quvl(2,iquad) + quvr(2,iquad))
+                flux_qv = nx*0.5*(quvl(3,iquad) + quvr(3,iquad)) + ny*0.5*(quvl(4,iquad) + quvr(4,iquad))
+
+                !---------------------------------
+                !  Do Gauss-Lobatto Integration
+                !---------------------------------
+
+                do i=1,ngl
+
+                    hi = psiq(i,iquad)
+
+                    !Pointers
+                    il=imapl(1,i,1,iface)
+                    jl=imapl(2,i,1,iface)
+                    kl=imapl(3,i,1,iface)
+                    
+                    ip=intma(il,jl,kl,iel)
+                    
+                    !Update Flux
+                    rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
+                    rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
+
+                    if (ier > 0) then
+                        !Pointers
+                        ir=imapr(1,i,1,iface)
+                        jr=imapr(2,i,1,iface)
+                        kr=imapr(3,i,1,iface)
+
+                        ip=intma(ir,jr,kr,ier)
+
+                        !Update Flux
+                        rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
+                        rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
+                    end if !ier
+
+                end do !i
+            
+            end do !iquad
+    
+        end do !iface
+    
+    end subroutine btp_create_rhs_laplacian_flux
 
 end module mod_laplacian_quad

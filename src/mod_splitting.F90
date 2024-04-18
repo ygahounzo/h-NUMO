@@ -3,7 +3,7 @@ module mod_splitting
 
     ! ===========================================================================================================================
     ! This module contains the routines for the barotropic-baroclinic splitting
-    !   Author: Yao GAhounzo 
+    !   Author: Yao Gahounzo 
     !   Date: March 27, 2023
     ! It contains the following routines:
     ! - ti_barotropic: barotropic substem for splitting system using two-level time integration (see Higdon et al. 2005)
@@ -12,7 +12,30 @@ module mod_splitting
     !
     ! ===========================================================================================================================
 
-    use mod_initial, only: coriolis_df, coriolis_quad, tau_wind
+    use mod_initial, only: coriolis_df, coriolis_quad, tau_wind, pbprime, pbprime_face
+    use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, alpha_mlswe
+    use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
+    use mod_basis, only: nqx, nqy, nqz, nq, ngl
+    use mod_input, only: nlayers, dt_btp, ifilter, nlayers, dt, ad_mlswe
+    use mod_create_rhs_mlswe, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_momentum_new, &
+                                    layer_mass_advection_rhs, layer_mass_advection_rhs1
+    use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
+                                    btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
+
+    use mod_input, only: method_visc
+    use mod_barotropic_terms, only: btp_mom_boundary_df, compute_btp_terms, compute_btp_mom_terms
+    use mod_layer_terms, only: filter_mlswe, layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, consistency_mass_terms1
+    use mod_laplacian_quad, only: create_laplacian_mlswe_v3, create_laplacian_mlswe_v4
+
+    use mod_initial, only: zbot_face, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,  coriolis_quad, a_bclp, b_bclp
+    use mod_create_rhs_mlswe, only: layer_momentum_rhs, interpolate_layer_from_quad_to_node, rhs_layer_shear_stress
+    use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
+                                shear_stress_system, layer_mom_boundary_df, &
+                                filter_mlswe, evaluate_mom, velocity_df, evaluate_mom_face
+
+    use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
+    use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
+    use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
         
     implicit none
 
@@ -38,22 +61,6 @@ module mod_splitting
         ! 
         ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
         ! ===========================================================================================================================
-
-        use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, explt_coriolis, ifilter, nlayers
-        use mod_create_rhs_mlswe, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_momentum_new, create_rhs_btp_momentum1, create_rhs_btp_momentum_new1, create_rhs_btp_momentum_new2
-        use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                        btp_mass_advection_terms, btp_bcl_coeffs, limiter_Positivity_Preserving_mom, &
-                                        limiter_Positivity_Preserving_mass, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
-
-        use mod_input, only: method_visc
-        use mod_barotropic_terms, only: btp_mom_boundary_df, evaluate_quprime, compute_btp_terms, &
-                                        evaluate_quprime2, evaluate_visc_terms, compute_btp_mom_terms
-        use mod_layer_terms, only: filter_mlswe
-        use mod_laplacian_quad, only: create_laplacian_mlswe_v3, create_laplacian_mlswe_v4
-
 
         implicit none
 
@@ -160,8 +167,6 @@ module mod_splitting
             qb_df_pred(3,:) = qb_df(3,:) + fdt_btp(:)*qb_df(4,:) + dt_btp*(rhs_mom1(1,:) + rhs_visc_bcl(1,:))
             qb_df_pred(4,:) = qb_df(4,:) - fdt_btp(:)*qb_df(3,:) + dt_btp*(rhs_mom1(2,:) + rhs_visc_bcl(2,:))
 
-            ! call limiter_Positivity_Preserving_mass(qb_df_pred(2,:))
-
             call btp_mom_boundary_df(qb_df_pred(3:4,:))
 
             ! ********** Barotropic mass equation ***********
@@ -215,8 +220,6 @@ module mod_splitting
             qb_df(2,:) = qb_df(2,:) + 0.5*dt_btp * (pb_advec(:) + rhs_mom1(3,:))
             qb_df(1,:) = qb_df(2,:) + pbprime_df(:)
 
-            ! call limiter_Positivity_Preserving_mass(qb_df(2,:))
-
             ! Evaluate the corrected barotropic mass at the quadrature points and face 
 
             call btp_evaluate_pb(qb, qb_df)
@@ -263,8 +266,6 @@ module mod_splitting
 
             qb_df(3,:) = a_btp(:) * tempu + b_btp(:) * tempv
             qb_df(4,:) = -b_btp(:) * tempu + a_btp(:) * tempv
-
-            ! call limiter_Positivity_Preserving_mom(qb_df(3:4,:))
 
             call btp_mom_boundary_df(qb_df(3:4,:))
 
@@ -350,7 +351,7 @@ module mod_splitting
     end subroutine ti_barotropic
 
     subroutine thickness(q,qprime, q_df, q_face, qprime_face, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-        btp_mass_flux_face_ave,dpprime_df, flag_pred, qb_df, disp)
+        btp_mass_flux_face_ave,dpprime_df, flag_pred, qb_df)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -362,18 +363,6 @@ module mod_splitting
         !
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
-
-        use mod_input, only: nlayers, dt, icase, ifilter
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-        use mod_initial, only: pbprime_df, pbprime, pbprime_face, q_df_mlswe_init, alpha_mlswe
-        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs, layer_mass_advection_rhs1
-        use mod_layer_terms, only: layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, consistency_mass_terms1, &
-                                    filter_mlswe, limiter_Positivity_Preserving_layers_mass
-
-        use mod_mpi_utilities, only : irank
-        use mod_constants, only: gravity
-
 
         implicit none
     
@@ -389,7 +378,7 @@ module mod_splitting
     
         ! Output variables
         real, dimension(2,nq, nface, nlayers), intent(out)   :: u_edge, v_edge
-        real, intent(out) :: dpprime_df(npoin,nlayers), disp(nq,nface,nlayers)
+        real, intent(out) :: dpprime_df(npoin,nlayers)
     
         ! Other variables
         real :: sum_layer_mass_flux(2,npoin_q), uvdp_temp(2,npoin_q,nlayers), flux_edge(2,nq,nface,nlayers), flux_adjustment(2,npoin_q,nlayers)
@@ -397,6 +386,7 @@ module mod_splitting
         real :: one_plus_eta_temp1
         integer :: k, I, iquad, iface, ilr,Iq
         real :: adjust_mass(npoin)
+        real :: disp(nq,nface,nlayers)
 
         ! =========================================== layer mass ===============================================================
     
@@ -407,7 +397,6 @@ module mod_splitting
 
         ! Compute RHS for layer thickness, return the result in array  dp_advec .
 
-        ! call layer_mass_advection_rhs(dp_advec, uvdp_temp, flux_edge)
         call layer_mass_advection_rhs1(dp_advec, uvdp_temp, flux_edge, q_face, disp)
 
         ! Compute the tentative values of the predicted or corrected 
@@ -459,7 +448,7 @@ module mod_splitting
     subroutine momentum(q,qprime,q_df,q_face,qprime_face,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,flag_pred,&
-        q2,q_face2,qb_df,qprime2, qprime_face3, ope2_ave, uvb_df_ave, disp)
+        q2,q_face2,qb_df,qprime2, qprime_face3, ope2_ave, uvb_df_ave)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
@@ -469,19 +458,6 @@ module mod_splitting
         ! The quadrature points of the layer momentum are stored in qb(2:5,:,:)
         ! The face values of the layer momentum are stored in qb_face(2:5,:,:,:)
         ! ===========================================================================================================================
-
-        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe, explt_coriolis, method_visc, ifilter, is_mlswe_linear
-        use mod_initial, only: coriolis_df, zbot_face, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,  coriolis_quad, a_bclp, b_bclp
-        use mod_create_rhs_mlswe, only: layer_momentum_rhs, interpolate_layer_from_quad_to_node, rhs_layer_shear_stress
-        use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
-                                    shear_stress_system, layer_mom_boundary_df, &
-                                    limiter_Positivity_Preserving_layers_mom, filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face
-
-        use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
-        use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
-        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
         implicit none
 
@@ -508,7 +484,6 @@ module mod_splitting
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime2
         real, dimension(2,npoin), intent(in) :: uvb_df_ave
-        real, dimension(nq,nface,nlayers), intent(in) :: disp
 
         ! Local variables
 
@@ -516,7 +491,7 @@ module mod_splitting
         real, dimension(2,npoin_q,nlayers)     :: coriolis, uvdp,uv
         real, dimension(2,npoin,nlayers)       :: q_df_temp
         real, dimension(npoin)                 :: fdt, fdt2, a, b, zk
-        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right
+        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right, disp
         real, dimension(npoin_q, nlayers)      :: u_udp_temp, v_vdp_temp
         real, dimension(2, npoin_q, nlayers)   :: u_vdp_temp
         real, dimension(2, nq, nface, nlayers) :: udp_flux_edge, vdp_flux_edge
@@ -562,7 +537,7 @@ module mod_splitting
 
         call layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, ope_ave, H_ave, ope_face_ave, zbot_face, H_face_ave, qprime_df, one_plus_eta_edge_2_ave, ope_ave_df, grad_z, ope2_ave)
 
-        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave)
+        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave, disp)
 
         call layer_momentum_advec_terms(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
             q2, qprime, uvb_ave, ope_ave, u_edge, v_edge, Qu_ave, Qv_ave, Quv_ave, &
@@ -624,28 +599,14 @@ module mod_splitting
         
         ! Add the Coriolis term
 
-        ! if(flag_pred == 1) then 
+        do k = 1,nlayers
 
-        !     do k = 1, nlayers
+            tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+            tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
 
-        !         tempu1(:) = q_df_temp(1,:,k) + fdt_bcl(:)*q_df(3,:,k)
-        !         tempv1(:) = q_df_temp(2,:,k) - fdt_bcl(:)*q_df(2,:,k)
-
-        !         q_df(2,:,k) = tempu1(:)
-        !         q_df(3,:,k) = tempv1(:)
-        !     end do
-
-        ! else 
-
-            do k = 1,nlayers
-
-                tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-                tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-
-                q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
-                q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
-            end do
-        ! end if
+            q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
+            q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
+        end do
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
@@ -693,7 +654,7 @@ module mod_splitting
         use mod_create_rhs_mlswe, only: layer_momentum_rhs, interpolate_layer_from_quad_to_node, rhs_layer_shear_stress
         use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
                                     shear_stress_system, layer_mom_boundary_df, &
-                                    limiter_Positivity_Preserving_layers_mom, filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, &
+                                    filter_mlswe, evaluate_mom, velocity_df, &
                                     evaluate_mom_face, evaluate_dp, evaluate_dp_face
 
         use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
@@ -747,13 +708,12 @@ module mod_splitting
         real, dimension(npoin) :: tempu1, tempv1
         real, dimension(2,nq,nface,nlayers) :: dprime_face_corr
         real :: sum_layer_mass_flux_face(2,nq,nface), sum_layer_mass_flux(2,npoin_q)
-        real, dimension(nq,nface,nlayers) :: disp
 
         q_df_temp = 0.0
 
         ! =========================================== layer mass ===============================================================
     
-        call rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face, disp)
+        call rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face)
 
         do k = 1, nlayers
 
@@ -799,7 +759,7 @@ module mod_splitting
 
             dprime_face_corr = qprime_face_temp(1,:,:,:,:)
             ! Communication of qprime_face values within the processor boundary
-            call create_communicator_quad_layer(qprime_face_temp(1,:,:,:,:),1,nlayers)
+            call bcl_create_communicator(qprime_face_temp(1,:,:,:,:),1,nlayers,nq)
 
             ! Compute average values 
             qprime_df(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df(:,:))
@@ -812,7 +772,7 @@ module mod_splitting
         call rhs_momentum(rhs_mom, rhs_visc_bcl, qprime,q_face,qprime_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
             Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
             qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,&
-            q,qprime2, qprime_face, ope2_ave, uvb_df_ave, disp)
+            q,qprime2, qprime_face, ope2_ave, uvb_df_ave)
 
         ! Compute the momentum equation variables for the next time step
 
@@ -857,28 +817,14 @@ module mod_splitting
         
         ! Add the Coriolis term
 
-        ! if(flag_pred == 1) then 
+        do k = 1,nlayers
 
-        !     do k = 1, nlayers
+            tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+            tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
 
-        !         tempu1(:) = q_df_temp(1,:,k) + fdt_bcl(:)*q_df(3,:,k)
-        !         tempv1(:) = q_df_temp(2,:,k) - fdt_bcl(:)*q_df(2,:,k)
-
-        !         q_df(2,:,k) = tempu1(:)
-        !         q_df(3,:,k) = tempv1(:)
-        !     end do
-
-        ! else 
-
-            do k = 1,nlayers
-
-                tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-                tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-
-                q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
-                q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
-            end do
-        ! end if
+            q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
+            q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
+        end do
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
@@ -913,7 +859,7 @@ module mod_splitting
     end subroutine momentum_mass
 
 
-    subroutine rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face, disp)
+    subroutine rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face, uvb_ave, ope_ave, uvb_face_ave, ope_face_ave, q_face)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -945,7 +891,6 @@ module mod_splitting
         real, intent(in)    :: uvb_ave(2,npoin_q), ope_ave(npoin_q)
         real, intent(in)    :: uvb_face_ave(2,2,nq,nface), ope_face_ave(2,nq,nface)
         real, intent(in) :: q_face(3,2,nq,nface,nlayers)
-        real, dimension(nq,nface,nlayers), intent(out) :: disp
     
         ! Output variables
         real, dimension(2,nq, nface, nlayers), intent(out)   :: u_edge, v_edge
@@ -954,6 +899,7 @@ module mod_splitting
         ! Other variables
         real :: uvdp_temp(2,npoin_q,nlayers), flux_edge(2,nq,nface,nlayers)
         real :: flux_adjust_edge(2,nq,nface,nlayers)
+        real :: disp(nq,nface,nlayers)
 
         ! =========================================== layer mass ===============================================================
     
@@ -974,7 +920,7 @@ module mod_splitting
     subroutine rhs_momentum(rhs_mom, rhs_visc_bcl, qprime,q_face,qprime_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,&
-        q2,qprime2, qprime_face3, ope2_ave, uvb_df_ave, disp)
+        q2,qprime2, qprime_face3, ope2_ave, uvb_df_ave)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
@@ -1014,7 +960,6 @@ module mod_splitting
         real, dimension(3,npoin_q,nlayers), intent(in) :: q2
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime2
         real, dimension(2,npoin), intent(in) :: uvb_df_ave
-        real, dimension(nq,nface,nlayers), intent(in) :: disp
 
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom, rhs_visc_bcl
 
@@ -1023,7 +968,7 @@ module mod_splitting
         real, dimension(2,npoin_q,nlayers+1)   :: grad_z
         real, dimension(2,npoin_q,nlayers)     :: coriolis
         real, dimension(2,npoin,nlayers)       :: q_df_temp
-        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right
+        real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right, disp
         real, dimension(npoin_q, nlayers)      :: u_udp_temp, v_vdp_temp
         real, dimension(2, npoin_q, nlayers)   :: u_vdp_temp
         real, dimension(2, nq, nface, nlayers) :: udp_flux_edge, vdp_flux_edge
@@ -1048,7 +993,7 @@ module mod_splitting
         call layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, ope_ave, H_ave, ope_face_ave, &
             zbot_face, H_face_ave, qprime_df, one_plus_eta_edge_2_ave, ope_ave_df, grad_z, ope2_ave)
 
-        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave)
+        call compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face3, uvb_face_ave, ope_face_ave, disp)
 
         call layer_momentum_advec_terms(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
             q2, qprime, uvb_ave, ope_ave, u_edge, v_edge, Qu_ave, Qv_ave, Quv_ave, &
@@ -1111,7 +1056,7 @@ module mod_splitting
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
-        call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
+        call bcl_create_communicator(qprime_face(1,:,:,:,:),1,nlayers,nq)
 
         call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
             sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, sum_layer_mass_flux_face, &

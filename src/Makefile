@@ -100,7 +100,8 @@ SOURCEF += diagnostics.F90
 SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90
 SOURCEF += ti_rk35_mlswe.F90
-
+SOURCEF += ti_rk35_bcl.F90
+SOURCEF += mod_splitting_v2.F90
 
 OBJS += $(addsuffix .o, $(basename $(SOURCEF) $(SOURCEC)))
 

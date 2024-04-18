@@ -486,7 +486,7 @@ module mod_initial_mlswe
     end subroutine compute_reference_edge_variables
 
 
-    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq)
+    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, psihg)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
 
@@ -508,6 +508,7 @@ module mod_initial_mlswe
         real, dimension(npoin_q,npts), intent(out) :: psih, dpsidx,dpsidy
         integer, dimension(npoin_q,npts) :: indexq
         real, dimension(npoin_q), intent(out) :: wjac
+        real, dimension(npoin_q,npoin), intent(out) :: psihg
 
         integer :: e, jquad, iquad, Iq, ip, m, n, I
         real :: h_e, h_n
@@ -518,6 +519,7 @@ module mod_initial_mlswe
         dpsidx = 0.0
         dpsidy = 0.0
         indexq = 0
+        psihg = 0.0
 
         do e = 1,nelem
 
@@ -541,6 +543,8 @@ module mod_initial_mlswe
                 
                             indexq(Iq, ip) = I
                             psih(Iq, ip) = psiqx(n, iquad) * psiqy(m, jquad)
+
+                            psihg(Iq,I) = psiqx(n, iquad) * psiqy(m, jquad)
                 
                             ! Xi derivatives
                             h_e = dpsiqx(n, iquad) * psiqy(m, jquad)

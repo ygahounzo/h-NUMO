@@ -241,6 +241,10 @@ contains
             if(ti_method_btp == 'rk35') then 
                 call ti_rk35_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
                     qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
+
+            elseif(ti_method_btp == 'rk34') then 
+
+                call ti_rk35_bcl(q0_df_mlswe,qb0_df_mlswe,qout_mlswe)
             else 
 
                 call ti_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &

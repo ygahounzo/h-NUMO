@@ -28,7 +28,7 @@ refinement_levels_v = 0, !refinement levels in vertical
 lp4est=T,
 lp6est=F,
 lio_grid_ascii=F,
-lread_external_grid=T,
+lread_external_grid=F,
 
 !Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
@@ -56,8 +56,8 @@ decomp_type='metis2d',
 /
 
 &input
-dt= 50,
-dt_btp = 0.5,
+dt= 100,
+dt_btp = 1.8,
 !dt_safety_factor = 0.5,
 time_initial = 0.0,
 time_final   = 10000,
@@ -89,7 +89,7 @@ ti_method = 'btp_bcl',
 	      !rk; (RK method of order KSTAGES)
 	      !rk35; (Optimized RK35)
 
-ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
+ti_method_btp = 'rk34', ! Default = 'explicit' (two step method)
 kstages=5,
 
 space_method = 'dg',    !cgc=continuous galerkin with global storage 

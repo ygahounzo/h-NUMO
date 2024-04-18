@@ -288,9 +288,7 @@ subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 
 end subroutine create_communicator_quad_all
 
-subroutine create_communicator_quad_layer(q_face,nvarb,nlayers)
-
-    use mod_basis, only: nq
+subroutine bcl_create_communicator(q_face,nvarb,nlayers,nq)
 
     use mod_mpi_communicator, only: ierr, ireq, nreq, status
 
@@ -314,7 +312,7 @@ subroutine create_communicator_quad_layer(q_face,nvarb,nlayers)
 
     !Global Arrays
     real, dimension(nvarb,2,nq,nface,nlayers), intent(inout) :: q_face
-    integer, intent(in) :: nvarb, nlayers
+    integer, intent(in) :: nvarb, nlayers,nq
 
     integer :: multirate
 
@@ -332,28 +330,23 @@ subroutine create_communicator_quad_layer(q_face,nvarb,nlayers)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad_layer(send_data_dg_quad1,q_face,nvarb,nlayers)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad_layer(send_data_dg_quad1,q_face,nvarb,nlayers,nq)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad_layer(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nlayers,nreq,ireq,status)
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad_layer(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nlayers,nq,nreq,ireq,status)
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad_layer(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb,nlayers)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad_layer(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb,nlayers,nq)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_quad_layer(q_face,q_send_quad1,q_recv_quad1,nvarb,nlayers,0)
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_quad_layer(q_face,q_send_quad1,q_recv_quad1,nvarb,nlayers,nq)
 
-        ! call mpi_waitall(nreq,ireq,status,ierr)
-
-    endif
-
-end subroutine create_communicator_quad_layer
+end subroutine bcl_create_communicator
 
 subroutine create_communicator_quad_layer_all(qprime_face,q_face,nvarb,nlayers)
 
@@ -399,26 +392,21 @@ subroutine create_communicator_quad_layer_all(qprime_face,q_face,nvarb,nlayers)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad_layer_all(send_data_dg_quad1,q_face,qprime_face,nvarb,nlayers)
-        
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad_layer(send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nlayers,nreq,ireq,status)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad_layer_all(send_data_dg_quad1,q_face,qprime_face,nvarb,nlayers)
+    
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad_layer(send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nlayers,nq,nreq,ireq,status)
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad_layer(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nlayers)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad_layer(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nlayers,nq)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_quad_layer_all(q_face,qprime_face,q_send_quad1,q_recv_quad1,nvarb,nlayers,0)
-
-        ! call mpi_waitall(nreq,ireq,status,ierr)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_quad_layer_all(q_face,qprime_face,q_send_quad1,q_recv_quad1,nvarb,nlayers)
 
 end subroutine create_communicator_quad_layer_all
 
