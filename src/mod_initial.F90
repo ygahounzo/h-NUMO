@@ -10,14 +10,14 @@
 !----------------------------------------------------------------------!
 module mod_initial
 
-    use mod_constants, only: gravity, cv, cp, rgas, p00, earth_radius, gamma, omega
+    use mod_constants, only: gravity, earth_radius, omega
 
     use mod_grid, only:  npoin, coord, npoin_cg, nface, npoin_q
 
     use mod_basis, only: nq, npts, ngl
 
     use mod_input, only: equations, time_initial, time_final, time_restart, time_scale, &
-        geometry_type, icase, lkessler, lpassive, lphysics, visc, nlaplacian, lLES, lout_vorticity, &
+        geometry_type, icase, &
         llimit, limit_threshold, lsalinity, lALE, is_swe_layers, nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
@@ -99,33 +99,9 @@ module mod_initial
         nvart=nvar
         !Define the number of diagnostic variables
         nvar_diag=0
-    
-        if(equations(1:5) == 'euler') then
-            !Define the scaling for time units (default in seconds)
-            if (icase == 13 .or. icase == 200) nvar=6
-
-            moist_coe = 0 !Default value
-            if (icase == 201 .and. lkessler .or. lphysics .or. lpassive) then
-                nvar      = 8
-                moist_coe = 1
-            end if
-            if (icase == 1000) nvar=8
-            if (icase == 1001) nvar=8
-
-            if (lsalinity) then
-               nvar = 6 !account for salinity (r,u,v,w,T,S)
-               nvart=nvar
-            end if
-
-        endif
-
-
-        !Update nvar for LES model:
-        if(lLES) nvar = nvar + 1
 
         !Store Number of RHS for MXM calls in CREATE_RHS_VOLUME
         nrhs_mxm=nvar + 1 !1 is for Pressure
-        if (visc > 0 .and. nlaplacian == 1) nrhs_mxm = nrhs_mxm + 4 !3 is for (U,V,W,Theta) for viscosity
 
         !Store Number of Tracers
         ntracers=nvar-5

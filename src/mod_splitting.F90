@@ -428,12 +428,26 @@ module mod_splitting
             endif
         end do
 
+        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
+        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
+
  
-        adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
+        !adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
+
+        adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
 
         ! Apply filter to the thickness
+
+        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+
         do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + adjust_mass(:)
+            dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+        end do
+
+        do k = 1,nlayers
+            !q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
+
+            q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
             
             if(ifilter > 0 .and. flag_pred == 0) then 
                 call filter_mlswe(q_df(1,:,k),1)
@@ -624,28 +638,14 @@ module mod_splitting
         
         ! Add the Coriolis term
 
-        ! if(flag_pred == 1) then 
+        do k = 1,nlayers
 
-        !     do k = 1, nlayers
+            tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+            tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
 
-        !         tempu1(:) = q_df_temp(1,:,k) + fdt_bcl(:)*q_df(3,:,k)
-        !         tempv1(:) = q_df_temp(2,:,k) - fdt_bcl(:)*q_df(2,:,k)
-
-        !         q_df(2,:,k) = tempu1(:)
-        !         q_df(3,:,k) = tempv1(:)
-        !     end do
-
-        ! else 
-
-            do k = 1,nlayers
-
-                tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-                tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-
-                q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
-                q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
-            end do
-        ! end if
+            q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
+            q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
+        end do
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
@@ -767,14 +767,24 @@ module mod_splitting
 
         end do
 
-        adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
+        !adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
+        adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
 
         !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
         !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
         ! Apply filter to the thickness
+
+        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+
         do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + adjust_mass(:)
+            dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+        end do
+
+        do k = 1,nlayers
+            !q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
+
+            q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
             
             if(flag_pred == 0 .and. ifilter > 0) then 
                 call filter_mlswe(q_df(1,:,k),1)
@@ -857,28 +867,14 @@ module mod_splitting
         
         ! Add the Coriolis term
 
-        ! if(flag_pred == 1) then 
+        do k = 1,nlayers
 
-        !     do k = 1, nlayers
+            tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+            tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
 
-        !         tempu1(:) = q_df_temp(1,:,k) + fdt_bcl(:)*q_df(3,:,k)
-        !         tempv1(:) = q_df_temp(2,:,k) - fdt_bcl(:)*q_df(2,:,k)
-
-        !         q_df(2,:,k) = tempu1(:)
-        !         q_df(3,:,k) = tempv1(:)
-        !     end do
-
-        ! else 
-
-            do k = 1,nlayers
-
-                tempu1(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-                tempv1(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-
-                q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
-                q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
-            end do
-        ! end if
+            q_df(2,:,k) = a_bcl(:)*tempu1(:) + b_bcl(:)*tempv1(:)
+            q_df(3,:,k) = - b_bcl(:)*tempu1(:) + a_bcl(:)*tempv1(:)
+        end do
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
@@ -1089,16 +1085,15 @@ module mod_splitting
         use mod_basis, only: nq
         use mod_initial, only: pbprime
         use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
-        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1
+        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, consistency_mass_terms
 
         implicit none
     
         ! Input variables
         
-        real, intent(in) :: q_df(3,npoin,nlayers)
-        real, intent(in)    :: btp_mass_flux_ave(2,npoin_q)
-        real, intent(in)    :: sum_layer_mass_flux(2,npoin_q), ope_face_ave(2,nq,nface)
-        real, intent(in)    :: btp_mass_flux_face_ave(2,nq,nface), sum_layer_mass_flux_face(2,nq,nface)
+        real, intent(in)    :: q_df(3,npoin,nlayers)
+        real, dimension(2,npoin_q), intent(in)  :: sum_layer_mass_flux, btp_mass_flux_ave
+        real, dimension(2,nq,nface), intent(in) :: btp_mass_flux_face_ave, sum_layer_mass_flux_face, ope_face_ave
     
         ! Output variables
         real, intent(out) :: dp_advec(npoin,nlayers)
@@ -1107,15 +1102,22 @@ module mod_splitting
         real :: flux_adjustment(2,npoin_q,nlayers)
         real :: flux_adjust_edge(2,nq,nface,nlayers)
         real :: qprime(3,npoin_q,nlayers), q(3,npoin_q,nlayers), qprime_face(3,2,nq,nface,nlayers), q_face(3,2,nq,nface,nlayers)
+        real, dimension(2,nq,nface)  :: flux_deficit_mass_face
         
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
-        call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
+        call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
 
-        call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-            sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, sum_layer_mass_flux_face, &
-            btp_mass_flux_face_ave, qprime_face)
+        flux_deficit_mass_face(1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
+        flux_deficit_mass_face(2,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
+
+        !call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+        !    sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, sum_layer_mass_flux_face, &
+        !    btp_mass_flux_face_ave, qprime_face, flux_deficit_mass_face)
+
+        call consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+            sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, flux_deficit_mass_face, q_face)
 
         call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
         

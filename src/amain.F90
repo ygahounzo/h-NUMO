@@ -121,11 +121,6 @@ subroutine initialize_fields()
        nopx, nopy, nopz, &
        solver_type, solver_tol, delta, ti_method, &
        si_method, si_dimension, precon_order, decomp_type, nproc_z, visc, visc2, visc4, nlaplacian, &
-       lnazarov, &
-       lLES, &
-       lSMAG, &
-       lkessler, &
-       lpassive, &
        lgrid_only, &
        Iter_Type, space_method, &
        lp4est, lp6est, is_non_conforming_flg
@@ -135,8 +130,6 @@ subroutine initialize_fields()
   use mod_mpi_utilities
 
   use mod_parallel, only: nproc, mod_parallel_create_send_recv, mod_parallel_reorder
-
-  use mod_viscosity, only: mod_viscosity_create
 
   implicit none
 
@@ -195,10 +188,6 @@ subroutine initialize_fields()
    !Create RHS Vectors for the Filter
    call mod_filter_create_rhs()
    if (irank == irank0) print *, "Filter RHS Created"
-
-   !Create Hyper-Viscosity Arrays
-   call mod_viscosity_create()
-   if (irank == irank0) print *, "Viscosity Arrays Created"
 
    ! Initialize local 2D and 3D arrays
    call get_dimensions()

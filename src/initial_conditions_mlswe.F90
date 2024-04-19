@@ -30,8 +30,6 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
    
    use mod_types, only : r8
    
-   use mod_constants, only : gamma
-   
    use mpi
    
    use mod_mpi_utilities, only: MPI_PRECISION

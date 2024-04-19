@@ -22,7 +22,7 @@ module mod_grid
       nqx, nqy, nqz, nq
 
     use mod_input, only: ti_method, si_dimension, geometry_type, delta, decomp_type, &
-        lphysics, lkessler, lpassive, space_method, cgdg_method, nelz,         &
+        space_method, cgdg_method, nelz,         &
         is_non_conforming_flg
 
     use mod_parallel, only:   nproc, &
@@ -405,15 +405,6 @@ contains
         sigma = 0.0
         index2d = 0
         intma_table = 0
-
-        !--------------------------
-        ! Do 1d IMEX ?
-        !--------------------------
-        do_1dIMEX = (((ti_method(1:2) /= 'rk' .and. delta >= 0 .and. si_dimension == '1d') .and. &
-            (decomp_type == 'metis2d' .or. decomp_type == 'nseam' .or. &
-            decomp_type == 'geom1' .or. decomp_type == 'geom2' .or. &
-            decomp_type == 'geom5' .or. decomp_type == 'geom6' .or. &
-            decomp_type == 'geom7' .or. decomp_type == 'geom9')) .or. lphysics .or. lkessler .or. lpassive);
 
     end subroutine mod_grid_init_unified
 

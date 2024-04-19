@@ -9,7 +9,7 @@ module mod_layer_terms
 
     public :: layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, &
             compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
-            shear_stress_system, consistency_mass_terms1, &
+            shear_stress_system, consistency_mass_terms1, consistency_mass_terms, &
             layer_mom_boundary_df, limiter_Positivity_Preserving_layers_mass, limiter_Positivity_Preserving_layers_mom, &
             filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom
 
@@ -264,7 +264,7 @@ module mod_layer_terms
 
     subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
         sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, sum_layer_mass_flux_face, &
-        btp_mass_flux_face_ave, qprime_face)
+        btp_mass_flux_face_ave, qprime_face, flux_deficit_mass_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
@@ -281,7 +281,7 @@ module mod_layer_terms
         real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
         real, dimension(2,nq,nface), intent(in)        :: sum_layer_mass_flux_face
         real, dimension(2,nq,nface), intent(in) :: ope_face_ave
-        real, dimension(2,nq,nface), intent(in) :: btp_mass_flux_face_ave
+        real, dimension(2,nq,nface), intent(in) :: btp_mass_flux_face_ave, flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
 
         real, dimension(npoin_q) :: weights
@@ -308,13 +308,132 @@ module mod_layer_terms
 
                 weights_face_l = 0.5*(weights_face_l + weights_face_r)
 
-                flux_adjust_edge(1,:,iface,k) = weights_face_l*(btp_mass_flux_face_ave(1,:,iface) - sum_layer_mass_flux_face(1,:,iface))
-                flux_adjust_edge(2,:,iface,k) = weights_face_l*(btp_mass_flux_face_ave(2,:,iface) - sum_layer_mass_flux_face(2,:,iface))
+                flux_adjust_edge(1,:,iface,k) = weights_face_l*flux_deficit_mass_face(1,:,iface)
+                flux_adjust_edge(2,:,iface,k) = weights_face_l*flux_deficit_mass_face(2,:,iface)
 
             end do
         end do
 
     end subroutine consistency_mass_terms1
+
+    subroutine consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+        sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, flux_deficit_mass_face, q_face)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
+        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma
+        use mod_initial, only: pbprime, pbprime_face, pbprime_edge
+        use mod_input, only: nlayers
+        use mod_face, only: imapl, imapr
+
+        implicit none
+
+        real, dimension(2,npoin_q, nlayers), intent(out)      :: flux_adjustment
+        real, dimension(2,nq, nface, nlayers), intent(out)    :: flux_adjust_edge
+
+        real, dimension(3,npoin,nlayers), intent(in)   :: q_df
+        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
+        real, dimension(2,nq,nface), intent(in)        :: ope_face_ave, flux_deficit_mass_face
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face
+
+        real, dimension(2,2) :: flux_adjustment_face
+        real, dimension(nlayers)                  :: dp_avail_left, dp_avail_right
+        real :: sum_left, sum_right, pb_edge, p_left, p_right, temp, one_plus_eta_edge
+        integer :: el, er, il, jl, iquad, k, iface
+        real, dimension(npoin_q) :: weights
+        real :: weights_face, qml, qmr, weights_face_r, weights_face_l
+        integer :: I, ir, jr, kr, kl, ier,m, Iq
+
+        flux_adjustment = 0.0
+        flux_adjust_edge = 0.0
+        flux_adjustment_face = 0.0
+
+        ! Consistency terms for interior cell points
+        do k = 1, nlayers
+            weights(:) = qprime(1,:,k) / pbprime(:)
+            flux_adjustment(1,:,k) = weights(:) * (btp_mass_flux_ave(1,:) - sum_layer_mass_flux(1,:))
+            flux_adjustment(2,:,k) = weights(:) * (btp_mass_flux_ave(2,:) - sum_layer_mass_flux(2,:))
+        end do
+
+        ! Consistency terms for face points
+        do iface = 1,nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+                
+            do iquad = 1,nq
+
+                one_plus_eta_edge = 0.5*(ope_face_ave(2,iquad,iface) + ope_face_ave(1,iquad,iface))
+                pb_edge = pbprime_edge(iquad,iface) * one_plus_eta_edge
+
+                dp_avail_left = 0.0
+                dp_avail_right = 0.0
+
+                sum_left = 0.0
+                sum_right = 0.0
+
+                p_left = 0.0 
+                p_right = 0.0
+                    
+                do k=1,nlayers
+                        
+                    temp = max(pb_edge - p_left, 0.0)
+
+                    qml = q_face(1,1,iquad,iface,k) 
+                    dp_avail_left(k)  = min(temp, qml)
+                    sum_left  = sum_left + dp_avail_left(k)
+                    p_left  = p_left  + qml
+
+                    temp = max(pb_edge - p_right, 0.0)
+
+                    qmr = q_face(1,2,iquad,iface,k)
+                    dp_avail_right(k) = min(temp, qmr)
+                    sum_right = sum_right + dp_avail_right(k)
+                    p_right = p_right + qmr
+
+                end do
+
+                do k = 1,nlayers
+
+                    if (sum_left > 0.0) then
+                        weights_face_l = dp_avail_left(k) / sum_left
+                        flux_adjustment_face(1,1) = weights_face_l * flux_deficit_mass_face(1,iquad,iface)
+                        flux_adjustment_face(2,1) = weights_face_l * flux_deficit_mass_face(2,iquad,iface)
+                    end if
+                    
+                    if (sum_right > 0.0) then
+                        weights_face_r = dp_avail_right(k) / sum_right
+                        flux_adjustment_face(1,2) = weights_face_r * flux_deficit_mass_face(1,iquad,iface)
+                        flux_adjustment_face(2,2) = weights_face_r * flux_deficit_mass_face(2,iquad,iface)
+                    end if
+
+                    !weights_face = 0.5*(weights_face_l + weights_face_r)
+
+                    !flux_adjust_edge(1,iquad,iface,k) = weights_face*flux_deficit_mass_face(1,iquad,iface)
+                    !flux_adjust_edge(2,iquad,iface,k) = weights_face*flux_deficit_mass_face(2,iquad,iface)
+
+                    if (flux_deficit_mass_face(1,iquad,iface) > 0.0) then
+                        flux_adjust_edge(1,iquad,iface,k) = flux_adjustment_face(1,1)
+                    else
+                        flux_adjust_edge(1,iquad,iface,k) = flux_adjustment_face(1,2)
+                    end if
+
+                    if (flux_deficit_mass_face(2,iquad,iface) > 0.0) then
+                        flux_adjust_edge(2,iquad,iface,k) = flux_adjustment_face(2,1)
+                    else
+                        flux_adjust_edge(2,iquad,iface,k) = flux_adjustment_face(2,2)
+                    end if
+
+                    ! flux_adjust_edge(1,iquad,iface,k) = 0.5*(flux_adjustment_face(1,1) + flux_adjustment_face(1,2))
+                    ! flux_adjust_edge(2,iquad,iface,k) = 0.5*(flux_adjustment_face(2,1) + flux_adjustment_face(2,2))
+
+                end do
+
+            end do
+        end do
+
+    end subroutine consistency_mass_terms
 
     subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave)
 
@@ -449,8 +568,8 @@ module mod_layer_terms
             uv_dp_flux_deficitq = Quv_ave(:) - sum(u_vdp_temp(1,:,:), dim=2)
             vv_dp_flux_deficitq = Qv_ave(:) - sum(v_vdp_temp(:,:), dim=2)
 
-            temp_uu(:,:) = abs(q(2,:,:)) !+ eps1
-            temp_vv(:,:) = abs(q(3,:,:)) !+ eps1
+            temp_uu(:,:) = abs(q(2,:,:)) 
+            temp_vv(:,:) = abs(q(3,:,:))
             
             one_over_sumuq = 1.0 / (sum(temp_uu(:,:), dim=2) + eps1)
             one_over_sumvq = 1.0 / (sum(temp_vv(:,:), dim=2) + eps1)

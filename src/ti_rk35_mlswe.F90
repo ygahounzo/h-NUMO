@@ -76,8 +76,10 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 
 	flag_pred = 1
 
-	call create_communicator_quad_layer(qprime_face,3,nlayers)
-	call create_communicator_quad_layer(q_face,3,nlayers)
+	!call create_communicator_quad_layer(qprime_face,3,nlayers)
+	!call create_communicator_quad_layer(q_face,3,nlayers)
+
+	call create_communicator_quad_layer_all(qprime_face,q_face,3,nlayers)
 
 	qbp = qb
 	qbp_face = qb_face
@@ -112,8 +114,6 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 
 	qprime_avg = 0.5*(qprime2 + qprime)
 	qprime_face_avg = 0.5*(qprime_face2 + qprime_face)
-
-	! call create_communicator_quad_layer(qprime_face_avg,3,nlayers)
 
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
 	

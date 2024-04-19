@@ -19,7 +19,7 @@ module mod_interface
 
     use mod_grid, only: intma, intma_1d, npoin, nelem, nz
 
-    use mod_initial, only: nvar, q_ref
+    use mod_initial, only: nvar
 
     use mod_input, only: nelz, eqn_set, lvisc_anisotropic, lincompressible, &
          space_method, cgdg_method, nlaplacian_flg
@@ -30,12 +30,9 @@ module mod_interface
         zeta_x, zeta_y, zeta_z, &
         jac, massinv, massinv_1d
 
-    use mod_viscosity, only: visc_elem, metrics_visc, q_visc, grad_q, nmetrics_visc, nvar_visc, grad_q_mlswe, q_visc_mlswe
-
     use mod_parallel, only : num_send_recv_total
 
     public :: &
-        compute_vorticity, &
         compute_local_gradient, &
         compute_local_gradient_v2, &
         compute_local_gradient_v3, &
@@ -50,128 +47,6 @@ module mod_interface
   !----------------------------------------------------------------------!
 
 contains
-
-    !----------------------------------------------------------------------!
-    !>@brief This subroutine computes the Vorticity in the Radial Direction of a 3-vector Q
-    !>@author  Francis X. Giraldo on 9/9/2011
-    !>           Department of Applied Mathematics
-    !>           Naval Postgraduate School
-    !>           Monterey, CA 93943-5216
-    !----------------------------------------------------------------------!
-    subroutine compute_vorticity(vorticity_q,q,imass)
-
-        implicit none
-
-        !global arrays
-        real, intent(out) :: vorticity_q(3,npoin)
-        real, intent(in)  :: q(3,npoin)
-        integer, intent(in)  :: imass
-
-        !local arrays
-        real :: u(ngl,ngl,ngl)
-        real :: v(ngl,ngl,ngl)
-        real :: w(ngl,ngl,ngl)
-        integer :: inode(ngl,ngl,ngl)
-        real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
-        real :: u_e, u_n, u_c
-        real :: v_e, v_n, v_c
-        real :: w_e, w_n, w_c
-        real :: h_e, h_n, h_c
-        real :: u_x, u_y, u_z
-        real :: v_x, v_y, v_z
-        real :: w_x, w_y, w_z
-        integer :: i, j, k, l, ie, ip
-        integer :: AllocateStatus
-
-        real, dimension(3,num_send_recv_total) :: vorticity_q_nbh
-
-        !initialize the global matrix
-        vorticity_q=0
-
-        !loop thru the elements
-        do ie=1,nelem
-
-            !Store Element Variables
-            do k=1,ngl
-                do j=1,ngl
-                    do i=1,ngl
-                        ip=intma(i,j,k,ie)
-                        inode(i,j,k)=ip
-                        ip=inode(i,j,k)
-                        u(i,j,k)  = q(1,ip)
-                        v(i,j,k)  = q(2,ip)
-                        w(i,j,k)  = q(3,ip)
-                    end do
-                end do
-            end do
-
-            !Loop through I (and L, LGL Points)
-            do k=1,ngl
-                do j=1,ngl
-                    do i=1,ngl
-                        ip=inode(i,j,k)
-
-                        !Gauss-Lobatto Weight and Jacobian
-                        wq=jac(i,j,k,ie)
-
-                        !Store Metric Terms
-                        e_x=ksi_x(i,j,k,ie);  e_y=ksi_y(i,j,k,ie);  e_z=ksi_z(i,j,k,ie)
-                        n_x=eta_x(i,j,k,ie);  n_y=eta_y(i,j,k,ie);  n_z=eta_z(i,j,k,ie)
-                        c_x=zeta_x(i,j,k,ie); c_y=zeta_y(i,j,k,ie); c_z=zeta_z(i,j,k,ie)
-
-                        !construct Derivatives in Computational Space
-                        u_e=0; u_n=0; u_c=0
-                        v_e=0; v_n=0; v_c=0
-                        w_e=0; w_n=0; w_c=0
-
-                        do l = 1,ngl
-                            ! Derivatives of Basis functions
-                            h_e = dpsi(l,i)
-                            h_n = dpsi(l,j)
-                            h_c = dpsi(l,k)
-
-                            !KSI Derivatives
-                            u_e = u_e + u(l,j,k)*h_e
-                            v_e = v_e + v(l,j,k)*h_e
-                            w_e = w_e + w(l,j,k)*h_e
-
-                            !ETA Derivatives
-                            u_n = u_n + u(i,l,k)*h_n
-                            v_n = v_n + v(i,l,k)*h_n
-                            w_n = w_n + w(i,l,k)*h_n
-
-                            !ZETA Derivatives
-                            u_c = u_c + u(i,j,l)*h_c
-                            v_c = v_c + v(i,j,l)*h_c
-                            w_c = w_c + w(i,j,l)*h_c
-                        end do !l
-
-                        !Construct Derivatives in Physical Space (via the Chain Rule)
-                        u_x=u_e*e_x + u_n*n_x + u_c*c_x
-                        u_y=u_e*e_y + u_n*n_y + u_c*c_y
-                        u_z=u_e*e_z + u_n*n_z + u_c*c_z
-
-                        v_x=v_e*e_x + v_n*n_x + v_c*c_x
-                        v_y=v_e*e_y + v_n*n_y + v_c*c_y
-                        v_z=v_e*e_z + v_n*n_z + v_c*c_z
-
-                        w_x=w_e*e_x + w_n*n_x + w_c*c_x
-                        w_y=w_e*e_y + w_n*n_y + w_c*c_y
-                        w_z=w_e*e_z + w_n*n_z + w_c*c_z
-
-                        !Store the solution
-                        vorticity_q(1,ip) = vorticity_q(1,ip) + wq*(w_y - v_z)
-                        vorticity_q(2,ip) = vorticity_q(2,ip) + wq*(u_z - w_x)
-                        vorticity_q(3,ip) = vorticity_q(3,ip) + wq*(v_x - u_y)
-                    end do !i
-                end do !j
-            end do !k
-        end do !ie
-
-        !Apply DSS
-        call create_global_rhs(vorticity_q,vorticity_q_nbh,3,imass)
-
-    end subroutine compute_vorticity
 
     !----------------------------------------------------------------------!
     !>@brief This subroutine computes the canonical derivative of the vector Q as one NxNDIMxN system.

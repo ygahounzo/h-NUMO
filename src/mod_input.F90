@@ -74,7 +74,6 @@ module mod_input
         lvisc_anisotropic, & !FXG 10/31/16: New flag to split Hor and Vert dirs.
         lvisc_dynamics, visc_dyn_flg,     &
         lvisc_tracers, visc_tracers_flg, &
-        lnazarov_tracers, naza_tracers_flg, &
         vertical_viscosity, &
         alpha_thermal, alpha_salinity,&
         filter_tracers_flg, &
@@ -85,13 +84,10 @@ module mod_input
         Re_tau, &
         Re_bulk, &
         Mach, &
-        lnazarov, &
         lapply_bcs_velocity, &
         lLAV, &
         llimit, llimit_below, llimit_above, limiter_type, limiter_qoi, &
         ltime_residual, time_residual_flg, &
-        lLES, &
-        lSMAG, &
         ladd_full_stress_tensor, &
         full_stress_flg, &
         ldamping_function, &
@@ -108,43 +104,16 @@ module mod_input
         nlaplacian, &
         nlaplacian_flg, &
         lanisotropic_laplacian, &
-        ladapt_timestep, lprint_diagnostics, iprint_diagnostics, lcheck_all_conserved, lunit_test, unit_test_type, lcompute_barycenter, ljenkins_test, &
-        ldynamics, lphysics, lsimple_physics, lkessler, lrain, lmoist_forcing, lmoist_column, lpassive, lpure_advection, ntracers_in, &
-        kessler_production_constant, &
-        sounding_file, lread_sound, lread_qvapor, lread_uvelo, lread_vvelo, &
+        ladapt_timestep, lprint_diagnostics, iprint_diagnostics, lcheck_all_conserved, lcompute_barycenter, ljenkins_test, &
+        ldynamics, &
         ctd_file_temp, ctd_file_salinity, &
-        sounding_ncolumns, &
-        uvelo_uniform, vvelo_uniform, wvelo_uniform, &
         lrotating_flow, &
         Mach1_in, Mach2_in, &
         bcast_type, &
-        lout_rho, lout_uvelo, lout_vvelo, lout_wvelo, lout_velo, lout_dvelo, lout_theta, lout_sponge, &
-        lout_thetae , lout_press , lout_temperature, &
-        lout_previous_time_steps, &
-        lout_rank, &
-        lout_vorticity, &
-        lout_xvorticity, &
-        lout_yvorticity, &
-        lout_zvorticity,&
-        lout_rvorticity,&
-        lout_tke, &
-        lout_qvapor , lout_qcloud , lout_qrain, &
-        lout_tau, lout_radius, lout_coords, &
-        lout_spherical, &
-        lwrite_time_averaging, &
-        lout_statistics, &
-        pert_type, &
-        pert_type_tracers, &
-        lleveque, &
-        lburgers1d, &
-        lburgers2d, &
-        lsmolar_flow,&
-        lslotted, &
         lout_spherical_shell, &
         zlevel_out, &
         lout_nc_3d, &
         p00_in, &
-        nu_air_in, &
         lpert_theta, lpert_qv, lpert_qc, lpert_qr, lcylinder, &
         ldam, &
         lpert_velo, &
@@ -154,17 +123,6 @@ module mod_input
         thetac3_in, qvc3_in, qcc3_in, qrc3_in, &
         thetac4_in, qvc4_in, qcc4_in, qrc4_in, &
         steepness_pert_in, &
-        xradius_pert_in, yradius_pert_in, zradius_pert_in, &
-        xradius2_pert_in, yradius2_pert_in, zradius2_pert_in, &
-        xradius3_pert_in, yradius3_pert_in, zradius3_pert_in, &
-        xradius4_pert_in, yradius4_pert_in, zradius4_pert_in, &
-        xc_pert_in, yc_pert_in, zc_pert_in, &
-        xc2_pert_in, yc2_pert_in, zc2_pert_in, &
-        xc3_pert_in, yc3_pert_in, zc3_pert_in, &
-        xc4_pert_in, yc4_pert_in, zc4_pert_in, &
-        xmin_velo_in, xmax_velo_in, &
-        ymin_velo_in, ymax_velo_in, &
-        zmin_velo_in, zmax_velo_in, &
         space_method, &
         cgdg_method, &
         form_method, &
@@ -184,7 +142,6 @@ module mod_input
  
    public :: nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
         nlayers, & !shallow water layers
-        lread_input_dimensions, &
         delta_domain, & !used for turbulent channel flows
         nlon, nlat, &
         x_boundary, y_boundary, z_boundary, &
@@ -192,27 +149,7 @@ module mod_input
         robin_bc_alpha, &
         lfree_slip_exact, &
         geometry_type, decomp_type, nproc_z, &
-        LAM_flg, GCM_flg, &
         bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
-        ldirichlet_all, &
-        ldirichlet_top, ldirichlet_bottom,  &
-        ldirichlet_east, ldirichlet_west,   &
-        ldirichlet_north, ldirichlet_south, &
-        dirichlet_theta, &
-        dirichlet_uvelo, &
-        dirichlet_vvelo, &
-        dirichlet_wvelo, &
-        lviscous_boundary, &
-        lviscous_ground, &
-        lviscous_bottom, &
-        lviscous_top, &
-        lviscous_south, &
-        lviscous_north, &
-        lviscous_east, &
-        lviscous_west, &
-        lforce_spongex, &
-        lforce_spongey, &
-        lforce_spongez, &
         sponge_type, sponge_top_coe, sponge_lateralx_coe, sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
         lsommerfeld, &
         lgrid_only, &
@@ -222,7 +159,6 @@ module mod_input
         xstretch_coe, ystretch_coe, zstretch_coe, &
         lxstretch, lystretch, lzstretch, &
         xstretch_type, ystretch_type, zstretch_type, &
-        lmountain,mount_type,mount_xc,mount_yc,mount_hm,mount_ac,mount_bc,&
         zgrid_type,hybrid_s,sleve_s1,sleve_s2, &
         lread_external_grid, read_external_grid_flg, is_non_conforming_flg, &
         interp_cg_flux_flg, &
@@ -333,14 +269,13 @@ module mod_input
    character     :: ti_method*14, si_method*8, si_dimension*2
    character     :: ti_method_btp*14
    character(len=1) :: ark2_type = 'b' !default set to ARK2B
-   character     :: sounding_file*124, ctd_file_temp*124, ctd_file_salinity*124
+   character     :: ctd_file_temp*124, ctd_file_salinity*124
    logical       :: lprint_diagnostics
    integer       :: iprint_diagnostics = 1 !every how many iterations to print diagnostics
    logical       :: lcheck_all_conserved = .false.
    logical       :: ljenkins_test = .true.
-   logical       :: lunit_test = .false.
  
-   character     :: solver_type*9, real_string*9, unit_test_type*16
+   character     :: solver_type*9, real_string*9
    logical       :: lcg_proj = .false.
    character     :: Iter_Type*5, precon_type*1, precon_mode*5, precon_fname*150
    character     :: space_method*3, cgdg_method*8
@@ -485,16 +420,9 @@ module mod_input
    integer               :: nel_root_v = 0
    integer               :: visc_dyn_flg     = 1   !This flag activates the laplacian computation for the dynamics equations (active by default)
    integer               :: visc_tracers_flg = 1   !This flag activates the laplacian computation for the tracers equations (active by default)
-   integer               :: naza_tracers_flg = 0   !This flag activates the nazarov-LES model for the tracers equations (NOT active by default)
    real(kind=r8)         :: vertical_viscosity = 1.0 !1=On and 0=Off
    integer               :: filter_tracers_flg = 0 !This flag activates the filter computation for the tracers equations (INactive by default)
-   integer               :: sounding_ncolumns = 5  !This indicates the number of columns of the sounding file
-   !The default has 5 columns only and the order is the following:
-   !    z(m)  theta(K)  qvapor(kg/kg)  uvelo(m/s)  vvelo(m/s)
-   !Any additional variable should be added as column 6, 7, etc.
-   !Ex.: to add a column with pressure we would have:
-   !    z(m)  theta(K)  qvapor(kg/kg)  uvelo(m/s)  vvelo(m/s)  pressure(Pa)
-   integer               :: ntracers_in = 3
+   
    integer               :: platformID = 0
    integer               :: deviceID = 0
    integer               :: platformID2 = 1
@@ -539,65 +467,16 @@ module mod_input
    real(kind=r8)         :: qvc4_in = 0.0
    real(kind=r8)         :: qcc4_in = 0.0
    real(kind=r8)         :: qrc4_in = 0.0
-   real(kind=r8)         :: xradius_pert_in = -1.0
-   real(kind=r8)         :: yradius_pert_in = -1.0
-   real(kind=r8)         :: zradius_pert_in = -1.0
-   real(kind=r8)         :: xradius2_pert_in = -1.0
-   real(kind=r8)         :: yradius2_pert_in = -1.0
-   real(kind=r8)         :: zradius2_pert_in = -1.0
-   real(kind=r8)         :: xradius3_pert_in = -1.0
-   real(kind=r8)         :: yradius3_pert_in = -1.0
-   real(kind=r8)         :: zradius3_pert_in = -1.0
-   real(kind=r8)         :: xradius4_pert_in = -1.0
-   real(kind=r8)         :: yradius4_pert_in = -1.0
-   real(kind=r8)         :: zradius4_pert_in = -1.0
- 
-   real(kind=r8)         :: LAM_flg
-   real(kind=r8)         :: GCM_flg
  
    integer               :: steepness_pert_in = 0 ! 0: sin-shaped rtb, >0: shape of rtb given by exp(-r**steepness_pert_in)
-   ! for the default domain of 1000m xradius_pert_in=yradius_pert_in=zradius_pert_in should be chosen according to following table:
-   ! steepness_pert_in  0   1     2     3     4     5     6
-   ! radius_pert_in     250 125.1 139.1 143.6 144.8 144.8 144.3
-   ! These numbers (for steepness_pert_in>0) were computed by Andreas Mueller (March 2014) with WolframAlpha using the following command:
-   ! Table[FindRoot[NIntegrate[  r (  1/300 - 1/(300 + 0.5 0.5 (1 + Cos[pi r/250]))), {r, 0, 250}] -    NIntegrate[r (1/300 - 1/(300 + 0.5 E^-(r/x)^p)), {r, 0, 250}], {x, 125.}],{p,1,6}]
-   ! this makes all the different bubbles have approximately the same total buoyancy
-   real(kind=r8)         :: xc_pert_in = 1.0e6
-   real(kind=r8)         :: yc_pert_in = 1.0e6
-   real(kind=r8)         :: zc_pert_in = 1.0e6
-   real(kind=r8)         :: xc2_pert_in = 1.0e6
-   real(kind=r8)         :: yc2_pert_in = 1.0e6
-   real(kind=r8)         :: zc2_pert_in = 1.0e6
-   real(kind=r8)         :: xc3_pert_in = 1.0e6
-   real(kind=r8)         :: yc3_pert_in = 1.0e6
-   real(kind=r8)         :: zc3_pert_in = 1.0e6
-   real(kind=r8)         :: xc4_pert_in = 1.0e6
-   real(kind=r8)         :: yc4_pert_in = 1.0e6
-   real(kind=r8)         :: zc4_pert_in = 1.0e6
-   real(kind=r8)         :: mount_xc   = 0.0
-   real(kind=r8)         :: mount_yc   = 0.0
-   real(kind=r8)         :: mount_hm   = 0.0
-   real(kind=r8)         :: mount_ac   = 1.0
-   real(kind=r8)         :: mount_bc   = 1.0
-   character(len=24)     :: mount_type = 'mountaintypehere_xxxxxx'
    character(len=12)     :: zgrid_type = 'sigma'
    real(kind=r8)         :: time_scale = 1.0_r8
-   real(kind=r8)         :: uvelo_uniform = 0.0
-   real(kind=r8)         :: vvelo_uniform = 0.0
-   real(kind=r8)         :: wvelo_uniform = 0.0
    real(kind=r8)         :: Mach1_in    = 0.0
    real(kind=r8)         :: Mach2_in    = 0.1
    real(kind=r8)         :: hybrid_s    = 1000.0
    real(kind=r8)         :: sleve_s1    = 1000.0
    real(kind=r8)         :: sleve_s2    = 1000.0
-   real(kind=r8)         :: xmin_velo_in = -6.0e8
-   real(kind=r8)         :: xmax_velo_in = 6.0e8
-   real(kind=r8)         :: ymin_velo_in = -6.0e8
-   real(kind=r8)         :: ymax_velo_in = 6.0e8
-   real(kind=r8)         :: zmin_velo_in = -6.0e8
-   real(kind=r8)         :: zmax_velo_in = 6.0e8
    real(kind=r8)         :: p00_in = -999.999
-   real(kind=r8)         :: nu_air_in = -1.0
    real(kind=r8)         :: Pr = 0.7            !Prandtl number for dry air. Default value
    real(kind=r8)         :: C1_in = 1.0         !Default C1 constant in Nazarov
    real(kind=r8)         :: C2_in = 0.5         !Default C2 constant in Nazarov
@@ -610,33 +489,10 @@ module mod_input
    ! The values of dirchlet_* are the actual (tota) physical values of the variable at the wall at hand
    !
    real(kind=r8), dimension(6) :: dirichlet_theta !dirichlet_theta contains a value of theta per face (6 faces in a box)
-   !dirichlet_theta(1) -> bottom value
-   !dirichlet_theta(2) -> top    value
-   !dirichlet_theta(3) -> sourth value
-   !dirichlet_theta(4) -> north  value
-   !dirichlet_theta(5) -> west   value
-   !dirichlet_theta(6) -> east   value
    real(kind=r8), dimension(6) :: dirichlet_uvelo !dirichlet_uvelo contains a value of uvelo per face (6 faces in a box)
-   !dirichlet_uvelo(1) -> bottom value
-   !dirichlet_uvelo(2) -> top    value
-   !dirichlet_uvelo(3) -> sourth value
-   !dirichlet_uvelo(4) -> north  value
-   !dirichlet_uvelo(5) -> west   value
-   !dirichlet_uvelo(6) -> east   value
    real(kind=r8), dimension(6) :: dirichlet_vvelo !dirichlet_vvelo contains a value of vvelo per face (6 faces in a box)
-   !dirichlet_vvelo(1) -> bottom value
-   !dirichlet_vvelo(2) -> top    value
-   !dirichlet_vvelo(3) -> sourth value
-   !dirichlet_vvelo(4) -> north  value
-   !dirichlet_vvelo(5) -> west   value
-   !dirichlet_vvelo(6) -> east   value
    real(kind=r8), dimension(6) :: dirichlet_wvelo !dirichlet_wvelo contains a value of wvelo per face (6 faces in a box)
-   !dirichlet_wvelo(1) -> bottom value
-   !dirichlet_wvelo(2) -> top    value
-   !dirichlet_wvelo(3) -> sourth value
-   !dirichlet_wvelo(4) -> north  value
-   !dirichlet_wvelo(5) -> west   value
-   !dirichlet_wvelo(6) -> east   value
+
  
    real(kind=r8)         :: c_am2 = 3.0/2.0 !AM2 constant from Durran-Blossey (2nd order)
  
@@ -646,28 +502,11 @@ module mod_input
    character(len=12)     :: tau_type   = 'codina'
    character(len=12)     :: shock_type = 'codina'
    character(len=12)     :: eqn_set    = 'set2nc'
-   character(len=12)     :: pert_type  = 'default'
-   character(len=12)     :: pert_type_tracers  = 'default'
    character(len=12)     :: equations  = 'euler'
    character(len=12)     :: limiter_type = 'none'
    character(len=3)      :: piso_type = 'dsa'
  
-   logical :: lread_input_dimensions = .false.
-   logical :: lleveque       = .false.
-   logical :: lburgers1d     = .false.
-   logical :: lburgers2d     = .false.
-   logical :: lsmolar_flow   = .false.
-   logical :: lslotted       = .false.
    logical :: ldynamics      = .true.
-   logical :: lpure_advection= .false.
-   logical :: lphysics       = .false.
-   logical :: lsimple_physics= .false.
-   logical :: lkessler       = .false.
-   logical :: lrain          = .true.
-   logical :: lmoist_forcing = .true.
-   logical :: lmoist_column  = .false.
-   logical :: lpassive       = .false.
-   logical :: lread_sound    = .false.
    logical :: lpert_theta    = .false.
    logical :: lpert_qv       = .false.
    logical :: lpert_qc       = .false.
@@ -680,35 +519,6 @@ module mod_input
    logical :: lread_uvelo    = .false.
    logical :: lread_vvelo    = .false.
    logical :: lrestart_file  = .false. !obsolete
-   logical :: lmountain      = .false.
-   logical :: lout_rho       = .false.
-   logical :: lout_uvelo     = .false.
-   logical :: lout_vvelo     = .false.
-   logical :: lout_wvelo     = .false.
-   logical :: lout_velo      = .true.
-   logical :: lout_dvelo     = .false.
-   logical :: lout_theta     = .true.
-   logical :: lout_thetae    = .false.
-   logical :: lout_press     = .true.
-   logical :: lout_temperature=.false.
-   logical :: lout_previous_time_steps = .false.
-   logical :: lout_rank       = .false.
-   logical :: lout_vorticity  = .false.
-   logical :: lout_xvorticity = .false.
-   logical :: lout_yvorticity = .false.
-   logical :: lout_zvorticity = .false.
-   logical :: lout_rvorticity = .false.
-   logical :: lout_tke       = .false.
-   logical :: lout_qvapor    = .false.
-   logical :: lout_qcloud    = .false.
-   logical :: lout_qrain     = .false.
-   logical :: lout_sponge    = .false.
-   logical :: lout_tau       = .false.
-   logical :: lout_radius    = .false.
-   logical :: lout_coords    = .false.
-   logical :: lout_spherical = .false.
-   logical :: lwrite_time_averaging = .false.
-   logical :: lout_statistics     = .false.
    logical :: lsommerfeld    = .false.
    logical :: lxstretch      = .false.
    logical :: lystretch      = .false.
@@ -719,8 +529,6 @@ module mod_input
    logical :: lshock_cpt_dyn = .false.
    logical :: lapply_bcs_velocity = .false.
    logical :: lLAV           = .false.
-   logical :: lnazarov       = .false.
-   logical :: lnazarov_tracers=.false.
    logical :: llimit         = .false.
    logical :: llimit_below   = .false.
    logical :: llimit_above   = .false.
@@ -731,17 +539,7 @@ module mod_input
    logical :: ltime_residual = .false.
    logical :: lforce_turb_momentum = .false.
    logical :: lanisotropic_laplacian = .false.
-   logical :: lviscous_boundary = .false.
-   logical :: lviscous_ground   = .false.
-   logical :: lviscous_bottom   = .false.
-   logical :: lviscous_top      = .false.
-   logical :: lviscous_south    = .false.
-   logical :: lviscous_north    = .false.
-   logical :: lviscous_east     = .false.
-   logical :: lviscous_west     = .false.
    logical :: lstabilize_mass_eqn = .false.
-   logical :: lLES           = .false.
-   logical :: lSMAG          = .false.
    logical :: ladd_full_stress_tensor = .false.
    logical :: ldamping_function = .false.
    logical :: luse_PSUP      = .false.
@@ -761,18 +559,6 @@ module mod_input
    logical :: lcompute_barycenter = .false.
    logical :: luse_min_element_length = .false.
    logical :: lrotating_flow = .false.
- 
-   logical :: ldirichlet_all    = .false.
-   logical :: ldirichlet_top    = .false.
-   logical :: ldirichlet_bottom = .false.
-   logical :: ldirichlet_east   = .false.
-   logical :: ldirichlet_west   = .false.
-   logical :: ldirichlet_north  = .false.
-   logical :: ldirichlet_south  = .false.
- 
-   logical :: lforce_spongex   = .false.
-   logical :: lforce_spongey   = .false.
-   logical :: lforce_spongez   = .false.
  
    logical :: ladapt_timestep = .false.
    logical :: lpi_fraction    = .false.
@@ -966,7 +752,6 @@ module mod_input
           lvisc_anisotropic, &
           lvisc_dynamics, visc_dyn_flg,     &
           lvisc_tracers, visc_tracers_flg, &
-          lnazarov_tracers, naza_tracers_flg, &
           vertical_viscosity, &
           filter_tracers_flg, &
           lVMS, lshock_cpt,   &
@@ -977,11 +762,8 @@ module mod_input
           Re_bulk, &
           Mach, &
           lLAV, &
-          lnazarov, &
           llimit, llimit_below, llimit_above, limiter_type, limiter_qoi, &
           ltime_residual, &
-          lLES, &
-          lSMAG, &
           ladd_full_stress_tensor, &
           ldamping_function, &
           damping_function_flg, &
@@ -996,40 +778,13 @@ module mod_input
           nlaplacian, &
           nlaplacian_flg, &
           lanisotropic_laplacian, &
-          ladapt_timestep,lprint_diagnostics,iprint_diagnostics,lcheck_all_conserved,lunit_test,unit_test_type,lcompute_barycenter,ljenkins_test, &
-          ldynamics, lphysics, lsimple_physics, lkessler, lrain, lmoist_forcing, lmoist_column, lpassive, lpure_advection, ntracers_in, &
-          kessler_production_constant, &
-          sounding_file, lread_sound, lread_qvapor, lread_uvelo, lread_vvelo, &
+          ladapt_timestep,lprint_diagnostics,iprint_diagnostics,lcheck_all_conserved,lcompute_barycenter,ljenkins_test, &
+          ldynamics, &
           ctd_file_temp, ctd_file_salinity, &
-          sounding_ncolumns, &
-          uvelo_uniform, vvelo_uniform, wvelo_uniform, &
           Mach1_in, Mach2_in, &
           lrotating_flow, &
           bcast_type, &
-          lout_rho, lout_uvelo, lout_vvelo, lout_wvelo, lout_velo, lout_dvelo, lout_theta, lout_sponge, &
-          lout_thetae, lout_press, lout_temperature, &
-          lout_previous_time_steps, &
-          lout_rank,  &
-          lout_vorticity,  &
-          lout_xvorticity, &
-          lout_yvorticity, &
-          lout_zvorticity, &
-          lout_rvorticity, &
-          lout_tke, &
-          lout_qvapor, lout_qcloud, lout_qrain, &
-          lout_tau, lout_radius, lout_coords, &
-          lout_spherical, &
-          lwrite_time_averaging, &
-          lout_statistics, &
           p00_in, &
-          nu_air_in, &
-          pert_type, &
-          pert_type_tracers, &
-          lleveque, &
-          lburgers1d, &
-          lburgers2d, &
-          lsmolar_flow, &
-          lslotted, &
           lout_spherical_shell, &
           zlevel_out, &
           lout_nc_3d, &
@@ -1043,17 +798,6 @@ module mod_input
           thetac4_in, qvc4_in, qcc4_in, qrc4_in, &
           steepness_pert_in, &
           steepness_pert_in, &
-          xradius_pert_in, yradius_pert_in, zradius_pert_in, &
-          xradius2_pert_in, yradius2_pert_in, zradius2_pert_in, &
-          xradius3_pert_in, yradius3_pert_in, zradius3_pert_in, &
-          xradius4_pert_in, yradius4_pert_in, zradius4_pert_in, &
-          xc_pert_in, yc_pert_in, zc_pert_in, &
-          xc2_pert_in, yc2_pert_in, zc2_pert_in, &
-          xc3_pert_in, yc3_pert_in, zc3_pert_in, &
-          xc4_pert_in, yc4_pert_in, zc4_pert_in, &
-          xmin_velo_in, xmax_velo_in, &
-          ymin_velo_in, ymax_velo_in, &
-          zmin_velo_in, zmax_velo_in, &
           space_method,  cgdg_method, form_method, dump_rhs, &
           lgpu, numaocca_dir, Nelems, Nslices, NslicesV, vectorization, &
           platform, platformID, deviceID, platformWeight, platform2, platformID2, deviceID2, platformWeight2, &
@@ -1109,7 +853,6 @@ module mod_input
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &
-          lread_input_dimensions, &
           delta_domain, & !used for turbulent channel flows
           nlon, nlat, &
           geometry_type, decomp_type, nproc_z, &
@@ -1119,24 +862,6 @@ module mod_input
           lset_outlet_pressure, &
           lfree_slip_exact, &
           bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
-          ldirichlet_all, &
-          ldirichlet_top, ldirichlet_bottom,  &
-          ldirichlet_east, ldirichlet_west,   &
-          ldirichlet_north, ldirichlet_south, &
-          dirichlet_theta, &
-          dirichlet_uvelo, &
-          dirichlet_vvelo, &
-          dirichlet_wvelo, &
-          lviscous_boundary, &
-          lviscous_ground, &
-          lviscous_top, &
-          lviscous_south, &
-          lviscous_north, &
-          lviscous_east, &
-          lviscous_west, &
-          lforce_spongex, &
-          lforce_spongey, &
-          lforce_spongez, &
           sponge_type, sponge_top_coe, sponge_lateralx_coe,sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
           lsommerfeld, &
           lgrid_only, &
@@ -1165,8 +890,6 @@ module mod_input
           refinement_levels_h, refinement_levels_v, nel_root_v, nel_root_h,&
           xstretch_coe, ystretch_coe, zstretch_coe, &
           lxstretch, lystretch, lzstretch, &
-          xstretch_type, ystretch_type, zstretch_type, &
-          lmountain,mount_type,mount_xc,mount_yc,mount_hm,mount_ac,mount_bc,&
           zgrid_type,hybrid_s,sleve_s1,sleve_s2
  
      amr_indicator_variables(1) = 1
