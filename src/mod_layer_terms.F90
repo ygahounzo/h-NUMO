@@ -11,7 +11,8 @@ module mod_layer_terms
             compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
             shear_stress_system, consistency_mass_terms1, consistency_mass_terms, &
             layer_mom_boundary_df, limiter_Positivity_Preserving_layers_mass, limiter_Positivity_Preserving_layers_mom, &
-            filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom
+            filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom, &
+            interpolate_mom, velocity, velocity_face, evaluate_mom_face_all
 
     contains
 
@@ -42,9 +43,9 @@ module mod_layer_terms
 
         real, dimension(nq) :: dp_left, dp_right, dp_temp(npoin_q)
         integer :: k, iface, iquad
-        real :: nxl, nyl, h_l, h_r, claml, clamr, clam, h1_l, h1_r, h2_l, h2_r, Ucl, Ucr, hgl, hgr, gprime, h1, h2, hg, UU
+        real :: nxl, nyl, h_l, h_r, claml, clamr, clam, h1_l, h1_r, h2_l, h2_r, Ucl, Ucr, hgl, hgr, gprime, h1, h2, hg
         real, dimension(nlayers) :: unl, unr, u, v
-        real :: clam1, clam2, s1_l, s1_r, s2_l, s2_r, alph
+        real :: clam1, clam2, s1_l, s1_r, s2_l, s2_r, alph, uu, vv, dpl, dpr
 
         alph = alpha_mlswe(1)/alpha_mlswe(2)
 
@@ -69,23 +70,51 @@ module mod_layer_terms
 
             do k = 1,nlayers
 
-                ! In the following computation of fluxes at element faces,
-                ! flux_edge iface a numerical approximation to the mass flux at element faces (each face has nq quadrature points)
-                ! Here we are using centered fluxes, so we need to compute the fluxes at the left and right edges of each face
+                do iquad = 1,nq
 
-                u_edge(1,:,iface,k) = qprime_face(2,1,:,iface,k) + uvb_face_ave(1,1,:,iface)
-                u_edge(2,:,iface,k) = qprime_face(2,2,:,iface,k) + uvb_face_ave(1,2,:,iface)
-                v_edge(1,:,iface,k) = qprime_face(3,1,:,iface,k) + uvb_face_ave(2,1,:,iface)
-                v_edge(2,:,iface,k) = qprime_face(3,2,:,iface,k) + uvb_face_ave(2,2,:,iface)
-                
-                dp_left = ope_face_ave(1,:,iface) * qprime_face(1,1,:,iface,k)
-                dp_right = ope_face_ave(2,:,iface) * qprime_face(1,2,:,iface,k)
+                    ! In the following computation of fluxes at element faces,
+                    ! flux_edge iface a numerical approximation to the mass flux at element faces (each face has nq quadrature points)
+                    ! Here we are using centered fluxes, so we need to compute the fluxes at the left and right edges of each face
 
-                flux_edge(1,:,iface,k) = 0.5*(u_edge(1,:,iface,k) * dp_left + u_edge(2,:,iface,k) * dp_right)
-                flux_edge(2,:,iface,k) = 0.5*(v_edge(1,:,iface,k) * dp_left + v_edge(2,:,iface,k) * dp_right)
+                    u_edge(1,iquad,iface,k) = qprime_face(2,1,iquad,iface,k) + uvb_face_ave(1,1,iquad,iface)
+                    u_edge(2,iquad,iface,k) = qprime_face(2,2,iquad,iface,k) + uvb_face_ave(1,2,iquad,iface)
+                    v_edge(1,iquad,iface,k) = qprime_face(3,1,iquad,iface,k) + uvb_face_ave(2,1,iquad,iface)
+                    v_edge(2,iquad,iface,k) = qprime_face(3,2,iquad,iface,k) + uvb_face_ave(2,2,iquad,iface)
 
-                sum_layer_mass_flux_face(1,:,iface) = sum_layer_mass_flux_face(1,:,iface) + flux_edge(1,:,iface,k)
-                sum_layer_mass_flux_face(2,:,iface) = sum_layer_mass_flux_face(2,:,iface) + flux_edge(2,:,iface,k)
+                    nxl = normal_vector_q(1,iquad,1,iface)
+                    nyl = normal_vector_q(2,iquad,1,iface)
+
+                    uu = 0.5*(u_edge(1,iquad,iface,k) + u_edge(2,iquad,iface,k))
+                    vv = 0.5*(v_edge(1,iquad,iface,k) + v_edge(2,iquad,iface,k))
+
+                    !uu = 0.5*(u_edge(1,iquad,iface,k) + u_edge(2,iquad,iface,k))
+                    !vv = 0.5*(v_edge(1,iquad,iface,k) + v_edge(2,iquad,iface,k))
+                    
+                    dpl = ope_face_ave(1,iquad,iface) * qprime_face(1,1,iquad,iface,k)
+                    dpr = ope_face_ave(2,iquad,iface) * qprime_face(1,2,iquad,iface,k)
+
+                    if(uu*nxl > 0.0) then 
+                        flux_edge(1,iquad,iface,k) = uu * dpl
+                    else 
+                        flux_edge(1,iquad,iface,k) = uu * dpr 
+                    endif 
+
+                    if(vv*nyl > 0.0) then 
+                        flux_edge(2,iquad,iface,k) = vv * dpl
+                    else 
+                        flux_edge(2,iquad,iface,k) = vv * dpr 
+                    endif 
+
+
+                    !flux_edge(1,iquad,iface,k) = 0.5*(u_edge(1,iquad,iface,k) * dp_left + u_edge(2,iquad,iface,k) * dp_right)
+                    !lux_edge(2,iquad,iface,k) = 0.5*(v_edge(1,iquad,iface,k) * dp_left + v_edge(2,iquad,iface,k) * dp_right)
+
+                    !flux_edge(1,iquad,iface,k) = 0.5*(u_edge(1,iquad,iface,k) * dpl + u_edge(2,iquad,iface,k) * dpr)
+                    !flux_edge(2,iquad,iface,k) = 0.5*(v_edge(1,iquad,iface,k) * dpl + v_edge(2,iquad,iface,k) * dpr)
+
+                    sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface) + flux_edge(1,iquad,iface,k)
+                    sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface) + flux_edge(2,iquad,iface,k)
+                end do 
 
             end do
 
@@ -263,8 +292,8 @@ module mod_layer_terms
 
 
     subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-        sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, sum_layer_mass_flux_face, &
-        btp_mass_flux_face_ave, qprime_face, flux_deficit_mass_face)
+        sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, &
+        qprime_face, flux_deficit_mass_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
@@ -279,13 +308,11 @@ module mod_layer_terms
         real, dimension(3,npoin,nlayers), intent(in)   :: q_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
-        real, dimension(2,nq,nface), intent(in)        :: sum_layer_mass_flux_face
-        real, dimension(2,nq,nface), intent(in) :: ope_face_ave
-        real, dimension(2,nq,nface), intent(in) :: btp_mass_flux_face_ave, flux_deficit_mass_face
+        real, dimension(2,nq,nface), intent(in) :: ope_face_ave, flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
 
         real, dimension(npoin_q) :: weights
-        real, dimension(nq) :: weights_face_l, weights_face_r
+        real, dimension(nq) :: weights_face_l, weights_face_r, weight
         integer :: iface, k
 
         flux_adjust_edge = 0.0
@@ -521,7 +548,7 @@ module mod_layer_terms
         integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl, mom_consistency
         real :: vu_dp_flux_deficit, sum_vu, u_min, u_max, v_min, v_max
         real, parameter :: eps1 = 1.0e-12 !  Parameter used to prevent division by zero.
-        real :: nx, ny, un(nlayers)
+        real :: nx, ny, un(nlayers), uu, vv, nxl, nyl
         real, dimension(npoin_q) :: temp_u, temp_v, temp_dp
         real, dimension(npoin_q,nlayers) :: temp_uu, temp_vv
 
@@ -551,11 +578,37 @@ module mod_layer_terms
         do k = 1,nlayers
             do iface = 1,nface
 
-                udp_flux_edge(1,:,iface,k) = 0.5*(udp_left(:,iface,k) * u_edge(1,:,iface,k) + udp_right(:,iface,k) * u_edge(2,:,iface,k))
-                udp_flux_edge(2,:,iface,k) = 0.5*(udp_left(:,iface,k) * v_edge(1,:,iface,k) + udp_right(:,iface,k) * v_edge(2,:,iface,k))
+                do iquad = 1, nq
 
-                vdp_flux_edge(1,:,iface,k) = 0.5*(vdp_left(:,iface,k) * u_edge(1,:,iface,k) + vdp_right(:,iface,k) * u_edge(2,:,iface,k))
-                vdp_flux_edge(2,:,iface,k) = 0.5*(vdp_left(:,iface,k) * v_edge(1,:,iface,k) + vdp_right(:,iface,k) * v_edge(2,:,iface,k))
+                    nxl = normal_vector_q(1,iquad,1,iface)
+                    nyl = normal_vector_q(2,iquad,1,iface)
+
+                    uu = 0.5*(u_edge(1,iquad,iface,k) + u_edge(2,iquad,iface,k))
+                    vv = 0.5*(v_edge(1,iquad,iface,k) + v_edge(2,iquad,iface,k))
+
+                    if(uu*nxl > 0.0) then 
+                        udp_flux_edge(1,iquad,iface,k) = uu * udp_left(iquad,iface,k)
+                        vdp_flux_edge(1,iquad,iface,k) = uu * vdp_left(iquad,iface,k)
+                    else 
+                        udp_flux_edge(1,iquad,iface,k) = uu * udp_right(iquad,iface,k)
+                        vdp_flux_edge(1,iquad,iface,k) = uu * vdp_right(iquad,iface,k)
+                    end if
+
+                    if(vv*nxl > 0.0) then 
+                        udp_flux_edge(2,iquad,iface,k) = vv * udp_left(iquad,iface,k)
+                        vdp_flux_edge(2,iquad,iface,k) = vv * vdp_left(iquad,iface,k)
+                    else 
+                        udp_flux_edge(2,iquad,iface,k) = vv * udp_right(iquad,iface,k)
+                        vdp_flux_edge(2,iquad,iface,k) = vv * vdp_right(iquad,iface,k)
+                    end if
+
+
+                    udp_flux_edge(1,iquad,iface,k) = 0.5*(udp_left(iquad,iface,k) * u_edge(1,iquad,iface,k) + udp_right(iquad,iface,k) * u_edge(2,iquad,iface,k))
+                    udp_flux_edge(2,iquad,iface,k) = 0.5*(udp_left(iquad,iface,k) * v_edge(1,iquad,iface,k) + udp_right(iquad,iface,k) * v_edge(2,iquad,iface,k))
+
+                    vdp_flux_edge(1,iquad,iface,k) = 0.5*(vdp_left(iquad,iface,k) * u_edge(1,iquad,iface,k) + vdp_right(iquad,iface,k) * u_edge(2,iquad,iface,k))
+                    vdp_flux_edge(2,iquad,iface,k) = 0.5*(vdp_left(iquad,iface,k) * v_edge(1,iquad,iface,k) + vdp_right(iquad,iface,k) * v_edge(2,iquad,iface,k))
+                end do
 
             end do
         end do
@@ -1236,11 +1289,11 @@ module mod_layer_terms
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
-                    uv_df(1,I,k) = uv_df(1,I,k) + (1.0/real(nlayers))*(- ubar + qb_df(3,I)/qb_df(1,I))
-                    uv_df(2,I,k) = uv_df(2,I,k) + (1.0/real(nlayers))*(- vbar + qb_df(4,I)/qb_df(1,I))
+                    !uv_df(1,I,k) = uv_df(1,I,k) + (1.0/real(nlayers))*(- ubar + qb_df(3,I)/qb_df(1,I))
+                    !uv_df(2,I,k) = uv_df(2,I,k) + (1.0/real(nlayers))*(- vbar + qb_df(4,I)/qb_df(1,I))
 
-                    !uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
-                    !uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
+                    uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
                 end do
 
             else
@@ -1262,6 +1315,145 @@ module mod_layer_terms
 
     end subroutine velocity_df
 
+    subroutine velocity(uv,q, qb)
+
+        use mod_grid, only : npoin_q
+        use mod_input, only: nlayers
+
+        implicit none
+        
+        real, dimension(3,npoin_q,nlayers), intent(in) :: q
+        real, dimension(4,npoin_q), intent(in) :: qb
+
+        real, dimension(2,npoin_q,nlayers), intent(out) :: uv
+        
+        real, dimension(nlayers) :: a, b, c
+        real, dimension(nlayers,2) :: r
+        real, dimension(nlayers) :: weight
+        real :: eps = 1.0e-4
+        real :: ubar, vbar, mult, dpbar, dp_cutoff1, dp_cutoff2
+        integer :: Iq, k
+
+        dp_cutoff1 = 1.5e6
+        dp_cutoff2 = 8.5e8
+        
+        do Iq = 1, npoin_q
+            do k = 1, nlayers
+                weight(k) = (q(1,Iq,k) - dp_cutoff1) / (dp_cutoff2 - dp_cutoff1)
+                weight(k) = max(min(weight(k), 1.0), 0.0)
+
+                !weight(k) = 1.0
+                
+                b(k) = 1.0
+                r(k,1) = weight(k) * q(2,Iq,k) / (q(1,Iq,k))
+                r(k,2) = weight(k) * q(3,Iq,k) / (q(1,Iq,k))
+            end do
+
+            if (nlayers >= 3) then
+               do k = 2,(nlayers-1)
+                  a(k) =  - (1.0-weight(k)) * q(1,Iq,k-1) / (q(1,Iq,k-1) + q(1,Iq,k+1))
+                  c(k) =  - (1.0-weight(k)) * q(1,Iq,k+1) / (q(1,Iq,k-1) + q(1,Iq,k+1))
+               enddo
+            endif
+    
+            a(1) = 0.0
+            c(1) = -(1.0-weight(1))
+            a(nlayers) = -(1.0-weight(nlayers))
+            c(nlayers) = 0.0
+            
+            do k = 2, nlayers
+                mult = a(k) / b(k-1)
+                b(k) = b(k) - mult * c(k-1)
+                r(k,1) = r(k,1) - mult * r(k-1,1)
+                r(k,2) = r(k,2) - mult * r(k-1,2)
+            end do
+    
+            r(nlayers,1) = r(nlayers,1) / b(nlayers)
+            r(nlayers,2) = r(nlayers,2) / b(nlayers)
+            uv(1,Iq,nlayers) = r(nlayers,1)
+            uv(2,Iq,nlayers) = r(nlayers,2)
+    
+            do k = nlayers-1, 1, -1
+                r(k,1) = (r(k,1) - c(k) * r(k+1,1)) / b(k)
+                r(k,2) = (r(k,2) - c(k) * r(k+1,2)) / b(k) 
+                uv(1,Iq,k) = r(k,1)
+                uv(2,Iq,k) = r(k,2)
+            end do
+        end do
+
+        do k = 1,nlayers
+            uv(1,:,k) = q(2,:,k) / q(1,:,k)
+            uv(2,:,k) = q(3,:,k) / q(1,:,k)
+        end do
+
+        do Iq = 1, npoin_q
+            ubar = 0.0
+            vbar = 0.0
+            
+            do k = 1, nlayers
+                ubar = ubar + uv(1,Iq,k) * q(1,Iq,k)
+                vbar = vbar + uv(2,Iq,k) * q(1,Iq,k)
+            end do
+
+            if(qb(1,Iq) > 0.0) then
+                
+                ubar = ubar / qb(1,Iq)
+                vbar = vbar / qb(1,Iq)
+
+                do k = 1, nlayers
+                    uv(1,Iq,k) = uv(1,Iq,k) - ubar + qb(3,Iq)/qb(1,Iq)
+                    uv(2,Iq,k) = uv(2,Iq,k) - vbar + qb(4,Iq)/qb(1,Iq)
+                end do
+
+            else
+                uv(:,Iq,:) = 0.0
+            end if
+        end do
+
+    end subroutine velocity
+
+    subroutine interpolate_mom(q_df,q, qb,flag_pred)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
+        use mod_input, only: nlayers, ifilter
+        use mod_create_rhs_mlswe, only: interpolate_layer_from_quad_to_node
+
+        use mod_initial, only: psih, indexq
+
+        implicit none
+      
+        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
+        real, dimension(3,npoin_q,nlayers), intent(inout) :: q
+        real, dimension(4,npoin_q), intent(in) :: qb
+        integer, intent(in) :: flag_pred
+
+        integer :: k, e, kquad,jquad, iquad, Iq, m, n, l,I, ip
+        real :: hi
+        real, dimension(2,npoin_q,nlayers) :: uv
+        
+        call evaluate_mom(q,q_df)
+
+        call velocity(uv,q, qb)
+
+        do k = 1,nlayers
+            q(2,:,k) = uv(1,:,k) * q(1,:,k)
+            q(3,:,k) = uv(2,:,k) * q(1,:,k)
+        end do 
+
+        ! Interpolate from quad to nodal space
+
+        call interpolate_layer_from_quad_to_node(q_df, q)
+
+        if(flag_pred == 0 .and. ifilter > 0) then 
+            do k = 1,nlayers
+                call filter_mlswe(q_df(2:3,:,k),2)
+            end do
+            call layer_mom_boundary_df(q_df(2:3,:,:))
+        end if
+
+    end subroutine interpolate_mom
+
     subroutine evaluate_mom(q,q_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
@@ -1276,9 +1468,8 @@ module mod_layer_terms
         real, intent(inout) :: q(3,npoin_q,nlayers)
         real, intent(in) :: q_df(3,npoin,nlayers)
 
-        integer :: k, e, kquad,jquad, iquad, Iq, m, n, l,I, ip
-        real :: hi, pb_temp, one_plus_eta_temp
-        real, dimension(npoin_q) :: ubar, vbar
+        integer :: k, Iq, m, n, l,I, ip
+        real :: hi
 
         q(2:3,:,:) = 0.0
       
@@ -1300,7 +1491,85 @@ module mod_layer_terms
         ! end do
 
     end subroutine evaluate_mom
+    
+    subroutine evaluate_mom_face_all(q_face, uv_face, q, uv)
 
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq
+        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        implicit none
+
+        real, dimension(3, 2, nq, nface, nlayers), intent(inout) :: q_face
+        real, dimension(2, 2, nq, nface, nlayers), intent(out) :: uv_face
+        real, dimension(3, npoin_q, nlayers), intent(in) :: q
+        real, dimension(2, npoin_q, nlayers), intent(in) :: uv
+    
+        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, kl, kr, jquad
+        real :: nx, ny, un(nlayers)
+    
+        q_face(2:3,:,:,:,:) = 0.0
+        uv_face = 0.0
+    
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il = imapl_q(1,iquad,1,iface)
+                jl = imapl_q(2,iquad,1,iface)
+                kl = imapl_q(3,iquad,1,iface)
+
+                I = intma_dg_quad(il,jl,kl,el)
+
+                q_face(2:3,1,iquad,iface,:) = q(2:3,I,:)
+                uv_face(:,1,iquad,iface,:) = uv(:,I,:)
+
+                if(er > 0) then
+
+                    ir = imapr_q(1,iquad,1,iface)
+                    jr = imapr_q(2,iquad,1,iface)
+                    kr = imapr_q(3,iquad,1,iface)
+
+                    I = intma_dg_quad(ir,jr,kr,er)
+
+                    q_face(2:3,2,iquad,iface,:) = q(2:3,I,:)
+                    uv_face(:,2,iquad,iface,:) = uv(:,I,:)
+
+                else 
+                    q_face(2:3,2,iquad,iface,:) = q_face(2:3,1,iquad,iface,:)
+                    uv_face(:,2,iquad,iface,:) = uv_face(:,1,iquad,iface,:)
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = q(2,I,:)*nx + q(3,I,:)*ny
+
+                        q_face(2,2,iquad,iface,:) = q(2,I,:) - 2.0*un*nx
+                        q_face(3,2,iquad,iface,:) = q(3,I,:) - 2.0*un*ny
+
+                        un = uv(1,I,:)*nx + uv(2,I,:)*ny
+
+                        uv_face(1,2,iquad,iface,:) = uv(1,I,:) - 2.0*un*nx
+                        uv_face(2,2,iquad,iface,:) = uv(2,I,:) - 2.0*un*ny
+
+                    elseif(er == -2) then 
+                        q_face(2:3,2,iquad,iface,:) = -q_face(2:3,1,iquad,iface,:)
+
+                        uv_face(:,2,iquad,iface,:) = -uv_face(:,1,iquad,iface,:)
+                        
+                    end if
+                end if
+
+            end do
+        end do
+    
+    end subroutine evaluate_mom_face_all
 
     subroutine evaluate_mom_face(q_face, q)
 
@@ -1368,6 +1637,71 @@ module mod_layer_terms
         ! end do
     
     end subroutine evaluate_mom_face
+
+    subroutine velocity_face(uv_face, uv)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq
+        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        implicit none
+
+        real, dimension(2, 2, nq, nface, nlayers), intent(out) :: uv_face
+        real, dimension(2, npoin_q, nlayers), intent(in) :: uv
+    
+        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, kl, kr, jquad
+        real :: nx, ny, un(nlayers)
+    
+        uv_face = 0.0
+    
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il = imapl_q(1,iquad,1,iface)
+                jl = imapl_q(2,iquad,1,iface)
+                kl = imapl_q(3,iquad,1,iface)
+
+                I = intma_dg_quad(il,jl,kl,el)
+
+                uv_face(:,1,iquad,iface,:) = uv(:,I,:)
+
+                if(er > 0) then
+
+                    ir = imapr_q(1,iquad,1,iface)
+                    jr = imapr_q(2,iquad,1,iface)
+                    kr = imapr_q(3,iquad,1,iface)
+
+                    I = intma_dg_quad(ir,jr,kr,er)
+
+                    uv_face(:,2,iquad,iface,:) = uv(:,I,:)
+
+                else 
+                    uv_face(:,2,iquad,iface,:) = uv_face(:,1,iquad,iface,:)
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = uv(1,I,:)*nx + uv(2,I,:)*ny
+
+                        uv_face(1,2,iquad,iface,:) = uv(1,I,:) - 2.0*un*nx
+                        uv_face(2,2,iquad,iface,:) = uv(2,I,:) - 2.0*un*ny
+                    elseif(er == -2) then 
+                        uv_face(:,2,iquad,iface,:) = -uv_face(:,1,iquad,iface,:)
+                        
+                    end if
+                end if
+
+            end do
+        end do
+    
+    end subroutine velocity_face
 
     subroutine layer_mom_boundary_df(q)
 

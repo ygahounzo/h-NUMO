@@ -428,26 +428,26 @@ module mod_splitting
             endif
         end do
 
-        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
-        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
+        call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
+            btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
  
         !adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
 
-        adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
+        !adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
 
         ! Apply filter to the thickness
 
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+        !one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+
+        !do k = 1,nlayers
+        !    dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+        !end do
 
         do k = 1,nlayers
-            dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-        end do
+            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
 
-        do k = 1,nlayers
-            !q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
-
-            q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
+            !q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
             
             if(ifilter > 0 .and. flag_pred == 0) then 
                 call filter_mlswe(q_df(1,:,k),1)
@@ -493,7 +493,7 @@ module mod_splitting
                                     shear_stress_system, layer_mom_boundary_df, &
                                     limiter_Positivity_Preserving_layers_mom, filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face
 
-        use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
+        use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom, interpolate_mom, velocity, velocity_face, evaluate_mom_face_all
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
         use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
@@ -527,7 +527,7 @@ module mod_splitting
         ! Local variables
 
         real, dimension(2,npoin_q,nlayers+1)   :: grad_z
-        real, dimension(2,npoin_q,nlayers)     :: coriolis, uvdp,uv
+        real, dimension(2,npoin_q,nlayers)     :: uvdp,uv
         real, dimension(2,npoin,nlayers)       :: q_df_temp
         real, dimension(npoin)                 :: fdt, fdt2, a, b, zk
         real, dimension(nq,nface,nlayers)      :: udp_left, vdp_left, udp_right, vdp_right
@@ -543,24 +543,16 @@ module mod_splitting
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress, rhs_visc_bcl, rhs_c
         real, dimension(3,npoin,nlayers) :: q_df3
         
-        real, dimension(2,npoin_q) :: z_xy, qpvisc
         real, dimension(npoin_q,nlayers) :: dp
         integer :: k, Iq, iquad, I, iface, ilr, n
         real :: tempu, tempv
         real, dimension(npoin) :: tempu1, tempv1, ub_df_ave, vb_df_ave
-        real :: nx, ny, un, E(2,npoin), uvb_ave_face(2,2,nq,nface)
         integer :: el, er, il, jl, kl, kr, jr, ir
-        real, dimension(2,2,npoin_q) :: grad_qpvisc
-        real, dimension(2,2,nq,nface) :: qpvisc_face
-        real, dimension(4,2,nq,nface) :: grad_qpvisc_face
-        real, dimension(2,npoin_q) :: grad_ub, grad_vb
-        real, dimension(2,npoin) :: rhs_visc_bcl_temp, q_vic
         real, dimension(3,npoin,nlayers) :: qprime_df2
 
         grad_z = 0.0
 
         q_df_temp = 0.0
-        coriolis = 0.0
 
         u_udp_temp = 0.0
         v_vdp_temp = 0.0
@@ -650,23 +642,40 @@ module mod_splitting
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
         ! Extract velocity from the momentum
-        call velocity_df(q_df, qb_df, flag_pred)
+        !call velocity_df(q_df, qb_df, flag_pred)
+
+        ! Extract velocity from the momentum on quads and interpolate to nodal pts
+        call interpolate_mom(q_df,q,qb,flag_pred)
+
         ! Evaluate velocity and momentum at the quad points
         call evaluate_mom(q,q_df)
+
+        call velocity(uv,q, qb)
+
         ! Extract faces values
-        call evaluate_mom_face(q_face, q)
+        !call evaluate_mom_face(q_face, q)
+        !call velocity_face(uv_face, uv)
+
+        call evaluate_mom_face_all(q_face, uv_face, q, uv)
 
         ! Compute uprime and vprime at the quad and nodal points
 
         do k = 1,nlayers
 
-            qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
-            qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
             qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
 
-            qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
-            qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
+            !qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
+            !qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
+            
+            !qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            !qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
+
+            qprime(2,:,k) = uv(1,:,k) - qb(3,:)/qb(1,:)
+            qprime(3,:,k) = uv(2,:,k) - qb(4,:)/qb(1,:)
+
+            qprime_face(2,:,:,:,k) = uv_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            qprime_face(3,:,:,:,k) = uv_face(2,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
         end do 
 
     end subroutine momentum
@@ -696,7 +705,7 @@ module mod_splitting
                                     limiter_Positivity_Preserving_layers_mom, filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, &
                                     evaluate_mom_face, evaluate_dp, evaluate_dp_face
 
-        use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
+        use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom, interpolate_mom, velocity, velocity_face, evaluate_mom_face_all
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
         use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
@@ -741,6 +750,7 @@ module mod_splitting
         real, dimension(3,2,nq,nface,nlayers) :: qprime_face_temp 
         real, dimension(3,npoin,nlayers) :: q_df3
         real, dimension(2,npoin_q,nlayers) :: uv
+        real, dimension(2,2,nq,nface,nlayers) :: uv_face
         
         integer :: k, Iq, iquad, I, iface
         real :: tempu, tempv
@@ -768,23 +778,23 @@ module mod_splitting
         end do
 
         !adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
-        adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
+        !adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
 
-        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
-        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
+        call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
+            btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
         ! Apply filter to the thickness
 
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+        !one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+
+        !do k = 1,nlayers
+        !    dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+        !end do
 
         do k = 1,nlayers
-            dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-        end do
+            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
 
-        do k = 1,nlayers
-            !q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
-
-            q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
+            !q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
             
             if(flag_pred == 0 .and. ifilter > 0) then 
                 call filter_mlswe(q_df(1,:,k),1)
@@ -863,7 +873,7 @@ module mod_splitting
                 q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
             end do
 
-        end if ! ad_mlswe >
+        end if ! ad_mlswe > 0
         
         ! Add the Coriolis term
 
@@ -879,31 +889,44 @@ module mod_splitting
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
         ! Extract velocity from the momentum
-        call velocity_df(q_df, qb_df, flag_pred)
+        !call velocity_df(q_df, qb_df, flag_pred)
+
+        ! Extract velocity from the momentum on quads and interpolate to nodal pts
+        call interpolate_mom(q_df,q,qb,flag_pred)
+
         ! Evaluate velocity and momentum at the quad points
         call evaluate_mom(q,q_df)
+
+        call velocity(uv,q, qb)
+
         ! Extract faces values
-        call evaluate_mom_face(q_face, q)
+        !call evaluate_mom_face(q_face, q)
+        !call velocity_face(uv_face, uv)
+
+        call evaluate_mom_face_all(q_face, uv_face, q, uv)
 
         ! Compute uprime and vprime at the quad and nodal points
 
         do k = 1,nlayers
-            qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
-            qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
+            qprime(1,:,k) = qprime_temp(1,:,k)
+            !qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
+            !qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
+
+            !qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            !qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
+
+            
+            qprime(2,:,k) = uv(1,:,k) - qb(3,:)/qb(1,:)
+            qprime(3,:,k) = uv(2,:,k) - qb(4,:)/qb(1,:)
+
+            qprime_face(2,:,:,:,k) = uv_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            qprime_face(3,:,:,:,k) = uv_face(2,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
+
+            qprime_df(1,:,k) = dpprime_df(:,k)
             qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
 
-            qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
-            qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
-
-            qprime(1,:,k) = qprime_temp(1,:,k)
-            qprime_df(1,:,k) = dpprime_df(:,k)
-
-            if(flag_pred == 1) then 
-                qprime_face(1,:,:,:,k) = qprime_face_temp(1,:,:,:,k)
-            else 
-                qprime_face(1,:,:,:,k) = dprime_face_corr(:,:,:,k)
-            end if
+            qprime_face(1,:,:,:,k) = qprime_face_temp(1,:,:,:,k)
         end do 
 
     end subroutine momentum_mass
@@ -1107,17 +1130,18 @@ module mod_splitting
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
-        call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
+        !call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
+        call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
 
         flux_deficit_mass_face(1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
         flux_deficit_mass_face(2,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
 
-        !call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-        !    sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, sum_layer_mass_flux_face, &
-        !    btp_mass_flux_face_ave, qprime_face, flux_deficit_mass_face)
+        call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+            sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, &
+            qprime_face, flux_deficit_mass_face)
 
-        call consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-            sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, flux_deficit_mass_face, q_face)
+        !call consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+        !    sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, flux_deficit_mass_face, q_face)
 
         call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
         

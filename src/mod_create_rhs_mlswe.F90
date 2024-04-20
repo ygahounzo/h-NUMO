@@ -13,7 +13,7 @@ module mod_create_rhs_mlswe
 
     use mod_initial, only: q_ref, coriolis_constant, kvector, nvar
 
-    use mod_barotropic_terms, only: massinv_rhs
+    !use mod_barotropic_terms, only: massinv_rhs
 
     use mod_input, only: nlayers, mass_exact
 
@@ -292,7 +292,7 @@ contains
         implicit none
         
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(5,npoin_q,nlayers), intent(in) :: q
+        real, dimension(3,npoin_q,nlayers), intent(in) :: q
 
         real :: wq, var_u(nlayers), var_v(nlayers), hi
         integer :: iquad, jquad, kquad, e, k, m, n, l, I, Iq, ip
@@ -304,8 +304,8 @@ contains
         do Iq = 1,npoin_q
             
             wq = wjac(Iq)
-            var_u = q(4,Iq,:)
-            var_v = q(5,Iq,:)
+            var_u = q(2,Iq,:)
+            var_v = q(3,Iq,:)
 
             do ip = 1, npts
 
@@ -321,12 +321,8 @@ contains
 
         do k = 1, nlayers
 
-            if(mass_exact) then 
-                call massinv_rhs(q_df(2:3,:,k),2) 
-            else
-                q_df(2,:,k) = massinv(:)*q_df(2,:,k)
-                q_df(3,:,k) = massinv(:)*q_df(3,:,k)
-            end if    
+            q_df(2,:,k) = massinv(:)*q_df(2,:,k)
+            q_df(3,:,k) = massinv(:)*q_df(3,:,k)  
 
         end do
         
@@ -397,12 +393,10 @@ contains
         end do
 
         do k = 1, nlayers
-            if(mass_exact) then 
-                call massinv_rhs(rhs_stress(:,:,k),2)
-            else
-                rhs_stress(1,:,k) = massinv(:)*rhs_stress(1,:,k)
-                rhs_stress(2,:,k) = massinv(:)*rhs_stress(2,:,k)
-            end if
+            
+            rhs_stress(1,:,k) = massinv(:)*rhs_stress(1,:,k)
+            rhs_stress(2,:,k) = massinv(:)*rhs_stress(2,:,k)
+
         end do
         
     end subroutine rhs_layer_shear_stress
