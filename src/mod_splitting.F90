@@ -396,7 +396,6 @@ module mod_splitting
         real :: flux_adjust_edge(2,nq,nface,nlayers), one_plus_eta_temp(npoin), sum_layer_mass_flux_face(2,nq,nface), dp_advec(npoin,nlayers)
         real :: one_plus_eta_temp1
         integer :: k, I, iquad, iface, ilr,Iq
-        real :: adjust_mass(npoin)
 
         ! =========================================== layer mass ===============================================================
     
@@ -431,28 +430,17 @@ module mod_splitting
         call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
             btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
- 
-        !adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
-
-        !adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
-
         ! Apply filter to the thickness
 
-        !one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
-        !do k = 1,nlayers
-        !    dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-        !end do
-
         do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
-
-            !q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
+            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
             
             if(ifilter > 0 .and. flag_pred == 0) then 
                 call filter_mlswe(q_df(1,:,k),1)
             end if
         end do
+
+        !call apply_consistency2(q_df,qb_df,flag_pred)
 
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
@@ -641,9 +629,6 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
-        ! Extract velocity from the momentum
-        !call velocity_df(q_df, qb_df, flag_pred)
-
         ! Extract velocity from the momentum on quads and interpolate to nodal pts
         call interpolate_mom(q_df,q,qb,flag_pred)
 
@@ -653,8 +638,6 @@ module mod_splitting
         call velocity(uv,q, qb)
 
         ! Extract faces values
-        !call evaluate_mom_face(q_face, q)
-        !call velocity_face(uv_face, uv)
 
         call evaluate_mom_face_all(q_face, uv_face, q, uv)
 
@@ -664,12 +647,6 @@ module mod_splitting
 
             qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
-
-            !qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
-            !qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
-            
-            !qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
-            !qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
 
             qprime(2,:,k) = uv(1,:,k) - qb(3,:)/qb(1,:)
             qprime(3,:,k) = uv(2,:,k) - qb(4,:)/qb(1,:)
@@ -744,7 +721,7 @@ module mod_splitting
         real, dimension(npoin,nlayers) :: dp_advec, dpprime_df
         real, dimension(2,npoin,nlayers)       :: q_df_temp
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_visc_bcl, rhs_stress
-        real, dimension(npoin) :: one_plus_eta_temp, adjust_mass
+        real, dimension(npoin) :: one_plus_eta_temp
 
         real, dimension(3,npoin_q,nlayers) :: qprime_temp 
         real, dimension(3,2,nq,nface,nlayers) :: qprime_face_temp 
@@ -777,29 +754,20 @@ module mod_splitting
 
         end do
 
-        !adjust_mass(:) = (1.0/real(nlayers))*(qb_df(1,:) - sum(q_df(1,:,:),dim=2))
-        !adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
-
         call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
             btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
         ! Apply filter to the thickness
 
-        !one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
-        !do k = 1,nlayers
-        !    dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-        !end do
-
         do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k) !adjust_mass(:)
-
-            !q_df(1,:,k) = q_df(1,:,k) + (dpprime_df(:,k)/pbprime_df(:))*adjust_mass(:)
+            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
             
             if(flag_pred == 0 .and. ifilter > 0) then 
                 call filter_mlswe(q_df(1,:,k),1)
             end if
         end do
+
+        !call apply_consistency2(q_df,qb_df,flag_pred)
         
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
@@ -813,19 +781,6 @@ module mod_splitting
         do k = 1,nlayers
             dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
         end do
-
-        ! If correction step, compute the average values of the layer thickness with values from time step n and and the prediction step
-        if(flag_pred == 0) then 
-
-            dprime_face_corr = qprime_face_temp(1,:,:,:,:)
-            ! Communication of qprime_face values within the processor boundary
-            call create_communicator_quad_layer(qprime_face_temp(1,:,:,:,:),1,nlayers)
-
-            ! Compute average values 
-            qprime_df(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df(:,:))
-            qprime(1,:,:) = 0.5*(qprime(1,:,:) + qprime_temp(1,:,:))
-            qprime_face(1,:,:,:,:) = 0.5*(qprime_face(1,:,:,:,:) + qprime_face_temp(1,:,:,:,:))
-        end if
 
         ! ==================================== layer momentum ==========================
 
@@ -888,45 +843,30 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
-        ! Extract velocity from the momentum
-        !call velocity_df(q_df, qb_df, flag_pred)
-
         ! Extract velocity from the momentum on quads and interpolate to nodal pts
         call interpolate_mom(q_df,q,qb,flag_pred)
 
         ! Evaluate velocity and momentum at the quad points
         call evaluate_mom(q,q_df)
-
         call velocity(uv,q, qb)
 
         ! Extract faces values
-        !call evaluate_mom_face(q_face, q)
-        !call velocity_face(uv_face, uv)
-
         call evaluate_mom_face_all(q_face, uv_face, q, uv)
 
         ! Compute uprime and vprime at the quad and nodal points
 
         do k = 1,nlayers
             qprime(1,:,k) = qprime_temp(1,:,k)
-            !qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
-            !qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
-
-            !qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
-            !qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
-
-            
             qprime(2,:,k) = uv(1,:,k) - qb(3,:)/qb(1,:)
             qprime(3,:,k) = uv(2,:,k) - qb(4,:)/qb(1,:)
 
+            qprime_face(1,:,:,:,k) = qprime_face_temp(1,:,:,:,k)
             qprime_face(2,:,:,:,k) = uv_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
             qprime_face(3,:,:,:,k) = uv_face(2,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
 
             qprime_df(1,:,k) = dpprime_df(:,k)
             qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
-
-            qprime_face(1,:,:,:,k) = qprime_face_temp(1,:,:,:,k)
         end do 
 
     end subroutine momentum_mass
@@ -1108,7 +1048,7 @@ module mod_splitting
         use mod_basis, only: nq
         use mod_initial, only: pbprime
         use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
-        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, consistency_mass_terms
+        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, consistency_mass_terms, consistency_mass_terms_v2
 
         implicit none
     
@@ -1130,22 +1070,75 @@ module mod_splitting
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
-        !call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
-        call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
+        call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
+        !call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
 
         flux_deficit_mass_face(1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
         flux_deficit_mass_face(2,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
 
-        call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-            sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, &
-            qprime_face, flux_deficit_mass_face)
+        !call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+        !    sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, &
+        !    qprime_face, flux_deficit_mass_face)
 
         !call consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
         !    sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, flux_deficit_mass_face, q_face)
 
+        call consistency_mass_terms_v2(flux_adjustment, flux_adjust_edge, q, &
+            sum_layer_mass_flux, btp_mass_flux_ave, flux_deficit_mass_face, q_face)
+
         call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
         
     end subroutine apply_consistency
+
+    subroutine apply_consistency2(q_df,qb_df,flag_pred)
+
+        ! ===========================================================================================================================
+        ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
+        ! The nodal points or degree of freedom of the layer thickness dpprime_df is stored in q_df(1,:,:)
+        ! The quadrature points of the layer thickness dpprime is stored in qprime(1,:,:)
+        ! The face values of the layer thickness dpprime_face is stored in qprime_face(1,:,:,:,:)
+        ! The quadrature points of the layer thickness dp is stored in qb(1,:,:)
+        ! The face values of the layer thickness dp_face is stored in qb_face(1,:,:,:,:)
+        !
+        ! Enforce consistency between the layer masses and the barotropic mass.
+        ! ===========================================================================================================================
+
+        use mod_input, only: nlayers, ifilter
+        use mod_grid, only: npoin
+        use mod_layer_terms, only: filter_mlswe
+
+        implicit none
+    
+        ! Input variables
+        
+        real, intent(inout)    :: q_df(3,npoin,nlayers)
+        real, dimension(4,npoin), intent(in)  :: qb_df
+        integer, intent(in) :: flag_pred
+
+        real :: adjust_mass(npoin), weight
+        integer :: I, k
+    
+        adjust_mass(:) = qb_df(1,:) - sum(q_df(1,:,:),dim=2)
+
+        ! Apply filter to the thickness
+
+        do k = 1,nlayers
+
+            do I = 1,npoin
+
+                weight = q_df(1,I,k) / sum(q_df(1,I,:))
+                q_df(1,I,k) = q_df(1,I,k) + weight*adjust_mass(I)
+            end do 
+        end do 
+            
+        if(flag_pred == 0 .and. ifilter > 0) then 
+
+            do k = 1,nlayers
+                call filter_mlswe(q_df(1,:,k),1)
+            end do
+        end if
+
+    end subroutine apply_consistency2
 
 
 end module mod_splitting

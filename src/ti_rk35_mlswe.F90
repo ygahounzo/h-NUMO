@@ -132,7 +132,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime2 = qprime_avg
 	qprime_face2 = qprime_face_avg
 
-	qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
+	!qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
 	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
 		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df, disp)

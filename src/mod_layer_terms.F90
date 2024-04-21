@@ -12,7 +12,7 @@ module mod_layer_terms
             shear_stress_system, consistency_mass_terms1, consistency_mass_terms, &
             layer_mom_boundary_df, limiter_Positivity_Preserving_layers_mass, limiter_Positivity_Preserving_layers_mom, &
             filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom, &
-            interpolate_mom, velocity, velocity_face, evaluate_mom_face_all
+            interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, consistency_mass_terms_v2
 
     contains
 
@@ -129,10 +129,15 @@ module mod_layer_terms
                 unl(:) = qprime_face(2,1,iquad,iface,:)*nxl + qprime_face(3,1,iquad,iface,:)*nyl
                 unr(:) = qprime_face(2,2,iquad,iface,:)*nxl + qprime_face(3,2,iquad,iface,:)*nyl
 
-                h1_l = (alpha_mlswe(1)/gravity)*dp_left(iquad)
-                h1_r = (alpha_mlswe(1)/gravity)*dp_right(iquad)
-                h2_l = (alpha_mlswe(2)/gravity)*dp_left(iquad)
-                h2_r = (alpha_mlswe(2)/gravity)*dp_right(iquad)
+                dpl = ope_face_ave(1,iquad,iface) * qprime_face(1,1,iquad,iface,1)
+                dpr = ope_face_ave(2,iquad,iface) * qprime_face(1,2,iquad,iface,1)
+                h1_l = (alpha_mlswe(1)/gravity)*dpl
+                h1_r = (alpha_mlswe(1)/gravity)*dpr
+
+                dpl = ope_face_ave(1,iquad,iface) * qprime_face(1,1,iquad,iface,2)
+                dpr = ope_face_ave(2,iquad,iface) * qprime_face(1,2,iquad,iface,2)
+                h2_l = (alpha_mlswe(2)/gravity)*dpl
+                h2_r = (alpha_mlswe(2)/gravity)*dpr
 
                 Ucl = (h1_l*unl(2) + h2_l*unl(1))/(h1_l + h2_l)
                 Ucr = (h1_r*unr(2) + h2_r*unr(1))/(h1_r + h2_r)
@@ -140,32 +145,11 @@ module mod_layer_terms
                 hgl = sqrt(gprime*(h1_l * h2_l)/(h1_l + h2_l))
                 hgr = sqrt(gprime*(h1_r * h2_r)/(h1_r + h2_r))
 
-                !claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
-                !clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
-
-                claml = max(sqrt(gravity*h1_l*(1.0-alph)), sqrt(gravity*h1_l*(1.0+alph)))
-                clamr = max(sqrt(gravity*h2_r*(1.0-alph)), sqrt(gravity*h1_r*(1.0+alph)))
-
-                !claml = abs(Ucl) + hgl
-                !clamr = abs(Ucr) + hgr
-
-                !s1_l = abs(unl(1)) + sqrt(qprime_face(1,1,iquad,iface,1))
-                !s1_r = abs(unr(1)) + sqrt(qprime_face(1,2,iquad,iface,1))
-
-                !s2_l = abs(unl(2)) + sqrt(qprime_face(1,1,iquad,iface,1))
-                !s2_r = abs(unr(2)) + sqrt(10qprime_face(1,2,iquad,iface,1))
-
-                s1_l = unl(1) + sqrt((1.0/(2.0*nlayers))*gprime*(h1_l + h2_l))
-                s1_r = unr(1) + sqrt((1.0/(2.0*nlayers))*gprime*(h1_r + h2_r))
-
-                s2_l = unl(1) - sqrt((1.0/(2.0*nlayers))*gprime*(h1_l + h2_l))
-                s2_r = unr(1) - sqrt((1.0/(2.0*nlayers))*gprime*(h1_r + h2_r))
+                claml = max(abs(Ucl - hgl), abs(Ucl + hgl))
+                clamr = max(abs(Ucr - hgr), abs(Ucr + hgr))
 
                 clam = 0.5*max(claml, clamr)
-                !clam = 0.5*max(abs(s1_l), abs(s1_r), abs(s2_l), abs(s2_r))
-                
-                !disp(iquad,iface,1) = bcl_flux*max(s1_l, s1_r)
-                !disp(iquad,iface,2) = bcl_flux*max(s2_l, s2_r)
+
 
                 disp(iquad,iface,1) = bcl_flux*clam
                 disp(iquad,iface,2) = bcl_flux*clam   
@@ -461,6 +445,81 @@ module mod_layer_terms
         end do
 
     end subroutine consistency_mass_terms
+
+    subroutine consistency_mass_terms_v2(flux_adjustment, flux_adjust_edge, q, &
+        sum_layer_mass_flux, btp_mass_flux_ave, flux_deficit_mass_face, q_face)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl, npts, npts_quad
+        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
+        use mod_initial, only: pbprime, pbprime_face, pbprime_edge
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q
+
+        implicit none
+
+        real, dimension(2,npoin_q, nlayers), intent(out)      :: flux_adjustment
+        real, dimension(2,nq, nface, nlayers), intent(out)    :: flux_adjust_edge
+
+        real, dimension(3,npoin_q,nlayers), intent(in)   :: q
+        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
+        real, dimension(2,nq,nface), intent(in)        :: flux_deficit_mass_face
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face
+
+        real, dimension(2,2) :: flux_adjustment_face
+        real, dimension(nlayers)                  :: dp_avail_left, dp_avail_right
+        real, dimension(nlayers) :: sum_left, sum_right
+        integer :: el, er, il, jl, iquad, k, iface
+        real :: weights
+        real :: weights_face, qml, qmr, weights_face_r, weights_face_l
+        integer :: I, ir, jr, kr, kl, ier,m, Iq, jquad, e, qmean(nlayers), ii
+        real, dimension(npts_quad) :: qlocal, inodes
+
+        flux_adjustment = 0.0
+        flux_adjust_edge = 0.0
+
+        do Iq = 1,npoin_q 
+            do k = 1, nlayers
+                
+                weights = q(1,Iq,k) / sum(q(1,Iq,:))
+                flux_adjustment(1,Iq,k) = weights * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
+                flux_adjustment(2,Iq,k) = weights * (btp_mass_flux_ave(2,Iq) - sum_layer_mass_flux(2,Iq))
+            end do
+        end do 
+
+        do iface = 1,nface
+
+            do iquad = 1,nq 
+                do k = 1,nlayers
+
+                    if(sum(q_face(1,1,iquad,iface,:)) > 0.0) then 
+                        weights_face_l = q_face(1,1,iquad,iface,k) / sum(q_face(1,1,iquad,iface,:))
+                    end if 
+                    if(sum(q_face(1,2,iquad,iface,:)) > 0.0) then 
+                        weights_face_r = q_face(1,2,iquad,iface,k) / sum(q_face(1,2,iquad,iface,:))
+                    end if 
+
+                    !weights_face_l = 0.5*(weights_face_l + weights_face_r)
+
+                    if(flux_deficit_mass_face(1,iquad,iface) > 0.0) then 
+
+                        flux_adjust_edge(1,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(1,iquad,iface)
+                    else 
+                        flux_adjust_edge(1,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(1,iquad,iface)
+                    end if 
+
+                    if(flux_deficit_mass_face(2,iquad,iface) > 0.0) then 
+                        flux_adjust_edge(2,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(2,iquad,iface)
+                    else 
+                        flux_adjust_edge(2,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(2,iquad,iface)
+                    end if 
+
+                    !flux_adjust_edge(1,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(1,iquad,iface)
+                    !flux_adjust_edge(2,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(2,iquad,iface)
+                end do 
+            end do 
+        end do
+
+    end subroutine consistency_mass_terms_v2
 
     subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave)
 
@@ -1333,53 +1392,6 @@ module mod_layer_terms
         real :: eps = 1.0e-4
         real :: ubar, vbar, mult, dpbar, dp_cutoff1, dp_cutoff2
         integer :: Iq, k
-
-        dp_cutoff1 = 1.5e6
-        dp_cutoff2 = 8.5e8
-        
-        do Iq = 1, npoin_q
-            do k = 1, nlayers
-                weight(k) = (q(1,Iq,k) - dp_cutoff1) / (dp_cutoff2 - dp_cutoff1)
-                weight(k) = max(min(weight(k), 1.0), 0.0)
-
-                !weight(k) = 1.0
-                
-                b(k) = 1.0
-                r(k,1) = weight(k) * q(2,Iq,k) / (q(1,Iq,k))
-                r(k,2) = weight(k) * q(3,Iq,k) / (q(1,Iq,k))
-            end do
-
-            if (nlayers >= 3) then
-               do k = 2,(nlayers-1)
-                  a(k) =  - (1.0-weight(k)) * q(1,Iq,k-1) / (q(1,Iq,k-1) + q(1,Iq,k+1))
-                  c(k) =  - (1.0-weight(k)) * q(1,Iq,k+1) / (q(1,Iq,k-1) + q(1,Iq,k+1))
-               enddo
-            endif
-    
-            a(1) = 0.0
-            c(1) = -(1.0-weight(1))
-            a(nlayers) = -(1.0-weight(nlayers))
-            c(nlayers) = 0.0
-            
-            do k = 2, nlayers
-                mult = a(k) / b(k-1)
-                b(k) = b(k) - mult * c(k-1)
-                r(k,1) = r(k,1) - mult * r(k-1,1)
-                r(k,2) = r(k,2) - mult * r(k-1,2)
-            end do
-    
-            r(nlayers,1) = r(nlayers,1) / b(nlayers)
-            r(nlayers,2) = r(nlayers,2) / b(nlayers)
-            uv(1,Iq,nlayers) = r(nlayers,1)
-            uv(2,Iq,nlayers) = r(nlayers,2)
-    
-            do k = nlayers-1, 1, -1
-                r(k,1) = (r(k,1) - c(k) * r(k+1,1)) / b(k)
-                r(k,2) = (r(k,2) - c(k) * r(k+1,2)) / b(k) 
-                uv(1,Iq,k) = r(k,1)
-                uv(2,Iq,k) = r(k,2)
-            end do
-        end do
 
         do k = 1,nlayers
             uv(1,:,k) = q(2,:,k) / q(1,:,k)
