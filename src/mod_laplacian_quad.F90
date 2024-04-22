@@ -12,12 +12,12 @@ module mod_laplacian_quad
 
     implicit none
 
-    public :: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_v3, &
-                create_laplacian_mlswe_v4
+    public :: bcl_create_laplacian, btp_create_laplacian_v1, &
+                btp_create_laplacian
 
     contains 
 
-    subroutine create_laplacian_mlswe_v3(rhs_lap,qprime,qprime_face,qb,qb_face)
+    subroutine btp_create_laplacian_v1(rhs_lap,qprime,qprime_face,qb,qb_face)
 
         real, intent (out) :: rhs_lap(2,npoin)
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
@@ -132,13 +132,13 @@ module mod_laplacian_quad
         rhs_lap(1,:) = massinv(:)*rhs_lap(1,:)
         rhs_lap(2,:) = massinv(:)*rhs_lap(2,:)
 
-    end subroutine create_laplacian_mlswe_v3
+    end subroutine btp_create_laplacian_v1
 
-    subroutine create_laplacian_mlswe_v4(rhs_lap,qprime_df,uvb_df, dpprime, qprime_face, qb_face)
+    subroutine btp_create_laplacian(rhs_lap,qprime_df,qb_df, dpprime, qprime_face, qb_face)
 
         real, intent (out) :: rhs_lap(2,npoin)
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(2,npoin), intent(in) :: uvb_df
+        real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(npoin_q, nlayers), intent(in) :: dpprime
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
         real, dimension(4,2,nq,nface), intent(in) :: qb_face
@@ -155,7 +155,8 @@ module mod_laplacian_quad
 
         do k = 1,nlayers
 
-            Uk(:,:) = qprime_df(2:3,:,k) + uvb_df(:,:)
+            Uk(1,:) = qprime_df(2,:,k) + qb_df(3,:)/qb_df(1,:)
+            Uk(2,:) = qprime_df(3,:,k) + qb_df(4,:)/qb_df(1,:)
 
             call compute_gradient_uv(graduv, Uk)
 
@@ -243,9 +244,9 @@ module mod_laplacian_quad
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
-    end subroutine create_laplacian_mlswe_v4
+    end subroutine btp_create_laplacian
 
-    subroutine create_laplacian_mlswe_layer_v3(rhs_lap,qprime,qprime_face,uvb,uvb_face)
+    subroutine bcl_create_laplacian(rhs_lap,qprime,qprime_face,uvb,uvb_face)
 
         real, intent (out) :: rhs_lap(2,npoin,nlayers)
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
@@ -357,7 +358,7 @@ module mod_laplacian_quad
 
         end do
 
-    end subroutine create_laplacian_mlswe_layer_v3
+    end subroutine bcl_create_laplacian
 
     subroutine create_rhs_laplacian_flux_SIPG_quad(rhs,gradq_face)
     

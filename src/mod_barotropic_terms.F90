@@ -1430,15 +1430,10 @@ module mod_barotropic_terms
             end do 
         end do
 
-        ! if(mass_exact) then 
-            ! call massinv_rhs(qu_df,2)
-            ! call massinv_rhs(qv_df,2)
-        ! else 
-            qu_df(1,:) = massinv(:)*qu_df(1,:)
-            qu_df(2,:) = massinv(:)*qu_df(2,:)
-            qv_df(1,:) = massinv(:)*qv_df(1,:)
-            qv_df(2,:) = massinv(:)*qv_df(2,:)
-        ! end if
+        qu_df(1,:) = massinv(:)*qu_df(1,:)
+        qu_df(2,:) = massinv(:)*qu_df(2,:)
+        qv_df(1,:) = massinv(:)*qv_df(1,:)
+        qv_df(2,:) = massinv(:)*qv_df(2,:)
 
         do Iq = 1,npoin_q
             do ip = 1,npts

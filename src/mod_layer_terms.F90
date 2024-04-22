@@ -150,7 +150,6 @@ module mod_layer_terms
 
                 clam = 0.5*max(claml, clamr)
 
-
                 disp(iquad,iface,1) = bcl_flux*clam
                 disp(iquad,iface,2) = bcl_flux*clam   
 
@@ -632,7 +631,7 @@ module mod_layer_terms
         ! udp_flux_edge  iface a numerical approximation to the flux of udp
         ! at cells edge in layer k, and vdp_flux_edge  iface a numerical approximation to the flux of vdp.
 
-        ! *****   Upwind flux, with available momentum   *****
+        ! *****   Flux, with available momentum   *****
 
         do k = 1,nlayers
             do iface = 1,nface
@@ -1005,31 +1004,32 @@ module mod_layer_terms
         ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic 
         ! time interval.
 
-        do I = 1, npoin_q
-
-            if(adjust_H_vertical_sum == 1) then 
+        if(adjust_H_vertical_sum == 1) then 
+            do I = 1, npoin_q
 
                 acceleration = 0.0
                 if (pbprime(I) > 0.0) then
                     acceleration = (H_ave(I) - sum(H_r(I,:))) / pbprime(I)
                 end if
                 H_r(I,:) = H_r(I,:) + dpprime_H(I,:) * acceleration
-    
-            elseif(adjust_H_vertical_sum == 2) then 
+            end do
+
+        elseif(adjust_H_vertical_sum == 2) then 
+            do I = 1, npoin_q
                 weight = 1.0
                 acceleration = sum(H_r(I,:))
                 if(acceleration > 0.0) then 
                     weight = H_ave(I) / acceleration
                 end if
                 H_r(I,:) = H_r(I,:) * weight
-            end if
-        end do
-
+            end do
+        end if
+        
         do iface = 1, nface
             el = face(7,iface)
             er = face(8,iface)
             do iquad = 1, nq
-                if(er /= -4) then
+                !if(er /= -4) then
                     do k = 1, nlayers-1          ! interface at the bottom of layer k
             
                         ! Corrections at the left side of a face.
@@ -1045,7 +1045,7 @@ module mod_layer_terms
                         H_r_face(2, iquad, iface, k+1) = H_r_face(2, iquad, iface, k+1) + H_corr2
             
                     end do
-                end if
+                !end if
             
                 ! Adjust the vertical sums of  H_r,  for the sake of consistency
                 ! between the layer equations and the barotropic equations.
@@ -1110,17 +1110,17 @@ module mod_layer_terms
 
                 ! ! Wall Boundary conditions
 
-                ! if(er == -4) then 
+                if(er == -4) then 
 
-                !     il=imapl_q(1,iquad,1,iface)
-                !     jl=imapl_q(2,iquad,1,iface)
-                !     kl=imapl_q(3,iquad,1,iface)
-                !     I=intma_dg_quad(il,jl,kl,el)
+                    il=imapl_q(1,iquad,1,iface)
+                    jl=imapl_q(2,iquad,1,iface)
+                    kl=imapl_q(3,iquad,1,iface)
+                    I=intma_dg_quad(il,jl,kl,el)
 
-                !     H_r_face(1,iquad,iface,:) = H_r(I,:)
-                !     H_r_face(2,iquad,iface,:) = H_r(I,:)
+                    H_r_face(1,iquad,iface,:) = H_r(I,:)
+                    H_r_face(2,iquad,iface,:) = H_r(I,:)
 
-                ! end if
+                end if
 
             end do
         end do
@@ -1332,7 +1332,6 @@ module mod_layer_terms
             uv_df(2,:,k) = q_df(3,:,k) / q_df(1,:,k)
         end do
 
-
         do I = 1, npoin
             ubar = 0.0
             vbar = 0.0
@@ -1385,12 +1384,9 @@ module mod_layer_terms
         real, dimension(4,npoin_q), intent(in) :: qb
 
         real, dimension(2,npoin_q,nlayers), intent(out) :: uv
-        
-        real, dimension(nlayers) :: a, b, c
-        real, dimension(nlayers,2) :: r
-        real, dimension(nlayers) :: weight
+    
         real :: eps = 1.0e-4
-        real :: ubar, vbar, mult, dpbar, dp_cutoff1, dp_cutoff2
+        real :: ubar, vbar, weight
         integer :: Iq, k
 
         do k = 1,nlayers
@@ -1412,9 +1408,11 @@ module mod_layer_terms
                 ubar = ubar / qb(1,Iq)
                 vbar = vbar / qb(1,Iq)
 
+                weight = q(1,Iq,k) / qb(1,Iq)
+
                 do k = 1, nlayers
-                    uv(1,Iq,k) = uv(1,Iq,k) - ubar + qb(3,Iq)/qb(1,Iq)
-                    uv(2,Iq,k) = uv(2,Iq,k) - vbar + qb(4,Iq)/qb(1,Iq)
+                    uv(1,Iq,k) = uv(1,Iq,k) + weight*(- ubar + qb(3,Iq)/qb(1,Iq))
+                    uv(2,Iq,k) = uv(2,Iq,k) + weight*(- vbar + qb(4,Iq)/qb(1,Iq))
                 end do
 
             else
@@ -1426,7 +1424,6 @@ module mod_layer_terms
 
     subroutine interpolate_mom(q_df,q, qb,flag_pred)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
         use mod_input, only: nlayers, ifilter
         use mod_create_rhs_mlswe, only: interpolate_layer_from_quad_to_node
@@ -1484,8 +1481,6 @@ module mod_layer_terms
         real :: hi
 
         q(2:3,:,:) = 0.0
-      
-        ! do k = 1, nlayers
 
         do Iq = 1,npoin_q
             do ip = 1,npts
@@ -1498,9 +1493,6 @@ module mod_layer_terms
 
             end do
         end do
-
-        ! call layer_mom_boundary(q)
-        ! end do
 
     end subroutine evaluate_mom
     
@@ -1555,6 +1547,7 @@ module mod_layer_terms
                 else 
                     q_face(2:3,2,iquad,iface,:) = q_face(2:3,1,iquad,iface,:)
                     uv_face(:,2,iquad,iface,:) = uv_face(:,1,iquad,iface,:)
+                    
                     if(er == -4) then
 
                         nx = normal_vector_q(1,iquad,1,iface)

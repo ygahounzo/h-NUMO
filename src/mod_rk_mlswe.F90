@@ -10,8 +10,6 @@ module mod_rk_mlswe
     ! - momentum: baroclinic substem for splitting system using two-level time integration
     !
     ! ===========================================================================================================================
-
-    use mod_initial, only: coriolis_df, coriolis_quad, tau_wind
         
     implicit none
 
@@ -23,7 +21,7 @@ module mod_rk_mlswe
         H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
         ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
         Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
-        qb_df,qprime,qprime_face, qprime_df, flag_pred, uvb_df_ave)
+        qb_df,qprime,qprime_face, qprime_df, flag_pred)
 
         ! ===========================================================================================================================
         ! This subroutine predicts and corrects the barotropic quantities for the splitting system using two-level time integration
@@ -38,20 +36,19 @@ module mod_rk_mlswe
         ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
         ! ===========================================================================================================================
 
-        use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind
+        use mod_initial, only: N_btp, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, explt_coriolis, ifilter, nlayers
-        use mod_create_rhs_mlswe, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_momentum_new, create_rhs_btp_momentum_new1
-        use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                        btp_mass_advection_terms, btp_bcl_coeffs, limiter_Positivity_Preserving_mom, &
-                                        limiter_Positivity_Preserving_mass, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
+        use mod_input, only: nlayers, dt_btp, ifilter, nlayers
+        use mod_create_rhs_mlswe, only: create_rhs_btp_momentum_new1
+        use mod_barotropic_terms, only: btp_mass_advection_terms, btp_bcl_coeffs, &
+                                        btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
 
         use mod_input, only: method_visc
         use mod_barotropic_terms, only: btp_mom_boundary_df, evaluate_quprime, compute_btp_terms, &
                                         evaluate_quprime2, evaluate_visc_terms
         use mod_layer_terms, only: filter_mlswe
-        use mod_laplacian_quad, only: create_laplacian_mlswe_v3, create_laplacian_mlswe_v4
+        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian
 
 
         implicit none
@@ -73,7 +70,6 @@ module mod_rk_mlswe
         real, dimension(2,npoin_q), intent(out) :: tau_wind_ave, tau_bot_ave
         integer, intent(in) :: flag_pred
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-        real, dimension(2,npoin) :: uvb_df_ave
 
         real, dimension(npoin_q) :: one_plus_eta
         real, dimension(4,npoin) :: qb_df_pred
@@ -86,16 +82,11 @@ module mod_rk_mlswe
         real, dimension(npoin) :: pb_advec, tempu, tempv, one_plus_eta_df
         real, dimension(2,npoin_q) :: btp_mass_flux, tau_bot
 
-        real, dimension(2,npoin_q,nlayers) :: grad_uprime, grad_vprime
-        real, dimension(2,npoin_q) :: btp_dpuvprime, coriolis
-        real, dimension(2,nq,nface) :: qb_com1,btp_dp_face
-        real, dimension(2,2,nq,nface) :: qb_com2,btp_dpuv_face
+        real, dimension(2,2,nq,nface) :: qb_com2
         real, dimension(3,npoin) :: rhs_mom
-        real, dimension(2,npoin) :: q_vic, uvb_df
         real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
 
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
-        real, dimension(npoin) :: fdt_btp1, fdt2_btp1, a_btp1, b_btp1
         real :: N_inv, a0,a1,a2, beta, dtt
 
         one_plus_eta_edge_2_ave = 0.0
@@ -118,7 +109,6 @@ module mod_rk_mlswe
         tau_bot_ave = 0.0
         rhs_visc_btp = 0.0
         ope2_ave = 0.0
-        uvb_df_ave = 0.0
 
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
@@ -153,11 +143,9 @@ module mod_rk_mlswe
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call create_laplacian_mlswe_v3(rhs_visc_btp,qprime,qprime_face,qb_init,qb_face_init)
+                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb_init,qb_face_init)
             elseif(method_visc == 2) then
-                uvb_df(1,:) = qb0_df(3,:)/qb0_df(1,:)
-                uvb_df(2,:) = qb0_df(4,:)/qb0_df(1,:)
-                call create_laplacian_mlswe_v4(rhs_visc_btp,qprime_df,uvb_df,qprime(1,:,:), qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb0_df,qprime(1,:,:), qprime_face, qb_face)
             end if
 
             ! Compute RHS for the barotropic
@@ -202,9 +190,6 @@ module mod_rk_mlswe
             one_plus_eta_edge_2_ave = one_plus_eta_edge_2_ave + one_plus_eta_edge_2
             ope2_ave = ope2_ave + one_plus_eta**2
 
-            uvb_df_ave(1,:) = uvb_df_ave(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_df_ave(2,:) = uvb_df_ave(2,:) + qb_df(4,:)/qb_df(1,:)
-
             ! ============ Step 2 of the RK3 scheme ============
 
             qb1_df = qb_df
@@ -225,11 +210,9 @@ module mod_rk_mlswe
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call create_laplacian_mlswe_v3(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
+                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
             elseif(method_visc == 2) then
-                uvb_df(1,:) = qb1_df(3,:)/qb1_df(1,:)
-                uvb_df(2,:) = qb1_df(4,:)/qb1_df(1,:)
-                call create_laplacian_mlswe_v4(rhs_visc_btp,qprime_df,uvb_df,qprime(1,:,:), qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb1_df,qprime(1,:,:), qprime_face, qb_face)
             end if
 
             ! Compute RHS for the barotropic
@@ -274,9 +257,6 @@ module mod_rk_mlswe
             one_plus_eta_edge_2_ave = one_plus_eta_edge_2_ave + one_plus_eta_edge_2
             ope2_ave = ope2_ave + one_plus_eta**2
 
-            uvb_df_ave(1,:) = uvb_df_ave(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_df_ave(2,:) = uvb_df_ave(2,:) + qb_df(4,:)/qb_df(1,:)
-
             ! ============ Step 3 of the RK3 scheme ============
 
             qb1_df = qb_df
@@ -297,11 +277,9 @@ module mod_rk_mlswe
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call create_laplacian_mlswe_v3(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
+                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
             elseif(method_visc == 2) then
-                uvb_df(1,:) = qb1_df(3,:)/qb1_df(1,:)
-                uvb_df(2,:) = qb1_df(4,:)/qb1_df(1,:)
-                call create_laplacian_mlswe_v4(rhs_visc_btp,qprime_df,uvb_df,qprime(1,:,:), qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb1_df,qprime(1,:,:), qprime_face, qb_face)
             end if
 
             ! Compute RHS for the barotropic
@@ -345,9 +323,6 @@ module mod_rk_mlswe
 
             one_plus_eta_edge_2_ave = one_plus_eta_edge_2_ave + one_plus_eta_edge_2
             ope2_ave = ope2_ave + one_plus_eta**2
-
-            uvb_df_ave(1,:) = uvb_df_ave(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_df_ave(2,:) = uvb_df_ave(2,:) + qb_df(4,:)/qb_df(1,:)
 
             ! ============ Step 4 of the RK3 scheme ============
 
@@ -369,11 +344,9 @@ module mod_rk_mlswe
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call create_laplacian_mlswe_v3(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
+                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
             elseif(method_visc == 2) then
-                uvb_df(1,:) = qb1_df(3,:)/qb1_df(1,:)
-                uvb_df(2,:) = qb1_df(4,:)/qb1_df(1,:)
-                call create_laplacian_mlswe_v4(rhs_visc_btp,qprime_df,uvb_df,qprime(1,:,:), qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb1_df,qprime(1,:,:), qprime_face, qb_face)
             end if
 
             ! Compute RHS for the barotropic
@@ -418,9 +391,6 @@ module mod_rk_mlswe
             one_plus_eta_edge_2_ave = one_plus_eta_edge_2_ave + one_plus_eta_edge_2
             ope2_ave = ope2_ave + one_plus_eta**2
 
-            uvb_df_ave(1,:) = uvb_df_ave(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_df_ave(2,:) = uvb_df_ave(2,:) + qb_df(4,:)/qb_df(1,:)
-
             ! ============ Step 5 of the RK3 scheme ============
 
             qb1_df = qb_df
@@ -441,11 +411,9 @@ module mod_rk_mlswe
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call create_laplacian_mlswe_v3(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
+                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb,qb_face)
             elseif(method_visc == 2) then
-                uvb_df(1,:) = qb1_df(3,:)/qb1_df(1,:)
-                uvb_df(2,:) = qb1_df(4,:)/qb1_df(1,:)
-                call create_laplacian_mlswe_v4(rhs_visc_btp,qprime_df,uvb_df,qprime(1,:,:), qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb1_df,qprime(1,:,:), qprime_face, qb_face)
             end if
 
             ! Compute RHS for the barotropic
@@ -496,9 +464,6 @@ module mod_rk_mlswe
 
             tau_wind_ave = tau_wind_ave + tau_wind
 
-            uvb_df_ave(1,:) = uvb_df_ave(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_df_ave(2,:) = uvb_df_ave(2,:) + qb_df(4,:)/qb_df(1,:)
-
             qb_init = qb
             qb_face_init = qb_face
             qb0_df = qb_df
@@ -533,7 +498,6 @@ module mod_rk_mlswe
         ope2_ave = N_inv*ope2_ave
 
         ope_ave_df = N_inv*ope_ave_df
-        uvb_df_ave = N_inv*uvb_df_ave
 
         tau_wind_ave = tau_wind_ave / real(N_btp)
         tau_bot_ave = tau_bot_ave / real(N_btp)

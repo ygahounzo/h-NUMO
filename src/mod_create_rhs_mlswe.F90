@@ -69,7 +69,7 @@ contains
 
     end subroutine layer_momentum_rhs
 
-    subroutine layer_mass_advection_rhs(dp_advec, uvdp_temp, flux_edge)
+    subroutine layer_mass_advection_rhs1(dp_advec, uvdp_temp, flux_edge)
 
         use mod_metrics, only: massinv
         use mod_input, only: nlayers
@@ -90,15 +90,15 @@ contains
 
         ! Compute the mass flux term 
 
-        call create_layer_mass_flux(dp_advec, flux_edge)
+        call create_layer_mass_flux1(dp_advec, flux_edge)
 
         do k = 1, nlayers
             dp_advec(:,k) = massinv(:)*dp_advec(:,k)
         end do
         
-    end subroutine layer_mass_advection_rhs
+    end subroutine layer_mass_advection_rhs1
 
-    subroutine layer_mass_advection_rhs1(dp_advec, uvdp_temp, flux_edge, q_face, disp)
+    subroutine layer_mass_advection_rhs(dp_advec, uvdp_temp, flux_edge, q_face, disp)
 
         use mod_metrics, only: massinv
         use mod_input, only: nlayers
@@ -121,14 +121,14 @@ contains
 
         ! Compute the mass flux term 
 
-        call create_layer_mass_flux1(dp_advec, flux_edge, q_face, disp)
+        call create_layer_mass_flux(dp_advec, flux_edge, q_face, disp)
 
         do k = 1, nlayers
 
             dp_advec(:,k) = massinv(:)*dp_advec(:,k)
         end do
         
-    end subroutine layer_mass_advection_rhs1
+    end subroutine layer_mass_advection_rhs
 
     subroutine create_rhs_btp_momentum(rhs_mom,Quu,Qvv,Quv,H,qb,H_face,Qu_face,Qv_face,tau_bot,rhs_visc,qb_face)
 
@@ -637,7 +637,7 @@ contains
 
     end subroutine create_layers_volume_mass
 
-    subroutine create_layer_mass_flux(dp_advec, flux_edge)
+    subroutine create_layer_mass_flux1(dp_advec, flux_edge)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin_q, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
@@ -706,9 +706,9 @@ contains
         end do
         ! end do
     
-    end subroutine create_layer_mass_flux
+    end subroutine create_layer_mass_flux1
 
-    subroutine create_layer_mass_flux1(dp_advec, flux_edge, q_face, disp)
+    subroutine create_layer_mass_flux(dp_advec, flux_edge, q_face, disp)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin_q, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
@@ -791,7 +791,7 @@ contains
         end do
         ! end do
     
-    end subroutine create_layer_mass_flux1
+    end subroutine create_layer_mass_flux
 
 
     subroutine create_rhs_btp_dynamics_volume(rhs_mom, H, qb, Quu, Quv, Qvv, tau_bot)
