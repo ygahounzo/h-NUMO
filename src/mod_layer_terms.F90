@@ -638,29 +638,6 @@ module mod_layer_terms
 
                 do iquad = 1, nq
 
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    uu = 0.5*(u_edge(1,iquad,iface,k) + u_edge(2,iquad,iface,k))
-                    vv = 0.5*(v_edge(1,iquad,iface,k) + v_edge(2,iquad,iface,k))
-
-                    if(uu*nxl > 0.0) then 
-                        udp_flux_edge(1,iquad,iface,k) = uu * udp_left(iquad,iface,k)
-                        vdp_flux_edge(1,iquad,iface,k) = uu * vdp_left(iquad,iface,k)
-                    else 
-                        udp_flux_edge(1,iquad,iface,k) = uu * udp_right(iquad,iface,k)
-                        vdp_flux_edge(1,iquad,iface,k) = uu * vdp_right(iquad,iface,k)
-                    end if
-
-                    if(vv*nxl > 0.0) then 
-                        udp_flux_edge(2,iquad,iface,k) = vv * udp_left(iquad,iface,k)
-                        vdp_flux_edge(2,iquad,iface,k) = vv * vdp_left(iquad,iface,k)
-                    else 
-                        udp_flux_edge(2,iquad,iface,k) = vv * udp_right(iquad,iface,k)
-                        vdp_flux_edge(2,iquad,iface,k) = vv * vdp_right(iquad,iface,k)
-                    end if
-
-
                     udp_flux_edge(1,iquad,iface,k) = 0.5*(udp_left(iquad,iface,k) * u_edge(1,iquad,iface,k) + udp_right(iquad,iface,k) * u_edge(2,iquad,iface,k))
                     udp_flux_edge(2,iquad,iface,k) = 0.5*(udp_left(iquad,iface,k) * v_edge(1,iquad,iface,k) + udp_right(iquad,iface,k) * v_edge(2,iquad,iface,k))
 
@@ -1110,17 +1087,17 @@ module mod_layer_terms
 
                 ! ! Wall Boundary conditions
 
-                if(er == -4) then 
+                !if(er == -4) then 
 
-                    il=imapl_q(1,iquad,1,iface)
-                    jl=imapl_q(2,iquad,1,iface)
-                    kl=imapl_q(3,iquad,1,iface)
-                    I=intma_dg_quad(il,jl,kl,el)
+                !    il=imapl_q(1,iquad,1,iface)
+                !    jl=imapl_q(2,iquad,1,iface)
+                !    kl=imapl_q(3,iquad,1,iface)
+                !    I=intma_dg_quad(il,jl,kl,el)
 
-                    H_r_face(1,iquad,iface,:) = H_r(I,:)
-                    H_r_face(2,iquad,iface,:) = H_r(I,:)
+                !    H_r_face(1,iquad,iface,:) = H_r(I,:)
+                !    H_r_face(2,iquad,iface,:) = H_r(I,:)
 
-                end if
+                !end if
 
             end do
         end do

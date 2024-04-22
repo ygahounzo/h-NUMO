@@ -415,20 +415,20 @@ module mod_splitting
             endif
         end do
 
-        call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
-            btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
+        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
+        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
         ! Apply filter to the thickness
 
-        do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+        !do k = 1,nlayers
+        !    q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
             
-            if(ifilter > 0 .and. flag_pred == 0) then 
-                call filter_mlswe(q_df(1,:,k),1)
-            end if
-        end do
+        !    if(ifilter > 0 .and. flag_pred == 0) then 
+        !        call filter_mlswe(q_df(1,:,k),1)
+        !    end if
+        !end do
 
-        !call apply_consistency2(q_df,qb_df,flag_pred)
+        call apply_consistency2(q_df,qb_df,flag_pred)
 
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
@@ -689,20 +689,20 @@ module mod_splitting
 
         end do
 
-        call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
-            btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
+        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
+        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
 
         ! Apply filter to the thickness
 
-        do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+        !do k = 1,nlayers
+        !    q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
             
-            if(flag_pred == 0 .and. ifilter > 0) then 
-                call filter_mlswe(q_df(1,:,k),1)
-            end if
-        end do
+        !    if(flag_pred == 0 .and. ifilter > 0) then 
+        !        call filter_mlswe(q_df(1,:,k),1)
+        !    end if
+        !end do
 
-        !call apply_consistency2(q_df,qb_df,flag_pred)
+        call apply_consistency2(q_df,qb_df,flag_pred)
         
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
