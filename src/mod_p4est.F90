@@ -35,7 +35,7 @@ module mod_p4est
   use mod_basis, only: nopz, ngl, nglx, ngly, nglz, xgl, xglx, xgly, xglz,     &
     npts, is_2d, FACE_CHILDREN, FACE_LEN, P4EST_FACES, P8EST_EDGES
 
-  use mod_bc, only: vc_el_type, mod_bc_init_restoring
+  use mod_bc, only: vc_el_type
 
   use mod_global_grid, only: nelem_g, npoin_g_cg, npoin_g, ncol_g, xmin, xmax, &
     ymin, ymax, zmin, zmax, iboundary, xperiodic, yperiodic, zperiodic
@@ -324,7 +324,6 @@ contains
     end if
 
     call mod_grid_init_unified()
-    call mod_bc_init_restoring() !initialize sponge if exists
 
     !-----------------------------------------
     ! Allocate parallel data structures

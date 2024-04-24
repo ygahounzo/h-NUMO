@@ -26,8 +26,6 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
 
-    use mod_bc, only: bb
-
     use mod_constants, only: pi, earth_radius, gravity
   
     use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
@@ -321,8 +319,6 @@ end subroutine outvtk_g_binary_mlswe
 subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
-
-    use mod_bc, only: bb
 
     use mod_constants, only: pi, earth_radius, gravity
   

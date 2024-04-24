@@ -12,9 +12,6 @@
 !>                         codes iboundary(1:6) are different from 6 in input. These are used in mod_bc.f90
 !> @date December 8 2014,  S. Marras added dirichlet boundary conditions values
 !> @date December 17 2014, S. Marras added a check on metis3D and periodic b.c.
-!> @date March       2015, S. Marras added a lvisc_dynamics, lvisc_tracers, lnazarov_tracers
-!> @date June 14, 2015, F.X. Giraldo added checks to the input data - space_method and explicit and si_dimension compatibilit
-!> @date April 4, 2017, F.X. Giraldo added Incompressible NSE flags for LVISC_RECIPROCAL and others (forgot to update this line but PISO_TYPE was also added).
 !
 !>
 !>@ modified by Yao Gahounzo 
@@ -58,74 +55,44 @@ module mod_input
         filter_weight_type, filter_basis_type, &
         fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
         write_mesh, &
-        visc, visc2, visc4, &
-        visc_h, visc_v, &
-        viscx, &
-        viscy, &
-        viscz, &
-        diff_T, diff_Th, diff_Tv, &
-        diff_S, diff_Sh, diff_Sv, &
         lsalinity, &
         which_eos, &
-        locean,&
         lbalance_pressure, &
         SIPG_constant, &
-        lvisc_reciprocal, & !FXG 4/5/17: New flag to divide by VISC to get proper convergence rates.
-        lvisc_anisotropic, & !FXG 10/31/16: New flag to split Hor and Vert dirs.
-        lvisc_dynamics, visc_dyn_flg,     &
-        lvisc_tracers, visc_tracers_flg, &
-        vertical_viscosity, &
         alpha_thermal, alpha_salinity,&
         filter_tracers_flg, &
-        lVMS, lshock_cpt, &
-        lVMS_dyn, lshock_cpt_dyn, &
+        lVMS, &
+        lVMS_dyn, &
         tau_type, shock_type, &
         Pr, C1_in, C2_in, Cs_in, &
         Re_tau, &
         Re_bulk, &
-        Mach, &
         lapply_bcs_velocity, &
         lLAV, &
-        llimit, llimit_below, llimit_above, limiter_type, limiter_qoi, &
         ltime_residual, time_residual_flg, &
         ladd_full_stress_tensor, &
         full_stress_flg, &
         ldamping_function, &
         damping_function_flg, &
-        lforce_turb_momentum, &
-        momentum_forcing_flg, &
-        momentum_forcing_LES_flg, &
         luse_PSUP, &
         luse_min_element_length, &
         min_length_flg, max_length_flg, &
         moist_forcing_flg, moist_nocolumn_flg, rain_flg, buoyancy_flg, &
         lstabilize_mass_eqn, &
         mass_stabilize_flg, &
-        nlaplacian, &
-        nlaplacian_flg, &
         lanisotropic_laplacian, &
         ladapt_timestep, lprint_diagnostics, iprint_diagnostics, lcheck_all_conserved, lcompute_barycenter, ljenkins_test, &
         ldynamics, &
         ctd_file_temp, ctd_file_salinity, &
         lrotating_flow, &
-        Mach1_in, Mach2_in, &
         bcast_type, &
         lout_spherical_shell, &
         zlevel_out, &
         lout_nc_3d, &
         p00_in, &
-        lpert_theta, lpert_qv, lpert_qc, lpert_qr, lcylinder, &
         ldam, &
-        lpert_velo, &
-        ljet, &
-        thetac_in, qvc_in, qcc_in, qrc_in, &
-        thetac2_in, qvc2_in, qcc2_in, qrc2_in, &
-        thetac3_in, qvc3_in, qcc3_in, qrc3_in, &
-        thetac4_in, qvc4_in, qcc4_in, qrc4_in, &
-        steepness_pert_in, &
         space_method, &
         dump_rhs, &
-        n_corrections, &
         imass, &
         ad_mlswe, explt_coriolis, cd_mlswe, dp_cutoff1, dp_cutoff2, &
         dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
@@ -185,50 +152,14 @@ module mod_input
         vectorization
  
    !!-- Shallow water inputs
-   public :: ibathymetry, bathymetry_file, wave_file, &
+   public :: ibathymetry, bathymetry_file, &
         gravity_in, &
-        xc_in, yc_in, rc_in, &
-        xc2_in, yc2_in, rc2_in, &
-        xc3_in, yc3_in, rc3_in, &
-        xc4_in, yc4_in, rc4_in, &
-        xc5_in, yc5_in, rc5_in, &
-        xc6_in, yc6_in, rc6_in, &
-        xc7_in, yc7_in, rc7_in, &
-        beach_length_in, mesh_file, &
-        xmin_topography_in, h0_in, free_surface_level_in, &
-        lobstacle, &
-        lobstacle_semicircle, &
-        lobstacle_ellipsis, &
-        lobstacle_distance_as_lambda_fraction, &
-        lobstacle_distance_as_obstacle_length, &
-        lobstacle_height_as_amplitude_fraction, &
-        lobstacle_size_as_lambda_fraction, &
-        lobstacle_crosssection_as_lambda_fraction, &
-        Lobs_in, CXobs_in, Hobs_in, &
-        Hobs2_in,  & !obstacle height
-        Hobs3_in,  & !obstacle height
-        Hobs4_in,  & !obstacle height
-        Hobs5_in,  & !obstacle height
-        ntimes_Lobs_in, &
-        xdims_obstacle, ydims_obstacle, &
-        xmin_obstacle, xmax_obstacle,   &
-        ymin_obstacle, ymax_obstacle,   &
-        x_obstacle_offset_in, &
+        mesh_file, &
         slope_in, &
         initial_shore_line_in, &
         dam_depth_in, dam_xlimit_in, &
-        lwave, lread_external_bathy, lread_wave_from_file, wave_amplitude_in, &
-        Lambda_in, lambda_fraction_in, obstacle_crosssection_lambda_fraction_in, wave_start_in, wave_type, &
-        wave_min_crest_in, wave_max_crest_in, &
         carrier_scaling_in, carrier_x_offset_in, &
-        wave_xcenter_in, wave_ycenter_in, &
-        distance_lambda_fraction_in, &
-        amplitude_height_fraction_in, &
-        amplitude_in, amplitude2_in, amplitude3_in, &
-        amplitude4_in, amplitude5_in, amplitude6_in, amplitude7_in, &
-        hump_config, bathymetry_shift, limit_threshold, &
-        amplitudes_in, nobstacles_in, radiusx_in, radiusy_in, xcc_in, ycc_in, &
-        cms_coefficient, cms_coefficient2
+        hump_config, bathymetry_shift, limit_threshold
  
               
    private
@@ -258,8 +189,6 @@ module mod_input
    integer       :: irestart_file_number = 0
    integer       :: limit_solver_iter_press = 500
    integer       :: limit_solver_iter_ALE = 100
-   integer       :: nlaplacian
-   integer       :: nlaplacian_flg = 0
    character     :: filter_basis_type*8, filter_weight_type*4
    character     :: fname_root*150, out_type*5, fname_initial*100
    character     :: restart_path*100
@@ -351,23 +280,8 @@ module mod_input
    real(kind=r8)         :: sponge_lateralx_coe_west = -1
    real(kind=r8)         :: sponge_lateraly_coe = -1
  
-   real(kind=r8)         :: visc = 0.0   !Default value if not given in input
-   real(kind=r8)         :: visc2= 0.0   !Default value if not given in input
-   real(kind=r8)         :: visc4= 0.0   !Default value if not given in input
-   real(kind=r8)         :: viscx = 0.0
-   real(kind=r8)         :: viscy = 0.0
-   real(kind=r8)         :: viscz = 0.0
-   real(kind=r8)         :: visc_h = 0.0 !Horizontal viscosity
-   real(kind=r8)         :: visc_v = 0.0 !Vertical viscosity
-   real(kind=r8)         :: diff_T = -1.0 !Thermal diffusivity
-   real(kind=r8)         :: diff_Th = -1.0 !Horizontal thermal diffusivity
-   real(kind=r8)         :: diff_Tv = -1.0 !Vertical thermal diffusivity
-   real(kind=r8)         :: diff_S = -1.0 !Salinity diffusivity
-   real(kind=r8)         :: diff_Sh = -1.0 !Horizontal salinity diffusivity
-   real(kind=r8)         :: diff_Sv = -1.0 !Vertical salinity diffusivity
    logical               :: lsalinity = .false. !salinity flag
    character(len=32)     :: which_eos !which eos to use: 'linear','simplified' - quadratic in temperature
-   logical               :: locean = .false. !ocean flag
  
    real(kind=r8)         :: alpha_thermal = 1.0 !Thermal expansion coefficient
    real(kind=r8)         :: alpha_salinity = 1.0 !Salinity contraction coefficient
@@ -414,9 +328,6 @@ module mod_input
  
    integer               :: nel_root_h = 0
    integer               :: nel_root_v = 0
-   integer               :: visc_dyn_flg     = 1   !This flag activates the laplacian computation for the dynamics equations (active by default)
-   integer               :: visc_tracers_flg = 1   !This flag activates the laplacian computation for the tracers equations (active by default)
-   real(kind=r8)         :: vertical_viscosity = 1.0 !1=On and 0=Off
    integer               :: filter_tracers_flg = 0 !This flag activates the filter computation for the tracers equations (INactive by default)
    
    integer               :: platformID = 0
@@ -432,7 +343,6 @@ module mod_input
    integer               :: platformWeight = 1
    integer               :: platformWeight2 = 1
  
-   integer               :: n_corrections = 1
    integer               :: imass = 1
  
    real(kind=r8)         :: mass_stabilize_flg = 0.0
@@ -440,35 +350,14 @@ module mod_input
    real(kind=r8)         :: max_length_flg
    real(kind=r8)         :: moist_forcing_flg
    real(kind=r8)         :: moist_nocolumn_flg
-   real(kind=r8)         :: momentum_forcing_flg = 0.0
-   real(kind=r8)         :: momentum_forcing_LES_flg = 0.0
    real(kind=r8)         :: damping_function_flg = 0.0
    real(kind=r8)         :: time_residual_flg = 0.0
    real(kind=r8)         :: rain_flg
    real(kind=r8)         :: buoyancy_flg
    real(kind=r8)         :: dt_safety_factor = 0.5
-   real(kind=r8)         :: thetac_in = 0.0
-   real(kind=r8)         :: qvc_in = 0.0
-   real(kind=r8)         :: qcc_in = 0.0
-   real(kind=r8)         :: qrc_in = 0.0
-   real(kind=r8)         :: thetac2_in = 0.0
-   real(kind=r8)         :: qvc2_in = 0.0
-   real(kind=r8)         :: qcc2_in = 0.0
-   real(kind=r8)         :: qrc2_in = 0.0
-   real(kind=r8)         :: thetac3_in = 0.0
-   real(kind=r8)         :: qvc3_in = 0.0
-   real(kind=r8)         :: qcc3_in = 0.0
-   real(kind=r8)         :: qrc3_in = 0.0
-   real(kind=r8)         :: thetac4_in = 0.0
-   real(kind=r8)         :: qvc4_in = 0.0
-   real(kind=r8)         :: qcc4_in = 0.0
-   real(kind=r8)         :: qrc4_in = 0.0
- 
-   integer               :: steepness_pert_in = 0 ! 0: sin-shaped rtb, >0: shape of rtb given by exp(-r**steepness_pert_in)
+
    character(len=12)     :: zgrid_type = 'sigma'
    real(kind=r8)         :: time_scale = 1.0_r8
-   real(kind=r8)         :: Mach1_in    = 0.0
-   real(kind=r8)         :: Mach2_in    = 0.1
    real(kind=r8)         :: hybrid_s    = 1000.0
    real(kind=r8)         :: sleve_s1    = 1000.0
    real(kind=r8)         :: sleve_s2    = 1000.0
@@ -479,7 +368,6 @@ module mod_input
    real(kind=r8)         :: Cs_in = 0.14        !Default Cs constant in Smagorinsky
    real(kind=r8)         :: Re_tau = 1.0        !Friction Reynolds number
    real(kind=r8)         :: Re_bulk = 1.0       !Bulk Reynolds number (simply, Reynolds)
-   real(kind=r8)         :: Mach = 0.1          !Mach number
  
    !
    ! The values of dirchlet_* are the actual (tota) physical values of the variable at the wall at hand
@@ -499,21 +387,10 @@ module mod_input
    character(len=12)     :: shock_type = 'codina'
    character(len=12)     :: eqn_set    = 'set2nc'
    character(len=12)     :: equations  = 'euler'
-   character(len=12)     :: limiter_type = 'none'
    character(len=3)      :: piso_type = 'dsa'
  
    logical :: ldynamics      = .true.
-   logical :: lpert_theta    = .false.
-   logical :: lpert_qv       = .false.
-   logical :: lpert_qc       = .false.
-   logical :: lpert_qr       = .false.
-   logical :: lpert_velo     = .false.
-   logical :: ljet           = .false.
-   logical :: lcylinder      = .false.
    logical :: ldam           = .false.
-   logical :: lread_qvapor   = .false.
-   logical :: lread_uvelo    = .false.
-   logical :: lread_vvelo    = .false.
    logical :: lrestart_file  = .false. !obsolete
    logical :: lsommerfeld    = .false.
    logical :: lxstretch      = .false.
@@ -521,19 +398,9 @@ module mod_input
    logical :: lzstretch      = .false.
    logical :: lVMS           = .false.
    logical :: lVMS_dyn       = .false.
-   logical :: lshock_cpt     = .false.
-   logical :: lshock_cpt_dyn = .false.
    logical :: lapply_bcs_velocity = .false.
    logical :: lLAV           = .false.
-   logical :: llimit         = .false.
-   logical :: llimit_below   = .false.
-   logical :: llimit_above   = .false.
-   logical :: lvisc_reciprocal = .false.
-   logical :: lvisc_anisotropic = .false.
-   logical :: lvisc_dynamics = .true.
-   logical :: lvisc_tracers  = .true.
    logical :: ltime_residual = .false.
-   logical :: lforce_turb_momentum = .false.
    logical :: lanisotropic_laplacian = .false.
    logical :: lstabilize_mass_eqn = .false.
    logical :: ladd_full_stress_tensor = .false.
@@ -605,65 +472,25 @@ module mod_input
    !-----------------------------------
    ! Shallow water variables
    !-----------------------------------
-   real xc_in, yc_in, zc_in, rc_in
-   real xc2_in, yc2_in, zc2_in, rc2_in
-   real xc3_in, yc3_in, zc3_in, rc3_in
-   real xc4_in, yc4_in, zc4_in, rc4_in
-   real xc5_in, yc5_in, zc5_in, rc5_in
-   real xc6_in, yc6_in, zc6_in, rc6_in
-   real xc7_in, yc7_in, zc7_in, rc7_in
-   real h0_in, beach_length_in, xmin_topography_in
-   real xmin_in, xmax_in, ymin_in, ymax_in, zmin_in, zmax_in
-   real x_obstacle_offset_in
-   real xmax_obstacle, xmin_obstacle
-   real ymax_obstacle, ymin_obstacle
-   real xmax_water, xmin_water
-   real ymax_water, ymin_water
- 
-   real xstretch_ref_in, zstretch_ref_in
- 
-   real, dimension(4) :: xdims_obstacle, ydims_obstacle
- 
-   real, allocatable :: amplitudes_in(:)
-   real, allocatable :: radiusx_in(:), radiusy_in(:)
-   real, allocatable :: xcc_in(:), ycc_in(:)
  
    real slope_in
    real initial_shore_line_in
    real time_scale_in
-   real wave_amplitude_in
-   real wave_min_crest_in
-   real wave_max_crest_in
    real carrier_scaling_in
    real carrier_x_offset_in
-   real wave_start_in
-   real wave_xcenter_in
-   real wave_ycenter_in
-   real Lambda_in
-   real distance_lambda_fraction_in
-   real lambda_fraction_in !This value indicates a fraction of the wave_length
-   real obstacle_crosssection_lambda_fraction_in
-   real amplitude_height_fraction_in
-   real amplitude_in, amplitude2_in, amplitude3_in
-   real amplitude4_in, amplitude5_in, amplitude6_in, amplitude7_in
  
    real dam_depth_in
-   real free_surface_level_in
    real, dimension(2) :: dam_xlimit_in, dam_ylimit_in
  
    real bathymetry_shift
-   integer nobstacles_in
    integer hump_config
    integer ibathymetry
    integer nonlinear, balance_flag, output_flag, warp_grid
-   character mesh_file*100, bathymetry_file*100, wave_file*100
+   character mesh_file*100, bathymetry_file*100
  
    logical lout_tree
    logical lout_shoreline
-   logical lwave
-   logical lread_wave_from_file
    logical lread_external_bathy
-   character wave_type*12
    real gravity_in
    real xdam_min, xdam_max
    real ydam_min, ydam_max
@@ -671,25 +498,9 @@ module mod_input
    logical luniform_flow
    real    flow_uvelocity_in
  
-   real    ntimes_Lobs_in
-   real    Lobs_in
-   real    Hobs_in, Hobs2_in, Hobs3_in, Hobs4_in, Hobs5_in
-   real    CXobs_in
- 
    real :: limit_threshold = 1e-3
-   integer :: limiter_qoi = 0
-   real :: cms_coefficient = 0.0
-   real :: cms_coefficient2 = 0.0
  
    logical llinear_pert
-   logical lobstacle
-   logical lobstacle_semicircle
-   logical lobstacle_ellipsis
-   logical lobstacle_size_as_lambda_fraction
-   logical lobstacle_crosssection_as_lambda_fraction
-   logical lobstacle_distance_as_lambda_fraction
-   logical lobstacle_distance_as_obstacle_length
-   logical lobstacle_height_as_amplitude_fraction
  
    !-----------------------------------
    ! End shallow water variables 
@@ -733,117 +544,52 @@ module mod_input
           fname_initial, limit_solver_iter_press, limit_solver_iter_ALE,&
           restart_path, & ! Added by Yao G.
           lgravity, &
-          visc, visc2, visc4, &
-          visc_h, visc_v, &
-          viscx, &
-          viscy, &
-          viscz, &
-          diff_T, diff_Th, diff_Tv, &
-          diff_S, diff_Sh, diff_Sv, &
           lsalinity, &
           which_eos, &
-          locean, &
           lbalance_pressure, &
           alpha_thermal, alpha_salinity,&
           SIPG_constant, &
-          lvisc_anisotropic, &
-          lvisc_dynamics, visc_dyn_flg,     &
-          lvisc_tracers, visc_tracers_flg, &
-          vertical_viscosity, &
           filter_tracers_flg, &
-          lVMS, lshock_cpt,   &
-          lVMS_dyn, lshock_cpt_dyn,   &
           tau_type, shock_type, &
           Pr, C1_in, C2_in, Cs_in, &
           Re_tau, &
           Re_bulk, &
-          Mach, &
           lLAV, &
-          llimit, llimit_below, llimit_above, limiter_type, limiter_qoi, &
           ltime_residual, &
           ladd_full_stress_tensor, &
           ldamping_function, &
           damping_function_flg, &
           luse_PSUP, &
-          lforce_turb_momentum, &
-          momentum_forcing_flg, &
-          momentum_forcing_LES_flg, &
           luse_min_element_length, &
           min_length_flg, max_length_flg, &
           lstabilize_mass_eqn, &
           mass_stabilize_flg, &
-          nlaplacian, &
-          nlaplacian_flg, &
           lanisotropic_laplacian, &
           ladapt_timestep,lprint_diagnostics,iprint_diagnostics,lcheck_all_conserved,lcompute_barycenter,ljenkins_test, &
           ldynamics, &
           ctd_file_temp, ctd_file_salinity, &
-          Mach1_in, Mach2_in, &
           lrotating_flow, &
           bcast_type, &
           p00_in, &
           lout_spherical_shell, &
           zlevel_out, &
           lout_nc_3d, &
-          lpert_theta, lpert_qv, lpert_qc, lpert_qr, lcylinder, &
           ldam, &
-          lpert_velo, &
-          ljet, &
-          thetac_in, qvc_in, qcc_in, qrc_in, &
-          thetac2_in, qvc2_in, qcc2_in, qrc2_in, &
-          thetac3_in, qvc3_in, qcc3_in, qrc3_in, &
-          thetac4_in, qvc4_in, qcc4_in, qrc4_in, &
-          steepness_pert_in, &
-          steepness_pert_in, &
           space_method, dump_rhs, &
           lgpu, numaocca_dir, Nelems, Nslices, NslicesV, vectorization, &
           platform, platformID, deviceID, platformWeight, platform2, platformID2, deviceID2, platformWeight2, &
           cpus_per_node, gpus_per_node, threads_per_process, luse_hybrid_cpu_gpu, &
                                  !!--Shallow
-          ibathymetry, bathymetry_file, wave_file, &
+          ibathymetry, bathymetry_file, &
           gravity_in, &
-          xc_in, yc_in, rc_in, &
-          xc2_in, yc2_in, rc2_in, &
-          xc3_in, yc3_in, rc3_in, &
-          xc4_in, yc4_in, rc4_in, &
-          xc5_in, yc5_in, rc5_in, &
-          xc6_in, yc6_in, rc6_in, &
-          xc7_in, yc7_in, rc7_in, &
-          beach_length_in, mesh_file, &
-          xmin_topography_in, h0_in, free_surface_level_in, &
-          lobstacle, &
-          lobstacle_semicircle, &
-          lobstacle_ellipsis, &
-          lobstacle_distance_as_lambda_fraction, &
-          lobstacle_distance_as_obstacle_length, &
-          lobstacle_height_as_amplitude_fraction, &
-          lobstacle_size_as_lambda_fraction, &
-          lobstacle_crosssection_as_lambda_fraction, &
-          Lobs_in, CXobs_in, Hobs_in, &
-          Hobs2_in,  & !obstacle height
-          Hobs3_in,  & !obstacle height
-          Hobs4_in,  & !obstacle height
-          Hobs5_in,  & !obstacle height
-          ntimes_Lobs_in, &
-          xdims_obstacle, ydims_obstacle, &
-          xmin_obstacle, xmax_obstacle,   &
-          ymin_obstacle, ymax_obstacle,   &
-          x_obstacle_offset_in, &
+          mesh_file, &
           slope_in, &
           initial_shore_line_in, &
           dam_depth_in, dam_xlimit_in, &
-          lwave, lread_external_bathy, lread_wave_from_file, wave_amplitude_in, &
-          Lambda_in, lambda_fraction_in, obstacle_crosssection_lambda_fraction_in, wave_start_in, wave_type, &
-          wave_min_crest_in, wave_max_crest_in, &
+          lread_external_bathy, &
           carrier_scaling_in, carrier_x_offset_in, &
-          wave_xcenter_in, wave_ycenter_in, &
-          distance_lambda_fraction_in, &
-          amplitude_height_fraction_in, &
-          amplitude_in, amplitude2_in, amplitude3_in, &
-          amplitude4_in, amplitude5_in, amplitude6_in, amplitude7_in, &
           hump_config, bathymetry_shift, limit_threshold, &
-          amplitudes_in, nobstacles_in, radiusx_in, radiusy_in, xcc_in, ycc_in, &
-          cms_coefficient, cms_coefficient2, n_corrections, imass, &
+          imass, &
           ad_mlswe, explt_coriolis, cd_mlswe, dp_cutoff1, dp_cutoff2, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
           visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, is_mlswe_linear, botfr, &
           mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type
@@ -1039,21 +785,6 @@ module mod_input
  
      !Inundation Checks
      if (equations(1:7) == 'shallow') is_shallow=.true.
-     if (.not. llimit) limit_threshold=-1e8 !large number will keep checks in the code from changing the water height.
- 
-     !1D-IMEX and P6est
-     if (si_dimension == '1d') then
-        if (lp4est) then
-           if(irank == 0) then
-              print*, '---------------------------------------------------'
-              print*,' INPUT WARNING:'
-              print*,' 1D-IMEX cannot be used with P4est. Please switch flag to P6est.'
-              print*,' Please, correct your input and rerun'
-              print*, '---------------------------------------------------'
-           end if
-           stop
-        end if
-     end if
  
    end subroutine mod_input_create
  

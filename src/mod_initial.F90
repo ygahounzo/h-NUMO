@@ -17,8 +17,7 @@ module mod_initial
     use mod_basis, only: nq, npts, ngl
 
     use mod_input, only: equations, time_initial, time_final, time_restart, time_scale, &
-        geometry_type, icase, &
-        llimit, limit_threshold, lsalinity, lALE, is_swe_layers, nlayers, dt, dt_btp, is_mlswe, kstages
+        geometry_type, icase, lsalinity, lALE, nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
         wind_stress_coriolis, compute_reference_edge_variables, Tensor_product, ssprk_coefficients
@@ -37,7 +36,6 @@ module mod_initial
         q_ref_layers, &
         coriolis_constant, kvector, shear_stress, bathymetry, &
         nvar, nvar_diag, nvart, ntracers, &
-        moist_coe, &
         nrhs_mxm, &
         height, &
         pi_values,&
@@ -76,7 +74,6 @@ module mod_initial
     integer, dimension(:,:), allocatable :: indexq
     real, dimension(:), allocatable :: wjac, ssprk_beta
 
-    integer :: moist_coe
     integer :: nvar, nvart, nvar_diag
     integer :: nrhs_mxm, N_btp
   !-----------------------------------------------------------------------

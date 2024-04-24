@@ -99,31 +99,24 @@ end program numa3d
 !---------------------------------------------------
 subroutine initialize_fields()
 
-  use mod_array_util, only: create_arrays, delete_arrays, get_dimensions
+  use mod_array_util, only: create_arrays, get_dimensions
 
-  use mod_bc, only: mod_bc_create, mod_bc_create_iperiodic
+  use mod_bc, only: mod_bc_create
 
   use mod_mpi_communicator, only: mod_mpi_communicator_create
-
-  !use mod_dss, only: mod_dss_create
 
   use mod_face, only: mod_face_create, mod_face_create_boundary, face_send
 
   use mod_filter, only: mod_filter_create_rhs
 
-  use mod_global_grid, only: mod_global_grid_bcs, mod_global_grid_dimensions
-
   use mod_grid, only: nboun
 
-  use mod_initial, only: mod_initial_create, q_init, nvar, q_exact, q_ref
+  use mod_initial, only: mod_initial_create, q_init, nvar
 
   use mod_input, only: &
        nopx, nopy, nopz, &
-       solver_type, solver_tol, delta, ti_method, &
-       si_method, si_dimension, precon_order, nproc_z, visc, visc2, visc4, nlaplacian, &
-       lgrid_only, &
-       Iter_Type, space_method, &
-       lp4est, lp6est, is_non_conforming_flg
+       space_method, &
+       lp4est, lp6est
 
   use mod_metrics, only: mod_metrics_create_metrics, mod_metrics_create_mass
 
@@ -164,12 +157,6 @@ subroutine initialize_fields()
   !Create Initial Conditions
   call mod_initial_create()
   if (irank == irank0) print *, "Initial Fields Created"
-
-  !print*, "nproc = ", nproc
-
-  ! Create DSS operator
-  !call mod_dss_create()
-  !if (irank == irank0) print *, "DSS operator Created"
 
   ! Create Boundary Condtions
   call mod_bc_create() 
@@ -212,13 +199,12 @@ subroutine initialize_grid()
 
   use mod_constants, only: mod_constants_create
 
-  use mod_grid, only: mod_grid_init_coord, npoin, nelem, nboun, face, nface, &
-      coord, mod_grid_rotate
+  use mod_grid, only: npoin, nelem, nboun, face, nface
 
   !use mod_initial, only: q_init, nvar
 
-  use mod_input, only: mod_input_create, nopx, nopy, nopz, equations, geometry_type, &
-      nproc_z, space_method, lp4est, lp6est, icase
+  use mod_input, only: mod_input_create, nopx, nopy, nopz, &
+      space_method, lp4est, lp6est, icase
 
   use mod_mpi_utilities
 

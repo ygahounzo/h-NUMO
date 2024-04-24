@@ -46,9 +46,6 @@ geometry_type='cube',
 		      !sphere_hex=spherical cubed-sphere domain; 
 		      !sphere_ico=spherical icosahedral domain 
 
-!nproc_z = 10,
-			!Only used with GEOM4: it controls the decomposition along z. Along XY, it
-			!will use the square root of nproc/nproc_z
 /
 
 &input

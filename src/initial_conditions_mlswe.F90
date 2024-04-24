@@ -26,8 +26,6 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
       nelx, nelz, eqn_set, &
       xdims, ydims,nlayers, icase
 
-   !use mod_input, only: 
-   
    use mod_types, only : r8
    
    use mpi
@@ -426,7 +424,7 @@ end subroutine initial_conditions_mlswe
 !--------------------------------------------------
 subroutine initial_grid_cube_shallow()
 
-    use mod_input, only: xdims, ydims, icase, h0_in, &
+    use mod_input, only: xdims, ydims, icase, &
                          x_boundary, y_boundary, z_boundary
 
     implicit none
