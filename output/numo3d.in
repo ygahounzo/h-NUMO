@@ -44,11 +44,7 @@ y_periodic = 0,
 geometry_type='cube', 
 		      !cube=3D Box; 
 		      !sphere_hex=spherical cubed-sphere domain; 
-		      !sphere_ico=spherical icosahedral domain
-
-decomp_type='metis2d',
-			!metis3d=3D metis partitioning; 
-			!metis2d=2D metis partitioning; 
+		      !sphere_ico=spherical icosahedral domain 
 
 !nproc_z = 10,
 			!Only used with GEOM4: it controls the decomposition along z. Along XY, it

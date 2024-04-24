@@ -22,7 +22,7 @@ subroutine print_header(flag,numproc)
         icase, space_method, ti_method, si_dimension, kstages, filter_mux, filter_muy, &
         filter_muz, ifilter, filter_weight_type, filter_basis_type, &
         geometry_type, fname_root, out_type, visc_mlswe, &
-        decomp_type, lprint_diagnostics, lp4est, lp6est, time_scale, &
+        lprint_diagnostics, lp4est, lp6est, time_scale, &
         refinement_levels_h, nel_root_h, refinement_levels_v, nel_root_v, flux_type
 
     implicit none
@@ -79,7 +79,6 @@ subroutine print_header(flag,numproc)
     write(*,'("viscosity = ",f6.3)')visc_mlswe
 
     write(*,'("nvar npoin npoin_cg nelem nboun = ",5(i9,1x))')nvar,npoin_g,npoin_g_cg,nelem_g,nboun_g
-    write(*,'("decomp_type = ",a)')decomp_type
     write(*,'("lprint_diagnostics = ",l7)')lprint_diagnostics
     write(*,'("numproc = ",(i6,1x))')numproc
     print*,'---------------------------------------------------------------'

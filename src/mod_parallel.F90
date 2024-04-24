@@ -30,7 +30,7 @@ module mod_parallel
     use mod_global_grid, only: nelem_g, npoin_g, npoin_g_cg, nface_g, ncol_g, intma_g, &
         nelem_s, ele_col_g, flag_periodic_g, nz, nboun_poin_g
   
-    use mod_input, only: decomp_type, geometry_type, nelx, nely, nelz
+    use mod_input, only: geometry_type, nelx, nely, nelz
   
     public :: &
         ! Constructor Functions

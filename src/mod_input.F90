@@ -146,7 +146,7 @@ module mod_input
         x_periodic, y_periodic, z_periodic, &
         robin_bc_alpha, &
         lfree_slip_exact, &
-        geometry_type, decomp_type, nproc_z, &
+        geometry_type, nproc_z, &
         bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
         sponge_type, sponge_top_coe, sponge_lateralx_coe, sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
         lsommerfeld, &
@@ -313,7 +313,6 @@ module mod_input
    integer           :: nproc_z
    integer           :: zlevel_out = 1 !This integer is given by the user to decide what spherical level to write to a netcdf file. Value 1 is by default
    character(len=13) :: geometry_type
-   character(len=7)  :: decomp_type
    character(len=24) :: sponge_type = 'no_sponge'
    character(len=8)  :: format_vtk  = 'BINARY' !can be ascii, binary
    character(len=8)  :: vtk_cell_type  = 'standard' !can be standard, lagrange
@@ -853,7 +852,7 @@ module mod_input
           nlayers, &
           delta_domain, & !used for turbulent channel flows
           nlon, nlat, &
-          geometry_type, decomp_type, nproc_z, &
+          geometry_type, nproc_z, &
           x_boundary, y_boundary, z_boundary, &
           x_periodic, y_periodic, z_periodic, &
           robin_bc_alpha, &
@@ -912,7 +911,6 @@ module mod_input
      close(funit)
  
      geometry_type = lowercase(geometry_type)
-     decomp_type = lowercase(decomp_type)
      ti_method = lowercase(ti_method)
      ti_method_btp = lowercase(ti_method_btp) !added by YaoG
      si_method = lowercase(si_method)
@@ -968,14 +966,6 @@ module mod_input
      ! Perform some checks on the Initial Data
      !
      if (irank == 0) then
-        if ( (si_dimension == '1d') .and. (decomp_type == 'metis3d' .or. &
-             decomp_type == 'geom3' .or. &
-             decomp_type == 'geom4') ) then
-           print*,' Error in MOD_INPUT; Incompatible input data.'
-           print*,' si_dimension = ',si_dimension
-           print*,' decomp_type = ',decomp_type
-           stop
-        end if
  
         !Check Equation Sets and IMEX
         if (delta >= 0 .and. ti_method(1:2) /= 'rk' .and. eqn_set(1:6) == 'set3c') then
@@ -993,35 +983,6 @@ module mod_input
            stop
         end if
  
-     end if
- 
-     !If periodicity is used, the GEOM1 should NOT be used for domain decomposition.
-     !Only metis will work with periodic b.c.:
-     if (irank == 0) then
-        if(  x_boundary(1) == 3 .or.  x_boundary(2) == 3 .or. &
-             y_boundary(1) == 3 .or.  y_boundary(2) == 3) then
- 
-           if(decomp_type(1:4) == 'geom') then
-              print*,'!!!-----------------------------'
-              print*,'!!! INCOMPATIBLE B.C. and Domain decomposition method!'
-              print*,'    Periodic b.c. do NOT work with GEOM(1,2,...) decomposition method'
-              print*,'    The decomposition method will be changed to metis2d'
-              decomp_type = 'metis2d'
-              print*,'    Now: decomp_type = ', decomp_type
-              print*,'!!!-----------------------------'
-           end if
- 
-           if(decomp_type(1:7) == 'metis3d') then
-              print*,'!!!-----------------------------'
-              print*,'!!! INCOMPATIBLE B.C. and Domain decomposition method!'
-              print*,'    Periodic b.c. do NOT work with metis3d decomposition method'
-              print*,'    The decomposition method will be changed to metis2d'
-              decomp_type = 'metis2d'
-              print*,'    Now: decomp_type = ', decomp_type
-              print*,'!!!-----------------------------'
-           end if
- 
-        end if
      end if
  
      !Grid Generation and Graph Partitioning

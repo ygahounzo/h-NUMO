@@ -113,14 +113,14 @@ subroutine initialize_fields()
 
   use mod_global_grid, only: mod_global_grid_bcs, mod_global_grid_dimensions
 
-  use mod_grid, only: do_1dIMEX, mod_grid_create_column, mod_grid_init_node_column, nboun
+  use mod_grid, only: nboun
 
   use mod_initial, only: mod_initial_create, q_init, nvar, q_exact, q_ref
 
   use mod_input, only: &
        nopx, nopy, nopz, &
        solver_type, solver_tol, delta, ti_method, &
-       si_method, si_dimension, precon_order, decomp_type, nproc_z, visc, visc2, visc4, nlaplacian, &
+       si_method, si_dimension, precon_order, nproc_z, visc, visc2, visc4, nlaplacian, &
        lgrid_only, &
        Iter_Type, space_method, &
        lp4est, lp6est, is_non_conforming_flg
@@ -212,13 +212,13 @@ subroutine initialize_grid()
 
   use mod_constants, only: mod_constants_create
 
-  use mod_grid, only: mod_grid_create, mod_grid_init_coord, npoin, nelem, nboun, face, nface, &
-       do_1dIMEX, mod_grid_create_column, mod_grid_init_node_column, coord, mod_grid_rotate
+  use mod_grid, only: mod_grid_init_coord, npoin, nelem, nboun, face, nface, &
+      coord, mod_grid_rotate
 
   !use mod_initial, only: q_init, nvar
 
   use mod_input, only: mod_input_create, nopx, nopy, nopz, equations, geometry_type, &
-       decomp_type, nproc_z, space_method, lp4est, lp6est, icase
+      nproc_z, space_method, lp4est, lp6est, icase
 
   use mod_mpi_utilities
 
