@@ -20,8 +20,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_initial, only: nvar
  
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
- 
    use mod_metrics, only: jac
  
    use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
@@ -111,8 +109,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_initial, only: nvar
  
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
- 
    use mod_metrics, only: jac
  
    use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
@@ -190,8 +186,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
  
    use mod_initial, only: nvar
- 
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
  
    use mod_metrics, only: jac
  
@@ -289,8 +283,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
  
    use mod_initial, only: nvar
- 
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
  
    !use mod_metrics, only: jac_faceq
  
@@ -420,8 +412,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_initial, only: nvar
  
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
- 
    use mod_metrics, only: jac
  
    use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
@@ -518,8 +508,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_initial, only: nvar
  
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
- 
    use mod_metrics, only: jac
  
    use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
@@ -608,8 +596,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
  
    use mod_initial, only: nvar
- 
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
  
    use mod_metrics, only: jac
  
@@ -707,8 +693,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
  
    use mod_initial, only: nvar
- 
-   use mod_input, only: space_method, cgdg_method, llimit, limit_threshold, is_shallow, form_method
  
    use mod_metrics, only: jac
  

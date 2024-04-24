@@ -19,11 +19,11 @@ subroutine print_header(flag,numproc)
 
     use mod_input, only: eqn_set, dt, time_initial, time_final, time_restart, &
         nelx, nely, nelz, nopx, nopy, nopz, ztop, &
-        icase, space_method, cgdg_method, form_method, ti_method, si_dimension, kstages, filter_mux, filter_muy, &
+        icase, space_method, ti_method, si_dimension, kstages, filter_mux, filter_muy, &
         filter_muz, ifilter, filter_weight_type, filter_basis_type, &
         geometry_type, fname_root, out_type, visc_mlswe, &
         decomp_type, lprint_diagnostics, lp4est, lp6est, time_scale, &
-        refinement_levels_h, nel_root_h, refinement_levels_v, nel_root_v
+        refinement_levels_h, nel_root_h, refinement_levels_v, nel_root_v, flux_type
 
     implicit none
 
@@ -65,8 +65,7 @@ subroutine print_header(flag,numproc)
     write(*,'("ztop = ",1(e12.4,1x))')ztop
     write(*,'("icase  = ",1(i6,1x))')icase
     write(*,'("space_method = ",a)')space_method
-    write(*,'("cgdg_method = ",a)')cgdg_method
-    write(*,'("form_method = ",a)')form_method
+    write(*,'("bcl_flux_type = ",a)')flux_type
     write(*,'("ti_method = ",a)')ti_method
     write(*,'("si_dimension = ",a)')si_dimension
     write(*,'("kstages = ",1(i6,1x))')kstages

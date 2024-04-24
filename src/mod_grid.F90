@@ -22,7 +22,7 @@ module mod_grid
       nqx, nqy, nqz, nq
 
     use mod_input, only: ti_method, si_dimension, geometry_type, delta, decomp_type, &
-        space_method, cgdg_method, nelz,         &
+        space_method, nelz,         &
         is_non_conforming_flg
 
     use mod_parallel, only:   nproc, &
@@ -509,16 +509,11 @@ contains
 
     subroutine initialize_coupling()
         integer ip
-        if(space_method == 'cgd' .and. cgdg_method == 'mixed') then
-            do ip = 1, npoin_cg
-                != Change this problem-dependent parameter
-                coupling_flg(ip) = merge(1, 0, coord_cg(1,ip) > 500)
-            end do
-        else !unified/separate
-            do ip = 1, npoin_cg
-                coupling_flg(ip) = 1
-            end do
-        endif
+
+        do ip = 1, npoin_cg
+            coupling_flg(ip) = 1
+        end do
+
     end subroutine initialize_coupling
     !-----------------------------------------------------------------------
     subroutine mod_grid_create()

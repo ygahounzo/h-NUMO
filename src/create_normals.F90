@@ -384,14 +384,6 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
             orderr(l)=l
         end do
 
-        !sort only conforming faces
-!        if((.not. lgpu) .and. (is_nonconforming_flg>0)) then 
-!            if(face(9,iface)==0) then
-!                call heapsort_node(nodel,orderl,ngl_ij)
-!                call heapsort_node(noder,orderr,ngl_ij)
-!            endif
-!        end if
-
         !store imapl,imapr
         ii = 0
         do i=1,ngl_i
@@ -417,22 +409,6 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                 jac_face(i,j,iface)=jac_facec(i,j)
             end do
         end do !l
-
-      !  print*,"face",iface
-      !  write(*,'(11i7)')face(:,iface)
-      !  do i=1,ngl_i
-      !    do j=1,ngl_j
-
-      !       ik=imapl(1,i,j,iface)
-      !       jk=imapl(2,i,j,iface)
-      !       kk=imapl(3,i,j,iface)
-      !       ip = intma(ik,jk,kk,iel);
-      !       x = coord(1,ip);
-      !       y = coord(2,ip);
-      !       z = coord(3,ip);
-      !       write(*,'(2i7,XXX,3i7,XXX,3i7,XXX,e16.8)')i,j,imapl(:,i,j,iface),imapr(:,i,j,iface), sqrt(x*x+y*y+z*z)+x-2*y+3*z
-      !    end do
-      ! end do
 
 
     end do !iface

@@ -16,7 +16,7 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
 
   use mod_initial, only: kvector
 
-  use mod_input, only: geometry_type, space_method, cgdg_method, eqn_set
+  use mod_input, only: geometry_type, space_method
 
   use mod_parallel, only: num_send_recv_total
 
@@ -49,9 +49,6 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
   ldirichlet=.false.
   is_sphere = .false.
   if(geometry_type(1:6) == 'sphere') is_sphere = .true.
-
-  !No need to go any further if DG or CGD with Unified
-!!$    if (space_method == 'dg' .or. (space_method == 'cgd' .and. cgdg_method == 'unified') ) return !FXG 1D-IMEX: need to build NORMALS for 1D-IMEX
 
   !Modify Normal Vectors
   do iface=1,nface

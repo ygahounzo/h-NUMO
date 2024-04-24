@@ -124,14 +124,12 @@ module mod_input
         thetac4_in, qvc4_in, qcc4_in, qrc4_in, &
         steepness_pert_in, &
         space_method, &
-        cgdg_method, &
-        form_method, &
         dump_rhs, &
         n_corrections, &
         imass, &
         ad_mlswe, explt_coriolis, cd_mlswe, dp_cutoff1, dp_cutoff2, &
         dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
-        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data
+        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type
  
    public :: nsmall, ti_alpha, ti_beta, dd_alpha
  
@@ -278,8 +276,7 @@ module mod_input
    character     :: solver_type*9, real_string*9
    logical       :: lcg_proj = .false.
    character     :: Iter_Type*5, precon_type*1, precon_mode*5, precon_fname*150
-   character     :: space_method*3, cgdg_method*8
-   character(len=17) :: form_method='strong' !strong form by default
+   character     :: space_method*3
    integer       :: precon_order, PBNO_pNorm, Hmat_Size, Proj_Size
    real(kind=r8) :: Focal_Dist_Adj, Imag_Wt
    logical       :: vertical_precon = .false.
@@ -590,6 +587,7 @@ module mod_input
    logical :: mlswe_bc_strong = .false. !added by Yao Gahounzo
    logical :: dg_integ_exact = .true. ! added by Yao Gahounzo
    logical :: dump_data = .true. ! added by Yao Gahounzo
+   character(len=12) :: flux_type = 'centered'
 
  
    !-----------------------------------------------------------------------
@@ -798,7 +796,7 @@ module mod_input
           thetac4_in, qvc4_in, qcc4_in, qrc4_in, &
           steepness_pert_in, &
           steepness_pert_in, &
-          space_method,  cgdg_method, form_method, dump_rhs, &
+          space_method, dump_rhs, &
           lgpu, numaocca_dir, Nelems, Nslices, NslicesV, vectorization, &
           platform, platformID, deviceID, platformWeight, platform2, platformID2, deviceID2, platformWeight2, &
           cpus_per_node, gpus_per_node, threads_per_process, luse_hybrid_cpu_gpu, &
@@ -849,7 +847,7 @@ module mod_input
           cms_coefficient, cms_coefficient2, n_corrections, imass, &
           ad_mlswe, explt_coriolis, cd_mlswe, dp_cutoff1, dp_cutoff2, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
           visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, is_mlswe_linear, botfr, &
-          mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data
+          mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &
@@ -913,10 +911,6 @@ module mod_input
      read(funit,gridnl)
      close(funit)
  
-     if(interp_cg_flux_flg .and. &
-          .not. (form_method(1:17) == 'strong_no_product'  &
-           .or.  form_method(1:4) == 'skew')) &
-        stop "interp_cg_flux_flg requires form_method = 'strong_no_product'"
      geometry_type = lowercase(geometry_type)
      decomp_type = lowercase(decomp_type)
      ti_method = lowercase(ti_method)

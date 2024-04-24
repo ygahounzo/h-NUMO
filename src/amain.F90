@@ -129,7 +129,7 @@ subroutine initialize_fields()
 
   use mod_mpi_utilities
 
-  use mod_parallel, only: nproc, mod_parallel_create_send_recv, mod_parallel_reorder
+  use mod_parallel, only: nproc, mod_parallel_reorder
 
   implicit none
 

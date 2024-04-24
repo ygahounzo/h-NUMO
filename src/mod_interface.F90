@@ -17,12 +17,9 @@ module mod_interface
         fx, fy, fz, fx_tr, fy_tr, fz_tr, &
         psiqx, psiqy, psiqz, dpsiqx, dpsiqy, dpsiqz
 
-    use mod_grid, only: intma, intma_1d, npoin, nelem, nz
+    use mod_grid, only: intma, npoin, nelem, nz
 
     use mod_initial, only: nvar
-
-    use mod_input, only: nelz, eqn_set, lvisc_anisotropic, lincompressible, &
-         space_method, cgdg_method, nlaplacian_flg
 
     use mod_metrics, only: &
         ksi_x, ksi_y, ksi_z, &
