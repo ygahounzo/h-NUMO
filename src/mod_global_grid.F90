@@ -22,8 +22,7 @@ module mod_global_grid
     use mod_input, only : equations, icase, nelx, nely, nelz, &
         xdims, ydims, &
         x_boundary, y_boundary, z_boundary, &
-        ztop_in => ztop, zbot_in => zbottom, geometry_type, &
-        lmountain, space_method
+        ztop_in => ztop, zbot_in => zbottom, geometry_type, space_method
 
     use mod_types, only : r8
 
@@ -153,7 +152,6 @@ contains
 
     !-----------------------------------------------------------------------
     subroutine mod_global_grid_cube_create()
-        use mod_constants, only: gamma
         
         implicit none
 

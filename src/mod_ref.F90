@@ -7,7 +7,7 @@
 !----------------------------------------------------------------------!
 module mod_ref
 
-    use mod_constants, only: gamma, tol, p00, gravity
+    use mod_constants, only: tol, gravity
 
     use mod_grid, only: nelem,  npoin, ncol, nz, node_column, nboun, npoin_cg
 
@@ -100,7 +100,6 @@ contains
 
         !Initialize allocated arrays:
         qb             = 0.0
-        press_ref      = p00
         grad_press_ref = 0.0
         grad_rho_ref   = 0.0
         grad_bathy     = 0.0

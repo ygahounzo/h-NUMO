@@ -46,7 +46,7 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
 
     use mod_basis, only: nglx, ngly, nglz
 
-    use mod_constants, only: rgas, p00, cp, cv, gamma, gravity
+    use mod_constants, only: gravity
 
     use mod_grid, only: coord, intma, npoin, nelem
 
@@ -89,10 +89,6 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
     endif
   
     npoints_per_cell=4 !FXG: if always 8, then no issue
-
-    !Constants
-    !>  c=cp/cv
-    c=gamma
 
     !initialize
     cfl=-1.0d10

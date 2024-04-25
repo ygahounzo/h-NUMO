@@ -28,7 +28,7 @@ refinement_levels_v = 0, !refinement levels in vertical
 lp4est=T,
 lp6est=F,
 lio_grid_ascii=F,
-lread_external_grid=T,
+lread_external_grid=F,
 
 !Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
@@ -44,11 +44,7 @@ y_periodic = 0,
 geometry_type='cube', 
 		      !cube=3D Box; 
 		      !sphere_hex=spherical cubed-sphere domain; 
-		      !sphere_ico=spherical icosahedral domain
-
-decomp_type='metis2d',
-			!metis3d=3D metis partitioning; 
-			!metis2d=2D metis partitioning; 
+		      !sphere_ico=spherical icosahedral domain 
 
 !nproc_z = 10,
 			!Only used with GEOM4: it controls the decomposition along z. Along XY, it
@@ -56,11 +52,11 @@ decomp_type='metis2d',
 /
 
 &input
-dt= 50,
-dt_btp = 0.5,
+dt= 120,
+dt_btp = 1.9,
 !dt_safety_factor = 0.5,
 time_initial = 0.0,
-time_final   = 10000,
+time_final   = 10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 lrestart_file = .false.,
@@ -78,6 +74,7 @@ adjust_H_vertical_sum = 2,
 mlswe_bc_strong = T
 dg_integ_exact = T,
 dump_data = T,
+flux_type = 'upwind',
 
 !----case
 icase=2023,
@@ -92,13 +89,7 @@ ti_method = 'btp_bcl',
 ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
 kstages=5,
 
-space_method = 'dg',    !cgc=continuous galerkin with global storage 
-                         !cgd=continuous galerkin with local-element-wise(LEW) storage
-                         !dg=discontinuous Galerkin
-
-cgdg_method = 'separate', 
-	     !unified=CG/DG use same Volume and Flux/BC Integrals;
-	     !separate=CG/DG only use same Volume Integrals but different BCs;
+space_method = 'dg', !dg=discontinuous Galerkin
 	    	
 si_dimension = '3d', 
 	       	     !1d IMEX in the vertical/radial direction; 

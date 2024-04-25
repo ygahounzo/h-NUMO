@@ -1,7 +1,7 @@
 subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpprime_df,qprime_df,qp_df_out)
 
-	use mod_splitting, only: ti_barotropic, thickness, momentum, momentum_mass
-	use mod_input, only: nlayers, dt, dt_btp, dpprime_visc_min, ti_method_btp
+	use mod_splitting, only: thickness, momentum, momentum_mass
+	use mod_input, only: nlayers, ti_method_btp
 	use mod_grid, only: npoin, npoin_q, nface
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df
@@ -28,40 +28,19 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	real, dimension(npoin_q) :: ope_ave, ope2_ave, H_ave, Qu_ave, Qv_ave, Quv_ave
 	real, dimension(2,npoin_q) :: btp_mass_flux_ave, uvb_ave 
 	real, dimension(npoin) :: ope_ave_df
-	real, dimension(2,2,nq,nface) :: uvb_face_ave, btp_mass_flux_face_ave1
-	real, dimension(2,nq,nface) :: btp_mass_flux_face_ave, Qu_face_ave, Qv_face_ave, Quv_face_ave, ope_face_ave, ope2_face_ave, H_face_ave1, one_plus_eta_edge_2_ave1
+	real, dimension(2,2,nq,nface) :: uvb_face_ave
+	real, dimension(2,nq,nface) :: btp_mass_flux_face_ave, Qu_face_ave, Qv_face_ave, Quv_face_ave, ope_face_ave
 	real, dimension(nq,nface) :: H_face_ave
 	real, dimension(2,npoin_q) :: tau_wind_ave, tau_bot_ave
 	real, dimension(npoin,nlayers+1) :: mslwe_elevation
 
-	real, dimension(3,npoin_q,nlayers) :: qprime_avg
-	real, dimension(3,npoin_q,nlayers) :: qprime1, qprime2
-	real, dimension(3,npoin_q,nlayers) :: qprime_corr
-	real, dimension(3,2,nq,nface,nlayers) :: qprime_face_corr
-	real, dimension(3,2,nq,nface,nlayers) :: qprime_face1, qprime_face2
-	real, dimension(3,2,nq,nface,nlayers) :: qprime_face_avg
-	real, dimension(npoin,nlayers) :: dpprime_df1, dpprime_df_avg, dpprime_df2, dpprime_df3
-	real, dimension(3,npoin_q,nlayers) :: q2
-	real, dimension(3,2,nq,nface,nlayers) :: q_face2, q_face1
+	real, dimension(3,npoin_q,nlayers) :: qprime_avg, qprime2, qprime_corr, q2
+	real, dimension(3,2,nq,nface,nlayers) :: qprime_face_corr, q_face2, qprime_face2, qprime_face_avg
+	real, dimension(npoin,nlayers) :: dpprime_df2
 	real, dimension(4,npoin) :: qbp_df
-	real, dimension(4,npoin_q) :: qb2
-	real, dimension(4,2,nq,nface) :: qb_face2
-	real, dimension(4,npoin) :: qb_df2
-	real, dimension(3,npoin,nlayers) :: q_df2
-	real, dimension(3,npoin,nlayers) :: q_df1
-	real, dimension(3,npoin,nlayers) :: qprime_df_avg, qprime_df2, qprime_df_corr
+	real, dimension(3,npoin,nlayers) :: qprime_df_avg, qprime_df2, qprime_df_corr, q_df2
 	real, dimension(4,npoin_q) :: qbp
 	real, dimension(4,2,nq,nface) :: qbp_face
-	real, dimension(npoin_q,nlayers) :: dp, dpprime 
-	real, dimension(npoin,nlayers) :: dp_df
-	real, dimension(2,nq,nface,nlayers) :: dp_face, dpprime_face
-	real, dimension(4,npoin_q,nlayers) :: qp_mom
-	real, dimension(4,2,nq,nface,nlayers) :: qp_face_mom
-	real, dimension(2,npoin_q, nlayers) :: qprime_mom 
-	real, dimension(2,npoin,nlayers) :: uvdp_df
-	real, dimension(2,2,nq,nface,nlayers) :: qprime_face_mom
-	real, dimension(2,npoin) :: uvb_df_ave
-	real, dimension(nq,nface,nlayers) :: disp
 
 	integer :: k, Iq, iquad, iface, ilr, flag_pred
 
@@ -76,8 +55,10 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 
 	flag_pred = 1
 
-	call create_communicator_quad_layer(qprime_face,3,nlayers)
-	call create_communicator_quad_layer(q_face,3,nlayers)
+	!call create_communicator_quad_layer(qprime_face,3,nlayers)
+	!call create_communicator_quad_layer(q_face,3,nlayers)
+
+	call create_communicator_quad_layer_all(qprime_face,q_face,3,nlayers)
 
 	qbp = qb
 	qbp_face = qb_face
@@ -88,7 +69,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
-		qbp_df,qprime,qprime_face, qprime_df, flag_pred, uvb_df_ave)
+		qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 
 	qprime2 = qprime
@@ -102,7 +83,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	call momentum_mass(q2,qprime2,q_df2,q_face2,qprime_face2,qbp,qbp_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df2,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,flag_pred,&
-        q,q_face,qbp_df,qprime, qprime_face, ope2_ave, btp_mass_flux_ave, btp_mass_flux_face_ave, uvb_df_ave)
+        q,q_face,qbp_df,qprime, qprime_face, ope2_ave, btp_mass_flux_ave, btp_mass_flux_face_ave)
 
 
 	! Correction step
@@ -113,8 +94,6 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_avg = 0.5*(qprime2 + qprime)
 	qprime_face_avg = 0.5*(qprime_face2 + qprime_face)
 
-	! call create_communicator_quad_layer(qprime_face_avg,3,nlayers)
-
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
 	
 	flag_pred = 0
@@ -123,7 +102,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
-		qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred, uvb_df_ave)
+		qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 
 
 	q2 = q
@@ -132,10 +111,10 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime2 = qprime_avg
 	qprime_face2 = qprime_face_avg
 
-	qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
+	!qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
 	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df, disp)
+		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df)
 
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
@@ -155,7 +134,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	call momentum(q,qprime_corr,q_df,q_face,qprime_face_corr,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
 		Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
 		qprime_df_corr,ope_ave_df,tau_bot_ave,tau_wind_ave, qprime_face2,flag_pred,&
-		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave,uvb_df_ave, disp)
+		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave)
 
 	qprime(1,:,:) = qprime_avg(1,:,:)
 	qprime(2:3,:,:) = qprime_corr(2:3,:,:)

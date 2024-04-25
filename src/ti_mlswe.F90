@@ -62,8 +62,6 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	real, dimension(2,npoin_q, nlayers) :: qprime_mom 
 	real, dimension(2,npoin,nlayers) :: uvdp_df
 	real, dimension(2,2,nq,nface,nlayers) :: qprime_face_mom
-	real, dimension(2,npoin) :: uvb_df_ave
-	real, dimension(nq,nface,nlayers) :: disp
 
 	integer :: k, Iq, iquad, iface, ilr, flag_pred
 
@@ -90,7 +88,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
-		qbp_df,qprime,qprime_face, qprime_df, flag_pred, uvb_df_ave)
+		qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 	q2 = q
 	q_face2 = q_face
@@ -99,7 +97,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qprime_face1 = qprime_face
 
 	call thickness(q2,qprime1, q_df1, q_face2, qprime_face1, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-		btp_mass_flux_face_ave,dpprime_df1, flag_pred, qbp_df, disp)
+		btp_mass_flux_face_ave,dpprime_df1, flag_pred, qbp_df)
 
 	qprime2 = qprime
 	qprime_face2 = qprime_face
@@ -107,7 +105,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 
 	call momentum(q2,qprime2,q_df1,q_face2,qprime_face2,qbp,qbp_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
 		Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
-		qprime_df2, ope_ave_df,tau_bot_ave,tau_wind_ave, qprime_face,flag_pred,q,q_face,qbp_df,qprime, qprime_face1, ope2_ave, uvb_df_ave, disp)
+		qprime_df2, ope_ave_df,tau_bot_ave,tau_wind_ave, qprime_face,flag_pred,q,q_face,qbp_df,qprime, qprime_face1, ope2_ave)
 
 	qprime2(1,:,:) = qprime1(1,:,:)
 	qprime_face2(1,:,:,:,:) = qprime_face1(1,:,:,:,:)
@@ -131,7 +129,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
 		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
 		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
-		qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred, uvb_df_ave)
+		qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 
 
 	q2 = q
@@ -143,7 +141,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
 	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df, disp)
+		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df)
 
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
@@ -163,7 +161,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	call momentum(q,qprime_corr,q_df,q_face,qprime_face_corr,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
 		Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
 		qprime_df_corr,ope_ave_df,tau_bot_ave,tau_wind_ave, qprime_face2,flag_pred,&
-		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave,uvb_df_ave, disp)
+		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave)
 
 	qprime(1,:,:) = qprime_avg(1,:,:)
 	qprime(2:3,:,:) = qprime_corr(2:3,:,:)

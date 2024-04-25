@@ -15,7 +15,7 @@ subroutine write_output_mlswe(qp,qb,fnp1,time,layer)
   
       use mod_initial, only: nvar, q_ref, q_exact, rho_layers, q_ref_layers
   
-      use mod_input, only: icase, fname_root, nopz, nelz, out_type, lout_ascii, lout_asciimaya, space_method, nvtk_files, lout_vorticity, lp4est, lp6est, &
+      use mod_input, only: icase, fname_root, nopz, nelz, out_type, lout_ascii, lout_asciimaya, space_method, nvtk_files, lp4est, lp6est, &
           zlevel_out, lout_spherical_shell, lout_nc_3d, lincompressible, locean, lsalinity, write_mesh, is_swe_layers, equations
   
       use mod_p4est, only: mod_p4est_dump_mesh
@@ -55,7 +55,7 @@ subroutine write_output_mlswe(qp,qb,fnp1,time,layer)
     
       use mod_parallel, only: num_send_recv_total
 
-      use mod_input, only: icase, fname_root, nopz, nelz, out_type, lout_ascii, lout_asciimaya, space_method, nvtk_files, lout_vorticity, lp4est, lp6est, &
+      use mod_input, only: icase, fname_root, nopz, nelz, out_type, lout_ascii, lout_asciimaya, space_method, nvtk_files, lp4est, lp6est, &
           zlevel_out, lout_spherical_shell, lout_nc_3d, lincompressible, locean, lsalinity, write_mesh, is_swe_layers, equations
   
       use mod_grid, only: npoin

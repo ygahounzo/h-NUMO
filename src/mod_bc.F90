@@ -19,7 +19,7 @@ module mod_bc
 
     use mod_grid, only: npoin, nbsido, coord, nelem
 
-    use mod_input, only: icase, decomp_type, sponge_type
+    use mod_input, only: icase, sponge_type
 
     use mod_types, only : r8
 
