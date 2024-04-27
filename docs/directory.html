@@ -55,12 +55,11 @@
 <li class="toctree-l2"><a class="reference internal" href="#graphics">3.3. Graphics</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#include">3.4. include</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#input-files">3.5. input_files</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#metis">3.6. Metis</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#lib">3.7. lib</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#output">3.8. output</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#run-scripts">3.9. run_scripts</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#src">3.10. src</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#p4est">3.11. p4est</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#lib">3.6. lib</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#output">3.7. output</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#run-scripts">3.8. run_scripts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#src">3.9. src</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#p4est">3.10. p4est</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="running.html">4. Running h-NUMO</a></li>
@@ -107,7 +106,6 @@
 <div class="line"><code class="code highlight bash docutils literal highlight-bash">input_files</code></div>
 <div class="line"><code class="code highlight bash docutils literal highlight-bash">lib</code></div>
 <div class="line"><code class="code highlight bash docutils literal highlight-bash">make_depend.pl</code></div>
-<div class="line"><code class="code highlight bash docutils literal highlight-bash">Metis</code></div>
 <div class="line"><code class="code highlight bash docutils literal highlight-bash">output</code></div>
 <div class="line"><code class="code highlight bash docutils literal highlight-bash">run_scripts</code></div>
 <div class="line"><code class="code highlight bash docutils literal highlight-bash">src</code></div>
@@ -134,29 +132,25 @@
 <h2><span class="section-number">3.5. </span>input_files<a class="headerlink" href="#input-files" title="Link to this heading">¶</a></h2>
 <p>This directory contains a collection of the input files that may be used to run h-NUMO with specific case numbers. All of the files in this directory should work exactly as they are. Simply copy one of these files to the directory you wish to run from and rename the file to <code class="docutils literal notranslate"><span class="pre">numo3d.in</span></code>.</p>
 </section>
-<section id="metis">
-<h2><span class="section-number">3.6. </span>Metis<a class="headerlink" href="#metis" title="Link to this heading">¶</a></h2>
-<p>This directory contains the <a class="reference external" href="http://glaros.dtc.umn.edu/gkhome/views/metis">METIS libraries</a> that are used in h-NUMO. Note that Metis version 5.1.0 has been compiled. You may have to generate your own METIS libraries.</p>
-</section>
 <section id="lib">
-<h2><span class="section-number">3.7. </span>lib<a class="headerlink" href="#lib" title="Link to this heading">¶</a></h2>
+<h2><span class="section-number">3.6. </span>lib<a class="headerlink" href="#lib" title="Link to this heading">¶</a></h2>
 <p>This directory contains LAPACK libraries compiled from VERSION 3.11.0: November 2022.</p>
 </section>
 <section id="output">
-<h2><span class="section-number">3.8. </span>output<a class="headerlink" href="#output" title="Link to this heading">¶</a></h2>
+<h2><span class="section-number">3.7. </span>output<a class="headerlink" href="#output" title="Link to this heading">¶</a></h2>
 <p>This directory contains a list of outputs for various test cases. It is sometimes helpful to see what the outputs of each test case should be.</p>
 </section>
 <section id="run-scripts">
-<h2><span class="section-number">3.9. </span>run_scripts<a class="headerlink" href="#run-scripts" title="Link to this heading">¶</a></h2>
+<h2><span class="section-number">3.8. </span>run_scripts<a class="headerlink" href="#run-scripts" title="Link to this heading">¶</a></h2>
 <p>This directory contains some simple run scripts for use with h-NUMO. It should give the user an idea of how to generate BASH scripts to run with h-NUMO.</p>
 </section>
 <section id="src">
-<h2><span class="section-number">3.10. </span>src<a class="headerlink" href="#src" title="Link to this heading">¶</a></h2>
+<h2><span class="section-number">3.9. </span>src<a class="headerlink" href="#src" title="Link to this heading">¶</a></h2>
 <p>This is the heart of the code and contains all of the source files actively used in h-NUMO. To add a new file to h-NUMO, you have to include it in the file <code class="docutils literal notranslate"><span class="pre">Makefile</span></code>.</p>
 </section>
 <section id="p4est">
-<h2><span class="section-number">3.11. </span>p4est<a class="headerlink" href="#p4est" title="Link to this heading">¶</a></h2>
-<p>The p4est library <span id="id1">[<a class="reference internal" href="#id4" title="Carsten Burstedde, Lucas C. Wilcox, and Omar Ghattas. \texttt p4est: scalable algorithms for parallel adaptive mesh refinement on forests of octrees. SIAM Journal on Scientific Computing, 33(3):1103-1133, 2011. doi:10.1137/100791634.">1</a>]</span> was used for the data structures and algorithms for parallel mesh generation, partitioning, and load balancing in h-NUMO.</p>
+<h2><span class="section-number">3.10. </span>p4est<a class="headerlink" href="#p4est" title="Link to this heading">¶</a></h2>
+<p>h-NUMO uses the p4est library <span id="id1">[<a class="reference internal" href="#id4" title="Carsten Burstedde, Lucas C. Wilcox, and Omar Ghattas. \texttt p4est: scalable algorithms for parallel adaptive mesh refinement on forests of octrees. SIAM Journal on Scientific Computing, 33(3):1103-1133, 2011. doi:10.1137/100791634.">1</a>]</span> for the data structures and algorithms for parallel mesh generation, partitioning, and load balancing.</p>
 <div class="docutils container" id="id2">
 <div role="list" class="citation-list">
 <div class="citation" id="id4" role="doc-biblioentry">
