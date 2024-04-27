@@ -19,7 +19,7 @@ module mod_global_grid
 
     use mod_constants, only: earth_radius, tol, gravity
 
-    use mod_input, only : equations, icase, nelx, nely, nelz, &
+    use mod_input, only : icase, nelx, nely, nelz, &
         xdims, ydims, &
         x_boundary, y_boundary, z_boundary, &
         ztop_in => ztop, zbot_in => zbottom, geometry_type, space_method

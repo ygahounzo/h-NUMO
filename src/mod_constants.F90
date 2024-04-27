@@ -7,7 +7,7 @@
 !----------------------------------------------------------------------!
 module mod_constants
   
-    use mod_input, only : icase, lgravity, p00_in
+    use mod_input, only : icase
 
     use mod_types, only : r8
 
@@ -53,7 +53,7 @@ contains
     !-----------------------------------------------------------------------
     subroutine mod_constants_create()
 
-        use mod_input, only: equations, icase
+        use mod_input, only: icase
     
         implicit none
 

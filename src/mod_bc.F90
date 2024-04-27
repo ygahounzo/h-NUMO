@@ -228,8 +228,6 @@ contains
       use mod_grid, only: npoin, mod_grid_get_face_ngl, nface, face, intma, coord
       
       use mod_face, only: imapl
-      
-      use mod_input, only: lfree_slip_exact
 
       use mod_parallel, only : num_send_recv_total
 
@@ -283,7 +281,7 @@ contains
 
                   if (bcflag(k) == -3) then !non-reflecting
                      !do nothing
-                  else if (bcflag(k) == -4 .and. .not.lfree_slip_exact) then !no-flux (velocity-neumann, pressure-dirichlet)
+                  else if (bcflag(k) == -4) then !no-flux (velocity-neumann, pressure-dirichlet)
                      !don't know how to classify this BC
                   else if (bcflag(k) == -6) then !outflow
                      !same as above
@@ -335,7 +333,7 @@ contains
                  
                   if (bcflag(k) == -3) then !non-reflecting
                      !do nothing
-                  else if (bcflag(k) == -4 .and. .not.lfree_slip_exact) then !no-flux (velocity-neumann, pressure-dirichlet)
+                  else if (bcflag(k) == -4) then !no-flux (velocity-neumann, pressure-dirichlet)
                      !don't know how to classify this BC
                   else if (bcflag(k) == -6) then !outflow
                      !same as above

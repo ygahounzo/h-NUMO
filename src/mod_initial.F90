@@ -16,8 +16,8 @@ module mod_initial
 
     use mod_basis, only: nq, npts, ngl
 
-    use mod_input, only: equations, time_initial, time_final, time_restart, time_scale, &
-        geometry_type, icase, lsalinity, lALE, nlayers, dt, dt_btp, is_mlswe, kstages
+    use mod_input, only: time_initial, time_final, time_restart, time_scale, &
+        geometry_type, icase, nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
         wind_stress_coriolis, compute_reference_edge_variables, Tensor_product, ssprk_coefficients

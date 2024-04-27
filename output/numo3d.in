@@ -1,9 +1,6 @@
 &eqnset
 eqn_set='set2nc',
-equations='shallow',
-is_swe_layers = F,
 is_mlswe = T,
-nonlinear_swe=0
 /
 
 &gridnl
@@ -49,7 +46,7 @@ geometry_type='cube',
 /
 
 &input
-dt= 120,
+dt= 100,
 dt_btp = 1.9,
 !dt_safety_factor = 0.5,
 time_initial = 0.0,

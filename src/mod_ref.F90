@@ -13,8 +13,7 @@ module mod_ref
 
     use mod_initial, only: q_ref, nvar, nvart, kvector, bathymetry, q_ref_layers
 
-    use mod_input, only: si_dimension, eqn_set, delta, space_method, is_shallow, lsalinity, &
-         lincompressible, is_swe_layers, nlayers, is_mlswe
+    use mod_input, only: space_method, nlayers, is_mlswe
 
     use mod_parallel, only: num_send_recv_total
     
