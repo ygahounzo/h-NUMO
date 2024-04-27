@@ -687,7 +687,7 @@ module mod_splitting
             end if
         end do
 
-        call apply_consistency2(q_df,qb_df,flag_pred)
+        !call apply_consistency2(q_df,qb_df,flag_pred)
         
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 

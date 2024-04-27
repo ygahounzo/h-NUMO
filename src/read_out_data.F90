@@ -12,7 +12,7 @@ subroutine read_mlswe(q_df,qb_df,fname)
   
     use mod_initial, only: nvar
 
-    use mod_input, only: format_vtk, nvtk_files,  fname_root, vtk_cell_type, is_swe_layers, nlayers
+    use mod_input, only: format_vtk, nvtk_files,  fname_root, vtk_cell_type, nlayers
 
     use mod_parallel, only: npoin_l, npoin_l_max, nelem_l, nelem_l_max
 

@@ -10,10 +10,6 @@ subroutine courant_mlswe(cfl_vector,q_layers,qb,dt,dt_btp,nlayers,min_dx_vec)
 
     use mod_grid, only: npoin
 
-    use mod_initial, only: nvar
-
-    use mod_input, only: geometry_type
-
     implicit none
 
     !global arrays
@@ -25,11 +21,7 @@ subroutine courant_mlswe(cfl_vector,q_layers,qb,dt,dt_btp,nlayers,min_dx_vec)
     real ::  cfl_h, cfl_v, cflu_h, cflu_v, min_dx,min_dy
     real :: cfl_b, cflu_b, cfl
 
-    if (geometry_type == 'cube') then
-        call courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_btp,nlayers,min_dx,min_dy)
-    else if (geometry_type(1:6) == 'sphere') then
-!        call courant_sphere(cfl_h,cfl_v,cflu_h,cflu_v,q,dt)
-    end if
+    call courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_btp,nlayers,min_dx,min_dy)
 
     cfl_vector(1)=cfl_h
     cfl_vector(2)=cfl_b
@@ -49,11 +41,6 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
     use mod_constants, only: gravity
 
     use mod_grid, only: coord, intma, npoin, nelem
-
-    use mod_initial, only: q_ref, nvar, rho_layers, q_ref_layers
-
-    use mod_input, only: eqn_set, is_shallow, llimit, limit_threshold, lincompressible, locean, &
-         is_swe_layers, is_mlswe
 
     use mod_constants, only: gravity
 
@@ -76,17 +63,9 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
     real    ::  sig, sigu, sigx, sigy, sigz, sigxu, sigyv, sigzw
     integer ::  ie, i, j, k, m, ii, jj, kk, il,ill
     real    ::  dxc, dyc, dzc
-    integer ::  setc, npoints_per_cell
+    integer ::  npoints_per_cell
     real :: u1,u2,v1,v2,ub,vb,hb,h1,h2,r1,r2,vel1,vel2,vel_b,sig1,sig2,sigb,sig1uv,sig2uv,lam,lamb,c_maxB
     real :: gprime, rb,cfl1,cfl2,cfl1uv,cfl2uv
-
-    if(eqn_set(1:6) == 'set2nc') then
-        setc = 0
-    else if(eqn_set(1:5) == 'set2c') then
-        setc = 1
-    else
-        setc = 2
-    endif
   
     npoints_per_cell=4 !FXG: if always 8, then no issue
 

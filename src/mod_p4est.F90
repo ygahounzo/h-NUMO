@@ -29,13 +29,13 @@ module mod_p4est
     space_method, read_external_grid_flg, is_non_conforming_flg, xlim_min,     &
     xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, space_method,            &
     luse_hybrid_cpu_gpu, platformWeight, platformWeight2, cpus_per_node,       &
-    gpus_per_node, equations, amr_indicator_variables, amr_smoothness_limits,  &
+    gpus_per_node, amr_indicator_variables, amr_smoothness_limits,  &
     amr_smoothness_qL2_limit, lrestoring_sponge
 
   use mod_basis, only: nopz, ngl, nglx, ngly, nglz, xgl, xglx, xgly, xglz,     &
     npts, is_2d, FACE_CHILDREN, FACE_LEN, P4EST_FACES, P8EST_EDGES
 
-  use mod_bc, only: vc_el_type, mod_bc_init_restoring
+  use mod_bc, only: vc_el_type
 
   use mod_global_grid, only: nelem_g, npoin_g_cg, npoin_g, ncol_g, xmin, xmax, &
     ymin, ymax, zmin, zmax, iboundary, xperiodic, yperiodic, zperiodic
@@ -324,7 +324,6 @@ contains
     end if
 
     call mod_grid_init_unified()
-    call mod_bc_init_restoring() !initialize sponge if exists
 
     !-----------------------------------------
     ! Allocate parallel data structures

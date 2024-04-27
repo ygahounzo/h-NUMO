@@ -298,8 +298,8 @@ module mod_initial_mlswe
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
         use mod_input, only: gravity_in, &
-            nelx, nelz, eqn_set, &
-            xdims, ydims, nlayers,explt_coriolis, dt, dt_btp
+            nelx, nelz, &
+            xdims, ydims, nlayers, dt, dt_btp
 
         !use mod_initial, only: psih, indexq
     

@@ -26,8 +26,6 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
 
-    use mod_bc, only: bb
-
     use mod_constants, only: pi, earth_radius, gravity
   
     use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
@@ -37,7 +35,7 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
     use mod_initial, only: nvar, nvar_diag, kvector, rho_layers, bathymetry
 
     use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, icase, out_type, &
-        eqn_set, format_vtk, space_method, equations, is_swe_layers, is_mlswe
+        eqn_set, format_vtk, space_method, is_mlswe
 
     use mod_mpi_utilities, only: irank, irank0
   
@@ -322,8 +320,6 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
 
-    use mod_bc, only: bb
-
     use mod_constants, only: pi, earth_radius, gravity
   
     use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
@@ -333,7 +329,7 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
     use mod_initial, only: nvar, nvar_diag, kvector, rho_layers, bathymetry
 
     use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, icase, out_type, &
-        eqn_set, format_vtk, space_method, equations, is_swe_layers, is_mlswe
+        eqn_set, format_vtk, space_method, is_mlswe
 
     use mod_mpi_utilities, only: irank, irank0
   

@@ -17,7 +17,7 @@ module mod_time_loop_mlswe
   
     !use mod_constants, only: nnorm, pi
     use mod_mpi_communicator, only: ierr, ireq, nreq, status
-    use mod_input, only: ti_method, dt, lprint_diagnostics, llimit, irestart_file_number, out_type
+    use mod_input, only: ti_method, dt, lprint_diagnostics, irestart_file_number, out_type
     use mod_mpi_utilities, only : irank, irank0, MPI_PRECISION, wtime, numproc
     use mod_types, only: r8
     use mod_global_grid, only: npoin_g, nelem_g

@@ -1,9 +1,6 @@
 &eqnset
 eqn_set='set2nc',
-equations='shallow',
-is_swe_layers = F,
 is_mlswe = T,
-nonlinear_swe=0
 /
 
 &gridnl
@@ -46,13 +43,10 @@ geometry_type='cube',
 		      !sphere_hex=spherical cubed-sphere domain; 
 		      !sphere_ico=spherical icosahedral domain 
 
-!nproc_z = 10,
-			!Only used with GEOM4: it controls the decomposition along z. Along XY, it
-			!will use the square root of nproc/nproc_z
 /
 
 &input
-dt= 120,
+dt= 100,
 dt_btp = 1.9,
 !dt_safety_factor = 0.5,
 time_initial = 0.0,

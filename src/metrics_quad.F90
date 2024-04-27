@@ -14,7 +14,7 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
  
     use mod_grid, only: intma, coord, nelem, intma_dg_quad
 
-    use mod_input, only: geometry_type, lp4est, lp6est, is_swe_layers
+    use mod_input, only: geometry_type, lp4est, lp6est
 
     use mod_interface, only: compute_local_gradient_quad_v3
 

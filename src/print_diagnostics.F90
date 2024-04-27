@@ -24,7 +24,7 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
 
    use mod_initial, only: nvar
 
-   use mod_input, only: lprint_diagnostics, si_dimension, ti_method, delta, &
+   use mod_input, only: lprint_diagnostics, si_dimension, ti_method, &
       icase, fname_root, time_scale, nlayers, dt_btp
 
    use mod_mpi_utilities, only: MPI_PRECISION

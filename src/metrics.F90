@@ -14,7 +14,7 @@ subroutine metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,
  
     use mod_grid, only: intma, coord, nelem, intma_dg_quad
 
-    use mod_input, only: geometry_type, lp4est, lp6est, is_swe_layers
+    use mod_input, only: geometry_type, lp4est, lp6est
 
     use mod_interface, only: compute_local_gradient_v3, compute_local_gradient_quad_v3
 
@@ -158,7 +158,7 @@ subroutine metrics1(ksi_x,ksi_y,eta_x,eta_y,jac,xjac)
  
     use mod_grid, only: intma, coord, nelem, intma_dg_quad
 
-    use mod_input, only: geometry_type, lp4est, lp6est, is_swe_layers
+    use mod_input, only: geometry_type, lp4est, lp6est
 
     use mod_interface, only: compute_local_gradient_v3, compute_local_gradient_quad_v3
 

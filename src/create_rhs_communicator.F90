@@ -20,8 +20,6 @@ subroutine create_rhs_precommunicator_quad(q_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: space_method
-
     use mod_ref, only: recv_data_dg_quad, send_data_dg_quad, nmessage
 
     use mod_basis, only: nq
@@ -35,14 +33,11 @@ subroutine create_rhs_precommunicator_quad(q_face,nvarb)
     !-------------------------------
     !     For DG
     !-------------------------------
-    if (space_method == 'dg') then
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad(send_data_dg_quad,q_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad(send_data_dg_quad,q_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad,recv_data_dg_quad,nvarb,nreq,ireq,status)
-        !print*, recv_data_dg_quad
-    end if
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad,recv_data_dg_quad,nvarb,nreq,ireq,status)
 
 end subroutine create_rhs_precommunicator_quad
 
@@ -55,8 +50,6 @@ subroutine create_rhs_postcommunicator_quad(q_face,nvarb)
     use mod_grid, only:  npoin, intma, nelem,nface
 
     use mod_initial, only: nvar
-
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
 
     use mod_metrics, only: massinv
 
@@ -99,8 +92,6 @@ subroutine create_communicator_quad(q_face,nvarb)
     use mod_grid, only:  npoin, intma, nelem,nface,nboun
 
     use mod_initial, only: nvar
-
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
 
     use mod_metrics, only: massinv
 
@@ -158,8 +149,6 @@ subroutine create_communicator_df(q_df_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
@@ -216,8 +205,6 @@ subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
@@ -273,8 +260,6 @@ subroutine create_communicator_quad_layer(q_face,nvarb,nlayers)
     use mod_grid, only:  npoin, intma, nelem,nface,nboun
 
     use mod_initial, only: nvar
-
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
 
     use mod_metrics, only: massinv
 
@@ -334,8 +319,6 @@ subroutine create_communicator_quad_layer_all(qprime_face,q_face,nvarb,nlayers)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
@@ -394,8 +377,6 @@ subroutine create_communicator_quad_1var(q_face)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
@@ -452,8 +433,6 @@ subroutine create_lap_postcommunicator_quad(rhs,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
@@ -482,18 +461,15 @@ subroutine create_lap_postcommunicator_quad(rhs,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_lap_quad_ip(rhs,q_send_quad1,q_recv_quad1,nvarb,0)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_lap_quad_ip(rhs,q_send_quad1,q_recv_quad1,nvarb,0)
 
 end subroutine create_lap_postcommunicator_quad
 
@@ -506,8 +482,6 @@ subroutine create_lap_precommunicator_quad(q_face,nvarb)
     use mod_grid, only:  npoin, intma, nelem,nface,nboun
 
     use mod_initial, only: nvar
-
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
 
     use mod_metrics, only: massinv
 
@@ -537,14 +511,12 @@ subroutine create_lap_precommunicator_quad(q_face,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
-    endif
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
 
 end subroutine create_lap_precommunicator_quad
 
@@ -557,8 +529,6 @@ subroutine create_lap_precommunicator_quad_v1(grad_uvdp,nvarb)
     use mod_grid, only:  npoin, intma, nelem,nface,nboun, npoin_q
 
     use mod_initial, only: nvar
-
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
 
     use mod_metrics, only: massinv
 

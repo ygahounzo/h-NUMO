@@ -11,7 +11,7 @@ module mod_basis
   
     use mod_input, only: filter_weight_type, filter_basis_type, &
         filter_mux, filter_muy, filter_muz, &
-        nopx, nopy, nopz, is_non_conforming_flg, is_swe_layers, is_mlswe, dg_integ_exact
+        nopx, nopy, nopz, is_non_conforming_flg, is_mlswe, dg_integ_exact
 
     public :: &
         mod_basis_create, &
@@ -143,8 +143,6 @@ contains
         call legendre_gauss_lobatto(nglx,xglx,wglx)
         call legendre_gauss_lobatto(ngly,xgly,wgly)
         call legendre_gauss_lobatto(nglz,xglz,wglz)
-    
-        if(is_swe_layers) wglz = 1.0
 
         !Construct Legendre Cardinal Bases at Gauss-Lobatto Points
         call legendre_basis(ngl,xgl,psi,dpsi)

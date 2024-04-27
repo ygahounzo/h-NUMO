@@ -13,7 +13,7 @@ subroutine filter(q)
 
     use mod_initial, only: nvar, nvart
 
-    use mod_input, only: filter_tracers_flg, space_method, equations
+    use mod_input, only: filter_tracers_flg, space_method
 
     use mod_interface, only: compute_local_gradient_filter_v3
 
@@ -108,7 +108,7 @@ subroutine filter_dss(q)
 
     use mod_initial, only: nvar, nvart
 
-    use mod_input, only: filter_tracers_flg, space_method, equations
+    use mod_input, only: filter_tracers_flg, space_method
 
     use mod_interface, only: compute_local_gradient_filter_v3
 

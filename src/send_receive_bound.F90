@@ -36,7 +36,7 @@ subroutine unpack_data_dg_general_quad(q_send,q_recv,send_data,recv_data,nvarb)
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
             ! if (ftype == 2 .and. imulti>0) then
                 ilocl = face(5,iface)
@@ -87,7 +87,7 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
             ! if (ftype == 2 .and. imulti>0) then
                 ilocl = face(5,iface)
@@ -136,9 +136,9 @@ subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,n
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
-            if (ftype == 2 .and. imulti>0) then
+            !if (ftype == 2 .and. imulti>0) then
                 ilocl = face(5,iface)
 
                 call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
@@ -154,7 +154,7 @@ subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,n
                     end do
                 end do
                 kk=kk+1
-            end if
+            !end if
             jj = jj + 1
         
         end do
@@ -190,9 +190,9 @@ subroutine unpack_data_dg_general_quad_1v(q_send,q_recv,send_data,recv_data)
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
-            if (ftype == 2 .and. imulti > 0) then
+            !if (ftype == 2 .and. imulti > 0) then
                 ilocl = face(5,iface)
 
                 call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
@@ -203,7 +203,7 @@ subroutine unpack_data_dg_general_quad_1v(q_send,q_recv,send_data,recv_data)
                     q_recv(inode,kk) = recv_data(ii)
                 end do
                 kk=kk+1
-            end if
+            !end if
             jj = jj + 1
         
         end do
@@ -222,8 +222,6 @@ subroutine pack_data_dg_quad(q_send,q_face,nvarb)
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
 
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
-
     use mod_metrics, only: jac
 
     use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
@@ -241,10 +239,6 @@ subroutine pack_data_dg_quad(q_send,q_face,nvarb)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -284,8 +278,6 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
 
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
-
     use mod_metrics, only: jac
 
     use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
@@ -303,10 +295,6 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -316,7 +304,7 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
             imulti = nbh_send_recv_multi(jj)
             ! jj = jj + 1
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            !if(face_type(iface) == 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -329,7 +317,7 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
                         q_send(ii)=q_face(ivar,1,inode,iface) 
                     end do
                 end do
-            end if
+            !end if
             jj = jj + 1
         end do
     end do
@@ -345,8 +333,6 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
     use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
-
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
 
     use mod_metrics, only: jac
 
@@ -366,10 +352,6 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -379,7 +361,7 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
             imulti = nbh_send_recv_multi(jj)
             ! jj = jj + 1
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            !if(face_type(iface) == 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -397,7 +379,7 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
                         q_send(ii)=grad_face(ivar,1,inode,iface) 
                     end do
                 end do
-            end if
+            !end if
             jj = jj + 1
         end do
     end do
@@ -413,8 +395,6 @@ subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
     use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, npoin_q, nboun, face, mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
-
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
 
     use mod_metrics, only: jac
 
@@ -433,10 +413,6 @@ subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -480,8 +456,6 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers)
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
 
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
-
     use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
 
     implicit none
@@ -497,10 +471,6 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -509,7 +479,7 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
         
-            if(face_type(iface)== 2 .and. imulti > 0) then
+            !if(face_type(iface)== 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -526,7 +496,7 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers)
 
                     end do
                 end do
-            end if
+            !end if
             jj = jj + 1
         end do
     end do
@@ -540,8 +510,6 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
     use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
-
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
 
     use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
 
@@ -558,10 +526,6 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -570,7 +534,7 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
         
-            if(face_type(iface)== 2 .and. imulti > 0) then
+            !if(face_type(iface)== 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -592,7 +556,7 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
 
                     end do
                 end do
-            end if
+            !end if
             jj = jj + 1
         end do
     end do
@@ -608,8 +572,6 @@ subroutine pack_data_dg_quad_1v(q_send,q_face)
     use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar, q_ref, q_ref_layers, rho_layers
-
-    use mod_input, only: llimit, limit_threshold, is_shallow, eqn_set, is_swe_layers
 
     use mod_metrics, only: jac
 
@@ -627,10 +589,6 @@ subroutine pack_data_dg_quad_1v(q_send,q_face)
     real :: h, qu, qv
     integer :: inode, jnode, ip, ilocl, ilocr
     integer :: iface_type
-    logical :: is_set2nc
-
-    !check for Set2NC which is Non-Conservative
-    is_set2nc = (eqn_set == 'set2nc')
 
     ii = 0
     jj = 1
@@ -640,7 +598,7 @@ subroutine pack_data_dg_quad_1v(q_send,q_face)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
         
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            !if(face_type(iface) == 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
@@ -652,7 +610,7 @@ subroutine pack_data_dg_quad_1v(q_send,q_face)
                     q_send(ii)=q_face(1,inode,iface) 
 
                 end do
-            end if
+            !end if
 
             jj = jj + 1
         
@@ -713,10 +671,10 @@ subroutine send_bound_dg_general(send_data,recv_data,nsize,nreq,ireq,status)
         nq = 0
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
             ilocl = face(5,iface)
-            if(ftype==21) ilocl = face(6,iface)
+            !if(ftype==21) ilocl = face(6,iface)
 
             do i=1,nbh_send_recv_multi(jj)
                 call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
@@ -797,7 +755,7 @@ subroutine send_bound_dg_general_quad(send_data,recv_data,nvarb,nreq,ireq,status
         nqp = 0
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
             ilocl = face(5,iface)
             ! if(ftype==21) ilocl = face(6,iface)
@@ -881,7 +839,7 @@ subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
         nqp = 0
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
             ilocl = face(5,iface)
             ! if(ftype==21) ilocl = face(6,iface)
@@ -962,10 +920,10 @@ subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nr
         nqp = 0
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
-            ftype = face_type(iface)
+            !ftype = face_type(iface)
 
             ilocl = face(5,iface)
-            if(ftype==21) ilocl = face(6,iface)
+            !if(ftype==21) ilocl = face(6,iface)
 
             do i=1,nbh_send_recv_multi(jj)
                 call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
