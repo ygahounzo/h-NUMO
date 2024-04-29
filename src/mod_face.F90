@@ -4,6 +4,11 @@
 !>           Department of Applied Mathematics
 !>           Naval Postgraduate School
 !>           Monterey, CA 93943-5216
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: March 27, 2023
+!       Added routines to build numormals at quadrature points
 !----------------------------------------------------------------------!
 module mod_face
 
@@ -61,7 +66,6 @@ contains
         if(is_mlswe) then
             call create_normals_quad(normal_vector_q,jac_faceq,face,nface)
             call create_imaplr_quad(imapl_q,imapr_q,normal_vector_q,jac_faceq,face,nface)
-            !call create_imaplr_quad1(imapl_q,imapr_q,face,nface)
         endif
 
         !Create IMAP-DG for the sphere / non-conforming grid
@@ -86,9 +90,6 @@ contains
             if(allocated(face_send)) deallocate(face_send, face_bound)
             allocate( face_send(nboun), face_bound(nface))
         end if
-
-        !Create jump penalty weight
-!!        call compute_jump_penalty_weight()  !FXG: is making AMR hang up.
         
     end subroutine mod_face_create_boundary
 

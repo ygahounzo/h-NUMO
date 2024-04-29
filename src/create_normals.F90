@@ -9,6 +9,11 @@
 !>@date 16 November 2009
 !>@date December 2014, Daniel S. Abdi, Fixed bug in jac_face
 !> and modified for inter-processor faces
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 03, 2023
+!       remove SEMI_ANALYTIC_METRICS and is_sphere flag
 !----------------------------------------------------------------------!
 subroutine create_normals(nv,jac_face,face,nface)
 
@@ -16,7 +21,7 @@ subroutine create_normals(nv,jac_face,face,nface)
 
     use mod_grid, only: intma, coord
 
-    use mod_input, only: geometry_type, lp4est, lp6est
+    use mod_input, only: geometry_type
 
     use mod_interface, only: compute_local_gradient_v3
 
@@ -32,16 +37,12 @@ subroutine create_normals(nv,jac_face,face,nface)
     integer :: iface, i, j, k, ip, l, m
     integer :: ilocl, ilocr, iel, ier, ndim
     real :: ww, nx, ny, nz, nlen
-    logical :: is_sphere
 
     !local arrays
     real, dimension(nglx,ngly,nglz) :: x, y, z
     real, dimension(nglx,ngly,nglz) :: x_ksi, x_eta, x_zeta, &
         y_ksi, y_eta, y_zeta, &
         z_ksi, z_eta, z_zeta
-
-    is_sphere = .false.
-    if(geometry_type(1:6) == 'sphere') is_sphere = .true.
   
     !Initialize MXM dimension
     ndim=1
@@ -73,48 +74,31 @@ subroutine create_normals(nv,jac_face,face,nface)
                 end do !j
             end do !k
         
-            if (.not. is_sphere) then
-                !Construct Mapping Derivatives
-                call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,nglx,ngly,nglz,ndim)
-                call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,nglx,ngly,nglz,ndim)
-                call compute_local_gradient_v3(z_ksi,z_eta,z_zeta,z,nglx,ngly,nglz,ndim)
+            !Construct Mapping Derivatives
+            call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,nglx,ngly,nglz,ndim)
+            call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,nglx,ngly,nglz,ndim)
+            call compute_local_gradient_v3(z_ksi,z_eta,z_zeta,z,nglx,ngly,nglz,ndim)
            
-            else
-               if ( (lp4est .or. lp6est) .and. geometry_type(1:10) == 'sphere_hex') then
-                  call semi_analytic_metrics_nep(iel,x,y,z,nglx,ngly,nglz,x_ksi,x_eta,x_zeta,&
-                       y_ksi,y_eta,y_zeta,z_ksi,z_eta,z_zeta)
-!                  call semi_analytic_metrics(x,y,z,nglx,ngly,nglz,x_ksi,x_eta,x_zeta,y_ksi,&
-!                       y_eta,y_zeta,z_ksi,z_eta,z_zeta)
-               else 
-                  call semi_analytic_metrics(x,y,z,nglx,ngly,nglz,x_ksi,x_eta,x_zeta,y_ksi,&
-                       y_eta,y_zeta,z_ksi,z_eta,z_zeta)
-!!$               call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,nglx,ngly,nglz,ndim)
-!!$               call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,nglx,ngly,nglz,ndim)
-!!$               call compute_local_gradient_v3(z_ksi,z_eta,z_zeta,z,nglx,ngly,nglz,ndim)
-               end if
-            end if
-        
             !set jacobian matrix J for 2D
-            if(.not. is_sphere) then
-                do k=1,nglz
-                    do j=1,ngly
-                        do i=1,nglx
-                            if(nglx == 1) then
-                                x_ksi(i,j,k) = 1;  y_ksi(i,j,k) = 0;  z_ksi(i,j,k) = 0;
-                                x_eta(i,j,k) = 0;  x_zeta(i,j,k) = 0;
-                            endif
-                            if(ngly == 1) then
-                                x_eta(i,j,k) = 0;  y_eta(i,j,k) = 1;  z_eta(i,j,k) = 0;
-                                y_ksi(i,j,k) = 0; y_zeta(i,j,k) = 0;
-                            endif
-                            if(nglz == 1) then
-                                x_zeta(i,j,k) = 0; y_zeta(i,j,k) = 0; z_zeta(i,j,k) = 1;
-                                z_ksi(i,j,k) = 0; z_eta(i,j,k) = 0;
-                            endif
-                        enddo
+
+            do k=1,nglz
+                do j=1,ngly
+                    do i=1,nglx
+                        if(nglx == 1) then
+                            x_ksi(i,j,k) = 1;  y_ksi(i,j,k) = 0;  z_ksi(i,j,k) = 0;
+                            x_eta(i,j,k) = 0;  x_zeta(i,j,k) = 0;
+                        endif
+                        if(ngly == 1) then
+                            x_eta(i,j,k) = 0;  y_eta(i,j,k) = 1;  z_eta(i,j,k) = 0;
+                            y_ksi(i,j,k) = 0; y_zeta(i,j,k) = 0;
+                        endif
+                        if(nglz == 1) then
+                            x_zeta(i,j,k) = 0; y_zeta(i,j,k) = 0; z_zeta(i,j,k) = 1;
+                            z_ksi(i,j,k) = 0; z_eta(i,j,k) = 0;
+                        endif
                     enddo
                 enddo
-            endif
+            enddo
               
             !Compute Normals
             select case (ilocl)
@@ -416,275 +400,3 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
 !stop
 
 end subroutine create_imaplr
-
-
-!----------------------------------------------------------------------!
-!>@author Francis X. Giraldo on 10/91 updated 11/97
-!>           Naval Research Laboratory
-!>           Monterey, CA 93943-5502
-!>----------------------------------------------------------------------!
-!> @brief This file contains all of the routines required for the
-!>construction and all other pertinent operations for the binary
-!>tree nonsequential storage used.
-!>all algorithms written by F.X. Giraldo
-!>----------------------------------------------------------------------!
-!>This is the HeapSort Algorithm.  It sorts an array
-!>into ascending order. It is used to sort the closest
-!>points to point C.
-!----------------------------------------------------------------------!
-subroutine heapsort_node(nodes,order,ndof)
-
-    implicit none
-    integer n, l, ir, inode, i, j, ndof
-    integer order(ndof), io
-    real nodes(ndof)
-
-    n=ndof
-    l=n/2 + 1
-    ir=n
-10 continue
-   if (l > 1) then
-       l=l-1
-       inode=nodes(l)
-       io=order(l)
-   else
-       inode=nodes(ir)
-       io=order(ir)
-       nodes(ir)=nodes(1)
-       order(ir)=order(1)
-       ir=ir-1
-       if (ir == 1) then
-           nodes(1)=inode
-           order(1)=io
-           goto 100
-       endif
-   endif
-
-   i=l
-   j=l+l
-20 if (j <= ir) then
-       if (j < ir) then
-           if (nodes(j) < nodes(j+1) ) j=j+1
-       endif
-       if (inode < nodes(j)) then
-           nodes(i)=nodes(j)
-           order(i)=order(j)
-           i=j
-           j=j+j
-       else
-           j=ir + 1
-       endif
-       goto 20
-   endif
-
-   nodes(i)=inode
-   order(i)=io
-   goto 10
-
-100 continue
-end subroutine heapsort_node
-
-
-!----------------------------------------------------------------------!
-!>This subroutine computes normals for one face of a given element
-!>@author  M.A. Kopera on 05/2015
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!----------------------------------------------------------------------!
-subroutine compute_normals_element(nx,ny,nz,jac_face,element,iloc)
-  
-    use mod_basis, only: ngl, nglx, ngly, nglz, wglx, wgly, wglz
-
-    use mod_grid, only: intma, coord
-
-    use mod_interface, only: compute_local_gradient_v3
-  
-    use mod_input, only: geometry_type
-  
-    implicit none
-
-    !global
-    real, dimension(ngl,ngl), intent(out) :: nx,ny,nz
-    real, dimension(ngl,ngl), intent(out) :: jac_face
-    integer, intent(in) :: element, iloc
-
-    !local
-    integer :: iface, i, j, k, ip, l, m
-    integer :: ilocl, ilocr, iel, ier, ndim
-    real :: ww, nlen
-    logical :: is_sphere
-  
-    !local arrays
-    real, dimension(nglx,ngly,nglz) :: x, y, z
-    real, dimension(nglx,ngly,nglz) :: x_ksi, x_eta, x_zeta, &
-        y_ksi, y_eta, y_zeta, &
-        z_ksi, z_eta, z_zeta
-
-    is_sphere = .false.
-    if(geometry_type(1:6) == 'sphere') is_sphere = .true.
-  
-    !Initialize MXM dimension
-    ndim=1
-
-    !initialize the global matrix
-    nx=0
-    ny=0
-    nz=0
-    jac_face=0
-   
-    !Store Element Variables
-    do k=1,nglz
-        do j=1,ngly
-            do i=1,nglx
-                ip=intma(i,j,k,element)
-                x(i,j,k)=coord(1,ip)
-                y(i,j,k)=coord(2,ip)
-                z(i,j,k)=coord(3,ip)
-            end do !i
-        end do !j
-    end do !k
-
-    if (.not. is_sphere) then
-        !Construct Mapping Derivatives
-        call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,nglx,ngly,nglz,ndim)
-        call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,nglx,ngly,nglz,ndim)
-        call compute_local_gradient_v3(z_ksi,z_eta,z_zeta,z,nglx,ngly,nglz,ndim)
-
-    else
-        !Semi analytic metrics
-        !call semi_analytic_metrics(x,y,z,nglx,ngly,nglz,x_ksi,x_eta,x_zeta,&
-        !    y_ksi,y_eta,y_zeta,z_ksi,z_eta,z_zeta)
-
-        call semi_analytic_metrics_nep(element,x,y,z,nglx,ngly,nglz,x_ksi,x_eta,x_zeta,&
-            y_ksi,y_eta,y_zeta,z_ksi,z_eta,z_zeta)
-    end if
-        
-    !set jacobian matrix J for 2D
-    if(.not. is_sphere) then
-        do k=1,nglz
-            do j=1,ngly
-                do i=1,nglx
-                    if(nglx == 1) then
-                        x_ksi(i,j,k) = 1;  y_ksi(i,j,k) = 0;  z_ksi(i,j,k) = 0;
-                        x_eta(i,j,k) = 0;  x_zeta(i,j,k) = 0;
-                    endif
-                    if(ngly == 1) then
-                        x_eta(i,j,k) = 0;  y_eta(i,j,k) = 1;  z_eta(i,j,k) = 0;
-                        y_ksi(i,j,k) = 0; y_zeta(i,j,k) = 0;
-                    endif
-                    if(nglz == 1) then
-                        x_zeta(i,j,k) = 0; y_zeta(i,j,k) = 0; z_zeta(i,j,k) = 1;
-                        z_ksi(i,j,k) = 0; z_eta(i,j,k) = 0;
-                    endif
-                enddo
-            enddo
-        enddo
-    endif
-        
-    !Compute Normals
-    select case (iloc)
-              
-        case(1)
-            ! Face 1: zeta = -1
-            do l=1,nglx
-                do m = 1,ngly
-                    ww=wglx(l)*wgly(m)
-                    i = l
-                    j = m
-                    k = 1
-                    nx(l,m) = + y_eta(i,j,k)*z_ksi(i,j,k) - z_eta(i,j,k)*y_ksi(i,j,k)
-                    ny(l,m) = - x_eta(i,j,k)*z_ksi(i,j,k) + z_eta(i,j,k)*x_ksi(i,j,k)
-                    nz(l,m) = + x_eta(i,j,k)*y_ksi(i,j,k) - y_eta(i,j,k)*x_ksi(i,j,k)
-                    jac_face(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(2)
-            ! Face 2: zeta = +1
-            do l=1,nglx
-                do m=1,ngly
-                    ww=wglx(l)*wgly(m)
-                    i = l
-                    j = m
-                    k = nglz
-                    nx(l,m) = - y_eta(i,j,k)*z_ksi(i,j,k) + z_eta(i,j,k)*y_ksi(i,j,k)
-                    ny(l,m) = + x_eta(i,j,k)*z_ksi(i,j,k) - z_eta(i,j,k)*x_ksi(i,j,k)
-                    nz(l,m) = - x_eta(i,j,k)*y_ksi(i,j,k) + y_eta(i,j,k)*x_ksi(i,j,k)
-                    jac_face(l,m) =ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(3)
-            ! Face 3: eta = -1
-            do l=1,nglx
-                do m=1,nglz
-                    ww=wglx(l)*wglz(m)
-                    i = l
-                    j = 1
-                    k = m
-                    nx(l,m) = + y_ksi(i,j,k)*z_zeta(i,j,k) - z_ksi(i,j,k)*y_zeta(i,j,k)
-                    ny(l,m) = - x_ksi(i,j,k)*z_zeta(i,j,k) + z_ksi(i,j,k)*x_zeta(i,j,k)
-                    nz(l,m) = + x_ksi(i,j,k)*y_zeta(i,j,k) - y_ksi(i,j,k)*x_zeta(i,j,k)
-                    jac_face(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(4)
-            ! Face 4: eta = +1
-            do l=1,nglx
-                do m=1,nglz
-                    ww=wglx(l)*wglz(m)
-                    i = l
-                    j = ngly
-                    k = m
-                    nx(l,m) = - y_ksi(i,j,k)*z_zeta(i,j,k) + z_ksi(i,j,k)*y_zeta(i,j,k)
-                    ny(l,m) = + x_ksi(i,j,k)*z_zeta(i,j,k) - z_ksi(i,j,k)*x_zeta(i,j,k)
-                    nz(l,m) = - x_ksi(i,j,k)*y_zeta(i,j,k) + y_ksi(i,j,k)*x_zeta(i,j,k)
-                    jac_face(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(5)
-            ! Face 5: ksi = -1
-            do l=1,ngly
-                do m=1,nglz
-                    ww=wgly(l)*wglz(m)
-                    i = 1
-                    j = l
-                    k = m
-                    nx(l,m) = - y_eta(i,j,k)*z_zeta(i,j,k) + z_eta(i,j,k)*y_zeta(i,j,k)
-                    ny(l,m) = + x_eta(i,j,k)*z_zeta(i,j,k) - z_eta(i,j,k)*x_zeta(i,j,k)
-                    nz(l,m) = - x_eta(i,j,k)*y_zeta(i,j,k) + y_eta(i,j,k)*x_zeta(i,j,k)
-                    jac_face(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-
-        case(6)
-            ! Face 6: ksi = +1
-            do l=1,ngly
-                do m=1,nglz
-                    ww=wgly(l)*wglz(m)
-                    i = nglx
-                    j = l
-                    k = m
-                    nx(l,m) = + y_eta(i,j,k)*z_zeta(i,j,k) - z_eta(i,j,k)*y_zeta(i,j,k)
-                    ny(l,m) = - x_eta(i,j,k)*z_zeta(i,j,k) + z_eta(i,j,k)*x_zeta(i,j,k)
-                    nz(l,m) = + x_eta(i,j,k)*y_zeta(i,j,k) - y_eta(i,j,k)*x_zeta(i,j,k)
-                    jac_face(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-    end select
-	   
-    ! Normalize the normals
-    do l=1,ngl
-        do m = 1,ngl
-            nlen = sqrt(nx(l,m)**2 + ny(l,m)**2 + nz(l,m)**2)
-            nx(l,m) = nx(l,m)/nlen
-            ny(l,m) = ny(l,m)/nlen
-            nz(l,m) = nz(l,m)/nlen
-        end do
-    end do
-
-
-end subroutine compute_normals_element

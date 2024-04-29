@@ -3,7 +3,9 @@ module mod_splitting
 
     ! ===========================================================================================================================
     ! This module contains the routines for the barotropic-baroclinic splitting
-    !   Author: Yao GAhounzo 
+    !   Author: Yao Gahounzo 
+    !   Computing PhD 
+    !   Boise State University
     !   Date: March 27, 2023
     ! It contains the following routines:
     ! - ti_barotropic: barotropic substem for splitting system using two-level time integration (see Higdon et al. 2005)

@@ -99,8 +99,6 @@ end program numa3d
 !---------------------------------------------------
 subroutine initialize_fields()
 
-  use mod_array_util, only: create_arrays, get_dimensions
-
   use mod_bc, only: mod_bc_create
 
   use mod_mpi_communicator, only: mod_mpi_communicator_create
@@ -175,13 +173,6 @@ subroutine initialize_fields()
    !Create RHS Vectors for the Filter
    call mod_filter_create_rhs()
    if (irank == irank0) print *, "Filter RHS Created"
-
-   ! Initialize local 2D and 3D arrays
-   call get_dimensions()
-   if (irank == irank0) print *, "GET_DIMENSIONS Created"
-
-   call create_arrays()
-   if (irank == irank0) print *, "CREATE_ARRAYS Created"
 
    !Create DG Communicator arrays
    if (space_method == 'dg') then
