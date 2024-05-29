@@ -4,6 +4,11 @@
 !>           Department of Applied Mathematics
 !>           Naval Postgraduate School
 !>           Monterey, CA 93943-5216
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 06, 2023
+!       modified for exact integration ( added nq ad is_mlswe condtions)
 !----------------------------------------------------------------------!
 module mod_ref
 

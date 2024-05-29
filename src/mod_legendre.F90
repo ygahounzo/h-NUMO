@@ -112,9 +112,10 @@ contains
 
     !---------------------------------------------------------------------!
     !>@brief This subroutine finds the Legendre-Gauss Roots.
-    !>@author  F.X. Giraldo on 9/97
-    !>           Naval Research Laboratory
-    !>           Monterey, CA 93943
+    !>@author  Francis X. Giraldo on 7/08
+    !>           Department of Applied Mathematics
+    !>           Naval Postgraduate School
+    !>           Monterey, CA 93943-5216
     !---------------------------------------------------------------------!
     subroutine legendre_gauss(ngl,xgl,wgl)
         integer, intent(in) :: ngl
@@ -180,9 +181,10 @@ contains
     !---------------------------------------------------------------------!
     !>@brief This subroutine finds the Legendre Cardinal Basis Functions and
     !>their Derivatives.
-    !>@author  F.X. Giraldo on 4/97
-    !>           Naval Research Laboratory
-    !>           Monterey, CA 93943
+    !>@author  Francis X. Giraldo on 7/08
+    !>           Department of Applied Mathematics
+    !>           Naval Postgraduate School
+    !>           Monterey, CA 93943-5216
     !---------------------------------------------------------------------!
     subroutine legendre_poly_loc(n,x,lpoly)
         integer,  intent(in) :: n
@@ -237,9 +239,10 @@ contains
     !---------------------------------------------------------------------!
     !>@brief This subroutine finds the Legendre Cardinal Basis Functions and
     !>their Derivatives.
-    !>@author  F.X. Giraldo on 4/97
-    !>           Naval Research Laboratory
-    !>           Monterey, CA 93943
+    !>@author  Francis X. Giraldo on 7/08
+    !>           Department of Applied Mathematics
+    !>           Naval Postgraduate School
+    !>           Monterey, CA 93943-5216
     !---------------------------------------------------------------------!
 
     subroutine legendre_basis(ngl,xgl,psi,dpsi)
@@ -321,9 +324,10 @@ contains
     !---------------------------------------------------------------------!
     !>@brief This subroutine finds the Legendre Cardinal Basis Functions and
     !>their Derivatives in in Lagrange Polynomial Form.
-    !>@author  F.X. Giraldo on 4/97
-    !>           Naval Research Laboratory
-    !>           Monterey, CA 93943
+    !>@author  Francis X. Giraldo on 7/08
+    !>           Department of Applied Mathematics
+    !>           Naval Postgraduate School
+    !>           Monterey, CA 93943-5216
     !---------------------------------------------------------------------!
     subroutine lagrange_basis_filter(ngl,xgl,nq,xnq,wnq,psi,dpsi)
         integer, intent(in)  :: ngl, nq
@@ -375,9 +379,10 @@ contains
     !---------------------------------------------------------------------!
     !>@brief This subroutine finds the Legendre Cardinal Basis Functions and
     !>their Derivatives in in Lagrange Polynomial Form.
-    !>@author  F.X. Giraldo on 4/97
-    !>           Naval Research Laboratory
-    !>           Monterey, CA 93943
+    !>@author  Francis X. Giraldo on 7/08
+    !>           Department of Applied Mathematics
+    !>           Naval Postgraduate School
+    !>           Monterey, CA 93943-5216
     !---------------------------------------------------------------------!
     subroutine lagrange_basis(ngl,xgl,nq,xnq,wnq,psiq,dpsiq)
         integer, intent(in)  :: ngl, nq
@@ -430,9 +435,10 @@ contains
     !---------------------------------------------------------------------!
     !>@brief This subroutine finds the Legendre Cardinal Basis Functions and
     !>their Derivatives in Lagrange Polynomial Form.
-    !>@author  Francis X. Giraldo on 9/97
-    !>           Naval Research Laboratory
-    !>           Monterey, CA 93943
+    !>@author  Francis X. Giraldo on 7/08
+    !>           Department of Applied Mathematics
+    !>           Naval Postgraduate School
+    !>           Monterey, CA 93943-5216
     !---------------------------------------------------------------------!
     subroutine lagrange_basis2(ngl,xgl,xd,psi,dpsi)
         integer, intent(in)  :: ngl

@@ -15,7 +15,6 @@ SOURCEF += create_face.F90
 SOURCEF += create_global_rhs.F90
 SOURCEF += create_grid_cube.F90
 SOURCEF += create_grid_sphere_hex.F90
-# SOURCEF += create_grid_sphere_ico.F90
 SOURCEF += create_mass.F90
 SOURCEF += create_normals.F90
 SOURCEF += create_rhs_communicator.F90
@@ -34,7 +33,7 @@ SOURCEF += mod_global_grid.F90
 SOURCEF += mod_grid.F90
 SOURCEF += mod_initial.F90
 SOURCEF += mod_input.F90
-SOURCEF += mod_interface.F90
+SOURCEF += mod_gradient.F90
 SOURCEF += mod_legendre.F90
 SOURCEF += mod_metrics.F90
 SOURCEF += mod_mpi_communicator.F90
@@ -83,6 +82,8 @@ SOURCEF += diagnostics.F90
 SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90
 SOURCEF += ti_rk35_mlswe.F90
+# SOURCEF += mod_splitting_v3.F90
+SOURCEF += mod_variables.F90
 
 
 OBJS += $(addsuffix .o, $(basename $(SOURCEF) $(SOURCEC)))

@@ -1,10 +1,6 @@
 !----------------------------------------------------------------------!
-!>@brief This subroutine builds the METRIC TERMS see Giraldo 2001 (IJNMF)
-!>@author  Francis X. Giraldo on 7/08
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!>@ modified by Yao Gahounzo 
+!>@brief This subroutine builds the METRIC TERMS
+!>@ author by Yao Gahounzo 
 !>      Computing PhD 
 !       Boise State University
 !       Date: July 02, 2023
@@ -15,7 +11,7 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
  
     use mod_grid, only: intma, coord, nelem, intma_dg_quad
 
-    use mod_interface, only: compute_local_gradient_quad_v3
+    use mod_gradient, only: compute_local_gradient_quad_v3
 
     implicit none
 

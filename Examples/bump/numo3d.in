@@ -1,0 +1,111 @@
+&eqnset
+eqn_set='set2nc',
+is_mlswe = T,
+/
+
+&gridnl
+nelx  = 10,
+nely  = 10,
+nelz  = 1,
+nopx  = 4,
+nopy  = 4,
+nopz  = 0,
+xdims = 0.0,2e3,
+ydims = 0.0,2e3,
+ztop  =  0.0,
+nlayers = 2,
+
+!P4est Input
+!nelh=nel_root_h*(2^refinement_levels_h)
+!nelv=nel_root_v*(2^refinement_levels_v)
+!nel_root_h = 1, !number of elements per cubed-sphere edge in horizontal
+!nel_root_v = 1, !number of vertical layers in the initial mesh
+refinement_levels_h = 0, !refinement levels in horizontal
+refinement_levels_v = 0, !refinement levels in vertical
+lp4est=T,
+lp6est=F,
+lio_grid_ascii=F,
+lread_external_grid=F,
+
+!Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
+x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
+y_boundary = 4, 4 !Left and Right (y=-1 and y=+1)
+z_boundary = 0, 0 !Bottom and Top (z=-1 and z=+1)
+	   !These denote constant x,y, or z. 
+	   !E.g. z_boundary(1) is the bottom and z_boundary(2) is the top
+	   !BCs are: 0=do nothing; 10=Dirichlet
+	   !(see MOD_GLOBAL_GRID for more info)
+x_periodic = 0,
+y_periodic = 0,
+
+geometry_type='cube', 
+		      !cube=3D Box; 
+		      !sphere_hex=spherical cubed-sphere domain; 
+		      !sphere_ico=spherical icosahedral domain 
+
+/
+
+&input
+dt= 100,
+dt_btp = 1.8,
+!dt_safety_factor = 0.5,
+time_initial = 0.0,
+time_final   = 10800,
+time_restart = 10.0,
+time_scale = 1, !1=seconds, 3600=hours, 86400=days
+lrestart_file = .false.,
+
+! mlswe parameter
+ad_mlswe = 0.0, 
+botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
+cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
+method_visc = 0,  !0=no viscosity
+visc_mlswe = 1.0,
+dpprime_visc_min = 1.5e7,
+max_shear_dz = 20.0,
+matlab_viz = T,
+adjust_H_vertical_sum = 2,
+mlswe_bc_strong = T
+dg_integ_exact = T,
+dump_data = T,
+flux_type = 'upwind',
+
+!----case
+icase=2023,
+	   !Euler Test Cases------------------------------------
+	   !case0=advection; 
+	   !case1 = igw; 
+
+ti_method = 'btp_bcl', 
+	      !rk; (RK method of order KSTAGES)
+	      !rk35; (Optimized RK35)
+
+ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
+kstages=5,
+
+space_method = 'dg', !dg=discontinuous Galerkin
+	    	
+si_dimension = '3d', 
+	       	     !1d IMEX in the vertical/radial direction; 
+	       	     !3d IMEX
+
+filter_mux=0.05,
+filter_muy=0.05,
+filter_muz=0.05,
+ifilter=1,
+filter_weight_type='erf',
+!filter_basis_type='modal',
+filter_basis_type='legendre',
+fname_root='mlswe',
+format_vtk='ascii',
+out_type='vtk',
+		  !gks2d=ascii 2d slice; 
+	       	  !gks3d=ascii 3d output; 
+	       	  !nc=netcdf 3d output; 
+	       	  !vtk=Visual ToolKit (Paraview) output
+	       	  !none=No Output
+
+lprint_diagnostics=T, 
+			   !T=true=print diagnostics
+			   !F=false=do NOT print diagnostics
+/

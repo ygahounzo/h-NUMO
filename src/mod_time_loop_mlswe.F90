@@ -1,15 +1,9 @@
 !----------------------------------------------------------------------!
 !> @brief This module contains the entire time loop of the code.
-!> @author Written by Francis X. Giraldo
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!> @date 11/2009
-!> @author Made into a module by Alex Reinecke.
-!> @author FX Giraldo added Alex Reinecke Split-Explicit: does not work
-!> @date December 5, 2014
-!> @author FX Giraldo added better adaptive time-stepping
-!> @date December 18, 2014
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 02, 2023
 !----------------------------------------------------------------------!
 module mod_time_loop_mlswe
 

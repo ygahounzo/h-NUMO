@@ -11,7 +11,7 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
     use mod_grid, only: intma_dg_quad, coord, intma
 
-    use mod_interface, only: compute_local_gradient_quad_v3
+    use mod_gradient, only: compute_local_gradient_quad_v3
 
     implicit none
 

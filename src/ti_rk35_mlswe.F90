@@ -1,3 +1,11 @@
+! ===========================================================================================================================
+! This module contains the routines for the predictor-corrector and the RK35 time integration methods
+!   Author: Yao Gahounzo 
+!   Computing PhD 
+!   Boise State University
+!   Date: October 27, 2023
+! ==========================================================================================================================
+
 subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpprime_df,qprime_df,qp_df_out)
 
 	use mod_splitting, only: thickness, momentum, momentum_mass
@@ -7,6 +15,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
 	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe
+
+	use mod_variables, only: one_plus_eta_df
 
 	implicit none
 
@@ -22,16 +32,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
 
 	real, dimension(5,npoin,nlayers), intent(out) :: qp_df_out
-	real, dimension(npoin) :: one_plus_eta
-
-	real, dimension(nq,nface) :: one_plus_eta_edge_2_ave
-	real, dimension(npoin_q) :: ope_ave, ope2_ave, H_ave, Qu_ave, Qv_ave, Quv_ave
-	real, dimension(2,npoin_q) :: btp_mass_flux_ave, uvb_ave 
-	real, dimension(npoin) :: ope_ave_df
-	real, dimension(2,2,nq,nface) :: uvb_face_ave
-	real, dimension(2,nq,nface) :: btp_mass_flux_face_ave, Qu_face_ave, Qv_face_ave, Quv_face_ave, ope_face_ave
-	real, dimension(nq,nface) :: H_face_ave
-	real, dimension(2,npoin_q) :: tau_wind_ave, tau_bot_ave
+	
 	real, dimension(npoin,nlayers+1) :: mslwe_elevation
 
 	real, dimension(3,npoin_q,nlayers) :: qprime_avg, qprime2, qprime_corr, q2
@@ -65,11 +66,13 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qbp_df = qb_df
 
 
-	call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
-		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
-		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
-		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
-		qbp_df,qprime,qprime_face, qprime_df, flag_pred)
+	!call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
+	!	H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
+	!	ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
+	!	Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
+	!	qbp_df,qprime,qprime_face, qprime_df, flag_pred)
+
+	call ti_barotropic_rk_mlswe(qbp,qbp_face,qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 
 	qprime2 = qprime
@@ -80,10 +83,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	q_face2 = q_face
 
 
-	call momentum_mass(q2,qprime2,q_df2,q_face2,qprime_face2,qbp,qbp_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,Qu_ave,&
-        Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
-        qprime_df2,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,flag_pred,&
-        q,q_face,qbp_df,qprime, qprime_face, ope2_ave, btp_mass_flux_ave, btp_mass_flux_face_ave)
+	call momentum_mass(q2,qprime2,q_df2,q_face2,qprime_face2,qbp,qbp_face,&
+        qprime_df2,qprime_face2,flag_pred,q,q_face,qbp_df,qprime, qprime_face)
 
 
 	! Correction step
@@ -98,11 +99,13 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	
 	flag_pred = 0
 
-	call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
-		H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
-		ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
-		Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
-		qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
+	!call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
+	!	H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
+	!	ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
+	!	Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
+	!	qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
+
+	call ti_barotropic_rk_mlswe(qb,qb_face,qb_df,qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 
 
 	q2 = q
@@ -113,8 +116,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 
 	!qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
-	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, uvb_ave, btp_mass_flux_ave, ope_ave, uvb_face_ave, ope_face_ave, &
-		btp_mass_flux_face_ave, dpprime_df2, flag_pred, qb_df)
+	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, dpprime_df2, flag_pred, qb_df)
 
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
@@ -131,10 +133,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_df_corr(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
 	qprime_df_corr(2:3,:,:) = qprime_df_avg(2:3,:,:)
 
-	call momentum(q,qprime_corr,q_df,q_face,qprime_face_corr,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
-		Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
-		qprime_df_corr,ope_ave_df,tau_bot_ave,tau_wind_ave, qprime_face2,flag_pred,&
-		q2,q_face2,qb_df,qprime2,qprime_face, ope2_ave)
+	call momentum(q,qprime_corr,q_df,q_face,qprime_face_corr,qb,qb_face,u_edge,v_edge,&
+		qprime_df_corr, qprime_face2,flag_pred,q2,q_face2,qb_df,qprime2,qprime_face)
 
 	qprime(1,:,:) = qprime_avg(1,:,:)
 	qprime(2:3,:,:) = qprime_corr(2:3,:,:)
@@ -159,7 +159,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qp_df_out(4,:,1) = qb_df(3,:)
 	qp_df_out(4,:,2) = qb_df(3,:)
 
-	qp_df_out(5,:,1) = one_plus_eta(:)-1.0!mslwe_elevation(:,1)
+	qp_df_out(5,:,1) = one_plus_eta_df(:)-1.0!mslwe_elevation(:,1)
+	!qp_df_out(5,:,1) = mslwe_elevation(:,1)
 	qp_df_out(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
 end subroutine ti_rk35_mlswe

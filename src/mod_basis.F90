@@ -6,6 +6,11 @@
 !>           Monterey, CA 93943-5216
 !>@date 1/2014 F.X. Girlado
 !> Modified to use variable order polynomials in all directions
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 03, 2023
+!       modified for exact integration ( added nq ad is_mlswe condtions)
 !----------------------------------------------------------------------!
 module mod_basis
   
@@ -151,15 +156,6 @@ contains
         call legendre_basis(nglz,xglz,psiz,dpsiz)
 
         if(is_mlswe) then ! added by Yao Gahounzo
-
-            ! psiq = 0.0
-            ! psiqx = 0.0
-            ! psiqy = 0.0
-            ! psiqz = 0.0
-            ! dpsiq = 0.0
-            ! dpsiqx = 0.0
-            ! dpsiqy = 0.0
-            ! dpsiqz = 0.0
 
             call lagrange_basis(ngl,xgl,nq,xnq,wnq,psiq,dpsiq)
             call lagrange_basis(nglx,xglx,nqx,xnqx,wnqx,psiqx,dpsiqx)

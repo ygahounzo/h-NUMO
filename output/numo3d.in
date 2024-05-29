@@ -59,7 +59,7 @@ lrestart_file = .false.,
 ad_mlswe = 0.0, 
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
-method_visc = 0,  !0=no viscosity
+method_visc = 2,  !0=no viscosity
 visc_mlswe = 1.0,
 dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,

@@ -4,8 +4,10 @@
 !>           Department of Applied Mathematics
 !>           Naval Postgraduate School
 !>           Monterey, CA 93943-5216
-!>@date 6 September 2010 James F. Kelly
-!> Parallelization
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 02, 2023
 !----------------------------------------------------------------------!
 subroutine compute_norms(l1_norm,l2_norm,l8_norm,time_norm,q0,inorm,time)
   

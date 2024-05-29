@@ -1,28 +1,12 @@
 !-----------------------------------------------------------------!
-!>@brief This code solves the 3D Euler Equations using CG and DG
-!>@details It uses SET 2NC, 2C and 3C as described in Giraldo et al. SISC 2010 
-!> using SE w/inexact integration and the following time-integrators: 
-!> 1) explicit SSP RK2, RK3, RK34, RK35,
-!> 2) IMEX 1D & 3D BDF2 (Schur and No Schur forms), 
-!> 3) IMEX 1D & 3D LF2  (Schur and No Schur forms), and
-!> 4) IMEX 1D & 3D ARK methods (Schur and No Schur Forms).
-!> 5) IMEX 1D & 3D AM2, BDF23 methods (Schur and No Schur Forms).
-!>The grids are Hexahedra but can be unstructured.
-!>@author  F.X. Giraldo and J.F. Kelly 
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!>@date 1 August 2010 James F. Kelly
-!> NUMA3dCG: A parallel implementation of NUMA for both spherical and 
-!> Cartesian grids.  The spatial discretization is based on spectral elements
-!> (or continuous Galerkin).  Domain decomposition utilizes either geometric
-!> decomposition (e.g. NSEAM-style cube grid decomposition) or METIS-based
-!> decomposition.
-!>@date January 2014 F.X. Giraldo
-!> Cleaned to remove redundant arrays, rename arrays to better names, and 
-!> modified to handle Periodic Boundary conditions by
-!>@date Dec 2014 Daniel S. Abdi
-!> Modified to merge parallel CG/DG
+!>@brief This code solves the multilayer shallow water equations (2D in the horizontal and Nl number of layers in the vertical) using DG
+!> using exact integration and the following time-integrators: 
+!> explicit predictor-correction (Higdon, 2025) and RK35,
+!>The grids are quadrilateral but can be unstructured.
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 02, 2023
 !-----------------------------------------------------------------!
 program numa3d
 
@@ -122,6 +106,8 @@ subroutine initialize_fields()
 
   use mod_parallel, only: nproc, mod_parallel_reorder
 
+  use mod_variables, only: mod_allocate_mlswe
+
   implicit none
 
   !local variables
@@ -178,6 +164,10 @@ subroutine initialize_fields()
    if (space_method == 'dg') then
       call mod_mpi_communicator_create()
    end if
+
+   ! allocate btp_variables
+
+   call mod_allocate_mlswe()
 
 end subroutine initialize_fields
 
