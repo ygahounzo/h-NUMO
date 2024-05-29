@@ -267,16 +267,16 @@ contains
                     call diagnostics(qout_mlswe,qb0_df_mlswe(1:4,:),inorm)
                 else
                     do l=1,nlayers
-                    !Write Snapshot File
-                    ifnp= l
-                    write(fnp4,'(i3)')ifnp
-                    iloop=2 - int(log10(real(ifnp)))
-                    do j=1,iloop
-                        fnp4(j:j)='0'
-                    end do
-                    write(fnp2,'(a1,a3,a1,a4)')"l",fnp4,"_",fnp1
+                        !Write Snapshot File
+                        ifnp= l
+                        write(fnp4,'(i3)')ifnp
+                        iloop=2 - int(log10(real(ifnp)))
+                        do j=1,iloop
+                            fnp4(j:j)='0'
+                        end do
+                        write(fnp2,'(a1,a3,a1,a4)')"l",fnp4,"_",fnp1
 
-                    call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
+                        call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
                     end do
                 end if
 
@@ -290,6 +290,13 @@ contains
         end do !time
 
         time2 = wtime()
+
+        idone = 1
+
+        if (lprint_diagnostics) then 
+            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+            ae01_g,ae02_g,cfl,cflu,ntime)
+        end if
 
         !Clean UP
 

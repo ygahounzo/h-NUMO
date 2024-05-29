@@ -464,7 +464,8 @@ module mod_laplacian_quad
 
         end do
 
-        call create_communicator_quad_layer(flux_uv_visc_face,4,nlayers)
+        !call create_communicator_quad_layer(flux_uv_visc_face,4,nlayers)
+        call bcl_create_communicator(flux_uv_visc_face,4,nlayers,nq)
 
         do k = 1,nlayers
 
@@ -579,11 +580,11 @@ module mod_laplacian_quad
 
         end do
 
-        !call bcl_create_communicator(flux_uv_visc_face,4,nlayers,ngl)
+        call bcl_create_communicator(flux_uv_visc_face,4,nlayers,ngl)
 
         do k = 1,nlayers
 
-            call compute_laplacian_IBP(rhs_temp,flux_uv_visc(:,:,k))
+            call compute_laplacian_IBP_v2(rhs_temp,flux_uv_visc(:,:,k))
 
             call create_rhs_laplacian_flux_SIPG(rhs_temp,flux_uv_visc_face(:,:,:,:,k))
 
@@ -735,11 +736,11 @@ module mod_laplacian_quad
 
         do Iq = 1,npoin
 
-            wq = wjac(Iq)
+            wq = wjac_df(Iq)
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
+                I = index_df(Iq,ip)
 
                 u_visc = dpsidx_df(Iq,ip)*grad_dpuvp(1,Iq) + dpsidy_df(Iq,ip)*grad_dpuvp(2,Iq)
                 v_visc = dpsidx_df(Iq,ip)*grad_dpuvp(3,Iq) + dpsidy_df(Iq,ip)*grad_dpuvp(4,Iq)

@@ -56,21 +56,11 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 
 	flag_pred = 1
 
-	!call create_communicator_quad_layer(qprime_face,3,nlayers)
-	!call create_communicator_quad_layer(q_face,3,nlayers)
-
 	call create_communicator_quad_layer_all(qprime_face,q_face,3,nlayers)
 
 	qbp = qb
 	qbp_face = qb_face
 	qbp_df = qb_df
-
-
-	!call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
-	!	H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
-	!	ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
-	!	Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qbp,qbp_face,&
-	!	qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 	call ti_barotropic_rk_mlswe(qbp,qbp_face,qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
@@ -90,7 +80,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	! Correction step
 
 	! Communication of qprime_face2 values within the inter-processor boundary
-	call create_communicator_quad_layer(qprime_face2,3,nlayers)
+	call bcl_create_communicator(qprime_face2,3,nlayers,nq)
 
 	qprime_avg = 0.5*(qprime2 + qprime)
 	qprime_face_avg = 0.5*(qprime_face2 + qprime_face)
@@ -98,12 +88,6 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
 	
 	flag_pred = 0
-
-	!call ti_barotropic_rk_mlswe(one_plus_eta,one_plus_eta_edge_2_ave,uvb_ave, ope_ave, ope2_ave, &
-	!	H_ave, Qu_ave, Qv_ave, Quv_ave, btp_mass_flux_ave, ope_ave_df, uvb_face_ave, &
-	!	ope_face_ave, btp_mass_flux_face_ave, H_face_ave, &
-	!	Qu_face_ave, Qv_face_ave, Quv_face_ave, tau_wind_ave, tau_bot_ave, qb,qb_face,&
-	!	qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 
 	call ti_barotropic_rk_mlswe(qb,qb_face,qb_df,qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 
@@ -121,7 +105,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
 	! Communication of qprime_face_avg values within the processor boundary
-	call create_communicator_quad_layer(qprime_face_avg(1,:,:,:,:),1,nlayers)
+	call bcl_create_communicator(qprime_face_avg(1,:,:,:,:),1,nlayers,nq)
 
 	qprime_df_avg(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
 
@@ -148,6 +132,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 		qp_df_out(1,:,k) = (alpha_mlswe(k)/gravity)*q_df(1,:,k)
 		qp_df_out(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
 		qp_df_out(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+		qp_df_out(4,:,k) = q_df(1,:,k)
 	end do
 
 	mslwe_elevation(:,nlayers+1) = zbot_df
@@ -156,8 +141,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 		mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + qp_df_out(1,:,k)
 	end do
 
-	qp_df_out(4,:,1) = qb_df(3,:)
-	qp_df_out(4,:,2) = qb_df(3,:)
+	!qp_df_out(4,:,1) = qb_df(3,:)
+	!qp_df_out(4,:,2) = qb_df(3,:)
 
 	qp_df_out(5,:,1) = one_plus_eta_df(:)-1.0!mslwe_elevation(:,1)
 	!qp_df_out(5,:,1) = mslwe_elevation(:,1)

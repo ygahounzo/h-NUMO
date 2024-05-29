@@ -63,8 +63,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 
 	flag_pred = 1
 
-	call create_communicator_quad_layer(qprime_face,3,nlayers)
-	call create_communicator_quad_layer(q_face,3,nlayers)
+	call create_communicator_quad_layer_all(qprime_face,q_face,3,nlayers)
 
 	qbp = qb
 	qbp_face = qb_face
@@ -94,12 +93,11 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	! Correction step
 
 	! Communication of qprime_face2 values within the inter-processor boundary
-	call create_communicator_quad_layer(qprime_face2,3,nlayers)
+
+	call bcl_create_communicator(qprime_face2,3,nlayers,nq)
 
 	qprime_avg = 0.5*(qprime2 + qprime)
 	qprime_face_avg = 0.5*(qprime_face2 + qprime_face)
-
-	! call create_communicator_quad_layer(qprime_face_avg,3,nlayers)
 
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
 	
@@ -121,7 +119,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
 	! Communication of qprime_face_avg values within the processor boundary
-	call create_communicator_quad_layer(qprime_face_avg(1,:,:,:,:),1,nlayers)
+	call bcl_create_communicator(qprime_face_avg(1,:,:,:,:),1,nlayers,nq)
 
 	qprime_df_avg(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
 

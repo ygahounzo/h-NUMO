@@ -47,7 +47,7 @@ geometry_type='cube',
 
 &input
 dt= 100,
-dt_btp = 1.9,
+dt_btp = 1.8,
 !dt_safety_factor = 0.5,
 time_initial = 0.0,
 time_final   = 10800,
@@ -59,7 +59,7 @@ lrestart_file = .false.,
 ad_mlswe = 0.0, 
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
-method_visc = 2,  !0=no viscosity
+method_visc = 0,  !0=no viscosity
 visc_mlswe = 1.0,
 dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,
@@ -68,7 +68,7 @@ adjust_H_vertical_sum = 2,
 mlswe_bc_strong = T
 dg_integ_exact = T,
 dump_data = T,
-flux_type = 'upwind',
+!flux_type = 'upwind',
 
 !----case
 icase=2023,

@@ -498,9 +498,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_quad1
 
- subroutine create_nbhs_face_quad_layer(q_face,q_send,q_recv,nvarb,nlayers,multirate)
+ subroutine create_nbhs_face_quad_layer(q_face,q_send,q_recv,nvarb,nlayers,nq)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq
+   use mod_basis, only: FACE_CHILDREN
  
    use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
  
@@ -522,7 +522,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, intent(inout) :: q_face(nvarb,2,nq,nface,nlayers)
    real,intent(in):: q_send(nvarb,nq,nboun,nlayers)
    real,intent(in):: q_recv(nvarb,nq,nboun,nlayers)
-   integer, intent(in) :: nvarb,nlayers
+   integer, intent(in) :: nvarb,nlayers,nq
  
    !local variables
  
@@ -532,8 +532,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: ifaceb, nq_i, nq_j, plane_ij
  
    integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti, ll
-   integer :: multirate
+   integer :: ftype, pface, subface, imulti, ll, inode
  
    !Constants
  
@@ -547,8 +546,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          imulti = nbh_send_recv_multi(jj)
  
          ftype = face_type(iface)
-
-         !print*, 'iface', iface, 'ftype', ftype, 'imulti', imulti
  
          ! do im = 1,imulti
  
@@ -556,24 +553,20 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                ilocl=face(5,iface)
                iel=face(7,iface)
  
-            !    if (multirate==1 .and. lev_list(iel)==0) then
-            !       kk=kk+1
-            !       cycle
-            !    end if
-            ! end if
- 
             !-------------------------------------
             !Store Left Side Variables
             !-------------------------------------
             call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
             
             do ll = 1,nlayers
-               do k=1,nvarb
-                  !Left Element
-                  q_face(k,1,:,iface,ll)=q_send(k,:,kk,ll)
+               do inode = 1,nq
+                  do k=1,nvarb
+                     !Left Element
+                     q_face(k,1,inode,iface,ll)=q_send(k,inode,kk,ll)
 
-                  !Right Element
-                  q_face(k,2,:,iface,ll)=q_recv(k,:,jj,ll)
+                     !Right Element
+                     q_face(k,2,inode,iface,ll)=q_recv(k,inode,jj,ll)
+                  end do
                end do
             end do
  

@@ -871,8 +871,8 @@ module mod_splitting
 
         ! Compute the RHS viscosity terms
         if(method_visc > 0) then 
-            call bcl_create_laplacian(rhs_visc_bcl,qprime2,qprime_face2)
-            !call bcl_create_laplacian_v1(rhs_visc_bcl,qprime_df)
+            !call bcl_create_laplacian(rhs_visc_bcl,qprime2,qprime_face2)
+            call bcl_create_laplacian_v1(rhs_visc_bcl,qprime_df)
         end if
 
         ! Compute the RHS of the layer momentum equation
@@ -923,8 +923,9 @@ module mod_splitting
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
-        call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
+        !call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
         !call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
+        call bcl_create_communicator(qprime_face(1,:,:,:,:),1,nlayers,nq)
 
         flux_deficit_mass_face(1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
         flux_deficit_mass_face(2,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)

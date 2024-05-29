@@ -68,7 +68,7 @@ adjust_H_vertical_sum = 2,
 mlswe_bc_strong = T
 dg_integ_exact = T,
 dump_data = T,
-flux_type = 'upwind',
+!flux_type = 'upwind',
 
 !----case
 icase=2023,

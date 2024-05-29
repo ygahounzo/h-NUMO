@@ -525,6 +525,12 @@ module mod_initial_mlswe
         dpsidy = 0.0
         indexq = 0
 
+        wjac_df = 0.0
+        psih_df = 0.0
+        dpsidx_df = 0.0
+        dpsidy_df = 0.0
+        index_df = 0
+
         do e = 1,nelem
 
             do jquad = 1,nqy
