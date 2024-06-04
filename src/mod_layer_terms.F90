@@ -251,7 +251,7 @@ module mod_layer_terms
     
     end subroutine evaluate_dp_face
     
-    subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+    subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, qprime, &
         sum_layer_mass_flux, qprime_face, flux_deficit_mass_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
@@ -259,21 +259,23 @@ module mod_layer_terms
         use mod_initial, only: pbprime, pbprime_face
         use mod_input, only: nlayers
         use mod_variables, only: btp_mass_flux_ave, ope_face_ave
+        use mod_face, only: normal_vector_q
 
         implicit none
 
         real, dimension(2,npoin_q, nlayers), intent(out)      :: flux_adjustment
         real, dimension(2,nq, nface, nlayers), intent(out)    :: flux_adjust_edge
 
-        real, dimension(3,npoin,nlayers), intent(in)   :: q_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux
-        real, dimension(2,nq,nface), intent(in) :: flux_deficit_mass_face
+        real, dimension(2,2,nq,nface), intent(in) :: flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
 
         real, dimension(npoin_q) :: weights
-        real, dimension(nq) :: weights_face_l, weights_face_r, weight
-        integer :: iface, k
+        !real, dimension(nq) :: weights_face_l, weights_face_r, weight
+        integer :: iface, k, iquad
+        real :: weights_face_l, weights_face_r, fu, fv, nxl, nyl
+
 
         flux_adjust_edge = 0.0
 
@@ -285,20 +287,36 @@ module mod_layer_terms
             flux_adjustment(1,:,k) = weights(:) * (btp_mass_flux_ave(1,:) - sum_layer_mass_flux(1,:))
             flux_adjustment(2,:,k) = weights(:) * (btp_mass_flux_ave(2,:) - sum_layer_mass_flux(2,:))   
 
-            ! Consistency terms for face points
-            do iface = 1,nface
+        end do
 
-                !Store Left Side Variables
+        do iface = 1,nface
 
-                weights_face_l = qprime_face(1,1,:,iface,k) / pbprime_face(1,:,iface)
-                weights_face_r = qprime_face(1,2,:,iface,k) / pbprime_face(2,:,iface)
+            do iquad = 1,nq 
+                do k = 1,nlayers
 
-                weights_face_l = 0.5*(weights_face_l + weights_face_r)
+                    weights_face_l = qprime_face(1,1,iquad,iface,k) / pbprime_face(1,iquad,iface)
+                    weights_face_r = qprime_face(1,2,iquad,iface,k) / pbprime_face(2,iquad,iface)
 
-                flux_adjust_edge(1,:,iface,k) = weights_face_l*flux_deficit_mass_face(1,:,iface)
-                flux_adjust_edge(2,:,iface,k) = weights_face_l*flux_deficit_mass_face(2,:,iface)
+                    !fu = 0.5*(flux_deficit_mass_face(1,1,iquad,iface) + flux_deficit_mass_face(1,2,iquad,iface))
+                    !fv = 0.5*(flux_deficit_mass_face(2,1,iquad,iface) + flux_deficit_mass_face(2,2,iquad,iface))
 
-            end do
+                    nxl = normal_vector_q(1,iquad,1,iface)
+                    nyl = normal_vector_q(2,iquad,1,iface)
+
+                    if(flux_deficit_mass_face(1,1,iquad,iface)*nxl > 0.0) then 
+
+                        flux_adjust_edge(1,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(1,1,iquad,iface)
+                    else 
+                        flux_adjust_edge(1,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(1,2,iquad,iface)
+                    end if 
+
+                    if(flux_deficit_mass_face(2,1,iquad,iface)*nyl > 0.0) then 
+                        flux_adjust_edge(2,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(2,1,iquad,iface)
+                    else 
+                        flux_adjust_edge(2,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(2,2,iquad,iface)
+                    end if 
+                end do 
+            end do 
         end do
 
     end subroutine consistency_mass_terms1
@@ -310,7 +328,7 @@ module mod_layer_terms
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma
         use mod_initial, only: pbprime, pbprime_face, pbprime_edge
         use mod_input, only: nlayers
-        use mod_face, only: imapl, imapr
+        use mod_face, only: normal_vector_q
         use mod_variables, only: ope_face_ave, btp_mass_flux_ave
 
         implicit none
@@ -321,7 +339,7 @@ module mod_layer_terms
         real, dimension(3,npoin,nlayers), intent(in)   :: q_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux
-        real, dimension(2,nq,nface), intent(in)        :: flux_deficit_mass_face
+        real, dimension(2,2,nq,nface), intent(in)        :: flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face
 
         real, dimension(2,2) :: flux_adjustment_face
@@ -329,7 +347,7 @@ module mod_layer_terms
         real :: sum_left, sum_right, pb_edge, p_left, p_right, temp, one_plus_eta_edge
         integer :: el, er, il, jl, iquad, k, iface
         real, dimension(npoin_q) :: weights
-        real :: weights_face, qml, qmr, weights_face_r, weights_face_l
+        real :: weights_face, qml, qmr, weights_face_r, weights_face_l, nxl, nyl
         integer :: I, ir, jr, kr, kl, ier,m, Iq
 
         flux_adjustment = 0.0
@@ -382,39 +400,34 @@ module mod_layer_terms
 
                 end do
 
+                nxl = normal_vector_q(1,iquad,1,iface)
+                nyl = normal_vector_q(2,iquad,1,iface)
+
                 do k = 1,nlayers
 
                     if (sum_left > 0.0) then
                         weights_face_l = dp_avail_left(k) / sum_left
-                        flux_adjustment_face(1,1) = weights_face_l * flux_deficit_mass_face(1,iquad,iface)
-                        flux_adjustment_face(2,1) = weights_face_l * flux_deficit_mass_face(2,iquad,iface)
+                        flux_adjustment_face(1,1) = weights_face_l * flux_deficit_mass_face(1,1,iquad,iface)
+                        flux_adjustment_face(2,1) = weights_face_l * flux_deficit_mass_face(2,1,iquad,iface)
                     end if
                     
                     if (sum_right > 0.0) then
                         weights_face_r = dp_avail_right(k) / sum_right
-                        flux_adjustment_face(1,2) = weights_face_r * flux_deficit_mass_face(1,iquad,iface)
-                        flux_adjustment_face(2,2) = weights_face_r * flux_deficit_mass_face(2,iquad,iface)
+                        flux_adjustment_face(1,2) = weights_face_r * flux_deficit_mass_face(1,2,iquad,iface)
+                        flux_adjustment_face(2,2) = weights_face_r * flux_deficit_mass_face(2,2,iquad,iface)
                     end if
 
-                    !weights_face = 0.5*(weights_face_l + weights_face_r)
-
-                    !flux_adjust_edge(1,iquad,iface,k) = weights_face*flux_deficit_mass_face(1,iquad,iface)
-                    !flux_adjust_edge(2,iquad,iface,k) = weights_face*flux_deficit_mass_face(2,iquad,iface)
-
-                    if (flux_deficit_mass_face(1,iquad,iface) > 0.0) then
+                    if (flux_deficit_mass_face(1,1,iquad,iface)*nxl > 0.0) then
                         flux_adjust_edge(1,iquad,iface,k) = flux_adjustment_face(1,1)
                     else
                         flux_adjust_edge(1,iquad,iface,k) = flux_adjustment_face(1,2)
                     end if
 
-                    if (flux_deficit_mass_face(2,iquad,iface) > 0.0) then
+                    if (flux_deficit_mass_face(2,1,iquad,iface)*nyl > 0.0) then
                         flux_adjust_edge(2,iquad,iface,k) = flux_adjustment_face(2,1)
                     else
                         flux_adjust_edge(2,iquad,iface,k) = flux_adjustment_face(2,2)
                     end if
-
-                    ! flux_adjust_edge(1,iquad,iface,k) = 0.5*(flux_adjustment_face(1,1) + flux_adjustment_face(1,2))
-                    ! flux_adjust_edge(2,iquad,iface,k) = 0.5*(flux_adjustment_face(2,1) + flux_adjustment_face(2,2))
 
                 end do
 

@@ -333,7 +333,7 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
 
-        use mod_input, only: nlayers, dt, icase, ifilter
+        use mod_input, only: nlayers, dt, icase, ifilter, method_consistency
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df, pbprime
@@ -389,20 +389,13 @@ module mod_splitting
             endif
         end do
 
-        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
-        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
-
-        ! Apply filter to the thickness
-
-        !do k = 1,nlayers
-        !    q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
-            
-        !    if(ifilter > 0 .and. flag_pred == 0) then 
-        !        call filter_mlswe(q_df(1,:,k),1)
-        !    end if
-        !end do
-
-        call apply_consistency2(q_df,qb_df,flag_pred)
+        if(method_consistency == 1) then 
+            ! consistency through flux adjustment 
+            call apply_consistency(dp_advec, q_df,sum_layer_mass_flux, sum_layer_mass_flux_face, flag_pred)
+        else
+            ! Second option for consistency 
+            call apply_consistency2(q_df,qb_df,flag_pred)
+        endif 
 
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
@@ -575,7 +568,7 @@ module mod_splitting
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe, ifilter
+        use mod_input, only: nlayers, dt, ad_mlswe, ifilter, method_consistency
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
         use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, velocity_df, &
@@ -639,20 +632,13 @@ module mod_splitting
 
         end do
 
-        !call apply_consistency(dp_advec, q_df, btp_mass_flux_ave, ope_face_ave, &
-        !    btp_mass_flux_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face)
-
-        ! Apply filter to the thickness
-
-        !do k = 1,nlayers
-        !    q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
-            
-        !    if(flag_pred == 0 .and. ifilter > 0) then 
-        !        call filter_mlswe(q_df(1,:,k),1)
-        !    end if
-        !end do
-
-        call apply_consistency2(q_df,qb_df,flag_pred)
+        if(method_consistency == 1) then 
+            ! consistency through flux adjustment 
+            call apply_consistency(dp_advec, q_df,sum_layer_mass_flux, sum_layer_mass_flux_face, flag_pred)
+        else
+            ! Second option for consistency 
+            call apply_consistency2(q_df,qb_df,flag_pred)
+        endif 
         
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
@@ -810,7 +796,7 @@ module mod_splitting
         use mod_initial, only: zbot_face
         use mod_create_rhs_mlswe, only: layer_momentum_rhs, rhs_layer_shear_stress
         use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, layer_momentum_advec_terms_upwind
-        use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v1
+        use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v1, bcl_create_laplacian_v2
 
         implicit none
 
@@ -870,9 +856,12 @@ module mod_splitting
         call layer_windbot_stress_terms(tau_wind_int, tau_bot_int,qprime)
 
         ! Compute the RHS viscosity terms
-        if(method_visc > 0) then 
-            !call bcl_create_laplacian(rhs_visc_bcl,qprime2,qprime_face2)
+        if(method_visc == 1) then 
+            call bcl_create_laplacian(rhs_visc_bcl,qprime2,qprime_face2)
+        elseif(method_visc == 2) then
             call bcl_create_laplacian_v1(rhs_visc_bcl,qprime_df)
+        elseif(method_visc == 3) then
+            call bcl_create_laplacian_v2(rhs_visc_bcl)
         end if
 
         ! Compute the RHS of the layer momentum equation
@@ -882,7 +871,7 @@ module mod_splitting
     end subroutine rhs_momentum
 
 
-    subroutine apply_consistency(dp_advec, q_df,sum_layer_mass_flux, sum_layer_mass_flux_face)
+    subroutine apply_consistency(dp_advec, q_df,sum_layer_mass_flux, sum_layer_mass_flux_face, flag_pred)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -895,21 +884,22 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
 
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, ifilter, dt
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime
         use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
-        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, consistency_mass_terms, consistency_mass_terms_v2
+        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, consistency_mass_terms, consistency_mass_terms_v2, filter_mlswe
         use mod_variables, only: btp_mass_flux_face_ave
 
         implicit none
     
         ! Input variables
         
-        real, intent(in)    :: q_df(3,npoin,nlayers)
+        real, intent(inout)    :: q_df(3,npoin,nlayers)
         real, dimension(2,npoin_q), intent(in)  :: sum_layer_mass_flux
         real, dimension(2,nq,nface), intent(in) :: sum_layer_mass_flux_face
+        integer, intent(in) :: flag_pred
     
         ! Output variables
         real, intent(out) :: dp_advec(npoin,nlayers)
@@ -918,29 +908,41 @@ module mod_splitting
         real :: flux_adjustment(2,npoin_q,nlayers)
         real :: flux_adjust_edge(2,nq,nface,nlayers)
         real :: qprime(3,npoin_q,nlayers), q(3,npoin_q,nlayers), qprime_face(3,2,nq,nface,nlayers), q_face(3,2,nq,nface,nlayers)
-        real, dimension(2,nq,nface)  :: flux_deficit_mass_face
+        real, dimension(2,2,nq,nface)  :: flux_deficit_mass_face
+        integer :: k
         
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
         !call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
-        !call create_communicator_quad_layer(qprime_face(1,:,:,:,:),1,nlayers)
+
         call bcl_create_communicator(qprime_face(1,:,:,:,:),1,nlayers,nq)
 
-        flux_deficit_mass_face(1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
-        flux_deficit_mass_face(2,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
+        flux_deficit_mass_face(1,1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
+        flux_deficit_mass_face(2,1,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
 
-        !call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-        !    sum_layer_mass_flux, &
-        !    qprime_face, flux_deficit_mass_face)
+        flux_deficit_mass_face(1,2,:,:) = flux_deficit_mass_face(1,1,:,:)
+        flux_deficit_mass_face(2,2,:,:) = flux_deficit_mass_face(2,1,:,:)
+
+        call create_communicator_quad(flux_deficit_mass_face,2)
+
+        call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, qprime, &
+            sum_layer_mass_flux, qprime_face, flux_deficit_mass_face)
 
         !call consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
         !    sum_layer_mass_flux, flux_deficit_mass_face, q_face)
 
-        call consistency_mass_terms_v2(flux_adjustment, flux_adjust_edge, q, &
-            sum_layer_mass_flux, flux_deficit_mass_face, q_face)
-
         call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
+
+        ! Apply consistency to the thickness
+
+        do k = 1,nlayers
+            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+            
+            if(ifilter > 0 .and. flag_pred == 0) then 
+                call filter_mlswe(q_df(1,:,k),1)
+            end if
+        end do
         
     end subroutine apply_consistency
 

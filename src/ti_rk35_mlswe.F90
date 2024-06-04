@@ -9,14 +9,14 @@
 subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpprime_df,qprime_df,qp_df_out)
 
 	use mod_splitting, only: thickness, momentum, momentum_mass
-	use mod_input, only: nlayers, ti_method_btp
+	use mod_input, only: nlayers, ti_method_btp, dpprime_visc_min
 	use mod_grid, only: npoin, npoin_q, nface
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
 	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe
 
-	use mod_variables, only: one_plus_eta_df
+	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 
 	implicit none
 
@@ -62,6 +62,9 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qbp_face = qb_face
 	qbp_df = qb_df
 
+	dpprime_visc(:,:) = qprime_df(1,:,:)
+	dpprime_visc_q(:,:) = qprime(1,:,:)
+
 	call ti_barotropic_rk_mlswe(qbp,qbp_face,qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 
@@ -88,6 +91,16 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
 	
 	flag_pred = 0
+
+	do k = 1,nlayers
+		do Iq = 1,npoin
+			dpprime_visc(Iq,k) = max(qprime_df_avg(1,Iq,k), dpprime_visc_min)
+		end do 
+
+		do Iq = 1,npoin_q
+			dpprime_visc_q(Iq,k) = max(qprime_avg(1,Iq,k), dpprime_visc_min)
+		end do 
+	end do 
 
 	call ti_barotropic_rk_mlswe(qb,qb_face,qb_df,qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 

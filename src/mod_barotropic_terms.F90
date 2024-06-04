@@ -21,7 +21,7 @@ module mod_barotropic_terms
                 limiter_Positivity_Preserving_mom, limiter_Positivity_Preserving_mass, evaluate_quprime, &
                 compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, btp_mom_boundary, &
                 evaluate_quprime2, evaluate_visc_terms, restart_mlswe_variales, restart_mlswe, massinv_rhs, evaluate_quprime1, &
-                compute_gradient_uv, compute_btp_mom_terms, compute_gradient_uv_v2
+                compute_gradient_uv, compute_btp_mom_terms, compute_gradient_uv_v1, btp_bcl_grad_coeffs
 
     contains
 
@@ -1092,6 +1092,138 @@ module mod_barotropic_terms
 
     end subroutine btp_bcl_coeffs
 
+
+    subroutine btp_bcl_grad_coeffs(qprime_df)
+        
+        use mod_grid, only: npoin_q, nface, npoin, face, intma
+        use mod_input, only: nlayers, dpprime_visc_min
+        use mod_basis, only: nqx, nqy, nqz, nq, ngl
+        use mod_initial, only: alpha_mlswe
+        use mod_variables, only: dpprime_visc,pbprime_visc,btp_dpp_graduv, btp_dpp_uvp, &
+                dpp_uvp, dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl, imapr, normal_vector
+
+        implicit none
+
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+
+        real, dimension(4, npoin) :: graduv
+
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, ivar
+        real, dimension(2,npoin) :: Uk
+        real :: un(nlayers), nx, ny
+
+        btp_dpp_graduv = 0.0
+        pbprime_visc = 0.0
+
+        do k = 1,nlayers
+
+            Uk = qprime_df(2:3,:,k)
+            
+            call compute_gradient_uv_v1(graduv, Uk)
+            
+            dpp_graduv(1,:,k) = dpprime_visc(:,k)*graduv(1,:)
+            dpp_graduv(2,:,k) = dpprime_visc(:,k)*graduv(2,:)
+            dpp_graduv(3,:,k) = dpprime_visc(:,k)*graduv(3,:)
+            dpp_graduv(4,:,k) = dpprime_visc(:,k)*graduv(4,:)
+
+            dpp_uvp(1,:,k) =  dpprime_visc(:,k)*qprime_df(2,:,k)
+            dpp_uvp(2,:,k) =  dpprime_visc(:,k)*qprime_df(3,:,k)
+
+            btp_dpp_graduv(:,:) = btp_dpp_graduv(:,:) + dpp_graduv(:,:,k)
+            pbprime_visc(:) =  pbprime_visc(:) + dpprime_visc(:,k)
+
+        end do
+
+        do iface=1,nface
+            !-------------------------------------
+            !Store Left and Right Side Variables
+            !-------------------------------------
+            iel=face(7,iface)
+            ier=face(8,iface)
+    
+            !----------------------------Left Element
+            do iquad = 1,ngl
+                !Get Pointers
+                il=imapl(1,iquad,1,iface)
+                jl=imapl(2,iquad,1,iface)
+                kl=imapl(3,iquad,1,iface)
+                Iq = intma(il,jl,kl,iel)
+
+                !Variables
+                graduv_dpp_face(1,1,iquad,iface,:) = dpp_graduv(1,Iq,:)
+                graduv_dpp_face(2,1,iquad,iface,:) = dpp_graduv(2,Iq,:)
+                graduv_dpp_face(3,1,iquad,iface,:) = dpp_graduv(3,Iq,:)
+                graduv_dpp_face(4,1,iquad,iface,:) = dpp_graduv(4,Iq,:)
+
+                graduv_dpp_face(5,1,iquad,iface,:) = dpprime_visc(Iq,:)
+
+                if (ier > 0 ) then
+
+                    !Get Pointers
+                    ir=imapr(1,iquad,1,iface)
+                    jr=imapr(2,iquad,1,iface)
+                    kr=imapr(3,iquad,1,iface)
+                    Iq=intma(ir,jr,kr,ier)
+
+                    !Variables
+                    graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:)
+                    graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:)
+                    graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:)
+                    graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:)
+
+                    graduv_dpp_face(5,2,iquad,iface,:) = dpprime_visc(Iq,:)
+
+                else
+                    !default values
+                    graduv_dpp_face(1,2,iquad,iface,:) = graduv_dpp_face(1,1,iquad,iface,:)
+                    graduv_dpp_face(2,2,iquad,iface,:) = graduv_dpp_face(2,1,iquad,iface,:)
+
+                    graduv_dpp_face(3,2,iquad,iface,:) = graduv_dpp_face(3,1,iquad,iface,:)
+                    graduv_dpp_face(4,2,iquad,iface,:) = graduv_dpp_face(4,1,iquad,iface,:)
+
+                    graduv_dpp_face(5,2,iquad,iface,:) = graduv_dpp_face(5,1,iquad,iface,:)
+
+                    if(ier == -4) then 
+                        nx = normal_vector(1,iquad,1,iface)
+                        ny = normal_vector(2,iquad,1,iface)
+
+                        un = dpp_graduv(1,Iq,:)*nx + dpp_graduv(2,Iq,:)*ny
+
+                        graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:) - 2.0*un*nx
+                        graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:) - 2.0*un*ny
+
+                        un = dpp_graduv(3,Iq,:)*nx + dpp_graduv(4,Iq,:)*ny
+
+                        graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:) - 2.0*un*nx
+                        graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:) - 2.0*un*ny
+
+                    end if 
+                end if
+            end do 
+
+        end do
+
+        call bcl_create_communicator(graduv_dpp_face,5,nlayers,ngl)
+
+        btp_graduv_dpp_face = 0.0
+
+        do iface=1,nface
+            do iquad = 1,ngl
+                
+                do k = 1,nlayers
+
+                    btp_graduv_dpp_face(:,1,iquad,iface) = btp_graduv_dpp_face(:,1,iquad,iface) + graduv_dpp_face(:,1,iquad,iface,k)
+
+                    btp_graduv_dpp_face(:,2,iquad,iface) = btp_graduv_dpp_face(:,2,iquad,iface) + graduv_dpp_face(:,2,iquad,iface,k)
+
+                end do 
+
+            end do 
+        end do 
+
+    end subroutine btp_bcl_grad_coeffs
+
     subroutine evaluate_quprime(quprime, qvprime, qp, qp_face)
 
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face, intma, npoin
@@ -2028,71 +2160,6 @@ module mod_barotropic_terms
 
     subroutine compute_gradient_uv_v1(grad_uv,uv)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, npts
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
-        use mod_basis, only: nq, psi, psix, psiy, psiz, dpsi, dpsix, dpsiy, dpsiz
-        use mod_metrics, only: ksi_x,ksi_y,ksi_z, eta_x,eta_y,eta_z, zeta_x,zeta_y,zeta_z, jac
-
-        use mod_initial, only: dpsidx_df,dpsidy_df, index_df
-
-        implicit none
-
-        real, dimension(2,npoin), intent(in) :: uv
-        real, dimension(2,2,npoin), intent(out) :: grad_uv
-        integer :: Iq, I, ip, e, iquad, jquad, n, m
-        real :: dhdx, dhdy, hi
-        real :: h_e, h_n
-        real :: e_x, e_y, n_x, n_y
-        
-        grad_uv = 0.0
-        
-        !Construct Volume Integral Contributions
-
-        do e = 1,nelem
-
-            do jquad = 1,ngly
-                do iquad = 1,nglx
-                    
-                    Iq = intma(iquad,jquad,1,e)
-
-                    e_x = ksi_x(iquad,jquad,1,e); e_y = ksi_y(iquad,jquad,1,e); 
-                    n_x = eta_x(iquad,jquad,1,e); n_y = eta_y(iquad,jquad,1,e);
-
-                    ip = 0
-                    
-                    do m = 1, ngly 
-                        do n = 1, nglx 
-
-                            I = intma(n,m,1,e)
-                
-                            ! Xi derivatives
-                            h_e = dpsix(n, iquad) * psiy(m, jquad)
-
-                            ! Eta derivatives
-                            h_n = psix(n, iquad) * dpsiy(m, jquad)
-                
-                            ! Pressure terms
-                            dhdx = h_e * e_x + h_n * n_x
-                            dhdy = h_e * e_y + h_n * n_y
-
-                            grad_uv(1,1,Iq) = grad_uv(1,1,Iq) + dhdx*uv(1,I)
-                            grad_uv(1,2,Iq) = grad_uv(1,2,Iq) + dhdy*uv(1,I)
-
-                            grad_uv(2,1,Iq) = grad_uv(2,1,Iq) + dhdx*uv(2,I)
-                            grad_uv(2,2,Iq) = grad_uv(2,2,Iq) + dhdy*uv(2,I)
-
-                        end do !n
-                    end do !m
-
-                end do !iquad
-            end do !jquad
-
-        end do !e
-
-    end subroutine compute_gradient_uv_v1
-
-    subroutine compute_gradient_uv_v2(grad_uv,uv)
-
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
         use mod_basis, only: nq, psiq, psiqx, psiqy, psiqz, dpsiq, dpsiqx, dpsiqy, dpsiqz
@@ -2103,7 +2170,7 @@ module mod_barotropic_terms
         implicit none
 
         real, dimension(2,npoin), intent(in) :: uv
-        real, dimension(2,2,npoin), intent(out) :: grad_uv
+        real, dimension(4,npoin), intent(out) :: grad_uv
         integer :: Iq, I, ip
         real :: dhdx, dhdy
         
@@ -2119,16 +2186,16 @@ module mod_barotropic_terms
                 dhdx = dpsidx_df(Iq,ip)
                 dhdy = dpsidy_df(Iq,ip)
 
-                grad_uv(1,1,Iq) = grad_uv(1,1,Iq) + dhdx*uv(1,I)
-                grad_uv(1,2,Iq) = grad_uv(1,2,Iq) + dhdy*uv(1,I)
+                grad_uv(1,Iq) = grad_uv(1,Iq) + dhdx*uv(1,I)
+                grad_uv(2,Iq) = grad_uv(2,Iq) + dhdy*uv(1,I)
 
-                grad_uv(2,1,Iq) = grad_uv(2,1,Iq) + dhdx*uv(2,I)
-                grad_uv(2,2,Iq) = grad_uv(2,2,Iq) + dhdy*uv(2,I)
+                grad_uv(3,Iq) = grad_uv(3,Iq) + dhdx*uv(2,I)
+                grad_uv(4,Iq) = grad_uv(4,Iq) + dhdy*uv(2,I)
 
             end do
         end do
 
-    end subroutine compute_gradient_uv_v2
+    end subroutine compute_gradient_uv_v1
 
 end module mod_barotropic_terms
             
