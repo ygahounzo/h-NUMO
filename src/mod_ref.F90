@@ -82,7 +82,7 @@ contains
             norm_inf_br(nelem), norm_inf_bu(nelem), norm_inf_bv(nelem), norm_inf_bw(nelem), norm_inf_bt(nelem), &
             grad_press_ref(3,npoin), grad_rho_ref(3,npoin), grad_theta_ref(3,npoin), grad_salinity_ref(3,npoin), &
             div_u_ref(npoin), q_send(nmessage,ngl,ngl,nboun),q_recv(nmessage,ngl,ngl,nboun), grad_bathy(3,npoin), &
-            q_recv_quad(3,nq,nboun), q_send_quad(3,nq,nboun),&
+            q_recv_quad(4,nq,nboun), q_send_quad(4,nq,nboun),&
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
@@ -111,8 +111,8 @@ contains
 
             allocate( recv_data_dg(nmessage*ngl*ngl*nboun), &
                 send_data_dg(nmessage*ngl*ngl*nboun), &
-                recv_data_dg_quad(3*nq*nboun), &
-                send_data_dg_quad(3*nq*nboun), &
+                recv_data_dg_quad(4*nq*nboun), &
+                send_data_dg_quad(4*nq*nboun), &
                 stat=AllocateStatus )
             if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
         end if

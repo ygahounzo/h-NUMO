@@ -29,7 +29,8 @@ module mod_create_rhs_mlswe
         jacq, massinv
 
     public :: layer_momentum_rhs, layer_mass_advection_rhs, create_rhs_btp_momentum, btp_mass_advection_rhs, &
-              interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, create_rhs_btp_momentum_new, create_rhs_btp_momentum_new1
+              interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, create_rhs_btp_momentum_new, create_rhs_btp_momentum_new1, &
+              create_rhs_btp_dynamics_volume_new1, Apply_btp_fluxes_new
               
 contains
 

@@ -15,6 +15,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
 	use mod_variables, only: one_plus_eta_df
+	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 
 	implicit none
 
@@ -69,6 +70,9 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qbp_face = qb_face
 	qbp_df = qb_df
 
+	dpprime_visc(:,:) = qprime_df(1,:,:)
+	dpprime_visc_q(:,:) = qprime(1,:,:)
+
 	call ti_barotropic(qbp,qbp_face,qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 	q2 = q
@@ -102,6 +106,16 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
 	
 	flag_pred = 0
+
+	do k = 1,nlayers
+		do Iq = 1,npoin
+			dpprime_visc(Iq,k) = max(qprime_df_avg(1,Iq,k), dpprime_visc_min)
+		end do 
+
+		do Iq = 1,npoin_q
+			dpprime_visc_q(Iq,k) = max(qprime_avg(1,Iq,k), dpprime_visc_min)
+		end do 
+	end do 
 
 	call ti_barotropic(qb,qb_face,qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 

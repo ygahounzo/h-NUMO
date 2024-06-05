@@ -1564,8 +1564,6 @@ module mod_layer_terms
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
-                    !uv_df(1,I,k) = uv_df(1,I,k) + (1.0/real(nlayers))*(- ubar + qb_df(3,I)/qb_df(1,I))
-                    !uv_df(2,I,k) = uv_df(2,I,k) + (1.0/real(nlayers))*(- vbar + qb_df(4,I)/qb_df(1,I))
 
                     uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
                     uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)

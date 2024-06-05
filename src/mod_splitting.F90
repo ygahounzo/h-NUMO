@@ -43,7 +43,8 @@ module mod_splitting
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers
         use mod_create_rhs_mlswe, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_momentum_new
         use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                        btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
+                                        btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, &
+                                        btp_bcl_grad_coeffs
 
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
@@ -52,13 +53,15 @@ module mod_splitting
                                 Qu_face, Qv_face, one_plus_eta_face, flux_edge, H_bcl_edge, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
                                 H_face, one_plus_eta_edge_2, one_plus_eta_edge, &
                                 Quu, Qvv, Quv, H, Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, one_plus_eta_df, &
-                                btp_mass_flux, tau_bot
+                                btp_mass_flux, tau_bot, uvb_ave_df
+
+        use mod_variables, only: graduvb_face_ave, graduvb_ave
 
         use mod_input, only: method_visc
         use mod_barotropic_terms, only: btp_mom_boundary_df, evaluate_quprime, compute_btp_terms, &
                                         evaluate_quprime2, evaluate_visc_terms, compute_btp_mom_terms
         use mod_layer_terms, only: filter_mlswe
-        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian
+        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian, btp_create_laplacian_v3
 
 
         implicit none
@@ -74,7 +77,7 @@ module mod_splitting
         real, dimension(4,npoin) :: qb_df_pred
         real, dimension(4,npoin_q) :: qb_init
         real, dimension(4,2,nq,nface) :: qb_face_init
-        real, dimension(2,npoin) :: rhs_mom, rhs_visc_bcl, rhs_visc_bcl1
+        real, dimension(2,npoin) :: rhs_mom, rhs_visc_btp, rhs_visc_btp1
         real, dimension(npoin) :: pb_advec, tempu, tempv
 
         real, dimension(2,nq,nface) :: qb_com1
@@ -87,6 +90,7 @@ module mod_splitting
 
         one_plus_eta_edge_2_ave = 0.0
         uvb_ave  = 0.0
+        uvb_ave_df  = 0.0
         ope_ave = 0.0
         btp_mass_flux_ave = 0.0
         H_ave = 0.0
@@ -103,13 +107,16 @@ module mod_splitting
         Quv_face_ave = 0.0
         tau_wind_ave = 0.0
         tau_bot_ave = 0.0
-        rhs_visc_bcl = 0.0
+        rhs_visc_btp = 0.0
         ope2_ave = 0.0
+        graduvb_face_ave = 0.0
+        graduvb_ave = 0.0
 
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
         call btp_bcl_coeffs(qprime,qprime_face)
+        call btp_bcl_grad_coeffs(qprime_df)
 
         qb_init = qb
         qb_face_init = qb_face
@@ -131,9 +138,12 @@ module mod_splitting
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call btp_create_laplacian_v1(rhs_visc_bcl,qprime,qprime_face,qb_init,qb_face_init)
+                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb_init,qb_face_init)
             elseif(method_visc == 2) then
-                !call btp_create_laplacian(rhs_visc_bcl,qprime_df,qb_df,qprime(1,:,:), qprime_face, qb_face)
+                !call btp_create_laplacian(rhs_visc_btp,qprime_df,qb_df,qprime(1,:,:), qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb_df)
+            elseif(method_visc == 3) then 
+                call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
             end if
 
             ! Compute RHS for the barotropic
@@ -142,8 +152,8 @@ module mod_splitting
 
             ! Predict barotropic 
 
-            qb_df_pred(3,:) = qb_df(3,:) + fdt_btp(:)*qb_df(4,:) + dt_btp*(rhs_mom1(1,:) + rhs_visc_bcl(1,:))
-            qb_df_pred(4,:) = qb_df(4,:) - fdt_btp(:)*qb_df(3,:) + dt_btp*(rhs_mom1(2,:) + rhs_visc_bcl(2,:))
+            qb_df_pred(3,:) = qb_df(3,:) + fdt_btp(:)*qb_df(4,:) + dt_btp*(rhs_mom1(1,:) + rhs_visc_btp(1,:))
+            qb_df_pred(4,:) = qb_df(4,:) - fdt_btp(:)*qb_df(3,:) + dt_btp*(rhs_mom1(2,:) + rhs_visc_btp(2,:))
 
             call btp_mom_boundary_df(qb_df_pred(3:4,:))
 
@@ -165,6 +175,10 @@ module mod_splitting
             ! Accumulate sums for time averaging
             uvb_ave(1,:) = uvb_ave(1,:) + qb_init(3,:)/qb_init(1,:)
             uvb_ave(2,:) = uvb_ave(2,:) + qb_init(4,:)/qb_init(1,:)
+
+            uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
+            uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
+
             uvb_face_ave(1,:,:,:) = uvb_face_ave(1,:,:,:) + qb_face_init(3,:,:,:)/qb_face_init(1,:,:,:)
             uvb_face_ave(2,:,:,:) = uvb_face_ave(2,:,:,:) + qb_face_init(4,:,:,:)/qb_face_init(1,:,:,:)
 
@@ -216,9 +230,12 @@ module mod_splitting
             ! Compute RHS viscosity terms
 
             if(method_visc == 1) then
-                call btp_create_laplacian_v1(rhs_visc_bcl1,qprime,qprime_face,qb,qb_face)
+                call btp_create_laplacian_v1(rhs_visc_btp1,qprime,qprime_face,qb,qb_face)
             elseif(method_visc == 2) then
-                !call btp_create_laplacian(rhs_visc_bcl1,qprime_df,qb_df_pred,qprime(1,:,:),qprime_face, qb_face)
+                !call btp_create_laplacian(rhs_visc_btp1,qprime_df,qb_df_pred,qprime(1,:,:),qprime_face, qb_face)
+                call btp_create_laplacian(rhs_visc_btp1,qprime_df,qb_df)
+            elseif(method_visc == 3) then 
+                call btp_create_laplacian_v3(rhs_visc_btp1,qb_df)
             end if
 
             ! Compute RHS for the barotropic momentum equation
@@ -226,12 +243,12 @@ module mod_splitting
             call create_rhs_btp_momentum(rhs_mom,qb,qb_face)
 
             rhs_mom = 0.5*(rhs_mom1(1:2,:) + rhs_mom)
-            rhs_visc_bcl = 0.5*(rhs_visc_bcl1 + rhs_visc_bcl)
+            rhs_visc_btp = 0.5*(rhs_visc_btp1 + rhs_visc_btp)
 
             ! Correct barotropic momentum
 
-            qb_df_temp(1,:) = qb_df(3,:) + dt_btp*(rhs_mom(1,:) + rhs_visc_bcl(1,:))
-            qb_df_temp(2,:) = qb_df(4,:) + dt_btp*(rhs_mom(2,:) + rhs_visc_bcl(2,:))
+            qb_df_temp(1,:) = qb_df(3,:) + dt_btp*(rhs_mom(1,:) + rhs_visc_btp(1,:))
+            qb_df_temp(2,:) = qb_df(4,:) + dt_btp*(rhs_mom(2,:) + rhs_visc_btp(2,:))
 
             call btp_mom_boundary_df(qb_df_temp(:,:))
 
@@ -264,6 +281,9 @@ module mod_splitting
 
             uvb_ave(1,:) = uvb_ave(1,:) + qb(3,:)/qb(1,:)
             uvb_ave(2,:) = uvb_ave(2,:) + qb(4,:)/qb(1,:)
+
+            uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
+            uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
 
             uvb_face_ave = uvb_face_ave + qb_com2(1:2,:,:,:)
 
@@ -317,6 +337,8 @@ module mod_splitting
 
         tau_wind_ave = tau_wind_ave / real(N_btp)
         tau_bot_ave = tau_bot_ave / real(N_btp)
+        graduvb_face_ave = N_inv*graduvb_face_ave 
+        graduvb_ave = N_inv*graduvb_ave
 
     end subroutine ti_barotropic
 
@@ -939,9 +961,9 @@ module mod_splitting
         do k = 1,nlayers
             q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
             
-            if(ifilter > 0 .and. flag_pred == 0) then 
-                call filter_mlswe(q_df(1,:,k),1)
-            end if
+            !if(ifilter > 0 .and. flag_pred == 0) then 
+            !    call filter_mlswe(q_df(1,:,k),1)
+            !end if
         end do
         
     end subroutine apply_consistency
@@ -989,9 +1011,9 @@ module mod_splitting
             
         if(flag_pred == 0 .and. ifilter > 0) then 
 
-            do k = 1,nlayers
-                call filter_mlswe(q_df(1,:,k),1)
-            end do
+            !do k = 1,nlayers
+            !    call filter_mlswe(q_df(1,:,k),1)
+            !end do
         end if
 
     end subroutine apply_consistency2

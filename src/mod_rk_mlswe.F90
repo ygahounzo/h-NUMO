@@ -438,12 +438,12 @@ module mod_rk_mlswe
 
             call btp_mom_boundary_df(qb_df(3:4,:))
 
-            if(mstep == N_btp .and. ifilter > 0 .and. flag_pred == 0) then 
-                call filter_mlswe(qb_df(3:4,:),2)
-                call btp_mom_boundary_df(qb_df(3:4,:))
-                call filter_mlswe(qb_df(1,:),1)
-                qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
-            end if
+            !if(mstep == N_btp .and. ifilter > 0 .and. flag_pred == 0) then 
+            !    call filter_mlswe(qb_df(3:4,:),2)
+            !    call btp_mom_boundary_df(qb_df(3:4,:))
+            !    call filter_mlswe(qb_df(1,:),1)
+            !    qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
+            !end if
 
             call btp_evaluate_mom_dp(qb,qb_df)
             call btp_evaluate_mom_dp_face(qb_face, qb)
