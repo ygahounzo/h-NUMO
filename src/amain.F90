@@ -107,6 +107,7 @@ subroutine initialize_fields()
   use mod_parallel, only: nproc, mod_parallel_reorder
 
   use mod_variables, only: mod_allocate_mlswe
+  use mod_ref, only: mod_ref_create
 
   implicit none
 
@@ -150,11 +151,9 @@ subroutine initialize_fields()
   call mod_metrics_create_mass()
   if (irank == irank0) print *, "Mass Matrix Created"
 
-  !--------------------------------------------------------------------------------
-  !    Create Iterative Solver Arrays
-  !--------------------------------------------------------------------------------
-
-  !CPU only code
+  ! Create Reference Fields
+  call mod_ref_create()
+  if (irank == irank0) print *, "Reference Fields Created"
 
    !Create RHS Vectors for the Filter
    call mod_filter_create_rhs()

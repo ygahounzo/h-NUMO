@@ -444,13 +444,17 @@ module mod_laplacian_quad
 
         end do
 
-        call create_communicator_df(graduv_face,4)
+        call create_rhs_lap_precommunicator_df(graduv_face,4)
 
-        graduvb_face_ave = graduvb_face_ave + graduv_face
+        !call create_communicator_df(graduv_face,4)
 
         ! rhs
 
         call btp_compute_laplacian_IBP(rhs_temp,graduv)
+
+        call create_rhs_lap_postcommunicator_df(graduv_face,4)
+
+        graduvb_face_ave = graduvb_face_ave + graduv_face
 
         call create_rhs_laplacian_flux_SIPG_v1(rhs_temp,graduv_face)
 
