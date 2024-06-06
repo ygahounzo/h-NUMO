@@ -59,7 +59,7 @@ lrestart_file = .false.,
 ad_mlswe = 0.0, 
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
-method_visc = 3,  !0=no viscosity
+method_visc = 0,  !0=no viscosity
 visc_mlswe = 1.0,
 dpprime_visc_min = 0.0,
 max_shear_dz = 20.0,
@@ -93,7 +93,7 @@ si_dimension = '3d',
 filter_mux=0.05,
 filter_muy=0.05,
 filter_muz=0.05,
-ifilter=1,
+ifilter=0,
 filter_weight_type='erf',
 !filter_basis_type='modal',
 filter_basis_type='legendre',
@@ -109,4 +109,6 @@ out_type='vtk',
 lprint_diagnostics=T, 
 			   !T=true=print diagnostics
 			   !F=false=do NOT print diagnostics
+
+lcheck_conserved=T
 /

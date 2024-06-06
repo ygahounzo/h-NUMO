@@ -84,6 +84,7 @@ SOURCEF += mod_rk_mlswe.F90
 SOURCEF += ti_rk35_mlswe.F90
 # SOURCEF += mod_splitting_v3.F90
 SOURCEF += mod_variables.F90
+SOURCEF += compute_conserved.F90
 
 
 OBJS += $(addsuffix .o, $(basename $(SOURCEF) $(SOURCEC)))

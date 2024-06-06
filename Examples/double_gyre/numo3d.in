@@ -60,7 +60,7 @@ dp_cutoff1 = 5.0e6,
 dp_cutoff2 = 1.0e7, 
 dp_tau_bot = 1.0e5, 
 dp_tau_wind = 1.0e6,
-method_visc = 2,  !0=no viscosity
+method_visc = 3,  !0=no viscosity
 visc_mlswe = 50.0,
 dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,
@@ -71,6 +71,8 @@ bcl_flux = 0.0,
 mlswe_bc_strong = T
 dg_integ_exact = T,
 dump_data = T,
+flux_type = 'upwind',
+method_consistency = 1,
 
 !----case
 icase=1100,
@@ -91,9 +93,9 @@ si_dimension = '3d',
 	       	     !1d IMEX in the vertical/radial direction; 
 	       	     !3d IMEX
 
-filter_mux=0.01,
-filter_muy=0.01,
-filter_muz=0.01,
+filter_mux=0.05,
+filter_muy=0.05,
+filter_muz=0.05,
 ifilter=1,
 filter_weight_type='erf',
 filter_basis_type='legendre',

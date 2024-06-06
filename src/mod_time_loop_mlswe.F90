@@ -43,7 +43,7 @@ contains
 
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             icase, ifilter, fname_root, lprint_diagnostics, &
-            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data
+            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
 
         use mod_papi, only: papi_start, papi_update, papi_print, papi_stop
 
@@ -65,10 +65,8 @@ contains
 
         integer AllocateStatus
 
-        real cfl_vector(4), cfl_vector_g(4)
         real cfl, cfl_h, cfl_v, cflu
-        real ae01, ae02, ae1, ae2, xm1, xm2
-        real ae01_g, ae02_g, ae1_g, ae2_g, raw_filter
+        real mass_conserv_l, mass_conserv_g, mass_conserv0_g(nlayers)
         integer m, itime
         integer irestart, ntime, inorm
         integer iloop, i, j, icol, ivar, npoin_bound, ifnp, idone, ii
@@ -112,7 +110,15 @@ contains
         qprime0_df = qprime_df_init
 
         qout_mlswe(1:3,:,:) = q0_df_mlswe(1:3,:,:)
-        qout_mlswe(4:5,:,:) = 0.0
+
+        do l = 1,nlayers
+            qout_mlswe(1,:,l) = (alpha_mlswe(l)/gravity)*q0_df_mlswe(1,:,l)
+            qout_mlswe(2,:,l) = q0_df_mlswe(2,:,l) / q0_df_mlswe(1,:,l)
+            qout_mlswe(3,:,l) = q0_df_mlswe(3,:,l) / q0_df_mlswe(1,:,l)
+            qout_mlswe(4,:,l) = q0_df_mlswe(1,:,l)
+        end do
+
+        qout_mlswe(5,:,:) = 0.0
         if(matlab_viz) then
 
             mslwe_elevation(:,nlayers+1) = zbot_df
@@ -201,11 +207,26 @@ contains
            if(irank==0)  print*,' Done Reading'
         end if
 
+
+        if(lcheck_conserved) then 
+
+            do l = 1,nlayers
+                call compute_conserved(mass_conserv_l,qout_mlswe(1,:,l))
+
+                mass_conserv_g = 0.0
+
+                call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+
+                mass_conserv0_g(l) = mass_conserv_g
+            end do 
+
+        endif 
+
         idone = 0
         if (lprint_diagnostics) then
                
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            ae01_g,ae02_g,cfl,cflu,ntime)
+            mass_conserv0_g,cfl,cflu,ntime)
         end if
 
         if (irank == irank0) then
@@ -284,7 +305,7 @@ contains
 
                 if (lprint_diagnostics) then 
                     call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-                    ae01_g,ae02_g,cfl,cflu,ntime)
+                    mass_conserv0_g,cfl,cflu,ntime)
                 end if
             end if !mod
         end do !time
@@ -295,7 +316,7 @@ contains
 
         if (lprint_diagnostics) then 
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            ae01_g,ae02_g,cfl,cflu,ntime)
+            mass_conserv0_g,cfl,cflu,ntime)
         end if
 
         !Clean UP

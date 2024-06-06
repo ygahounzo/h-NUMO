@@ -12,7 +12,7 @@
 !----------------------------------------------------------------------!
 
 subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
-   ae01_g,ae02_g,cfl,cflu,ntime)
+   mass_conserv0_g,cfl,cflu,ntime)
 
    use mpi
 
@@ -25,7 +25,7 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
    use mod_initial, only: nvar
 
    use mod_input, only: lprint_diagnostics, si_dimension, ti_method, &
-      icase, fname_root, time_scale, nlayers, dt_btp
+      icase, fname_root, time_scale, nlayers, dt_btp, lcheck_conserved
 
    use mod_mpi_utilities, only: MPI_PRECISION
 
@@ -33,7 +33,7 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
 
    !global arrays
    real, intent(in)  :: q_mlswe(5,npoin,nlayers), qb(4,npoin)
-   real, intent(in)  :: time, dt, ae01_g, ae02_g
+   real, intent(in)  :: time, dt, mass_conserv0_g(nlayers)
    integer, intent(in) :: itime, idone, ntime
 
    !local arrays
@@ -44,10 +44,9 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
    real :: qmax_g(nvar), qmin_g(nvar), qbmax_g(4), qbmin_g(4)
    real :: cfl_vector(5), cfl_vector_g(5), cfl, cflu
    real :: min_dx_vec(2),min_dx_vec_g(2)
-   real :: epart(3)
-   real :: ae1, ae2, ae1_g, ae2_g, xm1, xm2
+   real :: xm1(nlayers)
    integer :: ierr, irank, i, j, ncol_g, m, ll
-   real :: kiter_g, kiter
+   real :: mass_conserv_l, mass_conserv(nlayers), mass_conserv_g
    character :: fname_conservation*72,fname_qmax_qmin*72
    character(len=3), dimension(5) :: fileds
 
@@ -63,13 +62,17 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
 
       q = q_mlswe(:,:,ll)
 
-      !Compute Mass and Energy
-      !hack for now
-      !call compute_energy(ae1,ae2,epart,q)
-      ae1 = 0
-      ae2=0
-      call mpi_reduce(ae1,ae1_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
-      call mpi_reduce(ae2,ae2_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+      !Compute Mass
+
+      if(lcheck_conserved) then 
+      
+         call compute_conserved(mass_conserv_l,q(1,:))
+         mass_conserv_g = 0.0
+
+         call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+
+         mass_conserv(ll) = mass_conserv_g
+      end if
       
       !Calculate max on processor
        
@@ -91,6 +94,13 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
       qmin_layers(:,ll) = qmin_g
 
    end do
+
+   if (irank == 0 .and. lcheck_conserved) then 
+      
+      do ll = 1,nlayers
+         xm1(ll) = abs(mass_conserv(ll) - mass_conserv0_g(ll))/mass_conserv0_g(ll)
+      end do 
+   end if
 
    do i = 1,4
       qbmax(i)=maxval(qb(i,:))
@@ -128,6 +138,7 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
       print*,'---------------------------------------------------------------'
       do ll = 1,nlayers
          write(*,'("Layer = ",i8)')ll
+         write(*,'("Mass Loss   = ",1(e16.8,1x))') xm1(ll)
          do i=1,nvar
             write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), qmin_layers(i,ll)
          end do !i
@@ -157,7 +168,9 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
       open(unit=100, file = 'mlswe_FIN.txt')
       do ll = 1,nlayers
          write(*,'("Layer = ",i8)')ll
+         write(*,'("Mass Loss  = ",1(e16.8,1x))') xm1(ll)
          write(100,'("Layer = ",i8)')ll
+         write(100,'("Mass Loss  = ",1(e16.8,1x))') xm1(ll)
          do i=1,nvar
             write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), qmin_layers(i,ll)
 

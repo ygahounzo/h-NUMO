@@ -12,7 +12,7 @@ module mod_laplacian_quad
     use mod_face, only: imapl_q, imapr_q, normal_vector_q, jac_faceq, imapl, imapr, normal_vector, jac_face
     use mod_input, only: visc_mlswe, nlayers, mass_exact, xdims, ydims, nelx
     use mod_basis, only: ngl, nq, psiq, npts
-    use mod_barotropic_terms, only: evaluate_quprime2, massinv_rhs, compute_gradient_uv, compute_gradient_uv_v1
+    use mod_barotropic_terms, only: evaluate_quprime2, compute_gradient_uv, compute_gradient_uv_v1
     use mod_metrics, only: massinv, jacq
     use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, psih_df, dpsidx_df,dpsidy_df, index_df, wjac_df
     use mod_variables, only: dpprime_visc_q
