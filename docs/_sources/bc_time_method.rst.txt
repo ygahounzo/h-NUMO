@@ -22,7 +22,7 @@ types of boundary conditions:
 3. No-slip or No-flux Boundary Condition
 	This boundary condition cancels the normal velocity at a boundary (:math:`\mathbf{n}\cdot\mathbf{u} = 0`). 
 
-Time-Integrators}\label{sec:time_integrators
+Time-Integrators
 ----------------------------------------------------
 
 h-NUMO is equipped with a suite of time-integrators which include:
