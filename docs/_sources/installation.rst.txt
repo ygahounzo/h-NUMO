@@ -12,6 +12,7 @@ To compile the h-NUMO model, one needs the following modules
 | :bash:`gcc version 8 and above`
 | :bash:`openmpi`
 | :bash:`make`
+| :bash:`lapack`
 
 Installation instructions
 --------------------------------

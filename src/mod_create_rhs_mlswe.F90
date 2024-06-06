@@ -1,4 +1,10 @@
-
+! =======================================================================
+!>@brief This subroutine builds the RHS vector for the DG method for MLSWE
+!   Author: Yao Gahounzo 
+!   Computing PhD 
+!   Boise State University
+!   Date: April 03, 2023
+! =======================================================================
 module mod_create_rhs_mlswe
 
 
@@ -13,7 +19,6 @@ module mod_create_rhs_mlswe
 
     use mod_initial, only: q_ref, coriolis_constant, kvector, nvar
 
-    !use mod_barotropic_terms, only: massinv_rhs
 
     use mod_input, only: nlayers, mass_exact
 
@@ -24,7 +29,8 @@ module mod_create_rhs_mlswe
         jacq, massinv
 
     public :: layer_momentum_rhs, layer_mass_advection_rhs, create_rhs_btp_momentum, btp_mass_advection_rhs, &
-              interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, create_rhs_btp_momentum_new, create_rhs_btp_momentum_new1
+              interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, create_rhs_btp_momentum_new, create_rhs_btp_momentum_new1, &
+              create_rhs_btp_dynamics_volume_new1, Apply_btp_fluxes_new
               
 contains
 
@@ -95,7 +101,7 @@ contains
         
     end subroutine layer_mass_advection_rhs
 
-    subroutine create_rhs_btp_momentum(rhs_mom,Quu,Qvv,Quv,H,qb,H_face,Qu_face,Qv_face,tau_bot,rhs_visc,qb_face)
+    subroutine create_rhs_btp_momentum(rhs_mom,qb,qb_face)
 
 
         use mod_metrics, only: massinv
@@ -105,27 +111,18 @@ contains
         implicit none
 
         real, dimension(2, npoin), intent(out) :: rhs_mom
-        real, dimension(npoin_q), intent(in) :: H, Quu, Qvv, Quv
         real, dimension(4,npoin_q), intent(in) :: qb
-        real, dimension(2, nq, nface), intent(in) :: Qu_face, Qv_face
-        real, dimension(nq, nface), intent(in) :: H_face
-        real, dimension(2, npoin_q), intent(in) :: tau_bot
-        real, dimension(2, npoin), intent(in) :: rhs_visc
         real, dimension(4, 2, nq, nface), intent(in) :: qb_face
-
-        real, dimension(2,npoin_q) :: qb2
         
-
         integer :: I
 
-        call create_rhs_btp_dynamics_volume(rhs_mom, H, qb, Quu, Quv, Qvv,tau_bot)
+        call create_rhs_btp_dynamics_volume(rhs_mom,qb)
 
-        call Apply_btp_fluxes(rhs_mom,H_face,Qu_face,Qv_face, qb_face)
+        call Apply_btp_fluxes(rhs_mom,qb_face)
 
     end subroutine create_rhs_btp_momentum
 
-    subroutine create_rhs_btp_momentum_new(rhs_mom,Quu,Qvv,Quv,H,qb,H_face,Qu_face,Qv_face,tau_bot,rhs_visc,btp_mass_flux, flux_edge,qb_face)
-
+    subroutine create_rhs_btp_momentum_new(rhs_mom,qb,qb_face)
 
         use mod_metrics, only: massinv
         use mod_grid, only: npoin, npoin_q, nface
@@ -134,22 +131,16 @@ contains
         implicit none
 
         real, dimension(3, npoin), intent(out) :: rhs_mom
-        real, dimension(npoin_q), intent(in) :: H, Quu, Qvv, Quv
         real, dimension(4,npoin_q), intent(in) :: qb
-        real, dimension(2, nq, nface), intent(in) :: Qu_face, Qv_face, flux_edge
-        real, dimension(nq, nface), intent(in) :: H_face
-        real, dimension(2, npoin_q), intent(in) :: tau_bot, btp_mass_flux
-        real, dimension(2, npoin), intent(in) :: rhs_visc
         real, dimension(4, 2, nq, nface), intent(in) :: qb_face
 
+        call create_rhs_btp_dynamics_volume_new(rhs_mom, qb)
 
-        call create_rhs_btp_dynamics_volume_new(rhs_mom, H, qb, Quu, Quv, Qvv,tau_bot, btp_mass_flux)
-
-        call Apply_btp_fluxes_new(rhs_mom,H_face,Qu_face,Qv_face, qb_face, flux_edge)
+        call Apply_btp_fluxes_new(rhs_mom,qb_face)
 
     end subroutine create_rhs_btp_momentum_new
 
-    subroutine create_rhs_btp_momentum_new1(rhs_mom,Quu,Qvv,Quv,H,qb,H_face,Qu_face,Qv_face,tau_bot,rhs_visc,btp_mass_flux, flux_edge,qb_face)
+    subroutine create_rhs_btp_momentum_new1(rhs_mom,qb,qb_face)
 
 
         use mod_metrics, only: massinv
@@ -159,22 +150,16 @@ contains
         implicit none
 
         real, dimension(3, npoin), intent(out) :: rhs_mom
-        real, dimension(npoin_q), intent(in) :: H, Quu, Qvv, Quv
         real, dimension(4,npoin_q), intent(in) :: qb
-        real, dimension(2, nq, nface), intent(in) :: Qu_face, Qv_face, flux_edge
-        real, dimension(nq, nface), intent(in) :: H_face
-        real, dimension(2, npoin_q), intent(in) :: tau_bot, btp_mass_flux
-        real, dimension(2, npoin), intent(in) :: rhs_visc
         real, dimension(4, 2, nq, nface), intent(in) :: qb_face
 
+        call create_rhs_btp_dynamics_volume_new1(rhs_mom, qb)
 
-        call create_rhs_btp_dynamics_volume_new1(rhs_mom, H, qb, Quu, Quv, Qvv,tau_bot, btp_mass_flux)
-
-        call Apply_btp_fluxes_new(rhs_mom,H_face,Qu_face,Qv_face, qb_face, flux_edge)
+        call Apply_btp_fluxes_new(rhs_mom, qb_face)
 
     end subroutine create_rhs_btp_momentum_new1
 
-    subroutine btp_mass_advection_rhs(pb_advec, btp_mass_flux, flux_edge)
+    subroutine btp_mass_advection_rhs(pb_advec)
 
         use mod_metrics, only: massinv 
         use mod_grid, only: npoin_q, npoin, nface
@@ -182,12 +167,10 @@ contains
 
         implicit none
 
-        real, dimension(2, npoin_q), intent(in) :: btp_mass_flux
-        real, dimension(2, nq, nface), intent(in) :: flux_edge
         real, dimension(npoin), intent(out) :: pb_advec
 
-        call create_rhs_btp_dynamics_volume_mass(pb_advec, btp_mass_flux)
-        call  Apply_btp_flux_mass(pb_advec, flux_edge)
+        call create_rhs_btp_dynamics_volume_mass(pb_advec)
+        call  Apply_btp_flux_mass(pb_advec)
 
     end subroutine btp_mass_advection_rhs
 
@@ -330,70 +313,49 @@ contains
 
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
 
-        real, dimension(npoin_q,nlayers) :: tau_u_wind, tau_u_bot, tau_v_wind, tau_v_bot, pz_x, pz_y
+        real :: wq, hi, dhdx, dhdy
+        real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y
 
-
-        real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z, hi, &
-                h_e, h_n, dhdx, dhdy, h_c
-        real, dimension(nlayers) :: u_mom, v_mom, Hq, var_uu, var_uv, var_vu, var_vv, u_cori, v_cori
-
-        integer :: k, e, iquad, jquad, kquad, l, n, m, I, Iq, ip
+        integer :: k, I, Iq, ip
 
         rhs_mom = 0.0
 
-        do k=1,nlayers
+        do k = 1,nlayers
+            do Iq = 1, npoin_q
 
-            tau_u_wind(:,k) = gravity*tau_wind_int(1,:,k)
-            tau_u_bot(:,k) = -gravity*tau_bot_int(1,:,k)
+                wq = wjac(Iq)
 
-            tau_v_wind(:,k) = gravity*tau_wind_int(2,:,k)
-            tau_v_bot(:,k) = -gravity*tau_bot_int(2,:,k)
+                Hq = H_r(Iq,k)
 
-            pz_x(:,k) = gravity*(p(:,k) * grad_z(1,:,k) - p(:,k+1) * grad_z(1,:,k+1))
-            pz_y(:,k) = gravity*(p(:,k) * grad_z(2,:,k) - p(:,k+1) * grad_z(2,:,k+1))
-        end do
+                var_uu = u_udp_temp(Iq,k) 
+                var_uv = u_vdp_temp(1,Iq,k)
+                var_vu = u_vdp_temp(2,Iq,k)
+                var_vv = v_vdp_temp(Iq,k)
 
-        do Iq = 1, npoin_q
+                source_x = gravity*tau_wind_int(1,Iq,k) - gravity*tau_bot_int(1,Iq,k) + &
+                            gravity*(p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
+                source_y = gravity*tau_wind_int(2,Iq,k) - gravity*tau_bot_int(2,Iq,k) + &
+                            gravity*(p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1))                                                                                                                       
 
-            wq = wjac(Iq)
+                do ip = 1, npts
 
-            Hq = H_r(Iq,:)
+                    I = indexq(Iq,ip)
 
-            var_uu = u_udp_temp(Iq,:) 
-            var_uv = u_vdp_temp(1,Iq,:)
-            var_vu = u_vdp_temp(2,Iq,:)
-            var_vv = v_vdp_temp(Iq,:)
+                    hi = psih(Iq,ip)
 
-            do ip = 1, npts
+                    !Xi derivatives                                                                                
+                    dhdx = dpsidx(Iq,ip)
+                    !Eta derivatives
+                    dhdy = dpsidy(Iq,ip)
 
-                I = indexq(Iq,ip)
+                    rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*(hi*source_x + dhdx*Hq + var_uu*dhdx + var_uv*dhdy)
+                    rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*(hi*source_y + dhdy*Hq + var_vu*dhdx + var_vv*dhdy)
 
-                hi = psih(Iq,ip)
-
-                rhs_mom(1,I,:) = rhs_mom(1,I,:) + wq*hi*(tau_u_wind(Iq,:) + tau_u_bot(Iq,:) + pz_x(Iq,:))
-                rhs_mom(2,I,:) = rhs_mom(2,I,:) + wq*hi*(tau_v_wind(Iq,:) + tau_v_bot(Iq,:) + pz_y(Iq,:))
-
-                !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
-                !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
-
-                rhs_mom(1,I,:) = rhs_mom(1,I,:) + wq*dhdx*Hq(:) 
-                rhs_mom(2,I,:) = rhs_mom(2,I,:) + wq*dhdy*Hq(:)
-
-                u_mom(:) = var_uu(:)*dhdx + var_uv(:)*dhdy
-                v_mom(:) = var_vu(:)*dhdx + var_vv(:)*dhdy
-
-                rhs_mom(1,I,:) = rhs_mom(1,I,:) + wq*u_mom(:)
-                rhs_mom(2,I,:) = rhs_mom(2,I,:) + wq*v_mom(:)
-
+                end do
             end do
-        end do
-
-        ! end do !k
+        end do !k
 
     end subroutine create_rhs_dynamics_volume_layers
-
 
     subroutine Apply_layers_fluxes(rhs_mom,udp_flux_edge, vdp_flux_edge, H_r_face, q_face)
 
@@ -413,87 +375,86 @@ contains
         integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, nq_i, nq_j
         integer :: plane_ij, kl, kr, jquad, ngl_i, ngl_j, n, m
         real :: wq, hi, nxl, nyl, gprime, h1, h2, clam_temp, lam
-        real, dimension(nlayers) :: hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k
-        real, dimension(nq,nlayers) :: h_l, h_r, var_uudp, var_uvdp, var_vudp, var_vvdp
+        real :: hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k
+        real, dimension(nq) :: h_l, h_r, var_uudp, var_uvdp, var_vudp, var_vvdp
         real, dimension(nlayers) :: unl, unr, Hl, Hr, ul, vl, ur, vr
         real :: h1_l, h1_r, h2_l, h2_r, claml1, clamr1, claml2, clamr2, clam1, clam2
         real :: Ucl, Ucr, hgl, hgr, claml, clamr, clam
 
         !gprime = gravity *alpha_mlswe(2)*(1.0/alpha_mlswe(2) - 1.0/alpha_mlswe(1))
     
-        ! do k = 1, nlayers
+        do k = 1, nlayers
 
-        do iface = 1, nface
+            do iface = 1, nface
 
-            !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
-            el = face(7,iface)
-            er = face(8,iface)
+                !Store Left Side Variables
+                ilocl = face(5,iface)
+                ilocr = face(6,iface)
+                el = face(7,iface)
+                er = face(8,iface)
 
-            h_l = H_r_face(1,:,iface,:)
-            h_r = H_r_face(2,:,iface,:)
+                h_l = H_r_face(1,:,iface,k)
+                h_r = H_r_face(2,:,iface,k)
 
-            var_uudp = udp_flux_edge(1,:,iface,:)
-            var_uvdp = udp_flux_edge(2,:,iface,:)
+                var_uudp = udp_flux_edge(1,:,iface,k)
+                var_uvdp = udp_flux_edge(2,:,iface,k)
 
-            var_vudp = vdp_flux_edge(1,:,iface,:)
-            var_vvdp = vdp_flux_edge(2,:,iface,:)   
+                var_vudp = vdp_flux_edge(1,:,iface,k)
+                var_vvdp = vdp_flux_edge(2,:,iface,k)   
 
-            do iquad = 1, nq
+                do iquad = 1, nq
 
-                wq = jac_faceq(iquad,1,iface)
+                    wq = jac_faceq(iquad,1,iface)
 
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
+                    nxl = normal_vector_q(1,iquad,1,iface)
+                    nyl = normal_vector_q(2,iquad,1,iface)
 
-                hlx_k = nxl*h_l(iquad,:)
-                hrx_k = nxl*h_r(iquad,:)
-                
-                ! hx_k = 0.5*nxl*(h_l(iquad,:) + h_r(iquad,:))
-
-                hly_k = nyl*h_l(iquad,:)  
-                hry_k = nyl*h_r(iquad,:)
-
-                ! hy_k = 0.5*nyl*(h_l(iquad,:) + h_r(iquad,:))
-    
-                flux_x = nxl*var_uudp(iquad,:) + nyl*var_uvdp(iquad,:)
-                flux_y = nxl*var_vudp(iquad,:) + nyl*var_vvdp(iquad,:)
-
-                do n = 1, ngl
-
-                    hi = psiq(n,iquad)
+                    hlx_k = nxl*h_l(iquad)
+                    hrx_k = nxl*h_r(iquad)
                     
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
+                    ! hx_k = 0.5*nxl*(h_l(iquad) + h_r(iquad))
 
-                    I = intma(il,jl,kl,el)
+                    hly_k = nyl*h_l(iquad)  
+                    hry_k = nyl*h_r(iquad)
 
-                    rhs_mom(1,I,:) = rhs_mom(1,I,:) - wq*hi*(hlx_k + flux_x)
-                    rhs_mom(2,I,:) = rhs_mom(2,I,:) - wq*hi*(hly_k + flux_y)
+                    ! hy_k = 0.5*nyl*(h_l(iquad) + h_r(iquad))
+        
+                    flux_x = nxl*var_uudp(iquad) + nyl*var_uvdp(iquad)
+                    flux_y = nxl*var_vudp(iquad) + nyl*var_vvdp(iquad)
 
-                    if(er > 0) then
+                    do n = 1, ngl
 
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
+                        hi = psiq(n,iquad)
+                        
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
 
-                        I = intma(ir,jr,kr,er)
+                        I = intma(il,jl,kl,el)
 
-                        rhs_mom(1,I,:) = rhs_mom(1,I,:) + wq*hi*(hrx_k + flux_x)
-                        rhs_mom(2,I,:) = rhs_mom(2,I,:) + wq*hi*(hry_k + flux_y)
+                        rhs_mom(1,I,k) = rhs_mom(1,I,k) - wq*hi*(hlx_k + flux_x)
+                        rhs_mom(2,I,k) = rhs_mom(2,I,k) - wq*hi*(hly_k + flux_y)
 
-                    end if
+                        if(er > 0) then
 
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
+
+                            I = intma(ir,jr,kr,er)
+
+                            rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*hi*(hrx_k + flux_x)
+                            rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*hi*(hry_k + flux_y)
+
+                        end if
+
+                    end do
                 end do
-            end do
 
+            end do
         end do
-        ! end do
     
     end subroutine Apply_layers_fluxes
-
 
     subroutine create_layers_volume_mass(dp_advec, uvdp_temp)
 
@@ -502,7 +463,6 @@ contains
         use mod_input, only: nlayers
         use mod_constants, only: gravity
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
-
 
         implicit none 
 
@@ -513,29 +473,29 @@ contains
         real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z, hi, dhde, dhdn
 
         integer :: k, e, iquad, jquad, kquad, l, n, m, I, Iq, ip
-        real, dimension(nlayers) :: var_u, var_v
+        real :: var_u, var_v
 
         dp_advec = 0.0
 
-        ! do k=1,nlayers
+        do k=1,nlayers
 
-        do Iq = 1, npoin_q
-                
-            wq = wjac(Iq)
+            do Iq = 1, npoin_q
+                    
+                wq = wjac(Iq)
 
-            var_u = uvdp_temp(1,Iq,:) 
-            var_v = uvdp_temp(2,Iq,:)
+                var_u = uvdp_temp(1,Iq,k) 
+                var_v = uvdp_temp(2,Iq,k)
 
-            do ip = 1, npts
+                do ip = 1, npts
 
-                I = indexq(Iq,ip)
+                    I = indexq(Iq,ip)
 
-                dp_advec(I,:) = dp_advec(I,:) + wq*(dpsidx(Iq,ip)*var_u + dpsidy(Iq,ip)*var_v)
+                    dp_advec(I,k) = dp_advec(I,k) + wq*(dpsidx(Iq,ip)*var_u + dpsidy(Iq,ip)*var_v)
 
+                end do
             end do
-        end do
 
-        ! end do !k
+        end do !k
 
     end subroutine create_layers_volume_mass
 
@@ -556,99 +516,100 @@ contains
         integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
         integer :: plane_ij, kl, kr, jquad, ngl_i, ngl_j, n, m
         real :: wq, nxl, nyl, hi
-        real, dimension(nq,nlayers) :: var_x, var_y
-        real, dimension(nlayers) :: qx_k, qy_k, flux, ul, vl, ur, vr, unl, unr
+        real, dimension(nq) :: var_x, var_y
+        real :: qx_k, qy_k, flux
         real :: h1_l, h1_r, h2_l, h2_r, claml1, clamr1, claml2, clamr2, clam1, clam2
         real :: claml, clamr, gprime, clam, Ucl, Ucr, hgl, hgr
 
         !gprime = gravity *alpha_mlswe(2)*(1.0/alpha_mlswe(2) - 1.0/alpha_mlswe(1))
     
-        ! do k = 1, nlayers
-        do iface = 1, nface
+        do k = 1, nlayers
+            do iface = 1, nface
 
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
+                !Store Left Side Variables
+                el = face(7,iface)
+                er = face(8,iface)
 
-            var_x = flux_edge(1,:,iface,:)
-            var_y = flux_edge(2,:,iface,:)
+                var_x = flux_edge(1,:,iface,k)
+                var_y = flux_edge(2,:,iface,k)
 
-            do iquad = 1, nq
+                do iquad = 1, nq
 
-                wq = jac_faceq(iquad,1,iface)
+                    wq = jac_faceq(iquad,1,iface)
 
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
+                    nxl = normal_vector_q(1,iquad,1,iface)
+                    nyl = normal_vector_q(2,iquad,1,iface)
 
-                qx_k = var_x(iquad,:);  qy_k = var_y(iquad,:)
+                    qx_k = var_x(iquad);  qy_k = var_y(iquad)
 
-                flux(:) = nxl*qx_k(:) + nyl*qy_k(:)
+                    flux = nxl*qx_k + nyl*qy_k
 
-                do n = 1, ngl
+                    do n = 1, ngl
 
-                    hi = psiq(n,iquad)
-                    
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
+                        hi = psiq(n,iquad)
+                        
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
 
-                    I = intma(il,jl,kl,el)
+                        I = intma(il,jl,kl,el)
 
-                    dp_advec(I,:) = dp_advec(I,:) - wq*hi*flux
+                        dp_advec(I,k) = dp_advec(I,k) - wq*hi*flux
 
-                    if(er > 0) then
+                        if(er > 0) then
 
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
 
-                        I = intma(ir,jr,kr,er)
+                            I = intma(ir,jr,kr,er)
 
-                        dp_advec(I,:) = dp_advec(I,:) + wq*hi*flux
+                            dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
 
-                    end if
+                        end if
 
+                    end do
                 end do
-            end do
 
+            end do
         end do
-        ! end do
     
     end subroutine create_layer_mass_flux
 
 
-    subroutine create_rhs_btp_dynamics_volume(rhs_mom, H, qb, Quu, Quv, Qvv, tau_bot)
+    subroutine create_rhs_btp_dynamics_volume(rhs_mom, qb)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
         use mod_constants, only: gravity
         use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad
-
+        use mod_variables, only: Quu, Quv, Qvv, tau_bot, H
 
         implicit none 
 
-        real, dimension(npoin_q), intent(in) :: H, Quu, Qvv, Quv
         real, dimension(4,npoin_q), intent(in) :: qb
-        real, dimension(2, npoin_q), intent(in) :: tau_bot
-
         real, dimension(2,npoin), intent(out) :: rhs_mom
 
-        real, dimension(npoin_q) :: stress_u, stress_v, pb_x, pb_y
+        real :: source_x, source_y, Hq, quux, quvxy, qvvy
 
-        real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z, u_cori, v_cori, Hq, var_uu, var_uv, var_vu, var_vv, hi, &
-                h_e, h_n, dhdx, dhdy, u_mom, v_mom, h_c
+        real :: wq, hi, dhdx, dhdy
 
-        integer :: k, e, iquad, jquad, kquad, l, n, m, I, Iq, ip
+        integer :: I, Iq, ip
 
         rhs_mom = 0.0
 
-        stress_u(:) = gravity*(tau_wind(1,:) - tau_bot(1,:))
-        stress_v(:) = gravity*(tau_wind(2,:) - tau_bot(2,:))
-
-        pb_x(:) = gravity*qb(1,:)*grad_zbot_quad(1,:)
-        pb_y(:) = gravity*qb(1,:)*grad_zbot_quad(2,:)
-
         do Iq = 1, npoin_q
+
+            source_x = gravity*(tau_wind(1,Iq) - tau_bot(1,Iq)) - &
+                        gravity*qb(1,Iq)*grad_zbot_quad(1,Iq)
+
+            source_y = gravity*(tau_wind(2,Iq) - tau_bot(2,Iq)) - &
+                        gravity*qb(1,Iq)*grad_zbot_quad(2,Iq)
+
+            Hq = H(Iq)
+            quux = Quu(Iq)
+            quvxy = Quv(Iq)
+            qvvy = Qvv(Iq)
 
             wq = wjac(Iq)
 
@@ -658,58 +619,38 @@ contains
 
                 hi = psih(Iq,ip)
 
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*hi*(stress_u(Iq) - pb_x(Iq))
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*hi*(stress_v(Iq) - pb_y(Iq))
-
                 !Xi derivatives
                 dhdx = dpsidx(Iq,ip)
                 !Eta derivatives
                 dhdy = dpsidy(Iq,ip)
 
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*dhdx*H(Iq)
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*dhdy*H(Iq)
-
-                u_mom = Quu(Iq)*dhdx + Quv(Iq)*dhdy
-                v_mom = Quv(Iq)*dhdx + Qvv(Iq)*dhdy
-
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*u_mom
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*v_mom
+                rhs_mom(1,I) = rhs_mom(1,I) + wq*(hi*source_x + dhdx*Hq + quux*dhdx + quvxy*dhdy)
+                rhs_mom(2,I) = rhs_mom(2,I) + wq*(hi*source_y + dhdy*Hq + quvxy*dhdx + qvvy*dhdy)
 
             end do
         end do
 
     end subroutine create_rhs_btp_dynamics_volume
 
-    subroutine create_rhs_btp_dynamics_volume_new(rhs_mom, H, qb, Quu, Quv, Qvv, tau_bot, btp_mass_flux)
+    subroutine create_rhs_btp_dynamics_volume_new(rhs_mom,qb)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
         use mod_constants, only: gravity
         use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad
-
+        use mod_variables, only: btp_mass_flux, tau_bot, H, Quu, Quv, Qvv
 
         implicit none 
 
-        real, dimension(npoin_q), intent(in) :: H, Quu, Qvv, Quv
         real, dimension(4,npoin_q), intent(in) :: qb
-        real, dimension(2, npoin_q), intent(in) :: tau_bot, btp_mass_flux
-
         real, dimension(3,npoin), intent(out) :: rhs_mom
 
-        real, dimension(npoin_q) :: stress_u, stress_v, pb_x, pb_y
+        real :: source_x, source_y, Hq, quux, quvxy, qvvy
+        real :: wq, hi, dhdx, dhdy, var_u, var_v
 
-        real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z, u_cori, v_cori, Hq, var_uu, var_uv, var_vu, var_vv, hi, &
-                h_e, h_n, dhdx, dhdy, u_mom, v_mom, h_c, var_u, var_v
-
-        integer :: k, e, iquad, jquad, kquad, l, n, m, I, Iq, ip
+        integer :: I, Iq, ip
 
         rhs_mom = 0.0
-
-        stress_u(:) = gravity*(tau_wind(1,:) - tau_bot(1,:))
-        stress_v(:) = gravity*(tau_wind(2,:) - tau_bot(2,:))
-
-        pb_x(:) = gravity*qb(1,:)*grad_zbot_quad(1,:)
-        pb_y(:) = gravity*qb(1,:)*grad_zbot_quad(2,:)
 
         do Iq = 1, npoin_q
 
@@ -717,28 +658,30 @@ contains
             var_u = btp_mass_flux(1,Iq)
             var_v = btp_mass_flux(2,Iq)
 
+            source_x = gravity*(tau_wind(1,Iq) - tau_bot(1,Iq)) - &
+                        gravity*qb(1,Iq)*grad_zbot_quad(1,Iq)
+
+            source_y = gravity*(tau_wind(2,Iq) - tau_bot(2,Iq)) - &
+                        gravity*qb(1,Iq)*grad_zbot_quad(2,Iq)
+
+            Hq = H(Iq)
+            quux = Quu(Iq)
+            quvxy = Quv(Iq)
+            qvvy = Qvv(Iq)
+
             do ip = 1,npts
 
                 I = indexq(Iq,ip)
 
                 hi = psih(Iq,ip)
 
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*hi*(stress_u(Iq) - pb_x(Iq))
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*hi*(stress_v(Iq) - pb_y(Iq))
-
                 !Xi derivatives
                 dhdx = dpsidx(Iq,ip)
                 !Eta derivatives
                 dhdy = dpsidy(Iq,ip)
 
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*dhdx*H(Iq)
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*dhdy*H(Iq)
-
-                u_mom = Quu(Iq)*dhdx + Quv(Iq)*dhdy
-                v_mom = Quv(Iq)*dhdx + Qvv(Iq)*dhdy
-
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*u_mom
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*v_mom
+                rhs_mom(1,I) = rhs_mom(1,I) + wq*(hi*source_x + dhdx*Hq + quux*dhdx + quvxy*dhdy)
+                rhs_mom(2,I) = rhs_mom(2,I) + wq*(hi*source_y + dhdy*Hq + quvxy*dhdx + qvvy*dhdy)
 
                 rhs_mom(3,I) = rhs_mom(3,I) + wq*(dhdx*var_u + dhdy*var_v)
 
@@ -747,36 +690,25 @@ contains
 
     end subroutine create_rhs_btp_dynamics_volume_new
 
-    subroutine create_rhs_btp_dynamics_volume_new1(rhs_mom, H, qb, Quu, Quv, Qvv, tau_bot, btp_mass_flux)
+    subroutine create_rhs_btp_dynamics_volume_new1(rhs_mom, qb)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
         use mod_constants, only: gravity
         use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad
-
+        use mod_variables, only: btp_mass_flux, tau_bot, H, Quu, Quv, Qvv
 
         implicit none 
 
-        real, dimension(npoin_q), intent(in) :: H, Quu, Qvv, Quv
         real, dimension(4,npoin_q), intent(in) :: qb
-        real, dimension(2, npoin_q), intent(in) :: tau_bot, btp_mass_flux
-
         real, dimension(3,npoin), intent(out) :: rhs_mom
 
-        real, dimension(npoin_q) :: stress_u, stress_v, pb_x, pb_y
+        real :: source_x, source_y, Hq, quux, quvxy, qvvy
+        real :: wq, hi, dhdx, dhdy, var_u, var_v
 
-        real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z, u_cori, v_cori, Hq, var_uu, var_uv, var_vu, var_vv, hi, &
-                h_e, h_n, dhdx, dhdy, u_mom, v_mom, h_c, var_u, var_v
-
-        integer :: k, e, iquad, jquad, kquad, l, n, m, I, Iq, ip
+        integer :: I, Iq, ip
 
         rhs_mom = 0.0
-
-        stress_u(:) = gravity*(tau_wind(1,:) - tau_bot(1,:))
-        stress_v(:) = gravity*(tau_wind(2,:) - tau_bot(2,:))
-
-        pb_x(:) = gravity*qb(1,:)*grad_zbot_quad(1,:)
-        pb_y(:) = gravity*qb(1,:)*grad_zbot_quad(2,:)
 
         do Iq = 1, npoin_q
 
@@ -784,8 +716,16 @@ contains
             var_u = btp_mass_flux(1,Iq)
             var_v = btp_mass_flux(2,Iq)
 
-            u_cori = coriolis_quad(Iq)*qb(4,Iq)
-            v_cori = -coriolis_quad(Iq)*qb(3,Iq)
+            source_x = coriolis_quad(Iq)*qb(4,Iq) + gravity*(tau_wind(1,Iq) - tau_bot(1,Iq)) - &
+                        gravity*qb(1,Iq)*grad_zbot_quad(1,Iq)
+
+            source_y = -coriolis_quad(Iq)*qb(3,Iq) + gravity*(tau_wind(2,Iq) - tau_bot(2,Iq)) - &
+                        gravity*qb(1,Iq)*grad_zbot_quad(2,Iq)
+
+            Hq = H(Iq)
+            quux = Quu(Iq)
+            quvxy = Quv(Iq)
+            qvvy = Qvv(Iq)
 
             do ip = 1,npts
 
@@ -793,22 +733,13 @@ contains
 
                 hi = psih(Iq,ip)
 
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*hi*(stress_u(Iq) - pb_x(Iq) + u_cori)
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*hi*(stress_v(Iq) - pb_y(Iq) + v_cori)
-
                 !Xi derivatives
                 dhdx = dpsidx(Iq,ip)
                 !Eta derivatives
                 dhdy = dpsidy(Iq,ip)
 
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*dhdx*H(Iq)
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*dhdy*H(Iq)
-
-                u_mom = Quu(Iq)*dhdx + Quv(Iq)*dhdy
-                v_mom = Quv(Iq)*dhdx + Qvv(Iq)*dhdy
-
-                rhs_mom(1,I) = rhs_mom(1,I) + wq*u_mom
-                rhs_mom(2,I) = rhs_mom(2,I) + wq*v_mom
+                rhs_mom(1,I) = rhs_mom(1,I) + wq*(hi*source_x + dhdx*Hq + quux*dhdx + quvxy*dhdy)
+                rhs_mom(2,I) = rhs_mom(2,I) + wq*(hi*source_y + dhdy*Hq + quvxy*dhdx + qvvy*dhdy)
 
                 rhs_mom(3,I) = rhs_mom(3,I) + wq*(dhdx*var_u + dhdy*var_v)
 
@@ -817,7 +748,7 @@ contains
 
     end subroutine create_rhs_btp_dynamics_volume_new1
 
-    subroutine Apply_btp_fluxes(rhs_mom,H_face,Qu_face,Qv_face,qb_face)
+    subroutine Apply_btp_fluxes(rhs_mom,qb_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
@@ -825,12 +756,11 @@ contains
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_constants, only: gravity
         use mod_initial, only: alpha_mlswe, coeff_mass_pbpert_LR, pbprime_face
+        use mod_variables, only: H_face,Qu_face,Qv_face
 
         implicit none
 
         real, dimension(2, npoin), intent(inout)  :: rhs_mom
-        real, dimension(2, nq, nface), intent(in) :: Qu_face, Qv_face
-        real, dimension(nq, nface), intent(in) :: H_face
         real, dimension(4, 2, nq, nface), intent(in) :: qb_face
     
         integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, nq_i, nq_j
@@ -916,7 +846,7 @@ contains
     
     end subroutine Apply_btp_fluxes
 
-    subroutine Apply_btp_fluxes_new(rhs_mom,H_face,Qu_face,Qv_face,qb_face, flux_edge)
+    subroutine Apply_btp_fluxes_new(rhs_mom,qb_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
@@ -924,12 +854,11 @@ contains
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_constants, only: gravity
         use mod_initial, only: alpha_mlswe, coeff_mass_pbpert_LR, pbprime_face
+        use mod_variables, only: H_face,Qu_face,Qv_face,flux_edge
 
         implicit none
 
         real, dimension(3, npoin), intent(inout)  :: rhs_mom
-        real, dimension(2, nq, nface), intent(in) :: Qu_face, Qv_face, flux_edge
-        real, dimension(nq, nface), intent(in) :: H_face
         real, dimension(4, 2, nq, nface), intent(in) :: qb_face
     
         integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, nq_i, nq_j
@@ -1023,20 +952,16 @@ contains
     
     end subroutine Apply_btp_fluxes_new 
 
-    subroutine create_rhs_btp_dynamics_volume_mass(pb_advec, btp_mass_flux)
+    subroutine create_rhs_btp_dynamics_volume_mass(pb_advec)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
-
         use mod_basis, only: npts
-
         use mod_constants, only: gravity
-
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
-
+        use mod_variables, only: btp_mass_flux
 
         implicit none 
 
-        real, dimension(2, npoin_q), intent(in) :: btp_mass_flux
         real, dimension(npoin), intent(out) :: pb_advec
 
 
@@ -1065,16 +990,16 @@ contains
 
     end subroutine create_rhs_btp_dynamics_volume_mass
 
-    subroutine Apply_btp_flux_mass(pb_advec, flux_edge)
+    subroutine Apply_btp_flux_mass(pb_advec)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
+        use mod_variables, only: flux_edge
 
         implicit none
 
         real, dimension(npoin), intent(inout) :: pb_advec
-        real, dimension(2, nq, nface), intent(in) :: flux_edge
     
         integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
         integer :: plane_ij, kl, kr, jquad, ngl_i, ngl_j, n, m

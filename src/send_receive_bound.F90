@@ -107,9 +107,9 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
 
 end subroutine unpack_data_dg_general_df
 
-subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,nvarb,nlayers)
+subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,nvarb,nlayers,nq)
 
-    use mod_basis, only: nq, FACE_CHILDREN
+    use mod_basis, only: FACE_CHILDREN
 
     use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
 
@@ -122,7 +122,7 @@ subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,n
     !Global Variables
     real, dimension(nvarb,nq,nboun,nlayers), intent(out) :: q_send,q_recv
     real, dimension(nvarb*nq*nboun*nlayers), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nvarb,nlayers
+    integer, intent(in) :: nvarb,nlayers,nq
 
     !Local Variables
     integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
@@ -448,9 +448,9 @@ subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
   
 end subroutine pack_data_dg_quad_lap
 
-subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers)
+subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers,nq)
   
-    use mod_basis, only: ngl, FACE_CHILDREN, nq
+    use mod_basis, only: FACE_CHILDREN
 
     use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
 
@@ -463,7 +463,7 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers)
     !Global Variables
     real, intent(out) :: q_send(nvarb*nq*nboun*nlayers)
     real, intent(in) :: q_face(nvarb,2,nq,nface,nlayers)
-    integer, intent(in) :: nvarb, nlayers
+    integer, intent(in) :: nvarb, nlayers, nq
 
     !Local Variables
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -877,9 +877,7 @@ subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
 
 end subroutine send_bound_dg_general_df
 
-subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nreq,ireq,status)
-
-    use mod_basis, only: nq
+subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nq,nreq,ireq,status)
 
     use mod_face, only: face_send
 
@@ -901,7 +899,7 @@ subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nr
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*num_nbh)
-    integer, intent(in) :: nvarb, nlayers
+    integer, intent(in) :: nvarb, nlayers, nq
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp

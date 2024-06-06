@@ -23,7 +23,7 @@ subroutine create_normals(nv,jac_face,face,nface)
 
     use mod_input, only: geometry_type
 
-    use mod_interface, only: compute_local_gradient_v3
+    use mod_gradient, only: compute_local_gradient_v3
 
     implicit none
 

@@ -61,10 +61,10 @@
 <li class="toctree-l1"><a class="reference internal" href="installation.html">2. Installation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="directory.html">3. h-NUMO Directory Structure</a></li>
 <li class="toctree-l1"><a class="reference internal" href="running.html">4. Running h-NUMO</a></li>
-<li class="toctree-l1"><a class="reference internal" href="test.html">5. Test cases (benchmarking)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="test.html">5. Examples</a></li>
 <li class="toctree-l1"><a class="reference internal" href="bc_time_method.html">6. Boundary conditions and time intergration methods</a></li>
-<li class="toctree-l1"><a class="reference internal" href="results.html">7. Some numerical results</a></li>
-<li class="toctree-l1"><a class="reference internal" href="papers.html">8. Publications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="papers.html">7. Publications</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ref.html">8. References</a></li>
 </ul>
 
         </div>
@@ -157,7 +157,7 @@
      H(\mathbf{x},t) = \sum_{k=1}^{N_l} H_k(\mathbf{x},t).
  \end{equation}</div><section id="discontinuous-galerkin-discretisation">
 <h3><span class="section-number">1.3.1. </span>Discontinuous Galerkin discretisation<a class="headerlink" href="#discontinuous-galerkin-discretisation" title="Link to this heading">¶</a></h3>
-<p>We follow the DG method in Giraldo (2020) to discretize the split layered system.
+<p>We follow the DG method in <span id="id1">[<a class="reference internal" href="ref.html#id5" title="Francis X Giraldo. An Introduction to Element-Based Galerkin Methods on Tensor-Product Bases: Analysis, Algorithms, and Applications. Volume 24. Springer Nature, Cham, Switzerland, 2020.">1</a>]</span> to discretize the split layered system.
 We divide the computational domain <span class="math notranslate nohighlight">\(\Omega \in \mathbb{R}^2\)</span> into <span class="math notranslate nohighlight">\(N_e\)</span> non-overlapping quadrilateral elements</p>
 <div class="math notranslate nohighlight" id="equation-numo-model-10">
 \begin{equation}

@@ -15,7 +15,6 @@ A typical copy of NUMA consists of the following:
 | :bash:`input_files`
 | :bash:`lib`
 | :bash:`make_depend.pl`
-| :bash:`Metis`
 | :bash:`output`
 | :bash:`run_scripts`
 | :bash:`src`
@@ -47,11 +46,6 @@ input_files
 
 This directory contains a collection of the input files that may be used to run h-NUMO with specific case numbers. All of the files in this directory should work exactly as they are. Simply copy one of these files to the directory you wish to run from and rename the file to ``numo3d.in``.
 
-Metis
----------
-
-This directory contains the `METIS libraries <http://glaros.dtc.umn.edu/gkhome/views/metis>`_ that are used in h-NUMO. Note that Metis version 5.1.0 has been compiled. You may have to generate your own METIS libraries.
-
 lib
 -----
 
@@ -75,7 +69,5 @@ This is the heart of the code and contains all of the source files actively used
 p4est
 ------
 
-The p4est library :cite:p:`BursteddeWilcoxGhattas11` was used for the data structures and algorithms for parallel mesh generation, partitioning, and load balancing in h-NUMO.
+h-NUMO uses the p4est library :cite:p:`BursteddeWilcoxGhattas11` for the data structures and algorithms for parallel mesh generation, partitioning, and load balancing.
 
-
-.. bibliography:: refs.bib

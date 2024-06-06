@@ -4,14 +4,10 @@
 !>           Department of Applied Mathematics
 !>           Naval Postgraduate School
 !>           Monterey, CA 93943-5216
-!>@date 11 September 2009  James F. Kelly
-!> Generalized to 3D
-!> Combined to do both Cube and Sphere domains.
 !>@ modified by Yao Gahounzo 
 !>      Computing PhD 
 !       Boise State University
 !       Date: April 03, 2023
-!       remove SEMI_ANALYTIC_METRICS and is_sphere flag
 !----------------------------------------------------------------------!
 subroutine metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,xjac)
 
@@ -19,7 +15,7 @@ subroutine metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,
  
     use mod_grid, only: intma, coord, nelem, intma_dg_quad
 
-    use mod_interface, only: compute_local_gradient_v3, compute_local_gradient_quad_v3
+    use mod_gradient, only: compute_local_gradient_v3, compute_local_gradient_quad_v3
 
     implicit none
 

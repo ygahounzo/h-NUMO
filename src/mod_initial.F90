@@ -4,9 +4,10 @@
 !> Department of Applied Mathematics
 !> Naval Postgraduate School
 !> Monterey, CA 93943-5216
-!>
-!>@date S. Marras: initialize q_* arrays to zero after allocation.
-!>@date S. Marras: nvar_adiffusio
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 03, 2023
 !----------------------------------------------------------------------!
 module mod_initial
 
@@ -46,7 +47,7 @@ module mod_initial
         coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
         coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, grad_zbot_quad, &
         psih, dpsidx,dpsidy, indexq, wjac, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
-        ssprk_a, ssprk_beta
+        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df
 
     private
 
@@ -70,9 +71,9 @@ module mod_initial
     real, dimension(:,:,:), allocatable :: zbot_face
     real, dimension(:,:), allocatable :: grad_zbot_quad
 
-    real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a
-    integer, dimension(:,:), allocatable :: indexq
-    real, dimension(:), allocatable :: wjac, ssprk_beta
+    real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psih_df,dpsidx_df,dpsidy_df
+    integer, dimension(:,:), allocatable :: indexq, index_df
+    real, dimension(:), allocatable :: wjac, ssprk_beta, wjac_df
 
     integer :: nvar, nvart, nvar_diag
     integer :: nrhs_mxm, N_btp
@@ -133,7 +134,7 @@ module mod_initial
             psih(npoin_q,npts), dpsidx(npoin_q,npts), dpsidy(npoin_q,npts), indexq(npoin_q,npts), wjac(npoin_q), &
             fdt_btp(npoin), fdt2_btp(npoin), a_btp(npoin), b_btp(npoin), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
             b_bcl(npoin), a_bclp(npoin), b_bclp(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
-            ssprk_a(kstages,3), ssprk_beta(kstages))
+            ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin),psih_df(npoin,npts),dpsidx_df(npoin,npts),dpsidy_df(npoin,npts),index_df(npoin,npts))
 
             q_mlswe_init = 0.0
             qprime_mlswe_init = 0.0
@@ -154,7 +155,7 @@ module mod_initial
     
         if(is_mlswe) then
 
-            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq)
+            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
 
             call initial_conditions_mlswe(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
                 qprime_face_mlswe_init, pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &

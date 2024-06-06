@@ -1,4 +1,10 @@
-
+!--------------------------------------------------------------------------
+!@brief This module contains the interpolation from quad to nodal points.
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 02, 2023
+!-------------------------------------------------------------------------
 module mod_Tensorproduct
 
     use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz

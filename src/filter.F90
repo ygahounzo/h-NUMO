@@ -15,7 +15,7 @@ subroutine filter(q)
 
     use mod_input, only: filter_tracers_flg, space_method
 
-    use mod_interface, only: compute_local_gradient_filter_v3
+    use mod_gradient, only: compute_local_gradient_filter_v3
 
     use mod_metrics, only: jac, massinv
   
@@ -110,7 +110,7 @@ subroutine filter_dss(q)
 
     use mod_input, only: filter_tracers_flg, space_method
 
-    use mod_interface, only: compute_local_gradient_filter_v3
+    use mod_gradient, only: compute_local_gradient_filter_v3
 
     use mod_metrics, only: jac, massinv
   

@@ -1,3 +1,11 @@
+! ===========================================================================================================================
+! This module contains the routines for the barotropic-baroclinic splitting
+!   Author: Yao Gahounzo 
+!   Computing PhD 
+!   Boise State University
+!   Date: March 27, 2023
+! ==========================================================================================================================
+
 module mod_barotropic_terms
 
     
@@ -9,17 +17,14 @@ module mod_barotropic_terms
 
     public :: btp_evaluate_mom, &
                 btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, btp_mass_advection_terms, &
-                btp_bcl_coeffs, btp_mom_boundary_df, &
-                limiter_Positivity_Preserving_mom, limiter_Positivity_Preserving_mass, evaluate_quprime, &
-                compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, btp_mom_boundary, &
-                evaluate_quprime2, evaluate_visc_terms, restart_mlswe_variales, restart_mlswe, massinv_rhs, evaluate_quprime1, &
-                compute_gradient_uv, compute_btp_mom_terms
+                btp_bcl_coeffs, btp_mom_boundary_df, evaluate_quprime, &
+                compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, &
+                evaluate_quprime2, evaluate_visc_terms, restart_mlswe_variales, restart_mlswe, &
+                compute_gradient_uv, compute_btp_mom_terms, compute_gradient_uv_v1, btp_bcl_grad_coeffs
 
     contains
 
-    subroutine compute_btp_terms(Quu,Qvv,Quv,Qu_face,Qv_face, H, H_face,tau_bot, one_plus_eta,one_plus_eta_edge_2, one_plus_eta_df, &
-        one_plus_eta_face, flux_edge, btp_mass_flux, qb,Q_uu_dp,Q_uv_dp,Q_vv_dp,qb_face,Q_uu_dp_edge,Q_uv_dp_edge,Q_vv_dp_edge, qprime, &
-        H_bcl, H_bcl_edge, qb_df)
+    subroutine compute_btp_terms(qb,qb_face, qprime, qb_df)
 
         use mod_grid, only: npoin_q, nface, npoin, face, intma_dg_quad
         use mod_basis, only: nq
@@ -31,20 +36,16 @@ module mod_barotropic_terms
                                 coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
         use mod_constants, only: gravity
 
+        use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
+        use mod_variables, only: Qu_face, Qv_face, one_plus_eta_face, flux_edge, Quu, Qvv, Quv, H, one_plus_eta, &
+                                    one_plus_eta_df, tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2
+
         implicit none
 
-        real, dimension(npoin_q), intent(in) :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real, dimension(2,nq,nface), intent(in) :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(4,2,nq,nface), intent(in) :: qb_face
         real, dimension(4,npoin_q), intent(in) :: qb
-
-        real, dimension(2,nq,nface), intent(out) :: Qu_face, Qv_face, one_plus_eta_face, flux_edge
-        real, dimension(npoin_q), intent(out) :: Quu, Qvv, Quv, H, one_plus_eta
-        real, dimension(npoin), intent(out) :: one_plus_eta_df
-        real, dimension(2,npoin_q), intent(out) :: tau_bot, btp_mass_flux
-        real, dimension(nq,nface), intent(out) :: H_face, one_plus_eta_edge_2
 
         integer :: iface, iquad, Iq
         real, dimension(nq) :: ul, ur, vl, vr, upl, upr, vpl, vpr
@@ -201,9 +202,7 @@ module mod_barotropic_terms
 
     end subroutine compute_btp_terms
 
-    subroutine compute_btp_mom_terms(Quu,Qvv,Quv,Qu_face,Qv_face, H, H_face,tau_bot, one_plus_eta,one_plus_eta_edge_2, one_plus_eta_df, &
-        one_plus_eta_face, qb,Q_uu_dp,Q_uv_dp,Q_vv_dp,qb_face,Q_uu_dp_edge,Q_uv_dp_edge,Q_vv_dp_edge, qprime, &
-        H_bcl, H_bcl_edge, qb_df)
+    subroutine compute_btp_mom_terms(qb,qb_face,qprime,qb_df)
 
         use mod_grid, only: npoin_q, nface, npoin, face, intma_dg_quad
         use mod_basis, only: nq
@@ -215,20 +214,16 @@ module mod_barotropic_terms
                                 coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
         use mod_constants, only: gravity
 
+        use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
+        use mod_variables, only: Qu_face, Qv_face, one_plus_eta_face, Quu, Qvv, Quv, H, one_plus_eta, &
+                                    one_plus_eta_df, tau_bot, H_face, one_plus_eta_edge_2
+
         implicit none
 
-        real, dimension(npoin_q), intent(in) :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real, dimension(2,nq,nface), intent(in) :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(4,2,nq,nface), intent(in) :: qb_face
         real, dimension(4,npoin_q), intent(in) :: qb
-
-        real, dimension(2,nq,nface), intent(out) :: Qu_face, Qv_face, one_plus_eta_face
-        real, dimension(npoin_q), intent(out) :: Quu, Qvv, Quv, H, one_plus_eta
-        real, dimension(npoin), intent(out) :: one_plus_eta_df
-        real, dimension(2,npoin_q), intent(out) :: tau_bot
-        real, dimension(nq,nface), intent(out) :: H_face, one_plus_eta_edge_2
 
         integer :: iface, iquad, Iq
         real, dimension(nq) :: ul, ur, vl, vr, upl, upr, vpl, vpr
@@ -372,18 +367,18 @@ module mod_barotropic_terms
 
     end subroutine compute_btp_mom_terms
 
-    subroutine btp_mass_advection_terms(flux_edge,qb_face)
+    subroutine btp_mass_advection_terms(qb_face)
 
         use mod_basis, only: nq
         use mod_grid, only: nface, mod_grid_get_face_nq, face
         use mod_face, only: normal_vector_q
         use mod_initial, only: coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
         use mod_face, only: imapl_q, imapr_q
+        use mod_variables, only: flux_edge
 
         implicit none
 
         real, intent(in) :: qb_face(4,2,nq,nface)
-        real, intent(out) :: flux_edge(2,nq,nface)
 
         integer :: iface, iquad, nq_i, nq_j, plane_ij, ilocl, il, jl ,kl, Iq, el, er
         real :: nxl, nyl, nxr, nyr, pbub_left, pbvb_left, pbpert_left, pbub_right, pbvb_right, pbpert_right
@@ -504,8 +499,6 @@ module mod_barotropic_terms
                 stop
             end if
         end do
-
-         call btp_mom_boundary(qb)
     
     end subroutine btp_evaluate_mom
 
@@ -544,16 +537,14 @@ module mod_barotropic_terms
                 qb(4,Iq) = qb(4,Iq) + hi*qb_df(4,I)
                 
             end do
-        end do
 
-        qb(1,:) = qb(2,:) + pbprime(:)
+            qb(1,Iq) = qb(2,Iq) + pbprime(Iq)
+        end do
 
         if (any(qb(1,:) <= 0.0)) then
             write(*,*) 'Nonpositive depth in barotropic.m'
             stop
         end if
-
-        ! call btp_mom_boundary(qb)
     
     end subroutine btp_evaluate_mom_dp
     
@@ -816,206 +807,22 @@ module mod_barotropic_terms
 	    end do
       
     end subroutine btp_mom_boundary_df
+ 
 
-    subroutine btp_mom_boundary(qb)
-
-        use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl,nq
-        use mod_grid, only:  npoin_q, intma_dg_quad, nface, face,mod_grid_get_face_nq
-        use mod_initial, only: pbprime_face
-        use mod_face, only: imapl_q, imapr_q, normal_vector_q
-
-        implicit none
-
-        real, intent(inout) :: qb(4,npoin_q)
-
-        integer :: iface, ilr, iquad,jquad, m, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,plane_ij,nq_i,nq_j
-        integer :: bcflag
-        real :: nx, ny, unl, upnl
-
-      
-        do iface = 1, nface                  !i specifies the grid cell
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
-            if(er == -4) then
-
-                do iquad = 1, nq
-
-                    il=imapl_q(1,iquad,1,iface)
-                    jl=imapl_q(2,iquad,1,iface)
-                    kl=imapl_q(3,iquad,1,iface)
-                    I=intma_dg_quad(il,jl,kl,el)
-
-                    nx = normal_vector_q(1,iquad,1,iface)
-                    ny = normal_vector_q(2,iquad,1,iface)
-
-                    unl = qb(3,I)*nx + qb(4,I)*ny
-
-                    qb(3,I) = qb(3,I) - unl*nx
-                    qb(4,I) = qb(4,I) - unl*ny
-                    
-                end do
-            elseif(er == -2) then
-
-                do iquad = 1, nq
-
-                    il=imapl_q(1,iquad,1,iface)
-                    jl=imapl_q(2,iquad,1,iface)
-                    kl=imapl_q(3,iquad,1,iface)
-                    I=intma_dg_quad(il,jl,kl,el)
-
-                    qb(3,I) = 0.0
-                    qb(4,I) = 0.0
-                    
-                end do
-
-            end if
-
-      
-        end do
-      
-    end subroutine btp_mom_boundary
-
-    subroutine limiter_Positivity_Preserving_mass(qb_df)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
+    subroutine btp_bcl_coeffs(qprime,qprime_face)
         
-        implicit none
-
-        !global arrays
-        real, intent(inout) :: qb_df(npoin)
-
-        !local arrays
-        real, dimension(npts) :: qlocal, qlim
-        real :: theta, qmean, qmin
-        real :: eps, rho
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !Define Constants
-        eps=1.0e-13
-
-        !loop through elements
-        do e=1,nelem
-
-            !Store local DOFs and compute Mean
-            ii=0
-            do j=1,ngly
-                do i=1,nglx
-                    Ip = intma(i,j,1,e)
-                    ii=ii+1
-                    inodes(ii) = Ip
-                    !Store Primitive Variables
-                    qlocal(ii) = qb_df(Ip)
-                end do !i
-            end do !j
-
-            qmean = sum(qlocal(:)) / npts !area of canonical element in 3D (4 in 2D)
-
-            !Compute Weight
-            qmin = minval(qlocal(:))
-            theta = min(1.0, qmean/(abs(qmean - qmin)  + eps ))
-
-            !Apply Weighted combination of Mean Value and High-Order Solution
-            do ii=1,npts
-                qlim(ii) = qmean + abs(theta)*(qlocal(ii) - qmean)
-                if (qmin == 0.0 .and. qmean == 0.0) qlim(ii) = 0.0
-            end do !ii
-
-            !Check for Positivity and Store Values
-            do ii=1,npts
-                Ip = inodes(ii)
-                ! qlim(ii) = max(0.0, qlim(ii))
-                qb_df(Ip) = qlim(ii) 
-            end do !ii
-
-        end do !e
-
-    end subroutine limiter_Positivity_Preserving_mass
-
-    subroutine limiter_Positivity_Preserving_mom(qb_df)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
-
-        implicit none
-
-        !global arrays
-        real, intent(inout) :: qb_df(3,npoin)
-
-        !local arrays
-        real, dimension(3,npts) :: qlocal, qlim
-        real, dimension(3) :: qmean, qmin
-        real :: eps, rho, theta
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !Define Constants
-        eps=1.0e-13
-
-        !loop through elements
-        do e = 1,nelem
-
-            !Store local DOFs and compute Mean
-            ii=0
-            do j=1,ngly
-                do i=1,nglx
-                    Ip = intma(i,j,1,e)
-                    ii=ii+1
-                    inodes(ii) = Ip
-                    !Store Primitive Variables
-                    do m = 1,3
-                        qlocal(m,ii) = qb_df(m,Ip)
-                    end do
-                end do !i
-            end do !j
-
-            qmean(:) = sum(qlocal(:,:),dim=2) / npts !area of canonical element in 3D (4 in 2D)
-
-            !Compute Weight
-            do m = 1,3
-                qmin(m) = minval(qlocal(m,:))
-            end do
-
-            theta = min(1.0, qmean(1)/(abs(qmean(1) - qmin(1)) + eps))
-
-            !Apply Weighted combination of Mean Value and High-Order Solution
-            do ii=1,npts
-                do m = 2,3
-                    qlim(m,ii) = qmean(m) + abs(theta)*(qlocal(m,ii) - qmean(m))
-                    if (qmin(m) == 0.0 .and. qmean(m) == 0.0) qlim(m,ii) = 0.0d0
-                end do
-            end do !ii
-
-            !Check for Positivity and Store Values
-            do ii=1,npts
-                Ip = inodes(ii)
-                do m = 2,3
-                    qb_df(m,Ip) = qlim(m,ii) 
-                end do
-            end do !ii
-
-        end do !e
-
-    end subroutine limiter_Positivity_Preserving_mom       
-
-    subroutine btp_bcl_coeffs(Q_uu_dp,Q_uv_dp,H_bcl,Q_vv_dp,Q_uu_dp_edge,Q_uv_dp_edge,Q_vv_dp_edge,H_bcl_edge, qprime,qprime_face)
-
         use mod_grid, only: npoin_q, nface, npoin
         use mod_input, only: nlayers, dpprime_visc_min
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_initial, only: alpha_mlswe
 
         use mod_Tensorproduct, only: compute_gradient_quad, interpolate_layer_from_quad_to_node_1d
+        use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, H_bcl_edge, &
+                                    Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge
         
         implicit none
 
         real, intent(in)  :: qprime(3,npoin_q,nlayers), qprime_face(3,2,nq,nface,nlayers)
-
-        real, dimension(npoin_q), intent(out) :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
-        real, dimension(2,nq,nface), intent(out) :: H_bcl_edge
-        real, dimension(2,nq,nface), intent(out) :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge
         
         integer :: k, iface, Iq, iquad
         real, dimension(nq) :: left_uudp, right_uudp, left_uvdp
@@ -1030,6 +837,7 @@ module mod_barotropic_terms
         Q_uv_dp = 0.0
         Q_vv_dp = 0.0
         H_bcl = 0.0
+        H_bcl_edge = 0.0
 
         ! Compute Q_up_up_quad and Q_up_vp_quad at quadrature points.
 
@@ -1098,6 +906,138 @@ module mod_barotropic_terms
         end do
 
     end subroutine btp_bcl_coeffs
+
+
+    subroutine btp_bcl_grad_coeffs(qprime_df)
+        
+        use mod_grid, only: npoin_q, nface, npoin, face, intma
+        use mod_input, only: nlayers, dpprime_visc_min
+        use mod_basis, only: nqx, nqy, nqz, nq, ngl
+        use mod_initial, only: alpha_mlswe
+        use mod_variables, only: dpprime_visc,pbprime_visc,btp_dpp_graduv, btp_dpp_uvp, &
+                dpp_uvp, dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl, imapr, normal_vector
+
+        implicit none
+
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+
+        real, dimension(4, npoin) :: graduv
+
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, ivar
+        real, dimension(2,npoin) :: Uk
+        real :: un(nlayers), nx, ny
+
+        btp_dpp_graduv = 0.0
+        pbprime_visc = 0.0
+
+        do k = 1,nlayers
+
+            Uk = qprime_df(2:3,:,k)
+            
+            call compute_gradient_uv_v1(graduv, Uk)
+            
+            dpp_graduv(1,:,k) = dpprime_visc(:,k)*graduv(1,:)
+            dpp_graduv(2,:,k) = dpprime_visc(:,k)*graduv(2,:)
+            dpp_graduv(3,:,k) = dpprime_visc(:,k)*graduv(3,:)
+            dpp_graduv(4,:,k) = dpprime_visc(:,k)*graduv(4,:)
+
+            dpp_uvp(1,:,k) =  dpprime_visc(:,k)*qprime_df(2,:,k)
+            dpp_uvp(2,:,k) =  dpprime_visc(:,k)*qprime_df(3,:,k)
+
+            btp_dpp_graduv(:,:) = btp_dpp_graduv(:,:) + dpp_graduv(:,:,k)
+            pbprime_visc(:) =  pbprime_visc(:) + dpprime_visc(:,k)
+
+        end do
+
+        do iface=1,nface
+            !-------------------------------------
+            !Store Left and Right Side Variables
+            !-------------------------------------
+            iel=face(7,iface)
+            ier=face(8,iface)
+    
+            !----------------------------Left Element
+            do iquad = 1,ngl
+                !Get Pointers
+                il=imapl(1,iquad,1,iface)
+                jl=imapl(2,iquad,1,iface)
+                kl=imapl(3,iquad,1,iface)
+                Iq = intma(il,jl,kl,iel)
+
+                !Variables
+                graduv_dpp_face(1,1,iquad,iface,:) = dpp_graduv(1,Iq,:)
+                graduv_dpp_face(2,1,iquad,iface,:) = dpp_graduv(2,Iq,:)
+                graduv_dpp_face(3,1,iquad,iface,:) = dpp_graduv(3,Iq,:)
+                graduv_dpp_face(4,1,iquad,iface,:) = dpp_graduv(4,Iq,:)
+
+                graduv_dpp_face(5,1,iquad,iface,:) = dpprime_visc(Iq,:)
+
+                if (ier > 0 ) then
+
+                    !Get Pointers
+                    ir=imapr(1,iquad,1,iface)
+                    jr=imapr(2,iquad,1,iface)
+                    kr=imapr(3,iquad,1,iface)
+                    Iq=intma(ir,jr,kr,ier)
+
+                    !Variables
+                    graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:)
+                    graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:)
+                    graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:)
+                    graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:)
+
+                    graduv_dpp_face(5,2,iquad,iface,:) = dpprime_visc(Iq,:)
+
+                else
+                    !default values
+                    graduv_dpp_face(1,2,iquad,iface,:) = graduv_dpp_face(1,1,iquad,iface,:)
+                    graduv_dpp_face(2,2,iquad,iface,:) = graduv_dpp_face(2,1,iquad,iface,:)
+
+                    graduv_dpp_face(3,2,iquad,iface,:) = graduv_dpp_face(3,1,iquad,iface,:)
+                    graduv_dpp_face(4,2,iquad,iface,:) = graduv_dpp_face(4,1,iquad,iface,:)
+
+                    graduv_dpp_face(5,2,iquad,iface,:) = graduv_dpp_face(5,1,iquad,iface,:)
+
+                    if(ier == -4) then 
+                        nx = normal_vector(1,iquad,1,iface)
+                        ny = normal_vector(2,iquad,1,iface)
+
+                        un = dpp_graduv(1,Iq,:)*nx + dpp_graduv(2,Iq,:)*ny
+
+                        graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:) - 2.0*un*nx
+                        graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:) - 2.0*un*ny
+
+                        un = dpp_graduv(3,Iq,:)*nx + dpp_graduv(4,Iq,:)*ny
+
+                        graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:) - 2.0*un*nx
+                        graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:) - 2.0*un*ny
+
+                    end if 
+                end if
+            end do 
+
+        end do
+
+        call bcl_create_communicator(graduv_dpp_face,5,nlayers,ngl)
+
+        btp_graduv_dpp_face = 0.0
+
+        do iface=1,nface
+            do iquad = 1,ngl
+                
+                do k = 1,nlayers
+
+                    btp_graduv_dpp_face(:,1,iquad,iface) = btp_graduv_dpp_face(:,1,iquad,iface) + graduv_dpp_face(:,1,iquad,iface,k)
+
+                    btp_graduv_dpp_face(:,2,iquad,iface) = btp_graduv_dpp_face(:,2,iquad,iface) + graduv_dpp_face(:,2,iquad,iface,k)
+
+                end do 
+
+            end do 
+        end do 
+
+    end subroutine btp_bcl_grad_coeffs
 
     subroutine evaluate_quprime(quprime, qvprime, qp, qp_face)
 
@@ -1200,15 +1140,10 @@ module mod_barotropic_terms
             end do 
         end do
 
-        ! if(mass_exact) then 
-            ! call massinv_rhs(qu_df,2)
-            ! call massinv_rhs(qv_df,2)
-        ! else
-            qu_df(1,:) = massinv(:)*qu_df(1,:)
-            qu_df(2,:) = massinv(:)*qu_df(2,:)
-            qv_df(1,:) = massinv(:)*qv_df(1,:)
-            qv_df(2,:) = massinv(:)*qv_df(2,:)
-        ! end if
+        qu_df(1,:) = massinv(:)*qu_df(1,:)
+        qu_df(2,:) = massinv(:)*qu_df(2,:)
+        qv_df(1,:) = massinv(:)*qv_df(1,:)
+        qv_df(2,:) = massinv(:)*qv_df(2,:)
 
         do Iq = 1,npoin_q
             do ip = 1,npts
@@ -1453,278 +1388,6 @@ module mod_barotropic_terms
 
     end subroutine evaluate_quprime2
 
-    subroutine evaluate_quprime1(qprime1, qp, qp_face)
-
-        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face, intma, npoin
-        use mod_basis, only: npts, nq, ngl, psiq
-        use mod_metrics, only: massinv
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-
-        implicit none
-
-        real, dimension(2, npoin_q), intent(out) :: qprime1
-
-        real, dimension(npoin_q), intent(in) :: qp
-        real, dimension(2, nq, nface), intent(in) :: qp_face
-
-        real, dimension(2, npoin) :: qu_df
-
-        real :: nxl, nyl, dhdx, dhdy, wq, var_u, var_v, hi, um, vm
-        integer :: Iq, ip, I, iface, el, er, iquad, ir, jr, kr, il, jl, kl, n
-
-        qprime1 = 0.0
-        qu_df = 0.0
-
-        do Iq = 1,npoin_q
-            
-            wq = wjac(Iq)
-            var_u = qp(Iq)
-
-            do ip = 1, npts
-
-                I = indexq(Iq,ip)
-
-                !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
-                !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
-
-                qu_df(1,I) = qu_df(1,I) - wq*var_u*dhdx
-                qu_df(2,I) = qu_df(2,I) - wq*var_u*dhdy
-
-            end do
-        end do
-
-        do iface = 1,nface 
-
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do iquad = 1, nq
-
-                wq = jac_faceq(iquad,1,iface)
-
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
-
-                um = 0.5*(qp_face(1,iquad,iface) + qp_face(2,iquad,iface))
-
-                do n = 1, ngl
-
-                    hi = psiq(n,iquad)
-                    
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-
-                    I = intma(il,jl,kl,el)
-
-                    qu_df(1,I) = qu_df(1,I) + wq*hi*nxl*um
-                    qu_df(2,I) = qu_df(2,I) + wq*hi*nyl*um
-
-                    if(er > 0) then
-                            
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-
-                        I = intma(ir,jr,kr,er)
-
-                        qu_df(1,I) = qu_df(1,I) - wq*hi*nxl*um
-                        qu_df(2,I) = qu_df(2,I) - wq*hi*nyl*um
-
-                    end if
-
-                end do
-            end do 
-        end do
-
-        call massinv_rhs(qu_df,2)
-
-
-        do Iq = 1,npoin_q
-            do ip = 1,npts
-                
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
-                
-                qprime1(1,Iq) = qprime1(1,Iq) + hi*qu_df(1,I)
-                qprime1(2,Iq) = qprime1(2,Iq) + hi*qu_df(2,I)
-                
-            end do
-        end do
-
-
-    end subroutine evaluate_quprime1
-
-
-    ! subroutine btp_wet_dry(qb,qb_df,neg_pb_pos,neg_pb_pos_q)
-
-    !     use mod_grid, only: npoin, npoin_q
-    !     use mod_input, only: depth_dry
-    !     use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-    !     use mod_constants, only: gravity
-    
-    !     implicit none
-        
-    !     real, intent(inout) :: qb(6,npoin_q)
-    !     real, intent(inout) :: qb_df(6,npoin)
-    !     integer, dimension(npoin),intent(out) :: neg_pb_pos
-    !     integer, dimension(npoin_q),intent(out) :: neg_pb_pos_q
-
-    !     integer :: I, Iq
-    !     real :: h_limit, h, pb_limit
-    !     real :: theta, qmin 
-    !     real, dimension(3,npts) :: qlocal
-    !     real, dimension(3) :: qmean
-
-    !     !Define Constants
-    !     eps=1.0e-3
-
-    !     !loop through elements
-    !     do e=1,nelem
-
-    !         !Store local DOFs and compute Mean
-    !         ii=0
-    !         do j=1,ngly
-    !             do i=1,nglx
-    !                 Ip = intma(i,j,1,e)
-    !                 ii=ii+1
-    !                 inodes(ii) = Ip
-    !                 !Store Primitive Variables
-    !                 qlocal(1,ii) = qb_df(1,Ip)
-    !                 qlocal(2,ii) = qb_df(5,Ip)
-    !                 qlocal(3,ii) = qb_df(6,Ip)
-    !             end do !i
-    !         end do !j
-
-    !         !Compute Weight
-    !         qmin = minval(qlocal(1,:))
-
-    !         if(qmin < depth_dry) then 
-
-    !             qmean = sum(qlocal(:)) / npts !area of canonical element in 3D (4 in 2D)
-    !             if(qmean < depth_dry) then
-    !                 do ii=1,npts
-    !                     Ip = inodes(ii)
-    !                     qb_df(1,Ip) = (gravity/alpha_mlswe(nlayers)) * depth_dry
-    !                     qb_df(5:6,Ip) = 0.0
-    !                 end do !ii
-    !             else 
-
-    !                 theta = min(1.0, qmean/(qmean - qmin))
-
-    !                 !Apply Weighted combination of Mean Value and High-Order Solution
-    !                 do ii=1,npts
-    !                     Ip = inodes(ii)
-    !                     qb_df(1,Ip) = qmean(1) + theta*(qlocal(1,ii) - qmean(1))
-    !                     qb_df(5,Ip) = qmean(2) + theta*(qlocal(5,ii) - qmean(2))
-    !                     qb_df(6,Ip) = qmean(3) + theta*(qlocal(6,ii) - qmean(3))
-    !                 end do !ii
-    !             end if 
-    !         end if 
-
-    !     end do !e
-
-    !     qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
-
-    !     neg_pb_pos = 0
-    !     neg_pb_pos_q = 0
-
-    !     h_limit = 50.0
-    !     pb_limit = (gravity/sum(alpha_mlswe(:)))*h_limit
-
-    !     ! Compute the wetting and drying treatment for the barotropic
-
-    !     do I = 1,npoin
-    !         if(qb_df(1,I) < pb_limit) then 
-    !             neg_pb_pos(I) = 1
-    !             qb_df(1,I) = pb_limit
-    !             qb_df(2,I) = qb_df(1,I) - pbprime_df(I)
-    !             qb_df(3:6,I) = 0.0
-    !         end if
-    !     end do
-
-    !     do Iq = 1,npoin_q
-    !         if (qb(1,Iq) < pb_limit) then
-    !             neg_pb_pos_q(I) = 1
-    !             qb(1,Iq) = pb_limit
-    !             qb(2,Iq) = qb(1,Iq) - pbprime(Iq)
-    !             qb(3:6,Iq) = 0.0
-    !         end if
-    !     end do
-    
-    ! end subroutine btp_wet_dry
-
-    subroutine btp_wet_dry_mom(qb,qb_df,neg_pb_pos,neg_pb_pos_q)
-
-        use mod_grid, only: npoin, npoin_q
-
-        use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-        use mod_constants, only: gravity
-    
-        implicit none
-        
-        real, intent(inout) :: qb(6,npoin_q)
-        real, intent(inout) :: qb_df(6,npoin)
-        integer, dimension(npoin),intent(in) :: neg_pb_pos
-        integer, dimension(npoin_q),intent(in) :: neg_pb_pos_q
-
-        integer :: I, Iq
-        real :: h_limit
-
-        h_limit = 0.1
-
-        ! Compute the wetting and drying treatment for the barotropic
-
-        do I = 1,npoin
-            if(neg_pb_pos(I) == 1) then 
-                qb_df(3:6,I) = 0.0
-            end if
-        end do
-
-        do Iq = 1,npoin_q
-            
-            if (neg_pb_pos_q(Iq) == 1) then
-                qb(3:6,Iq) = 0.0
-            end if
-        end do
-    
-    end subroutine btp_wet_dry_mom
-
-    subroutine btp_wet_dry_mass(qb,qb_df)
-
-        use mod_grid, only: npoin, npoin_q
-
-        use mod_initial, only: pbprime, pbprime_df
-    
-        implicit none
-        
-        real, intent(inout) :: qb(6,npoin_q)
-        real, intent(inout) :: qb_df(6,npoin)
-
-        integer :: I, Iq
-
-        ! Compute the wetting and drying treatment for the barotropic
-
-        do I = 1,npoin
-            if(qb_df(1,I) < 10250.0) then 
-                qb_df(1,I) = 10250.0
-                qb_df(2,I) = qb_df(1,I) - pbprime_df(I)
-            end if
-        end do
-
-        do Iq = 1,npoin_q
-            
-            if (qb(1,Iq) < 10250.0) then
-                qb(1,Iq) = 10250.0
-                qb(2,Iq) = qb(1,Iq) - pbprime(Iq)
-            end if
-        end do
-    
-    end subroutine btp_wet_dry_mass
-
 
     subroutine restart_mlswe_variales(qr,qbr,qprimer,q,qb,qprime, q_df,qb_df,qprime_df,q_face,qb_face,qprime_face)
 
@@ -1948,53 +1611,6 @@ module mod_barotropic_terms
     
     end subroutine restart_mlswe
 
-    subroutine massinv_rhs(rhs,nvarb)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
-        use mod_metrics, only : massinv_e
-
-        implicit none
-
-        !global arrays
-        integer, intent(in) :: nvarb
-        real, intent(inout) :: rhs(nvarb,npoin)
-
-        !local arrays
-        real, dimension(nvarb,npts) :: qlocal, rhs_e
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !loop through elements
-        do e = 1,nelem
-
-            !Store local DOFs
-            ii = 0
-            do j=1,ngly
-                do i=1,nglx
-                    Ip = intma(i,j,1,e)
-                    ii=ii+1
-                    inodes(ii) = Ip
-                    !Store Primitive Variables
-
-                    qlocal(:,ii) = rhs(:,Ip)
-
-                end do !i
-            end do !j
-
-            ! Multiply the rhs for each element by element inverse mass matrix
-            do m = 1, nvarb
-                rhs_e(m,:) = matmul(massinv_e,qlocal(m,:))
-            end do
-
-            ! Store the element rhs into the global rhs
-            do l = 1,npts
-                Ip = inodes(l)
-                rhs(:,Ip) = rhs_e(:,l) 
-            end do !ii
-        end do
-    end subroutine massinv_rhs
-
-
     subroutine compute_gradient_uv(grad_uv,uv)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
@@ -2006,11 +1622,10 @@ module mod_barotropic_terms
 
         implicit none
 
-  
         real, dimension(2,npoin), intent(in) :: uv
         real, dimension(2,2,npoin_q), intent(out) :: grad_uv
-        integer :: e, iquad, jquad, kquad, l, m, n, Iq, I, ip
-        real :: e_x, e_y, n_x, n_y, h_e, h_n,h_c, c_x, c_y, c_z, e_z, n_z, dhdx, dhdy
+        integer :: Iq, I, ip
+        real :: dhdx, dhdy
         
         grad_uv = 0.0
         
@@ -2034,6 +1649,43 @@ module mod_barotropic_terms
         end do
 
     end subroutine compute_gradient_uv
+
+    subroutine compute_gradient_uv_v1(grad_uv,uv)
+
+        use mod_basis, only:  npts
+        use mod_grid, only:  npoin
+
+        use mod_initial, only: dpsidx_df,dpsidy_df, index_df
+
+        implicit none
+
+        real, dimension(2,npoin), intent(in) :: uv
+        real, dimension(4,npoin), intent(out) :: grad_uv
+        integer :: Iq, I, ip
+        real :: dhdx, dhdy
+        
+        grad_uv = 0.0
+        
+        !Construct Volume Integral Contributions
+
+        do Iq = 1, npoin
+
+            do ip = 1,npts
+
+                I = index_df(Iq,ip)
+                dhdx = dpsidx_df(Iq,ip)
+                dhdy = dpsidy_df(Iq,ip)
+
+                grad_uv(1,Iq) = grad_uv(1,Iq) + dhdx*uv(1,I)
+                grad_uv(2,Iq) = grad_uv(2,Iq) + dhdy*uv(1,I)
+
+                grad_uv(3,Iq) = grad_uv(3,Iq) + dhdx*uv(2,I)
+                grad_uv(4,Iq) = grad_uv(4,Iq) + dhdy*uv(2,I)
+
+            end do
+        end do
+
+    end subroutine compute_gradient_uv_v1
 
 end module mod_barotropic_terms
             

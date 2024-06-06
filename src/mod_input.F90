@@ -47,7 +47,7 @@ module mod_input
         imass, &
         ad_mlswe, cd_mlswe, dp_cutoff1, dp_cutoff2, &
         dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
-        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type
+        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type, method_consistency, lcheck_conserved
  
    public :: eqn_set, is_mlswe
  
@@ -129,6 +129,7 @@ module mod_input
    real(kind=r8) :: dp_tau_bot = 0.0
    real(kind=r8) :: dp_tau_wind = 0.0
    integer :: method_visc = 0
+   integer :: method_consistency = 2
    integer :: botfr = 0
    integer :: adjust_H_vertical_sum = 0
    real(kind=r8) :: visc_mlswe = 0.0
@@ -287,6 +288,7 @@ module mod_input
    logical :: dg_integ_exact = .true. ! added by Yao Gahounzo
    logical :: dump_data = .true. ! added by Yao Gahounzo
    character(len=12) :: flux_type = 'centered'
+   logical :: lcheck_conserved = .false. ! added by Yao Gahounzo
 
  
    !-----------------------------------------------------------------------
@@ -364,7 +366,7 @@ module mod_input
          imass, &
          ad_mlswe, cd_mlswe, dp_cutoff1, dp_cutoff2, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, is_mlswe_linear, botfr, &
-         mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type
+         mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type, method_consistency, lcheck_conserved
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &

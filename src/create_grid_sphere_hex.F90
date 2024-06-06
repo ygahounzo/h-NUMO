@@ -200,10 +200,10 @@ end subroutine create1d_grid
 
 !----------------------------------------------------------------------!
 !>@brief This subroutine constructs the HEXAHEDRAL GRID
-!>@author  Francis X. Giraldo on 10/98
-!>           Naval Research Laboratory
-!>           Global Modeling Section
-!>           Monterey, CA 93943-5502
+!>@author  Francis X. Giraldo on 11/2014
+!> Department of Applied Mathematics
+!> Naval Postgraduate School
+!> Monterey, CA 93943
 !----------------------------------------------------------------------!
 subroutine hex_quad(coord_cg,intma,nel,ngl,nface,nelem,npoin_cg,nelem0,npoin0,nx,ny)
   
@@ -466,10 +466,10 @@ end subroutine hex_quad
 
 !----------------------------------------------------------------------!
 !>@brief This subroutine constructs the INITIAL HEXAHEDRON
-!>@author  Francis X. Giraldo on 10/98
-!>           Naval Research Laboratory
-!>           Global Modeling Section
-!>           Monterey, CA 93943-5502
+!>@author  Francis X. Giraldo on 11/2014
+!> Department of Applied Mathematics
+!> Naval Postgraduate School
+!> Monterey, CA 93943
 !----------------------------------------------------------------------!
 subroutine init_hex(coord,intma,nelem,nel,nx,ny,ngl,s)
   

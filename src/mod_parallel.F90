@@ -22,6 +22,10 @@
 !>           Monterey, CA 93943-5216
 !>
 !>
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 10, 2023
 !----------------------------------------------------------------------!
 module mod_parallel
   

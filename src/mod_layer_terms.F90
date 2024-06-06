@@ -17,7 +17,7 @@ module mod_layer_terms
     contains
 
     subroutine layer_mass_advection_terms(sum_layer_mass_flux,sum_layer_mass_flux_face,u_edge,v_edge,uvdp_temp,flux_edge, &
-                        qprime,uvb_ave,ope_ave,qprime_face,uvb_face_ave,ope_face_ave)
+                        qprime,qprime_face)
 
         use mod_grid, only: npoin_q, nface, intma_dg_quad, face
         use mod_basis, only: nqx, nqy, nqz, nq
@@ -25,13 +25,10 @@ module mod_layer_terms
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
         use mod_constants, only: gravity
         use mod_initial, only: alpha_mlswe
+        use mod_variables, only: uvb_ave,ope_ave, uvb_face_ave,ope_face_ave
 
         implicit none
 
-        real, dimension(npoin_q),               intent(in)    :: ope_ave
-        real, dimension(2,npoin_q),               intent(in)    :: uvb_ave
-        real, dimension(2,nq,nface),            intent(in)    :: ope_face_ave
-        real, dimension(2,2,nq,nface),            intent(in)    :: uvb_face_ave
         real, dimension(3,npoin_q, nlayers),    intent(in)    :: qprime
         real, dimension(3,2,nq,nface,nlayers),  intent(in)    :: qprime_face
         real, dimension(2,npoin_q),             intent(out)   :: sum_layer_mass_flux
@@ -253,31 +250,32 @@ module mod_layer_terms
         ! end do
     
     end subroutine evaluate_dp_face
-
-
-    subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-        sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, &
-        qprime_face, flux_deficit_mass_face)
+    
+    subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, qprime, &
+        sum_layer_mass_flux, qprime_face, flux_deficit_mass_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
         use mod_initial, only: pbprime, pbprime_face
         use mod_input, only: nlayers
+        use mod_variables, only: btp_mass_flux_ave, ope_face_ave
+        use mod_face, only: normal_vector_q
 
         implicit none
 
         real, dimension(2,npoin_q, nlayers), intent(out)      :: flux_adjustment
         real, dimension(2,nq, nface, nlayers), intent(out)    :: flux_adjust_edge
 
-        real, dimension(3,npoin,nlayers), intent(in)   :: q_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
-        real, dimension(2,nq,nface), intent(in) :: ope_face_ave, flux_deficit_mass_face
+        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux
+        real, dimension(2,2,nq,nface), intent(in) :: flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
 
         real, dimension(npoin_q) :: weights
-        real, dimension(nq) :: weights_face_l, weights_face_r, weight
-        integer :: iface, k
+        !real, dimension(nq) :: weights_face_l, weights_face_r, weight
+        integer :: iface, k, iquad
+        real :: weights_face_l, weights_face_r, fu, fv, nxl, nyl
+
 
         flux_adjust_edge = 0.0
 
@@ -289,32 +287,49 @@ module mod_layer_terms
             flux_adjustment(1,:,k) = weights(:) * (btp_mass_flux_ave(1,:) - sum_layer_mass_flux(1,:))
             flux_adjustment(2,:,k) = weights(:) * (btp_mass_flux_ave(2,:) - sum_layer_mass_flux(2,:))   
 
-            ! Consistency terms for face points
-            do iface = 1,nface
+        end do
 
-                !Store Left Side Variables
+        do iface = 1,nface
 
-                weights_face_l = qprime_face(1,1,:,iface,k) / pbprime_face(1,:,iface)
-                weights_face_r = qprime_face(1,2,:,iface,k) / pbprime_face(2,:,iface)
+            do iquad = 1,nq 
+                do k = 1,nlayers
 
-                weights_face_l = 0.5*(weights_face_l + weights_face_r)
+                    weights_face_l = qprime_face(1,1,iquad,iface,k) / pbprime_face(1,iquad,iface)
+                    weights_face_r = qprime_face(1,2,iquad,iface,k) / pbprime_face(2,iquad,iface)
 
-                flux_adjust_edge(1,:,iface,k) = weights_face_l*flux_deficit_mass_face(1,:,iface)
-                flux_adjust_edge(2,:,iface,k) = weights_face_l*flux_deficit_mass_face(2,:,iface)
+                    !fu = 0.5*(flux_deficit_mass_face(1,1,iquad,iface) + flux_deficit_mass_face(1,2,iquad,iface))
+                    !fv = 0.5*(flux_deficit_mass_face(2,1,iquad,iface) + flux_deficit_mass_face(2,2,iquad,iface))
 
-            end do
+                    nxl = normal_vector_q(1,iquad,1,iface)
+                    nyl = normal_vector_q(2,iquad,1,iface)
+
+                    if(flux_deficit_mass_face(1,1,iquad,iface)*nxl > 0.0) then 
+
+                        flux_adjust_edge(1,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(1,1,iquad,iface)
+                    else 
+                        flux_adjust_edge(1,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(1,2,iquad,iface)
+                    end if 
+
+                    if(flux_deficit_mass_face(2,1,iquad,iface)*nyl > 0.0) then 
+                        flux_adjust_edge(2,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(2,1,iquad,iface)
+                    else 
+                        flux_adjust_edge(2,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(2,2,iquad,iface)
+                    end if 
+                end do 
+            end do 
         end do
 
     end subroutine consistency_mass_terms1
 
     subroutine consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-        sum_layer_mass_flux, btp_mass_flux_ave, ope_face_ave, flux_deficit_mass_face, q_face)
+        sum_layer_mass_flux, flux_deficit_mass_face, q_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma
         use mod_initial, only: pbprime, pbprime_face, pbprime_edge
         use mod_input, only: nlayers
-        use mod_face, only: imapl, imapr
+        use mod_face, only: normal_vector_q
+        use mod_variables, only: ope_face_ave, btp_mass_flux_ave
 
         implicit none
 
@@ -323,8 +338,8 @@ module mod_layer_terms
 
         real, dimension(3,npoin,nlayers), intent(in)   :: q_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
-        real, dimension(2,nq,nface), intent(in)        :: ope_face_ave, flux_deficit_mass_face
+        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux
+        real, dimension(2,2,nq,nface), intent(in)        :: flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face
 
         real, dimension(2,2) :: flux_adjustment_face
@@ -332,7 +347,7 @@ module mod_layer_terms
         real :: sum_left, sum_right, pb_edge, p_left, p_right, temp, one_plus_eta_edge
         integer :: el, er, il, jl, iquad, k, iface
         real, dimension(npoin_q) :: weights
-        real :: weights_face, qml, qmr, weights_face_r, weights_face_l
+        real :: weights_face, qml, qmr, weights_face_r, weights_face_l, nxl, nyl
         integer :: I, ir, jr, kr, kl, ier,m, Iq
 
         flux_adjustment = 0.0
@@ -385,39 +400,34 @@ module mod_layer_terms
 
                 end do
 
+                nxl = normal_vector_q(1,iquad,1,iface)
+                nyl = normal_vector_q(2,iquad,1,iface)
+
                 do k = 1,nlayers
 
                     if (sum_left > 0.0) then
                         weights_face_l = dp_avail_left(k) / sum_left
-                        flux_adjustment_face(1,1) = weights_face_l * flux_deficit_mass_face(1,iquad,iface)
-                        flux_adjustment_face(2,1) = weights_face_l * flux_deficit_mass_face(2,iquad,iface)
+                        flux_adjustment_face(1,1) = weights_face_l * flux_deficit_mass_face(1,1,iquad,iface)
+                        flux_adjustment_face(2,1) = weights_face_l * flux_deficit_mass_face(2,1,iquad,iface)
                     end if
                     
                     if (sum_right > 0.0) then
                         weights_face_r = dp_avail_right(k) / sum_right
-                        flux_adjustment_face(1,2) = weights_face_r * flux_deficit_mass_face(1,iquad,iface)
-                        flux_adjustment_face(2,2) = weights_face_r * flux_deficit_mass_face(2,iquad,iface)
+                        flux_adjustment_face(1,2) = weights_face_r * flux_deficit_mass_face(1,2,iquad,iface)
+                        flux_adjustment_face(2,2) = weights_face_r * flux_deficit_mass_face(2,2,iquad,iface)
                     end if
 
-                    !weights_face = 0.5*(weights_face_l + weights_face_r)
-
-                    !flux_adjust_edge(1,iquad,iface,k) = weights_face*flux_deficit_mass_face(1,iquad,iface)
-                    !flux_adjust_edge(2,iquad,iface,k) = weights_face*flux_deficit_mass_face(2,iquad,iface)
-
-                    if (flux_deficit_mass_face(1,iquad,iface) > 0.0) then
+                    if (flux_deficit_mass_face(1,1,iquad,iface)*nxl > 0.0) then
                         flux_adjust_edge(1,iquad,iface,k) = flux_adjustment_face(1,1)
                     else
                         flux_adjust_edge(1,iquad,iface,k) = flux_adjustment_face(1,2)
                     end if
 
-                    if (flux_deficit_mass_face(2,iquad,iface) > 0.0) then
+                    if (flux_deficit_mass_face(2,1,iquad,iface)*nyl > 0.0) then
                         flux_adjust_edge(2,iquad,iface,k) = flux_adjustment_face(2,1)
                     else
                         flux_adjust_edge(2,iquad,iface,k) = flux_adjustment_face(2,2)
                     end if
-
-                    ! flux_adjust_edge(1,iquad,iface,k) = 0.5*(flux_adjustment_face(1,1) + flux_adjustment_face(1,2))
-                    ! flux_adjust_edge(2,iquad,iface,k) = 0.5*(flux_adjustment_face(2,1) + flux_adjustment_face(2,2))
 
                 end do
 
@@ -427,13 +437,14 @@ module mod_layer_terms
     end subroutine consistency_mass_terms
 
     subroutine consistency_mass_terms_v2(flux_adjustment, flux_adjust_edge, q, &
-        sum_layer_mass_flux, btp_mass_flux_ave, flux_deficit_mass_face, q_face)
+        sum_layer_mass_flux, flux_deficit_mass_face, q_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl, npts, npts_quad
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
         use mod_initial, only: pbprime, pbprime_face, pbprime_edge
         use mod_input, only: nlayers
         use mod_face, only: imapl_q, imapr_q
+        use mod_variables, only: btp_mass_flux_ave
 
         implicit none
 
@@ -441,7 +452,7 @@ module mod_layer_terms
         real, dimension(2,nq, nface, nlayers), intent(out)    :: flux_adjust_edge
 
         real, dimension(3,npoin_q,nlayers), intent(in)   :: q
-        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux, btp_mass_flux_ave
+        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux
         real, dimension(2,nq,nface), intent(in)        :: flux_deficit_mass_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face
 
@@ -501,7 +512,7 @@ module mod_layer_terms
 
     end subroutine consistency_mass_terms_v2
 
-    subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face, uvb_face_ave, ope_face_ave)
+    subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  nface
@@ -509,13 +520,12 @@ module mod_layer_terms
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
         use mod_constants, only: gravity
         use mod_initial, only: alpha_mlswe
+        use mod_variables, only: uvb_face_ave, ope_face_ave
   
         implicit none
         
         ! Input variables
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face 
-        real, dimension(2,nq,nface), intent(in) :: ope_face_ave 
-        real, dimension(2,2,nq,nface), intent(in) :: uvb_face_ave
         
         ! Output variables
         real, dimension(nq,nface,nlayers), intent(out) :: udp_left, vdp_left, udp_right, vdp_right
@@ -557,23 +567,20 @@ module mod_layer_terms
     end subroutine compute_momentum_edge_values
 
     subroutine layer_momentum_advec_terms(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
-        q, qprime, uvb_ave, ope_ave, u_edge, v_edge, Qu_ave, Qv_ave, Quv_ave, &
-        udp_left, vdp_left, udp_right, vdp_right, Qu_face_ave, Qv_face_ave, Quv_face_ave)
+        q, qprime, u_edge, v_edge, udp_left, vdp_left, udp_right, vdp_right)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface
         use mod_input, only: nlayers
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
+        use mod_variables, only: Quv_face_ave, Qu_face_ave, Qv_face_ave, ope_ave, Qu_ave, Qv_ave, Quv_ave, uvb_ave
 
         implicit none
 
         real, dimension(3, npoin_q, nlayers), intent(in)    :: q 
         real, dimension(3, npoin_q, nlayers), intent(in)    :: qprime
         real, dimension(2,nq, nface, nlayers), intent(in)     :: u_edge, v_edge
-        real, dimension(2,nq,nface), intent(in)               :: Quv_face_ave, Qu_face_ave, Qv_face_ave
-        real, dimension(npoin_q), intent(in)                :: ope_ave, Qu_ave, Qv_ave, Quv_ave
         real, dimension(nq, nface, nlayers), intent(in)     :: udp_left, vdp_left, udp_right, vdp_right
-        real, dimension(2,npoin_q), intent(in)                :: uvb_ave
 
         real, dimension(npoin_q, nlayers), intent(out)      :: u_udp_temp, v_vdp_temp
         real, dimension(2, npoin_q, nlayers), intent(out)   :: u_vdp_temp
@@ -720,23 +727,20 @@ module mod_layer_terms
     end subroutine layer_momentum_advec_terms
 
     subroutine layer_momentum_advec_terms_upwind(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
-        q, qprime, uvb_ave, ope_ave, u_edge, v_edge, Qu_ave, Qv_ave, Quv_ave, &
-        udp_left, vdp_left, udp_right, vdp_right, Qu_face_ave, Qv_face_ave, Quv_face_ave)
+        q, qprime, u_edge, v_edge, udp_left, vdp_left, udp_right, vdp_right)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface
         use mod_input, only: nlayers
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
+        use mod_variables, only: Quv_face_ave, Qu_face_ave, Qv_face_ave, ope_ave, Qu_ave, Qv_ave, Quv_ave, uvb_ave
 
         implicit none
 
         real, dimension(3, npoin_q, nlayers), intent(in)    :: q 
         real, dimension(3, npoin_q, nlayers), intent(in)    :: qprime
         real, dimension(2,nq, nface, nlayers), intent(in)     :: u_edge, v_edge
-        real, dimension(2,nq,nface), intent(in)               :: Quv_face_ave, Qu_face_ave, Qv_face_ave
-        real, dimension(npoin_q), intent(in)                :: ope_ave, Qu_ave, Qv_ave, Quv_ave
         real, dimension(nq, nface, nlayers), intent(in)     :: udp_left, vdp_left, udp_right, vdp_right
-        real, dimension(2,npoin_q), intent(in)                :: uvb_ave
 
         real, dimension(npoin_q, nlayers), intent(out)      :: u_udp_temp, v_vdp_temp
         real, dimension(2, npoin_q, nlayers), intent(out)   :: u_vdp_temp
@@ -979,8 +983,7 @@ module mod_layer_terms
           
     end subroutine layer_momentum_advec_terms_upwind
 
-
-    subroutine layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, ope_ave, H_ave, ope_face_ave, zbot_face, H_face_ave, qprime_df, one_plus_eta_edge_2_ave, ope_ave_df,grad_z, ope2_ave)
+    subroutine layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, zbot_face, qprime_df ,grad_z)
 
 
         use mod_constants, only : gravity
@@ -990,18 +993,14 @@ module mod_layer_terms
         use mod_input, only : nlayers, adjust_H_vertical_sum
         use mod_face, only: imapl_q, imapr_q
         use mod_Tensorproduct, only: interpolate_layer_from_quad_to_node_1d, compute_gradient_quad
-        !use mod_barotropic_terms, only: evaluate_quprime1
+        use mod_variables, only: ope_ave, H_ave, ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, ope_ave_df, ope2_ave
 
         implicit none
 
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
-        real, dimension(npoin_q), intent(in) :: ope_ave, H_ave, ope2_ave
-        real, dimension(2,nq,nface), intent(in) :: ope_face_ave, zbot_face
-        real, dimension(nq,nface), intent(in) :: H_face_ave
+        real, dimension(2,nq,nface), intent(in) :: zbot_face
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(nq,nface), intent(in) :: one_plus_eta_edge_2_ave
-        real, dimension(npoin), intent(in) :: ope_ave_df
         real, dimension(npoin_q,nlayers), intent(out) :: H_r
         real, dimension(2,nq,nface,nlayers), intent(out) :: H_r_face
         real, dimension(npoin_q,nlayers+1), intent(out) :: p
@@ -1345,18 +1344,18 @@ module mod_layer_terms
 
     end subroutine layer_pressure_terms
 
-    subroutine layer_windbot_stress_terms(tau_wind_int, tau_bot_int,qprime, tau_bot_ave, tau_wind_ave)
+    subroutine layer_windbot_stress_terms(tau_wind_int, tau_bot_int,qprime)
 
         use mod_initial, only : pbprime, tau_wind, alpha_mlswe
         use mod_grid, only :  npoin_q
         use mod_input, only: nlayers, dp_tau_wind, dp_tau_bot
         use mod_mpi_utilities, only : irank
         use mod_constants, only : gravity
+        use mod_variables, only: tau_bot_ave, tau_wind_ave
 
         implicit none
     
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime 
-        real, dimension(2,npoin_q), intent(in) :: tau_bot_ave, tau_wind_ave
         real, dimension(2,npoin_q,nlayers), intent(out) :: tau_wind_int, tau_bot_int ! output arrays
     
         real, dimension(npoin_q,nlayers+1) :: pprime_temp 
@@ -1565,8 +1564,6 @@ module mod_layer_terms
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
-                    !uv_df(1,I,k) = uv_df(1,I,k) + (1.0/real(nlayers))*(- ubar + qb_df(3,I)/qb_df(1,I))
-                    !uv_df(2,I,k) = uv_df(2,I,k) + (1.0/real(nlayers))*(- vbar + qb_df(4,I)/qb_df(1,I))
 
                     uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
                     uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
@@ -2104,7 +2101,7 @@ module mod_layer_terms
 
         use mod_initial, only: nvar, nvart
 
-        use mod_interface, only: compute_local_gradient_filter_v3
+        use mod_gradient, only: compute_local_gradient_filter_v3
 
         use mod_metrics, only: jac, massinv
     
