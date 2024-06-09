@@ -524,9 +524,9 @@ module mod_splitting
 
             ! Compute the vertical stress terms
 
-            call shear_stress_system(q)
+            call shear_stress_system(uv,q)
 
-            call rhs_layer_shear_stress(rhs_stress,q)
+            call rhs_layer_shear_stress(rhs_stress,uv)
 
             do k = 1,nlayers
                 q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
