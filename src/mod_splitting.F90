@@ -501,38 +501,39 @@ module mod_splitting
         end do
 
         ! Compute the shear stress terms
-        ! if(ad_mlswe > 0.0) then 
-            
-        !     do k = 1,nlayers
-        !         do I = 1,npoin
-        !             tempu(I) = q_df_temp(1,I,k) + fdt2_bcl(I)*q_df(5,I,k)
-        !             tempv(I) = q_df_temp(2,I,k) - fdt2_bcl(I)*q_df(4,I,k)
+        if(ad_mlswe > 0.0) then 
+      
+            do k = 1,nlayers
+                do I = 1,npoin
+                    tempu(I) = q_df_temp(1,I,k) + fdt2_bcl(I)*q_df(3,I,k)
+                    tempv(I) = q_df_temp(2,I,k) - fdt2_bcl(I)*q_df(2,I,k)
 
-        !             q_df3(4,I,k) = a_bcl(I)*tempu(I) + b_bcl(I)*tempv(I)
-        !             q_df3(5,I,k) = - b_bcl(I)*tempu(I) + a_bcl(I)*tempv(I)
-        !         end do
-        !         q_df3(1,:,k) = q_df(1,:,k)
-        !     end do
+                    q_df3(2,I,k) = a_bcl(I)*tempu(I) + b_bcl(I)*tempv(I)
+                    q_df3(3,I,k) = - b_bcl(I)*tempu(I) + a_bcl(I)*tempv(I)
+                end do
+                q_df3(1,:,k) = q_df(1,:,k)
+            end do
 
-        !     call layer_mom_boundary_df(q_df3(4:5,:,:))
+            call layer_mom_boundary_df(q_df3(2:3,:,:))
 
-        !     ! Extract velocity from the momentum
-        !     call velocity_df(q_df3, qb_df)
-        !     ! Evaluate velocity and momentum at the quad points
-        !     call evaluate_mom(q,q_df3)
+            !Extract velocity from the momentum on quads and interpolate to nodal pts
+            call interpolate_mom(q_df3,q,qb,flag_pred)
 
-        !     ! Compute the vertical stress terms
+            ! Evaluate velocity and momentum at the quad points
+            call evaluate_mom(q,q_df3)
 
-        !     call shear_stress_system(q)
+            ! Compute the vertical stress terms
 
-        !     call rhs_layer_shear_stress(rhs_stress,q)
+            call shear_stress_system(q)
 
-        !     do k = 1,nlayers
-        !         q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
-        !         q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
-        !     end do
+            call rhs_layer_shear_stress(rhs_stress,q)
 
-        ! end if ! ad_mlswe > 0.0
+            do k = 1,nlayers
+                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
+                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
+            end do
+
+        end if ! ad_mlswe > 0.0
         
         ! Add the Coriolis term
 
@@ -703,8 +704,9 @@ module mod_splitting
 
             !call layer_mom_boundary_df(q_df3(2:3,:,:))
 
-            ! Extract velocity from the momentum
-            call velocity_df(q_df3, qb_df, flag_pred)
+            ! Extract velocity from the momentum on quads and interpolate to nodal pts
+            call interpolate_mom(q_df3,q,qb,flag_pred)
+
             ! Evaluate velocity and momentum at the quad points
             call evaluate_mom(q,q_df3)
 
