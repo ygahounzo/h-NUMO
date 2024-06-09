@@ -92,15 +92,18 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	
 	flag_pred = 0
 
-	do k = 1,nlayers
-		do Iq = 1,npoin
-			dpprime_visc(Iq,k) = max(qprime_df_avg(1,Iq,k), dpprime_visc_min)
-		end do 
+	!do k = 1,nlayers
+	!	do Iq = 1,npoin
+	!		dpprime_visc(Iq,k) = max(qprime_df_avg(1,Iq,k), dpprime_visc_min)
+	!	end do 
 
-		do Iq = 1,npoin_q
-			dpprime_visc_q(Iq,k) = max(qprime_avg(1,Iq,k), dpprime_visc_min)
-		end do 
-	end do 
+	!	do Iq = 1,npoin_q
+	!		dpprime_visc_q(Iq,k) = max(qprime_avg(1,Iq,k), dpprime_visc_min)
+	!	end do 
+	!end do 
+
+	dpprime_visc(:,:) = qprime_df_avg(1,:,:)
+	dpprime_visc_q(:,:) = qprime_avg(1,:,:)
 
 	call ti_barotropic_rk_mlswe(qb,qb_face,qb_df,qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
 

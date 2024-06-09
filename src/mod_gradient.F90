@@ -33,7 +33,6 @@ module mod_gradient
 
     public :: &
         compute_local_gradient, &
-        compute_local_gradient_v2, &
         compute_local_gradient_v3, &
         compute_local_gradient_transpose_v3, &
         compute_local_gradient_filter_v3, &
@@ -99,72 +98,6 @@ contains
         endif
 
     end subroutine compute_local_gradient
-
-    !----------------------------------------------------------------------!
-    !>@brief This subroutine computes the canonical derivative of the vector Q as (N,N,N,NDIM).
-    !>That is, it builds Q_e, Q_n, and Q_c.
-    !>@author  Francis X. Giraldo on 12/2013
-    !>                  Department of Applied Mathematics
-    !>                  Naval Postgraduate School
-    !>                  Monterey, CA 93943-5216
-    !----------------------------------------------------------------------!
-    subroutine compute_local_gradient_v2(q_e,q_n,q_c,q,nglx,ngly,nglz,ndim)
-
-        implicit none
-
-        !global arrays
-        real, dimension(nglx,ngly,nglz,ndim), intent(out) :: q_e, q_n, q_c
-        real, dimension(nglx,ngly,nglz,ndim), intent(in)  :: q
-        integer, intent(in) :: nglx, ngly, nglz, ndim
-
-        !local arrays
-        integer :: m1, m2, m3, m, k
-        real, dimension(nglx,ngly,nglz) :: qt, qt_e, qt_n, qt_c
-
-        !Construct Local Derivatives
-        do m=1,ndim
-            !Store Input
-            qt=q(:,:,:,m)
-
-            !KSI Derivative
-            if(nglx > 1) then
-                m1=nglx !nglx
-                m2=nglx !nglx
-                m3=ngly*nglz !nsize*ngly*nglz
-                call mxm(dpsix_tr,m1,qt,m2,qt_e,m3)
-            else
-                qt_e = 0
-            endif
-
-            !ETA Derivative
-            if(ngly > 1) then
-                m1=nglx !nglx
-                m2=ngly !ngly
-                m3=ngly !ngly
-                do k=1,ngl
-                    call mxm(qt(1,1,k),m1,dpsiy,m2,qt_n(1,1,k),m3)
-                enddo !k
-            else
-                qt_n = 0
-            endif
-
-            !Zeta Derivative
-            if(nglz > 1) then
-                m1=nglx*ngly !nglx*nsize*ngly
-                m2=nglz !nglz
-                m3=nglz !nglz
-                call mxm(qt,m1,dpsiz,m2,qt_c,m3)
-            else
-                qt_c = 0
-            endif
-
-            !Store Output
-            q_e(:,:,:,m)=qt_e
-            q_n(:,:,:,m)=qt_n
-            q_c(:,:,:,m)=qt_c
-        end do !m
-
-    end subroutine compute_local_gradient_v2
 
     !----------------------------------------------------------------------!
     !>@brief This subroutine computes the canonical derivative of the vector Q as (NDIM,N,N,N)
