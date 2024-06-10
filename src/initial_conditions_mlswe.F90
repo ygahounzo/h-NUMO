@@ -1,7 +1,7 @@
 !-----------------------------------------------------------------!
 !>@brief This subroutine builds the Initial Conditions for the multilayer Shallow Water Equations
 !>@author Written by Yao Gahounzo
-!>@date 2018-03-01
+!>@date March 27, 2023
 !
 !-----------------------------------------------------------------!
 
@@ -109,7 +109,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
    select case (icase)
       
-   case (2023) 
+   case (2023) ! bump test (wave propagation)
 
       gravity = 9.806
        
@@ -145,7 +145,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
       end do
 
-   case(2024) 
+   case(2024) ! lake at rest (well-balanced) test 
 
       gravity = 9.806
 
@@ -184,7 +184,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
       end do  
 
-   case(2022) 
+   case(2022) ! 
 
       gravity = 9.806
 

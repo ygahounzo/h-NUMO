@@ -1,5 +1,5 @@
 ! ===========================================================================================================================
-! This module contains the routines for the barotropic-baroclinic splitting
+! This module contains the routines for the barotropic and baroclinic horizontal viscosity terms 
 !   Author: Yao Gahounzo 
 !   Computing PhD 
 !   Boise State University
@@ -25,6 +25,8 @@ module mod_laplacian_quad
     contains 
 
     subroutine btp_create_laplacian_v1(rhs_lap,qprime,qprime_face,qb,qb_face)
+
+        ! Barotropic horizontal viscosity 
 
         real, intent (out) :: rhs_lap(2,npoin)
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
@@ -127,12 +129,14 @@ module mod_laplacian_quad
 
         end do
 
+        ! Communicate within processors 
+
         call create_communicator_quad(flux_uv_visc_face,4)
-
+        ! Compute volume intergral 
         call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc)
-
+        ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face)
-
+        ! RHS of the viscosity term 
         rhs_lap(:,:) = visc_mlswe*rhs_temp(:,:)
 
         !Store Solution
@@ -142,6 +146,8 @@ module mod_laplacian_quad
     end subroutine btp_create_laplacian_v1
 
     subroutine btp_create_laplacian_v2(rhs_lap,qprime_df,qb_df, dpprime, qprime_face, qb_face)
+
+        ! Barotropic horizontal viscosity 
 
         real, intent (out) :: rhs_lap(2,npoin)
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
@@ -242,12 +248,13 @@ module mod_laplacian_quad
 
         end do
 
+        ! Communicate within processors
         call create_communicator_quad(flux_uv_visc_face,4)
-
+        ! Compute volume integral 
         call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc)
-
+        ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face)
-
+        RHS of the viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
@@ -255,6 +262,8 @@ module mod_laplacian_quad
 
 
     subroutine btp_create_laplacian(rhs_lap,qprime_df,qb_df)
+
+        ! Barotropic horizontal viscosity 
 
         use mod_variables, only: dpprime_visc
 
@@ -354,18 +363,21 @@ module mod_laplacian_quad
 
         end do
 
+        ! Communicate within processors 
         call create_communicator_df(flux_uv_visc_face,4)
-
+        ! Compute volume integral 
         call compute_laplacian_IBP_v2(rhs_temp,flux_uv_visc)
-
+        ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG(rhs_temp,flux_uv_visc_face)
-
+        RHS of viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine btp_create_laplacian
 
     subroutine btp_create_laplacian_v3(rhs_lap,qb_df)
+
+        ! Barotropic horizontal viscosity 
 
         use mod_variables, only: pbprime_visc, btp_dpp_graduv, graduvb_ave, graduvb_face_ave, btp_graduv_dpp_face
 
@@ -444,26 +456,25 @@ module mod_laplacian_quad
 
         end do
 
+        ! Precommunication step 
         call create_rhs_lap_precommunicator_df(graduv_face,4)
-
-        !call create_communicator_df(graduv_face,4)
-
-        ! rhs
-
+        ! Compute volume integral 
         call btp_compute_laplacian_IBP(rhs_temp,graduv)
-
+        ! Postcommunication step 
         call create_rhs_lap_postcommunicator_df(graduv_face,4)
 
         graduvb_face_ave = graduvb_face_ave + graduv_face
-
+        ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG_v1(rhs_temp,graduv_face)
-
+        RHS of viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine btp_create_laplacian_v3
 
     subroutine bcl_create_laplacian(rhs_lap,qprime,qprime_face)
+
+        ! Baroclinic horizontal viscosity 
 
         use mod_variables, only: uvb_ave,uvb_face_ave
 
@@ -565,8 +576,10 @@ module mod_laplacian_quad
 
         end do
 
+        ! Communication within processors 
         call bcl_create_communicator(flux_uv_visc_face,4,nlayers,nq)
 
+        ! Commpute bcl viscosity 
         do k = 1,nlayers
 
             call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc(:,:,k))
@@ -583,6 +596,8 @@ module mod_laplacian_quad
 
 
     subroutine bcl_create_laplacian_v1(rhs_lap,qprime_df)
+
+        ! Baroclinic horizontal viscosity 
 
         use mod_variables, only: uvb_ave_df, dpprime_visc
 
@@ -680,8 +695,10 @@ module mod_laplacian_quad
 
         end do
 
+        ! Communicate within processors 
         call bcl_create_communicator(flux_uv_visc_face,4,nlayers,ngl)
 
+        ! Compute bcl viscosity 
         do k = 1,nlayers
 
             call compute_laplacian_IBP_v2(rhs_temp,flux_uv_visc(:,:,k))

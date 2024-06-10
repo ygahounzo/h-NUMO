@@ -1,5 +1,5 @@
 ! ===========================================================================================================================
-! This module contains the routines for the barotropic-baroclinic splitting
+! This module contains the routines for the barotropic flux terms
 !   Author: Yao Gahounzo 
 !   Computing PhD 
 !   Boise State University
@@ -25,6 +25,8 @@ module mod_barotropic_terms
     contains
 
     subroutine compute_btp_terms(qb,qb_face, qprime, qb_df)
+
+        ! This routine computes the flux terms for barotropic system
 
         use mod_grid, only: npoin_q, nface, npoin, face, intma_dg_quad
         use mod_basis, only: nq
@@ -63,7 +65,7 @@ module mod_barotropic_terms
 
         tau_bot = 0.0
 
-        ! Stress terms
+        ! Bottom friction terms
 
         if(botfr == 1) then 
 
@@ -93,7 +95,7 @@ module mod_barotropic_terms
 
         btp_mass_flux = qb(3:4,:)
 
-        ! Compute H
+        ! Compute pressure forcing H
 
         H(:) = (one_plus_eta(:)**2) * H_bcl(:)
 
@@ -167,7 +169,7 @@ module mod_barotropic_terms
             one_plus_eta_face(1,:,iface) = 1.0 + qb_face(2,1,:,iface) * one_over_pbprime_face(1,:,iface)
             one_plus_eta_face(2,:,iface) = 1.0 + qb_face(2,2,:,iface) * one_over_pbprime_face(2,:,iface)
 
-            ! Compute H_face at each element face.
+            ! Compute pressure forcing H_face at each element face.
 
             H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
 
@@ -185,6 +187,8 @@ module mod_barotropic_terms
                     
                 end do
             end if
+
+            ! Compute momentum flux terms at each element face 
 
             ul = qb_face(3,1,:,iface)/qb_face(1,1,:,iface); ur = qb_face(3,2,:,iface)/qb_face(1,2,:,iface)
             vl = qb_face(4,1,:,iface)/qb_face(1,1,:,iface); vr = qb_face(4,2,:,iface)/qb_face(1,2,:,iface)
@@ -425,6 +429,8 @@ module mod_barotropic_terms
 
     subroutine btp_evaluate_pb(qb, qb_df)
 
+        ! Interpolate btp mass pb from nodal to quad points
+
         use mod_initial, only: pbprime
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
@@ -460,6 +466,8 @@ module mod_barotropic_terms
 
 
     subroutine btp_evaluate_mom(qb,qb_df)
+
+        ! Interpolate btp momentum ub*pb, vb*pb from nodal to quad points
 
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
@@ -504,6 +512,7 @@ module mod_barotropic_terms
 
     subroutine btp_evaluate_mom_dp(qb,qb_df)
 
+        ! Interpolate btp pb, ubpb, vbpb from nodal to quad points
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
@@ -549,6 +558,8 @@ module mod_barotropic_terms
     end subroutine btp_evaluate_mom_dp
     
     subroutine btp_evaluate_pb_face(qb_face, qb)
+
+        ! Extract btp pb (qb(1,:)) face values to qb_face(1,:,:,:)
 
         use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl, nq
         use mod_grid, only:  npoin_q, intma_dg_quad, nface, face,mod_grid_get_face_nq
@@ -603,6 +614,8 @@ module mod_barotropic_terms
     end subroutine btp_evaluate_pb_face
 
     subroutine btp_evaluate_mom_face(qb_face, qb)
+
+        ! Extract btp ubpb, vbpb (qb(3:4,:)) face values to qb_face(3:4,:,:,:)
 
         use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl,nq
         use mod_grid, only:  npoin_q, intma_dg_quad, nface, face,mod_grid_get_face_nq
@@ -811,6 +824,8 @@ module mod_barotropic_terms
 
     subroutine btp_bcl_coeffs(qprime,qprime_face)
         
+        ! Compute baroclinic coefficients in the advective barotropic momentum fluxes and in the barotropic pressure forcing. 
+
         use mod_grid, only: npoin_q, nface, npoin
         use mod_input, only: nlayers, dpprime_visc_min
         use mod_basis, only: nqx, nqy, nqz, nq
@@ -909,6 +924,9 @@ module mod_barotropic_terms
 
 
     subroutine btp_bcl_grad_coeffs(qprime_df)
+
+        ! Compute baroclinic coefficients that appear in the weak forms of the horizontal viscosity terms in the 
+        ! layer momentum equations and in the vertically-summed barotropic momentum equations. 
         
         use mod_grid, only: npoin_q, nface, npoin, face, intma
         use mod_input, only: nlayers, dpprime_visc_min
