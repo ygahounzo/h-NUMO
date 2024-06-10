@@ -109,6 +109,13 @@ contains
         dpprime0_df = dpprime_df_init
         qprime0_df = qprime_df_init
 
+        ! q0_mlswe: layer variable dp, u*dp, v*dp at quad points and their face values: q0_mlswe_face
+        ! q0_df_mlswe : layer variable dp, u*dp, v*dp at nodal (dof) point
+        ! qprime0_mlswe: value dp', u' and v' at quad points and their face values: qprime0_face_mlswe
+        ! qb0_mlswe : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at quad points and their face values: qb0_face_mlswe
+        ! qb0_df_mlswe: : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at nodal points 
+        ! qprime0_df: value dp', u' and v' at nodal points
+
         qout_mlswe(1:3,:,:) = q0_df_mlswe(1:3,:,:)
 
         do l = 1,nlayers
@@ -254,10 +261,11 @@ contains
             call cpu_time(time1)
 
             if(ti_method_btp == 'rk35') then 
+                ! TIme integration solver: predictor-corrector and RK35 methods 
                 call ti_rk35_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
                     qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
             else 
-
+                ! Only predictor-corrector methods 
                 call ti_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
                     qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
             end if

@@ -481,7 +481,8 @@ module mod_rk_mlswe
 
         end do
 
-        ! Update the barotropic variables at the baroclinic time level n+1
+        ! Compute time averages of the various quantities listed earlier,
+        ! over all barotropic substeps of the baroclinic time interval.   
 
         one_plus_eta_out = one_plus_eta_df
 

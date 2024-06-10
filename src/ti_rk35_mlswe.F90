@@ -1,5 +1,5 @@
 ! ===========================================================================================================================
-! This module contains the routines for the predictor-corrector and the RK35 time integration methods
+! This module contains the routines for the predictor-corrector (for baroclinic) and the RK35 time integration (for barotropic) methods
 !   Author: Yao Gahounzo 
 !   Computing PhD 
 !   Boise State University
@@ -7,6 +7,14 @@
 ! ==========================================================================================================================
 
 subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpprime_df,qprime_df,qp_df_out)
+
+	! q: layer variable dp, u*dp, v*dp at quad points and their face values: q_face
+	! q_df : layer variable dp, u*dp, v*dp at nodal (dof) point
+	! qprime: value dp', u' and v' at quad points and their face values: qprime_face
+	! qb : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at quad points and their face values: qb_face
+	! qb_df: : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at nodal points 
+	! qprime_df: value dp', u' and v' at nodal points
+	! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
 
 	use mod_splitting, only: thickness, momentum, momentum_mass
 	use mod_input, only: nlayers, ti_method_btp, dpprime_visc_min
@@ -92,16 +100,6 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	
 	flag_pred = 0
 
-	!do k = 1,nlayers
-	!	do Iq = 1,npoin
-	!		dpprime_visc(Iq,k) = max(qprime_df_avg(1,Iq,k), dpprime_visc_min)
-	!	end do 
-
-	!	do Iq = 1,npoin_q
-	!		dpprime_visc_q(Iq,k) = max(qprime_avg(1,Iq,k), dpprime_visc_min)
-	!	end do 
-	!end do 
-
 	dpprime_visc(:,:) = qprime_df_avg(1,:,:)
 	dpprime_visc_q(:,:) = qprime_avg(1,:,:)
 
@@ -129,7 +127,6 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_face_corr(1,:,:,:,:) = 0.5*(qprime_face(1,:,:,:,:) + qprime_face_avg(1,:,:,:,:))
 	qprime_corr(2:3,:,:) = qprime_avg(2:3,:,:)
 	qprime_face_corr(2:3,:,:,:,:) = qprime_face_avg(2:3,:,:,:,:)
-	! qprime_df = qprime_df_avg
 	qprime_df_corr(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
 	qprime_df_corr(2:3,:,:) = qprime_df_avg(2:3,:,:)
 
@@ -157,11 +154,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 		mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + qp_df_out(1,:,k)
 	end do
 
-	!qp_df_out(4,:,1) = qb_df(3,:)
-	!qp_df_out(4,:,2) = qb_df(3,:)
-
-	qp_df_out(5,:,1) = one_plus_eta_df(:)-1.0!mslwe_elevation(:,1)
-	!qp_df_out(5,:,1) = mslwe_elevation(:,1)
+	!qp_df_out(5,:,1) = one_plus_eta_df(:)-1.0!mslwe_elevation(:,1)
+	qp_df_out(5,:,1) = mslwe_elevation(:,1)
 	qp_df_out(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
 end subroutine ti_rk35_mlswe

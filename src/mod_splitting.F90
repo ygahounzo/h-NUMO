@@ -11,6 +11,7 @@ module mod_splitting
     ! - ti_barotropic: barotropic substem for splitting system using two-level time integration (see Higdon et al. 2005)
     ! - thickness: baroclinic substem for splitting system using two-level time integration 
     ! - momentum: baroclinic substem for splitting system using two-level time integration
+    ! These routines are based on Prof. Higdon 1D MLSWE code
     !
     ! ===========================================================================================================================
 
@@ -394,7 +395,7 @@ module mod_splitting
         call rhs_thickness(dp_advec, sum_layer_mass_flux, sum_layer_mass_flux_face, u_edge, v_edge, qprime, qprime_face)
 
         ! Compute the tentative values of the predicted or corrected 
-        ! degrees of freedom for  dp.  These would be the values at
+        ! degrees of freedom for  dp (q_df(1,:,:)).  These would be the values at
         ! baroclinic time level  n+1,  except for the need to enforce
         ! consistency between the layer masses and the barotropic mass 
         ! and for the possible need to use a variation limiter to 
@@ -439,12 +440,12 @@ module mod_splitting
         qprime_df,qprime_face2,flag_pred,q2,q_face2,qb_df,qprime2, qprime_face3)
 
         ! ===========================================================================================================================
-        ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
+        ! This subroutine is used to correct the layer momentum for the splitting system using two-level time integration
         ! The nodal points or degree of freedom of the layer momentum is stored in q_df(2:3,:,:)
         ! The quadrature points of the layer momentum are stored in qprime(2:3,:,:)
         ! The face values of the layer momentum are stored in qprime_face(2:3,:,:,:,:)
-        ! The quadrature points of the layer momentum are stored in qb(2:5,:,:)
-        ! The face values of the layer momentum are stored in qb_face(2:5,:,:,:)
+        ! The quadrature points of the layer momentum are stored in qb(2:3,:,:)
+        ! The face values of the layer momentum are stored in qb_face(2:3,:,:,:)
         ! ===========================================================================================================================
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
@@ -452,7 +453,7 @@ module mod_splitting
         use mod_input, only: nlayers, dt, ad_mlswe, ifilter
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
-        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, velocity_df, evaluate_mom_face, &
+        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, evaluate_mom_face, &
                                     interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, shear_stress_system
 
         implicit none
@@ -581,12 +582,12 @@ module mod_splitting
         qprime_df,qprime_face2,flag_pred,q2,q_face2,qb_df,qprime2, qprime_face3)
 
         ! ===========================================================================================================================
-        ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
-        ! The nodal points or degree of freedom of the layer momentum is stored in q_df(2:3,:,:)
-        ! The quadrature points of the layer momentum are stored in qprime(2:3,:,:)
-        ! The face values of the layer momentum are stored in qprime_face(2:3,:,:,:,:)
-        ! The quadrature points of the layer momentum are stored in qb(2:5,:,:)
-        ! The face values of the layer momentum are stored in qb_face(2:5,:,:,:)
+        ! This subroutine is used to predict the layer mass and momentum for the splitting system using two-level time integration
+        ! The nodal points or degree of freedom of the layer mass is stored in q_df(1,:,:), momentum is stored in q_df(2:3,:,:)
+        ! The quadrature points of the layer mass is stored in qprime(1,:,:), momentum are stored in qprime(2:3,:,:)
+        ! The face values of the layer mass is stored in qprime_face(1,:,:,:,:), momentum are stored in qprime_face(2:3,:,:,:,:)
+        ! The quadrature points of the barotropic momentum are stored in qb(3:4,:,:)
+        ! The face values of the barotropic momentum are stored in qb_face(2:3,:,:,:)
         ! ===========================================================================================================================
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
@@ -594,7 +595,7 @@ module mod_splitting
         use mod_input, only: nlayers, dt, ad_mlswe, ifilter, method_consistency
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
-        use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, velocity_df, &
+        use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, &
                                     evaluate_mom_face, evaluate_dp, evaluate_dp_face
 
         use mod_layer_terms, only: interpolate_mom, velocity, velocity_face, evaluate_mom_face_all
@@ -701,8 +702,6 @@ module mod_splitting
                 end do
                 q_df3(1,:,k) = q_df(1,:,k)
             end do
-
-            !call layer_mom_boundary_df(q_df3(2:3,:,:))
 
             ! Extract velocity from the momentum on quads and interpolate to nodal pts
             call interpolate_mom(q_df3,q,qb,flag_pred)
@@ -849,7 +848,7 @@ module mod_splitting
         real, dimension(2,nq,nface,nlayers)    :: H_r_face
         real, dimension(npoin_q,nlayers+1)     :: p
         real, dimension(npoin,nlayers+1)       :: z_elev
-        real, dimension(2,npoin_q,nlayers+1)     :: tau_wind_int, tau_bot_int
+        real, dimension(2,npoin_q,nlayers+1)   :: tau_wind_int, tau_bot_int
 
         u_udp_temp = 0.0
         v_vdp_temp = 0.0
@@ -898,14 +897,7 @@ module mod_splitting
     subroutine apply_consistency(dp_advec, q_df,sum_layer_mass_flux, sum_layer_mass_flux_face, flag_pred)
 
         ! ===========================================================================================================================
-        ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
-        ! The nodal points or degree of freedom of the layer thickness dpprime_df is stored in q_df(1,:,:)
-        ! The quadrature points of the layer thickness dpprime is stored in qprime(1,:,:)
-        ! The face values of the layer thickness dpprime_face is stored in qprime_face(1,:,:,:,:)
-        ! The quadrature points of the layer thickness dp is stored in qb(1,:,:)
-        ! The face values of the layer thickness dp_face is stored in qb_face(1,:,:,:,:)
-        !
-        ! Enforce consistency between the layer masses and the barotropic mass.
+        ! This subroutine enforce consistency between the layer masses and the barotropic mass through flux adjustment (see Higdon (2015)).
         ! ===========================================================================================================================
 
         use mod_input, only: nlayers, ifilter, dt
@@ -913,7 +905,7 @@ module mod_splitting
         use mod_basis, only: nq
         use mod_initial, only: pbprime
         use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
-        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, consistency_mass_terms, consistency_mass_terms_v2, filter_mlswe
+        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, filter_mlswe
         use mod_variables, only: btp_mass_flux_face_ave
 
         implicit none
@@ -935,11 +927,11 @@ module mod_splitting
         real, dimension(2,2,nq,nface)  :: flux_deficit_mass_face
         integer :: k
         
+        ! Interpolate to quad points 
         call evaluate_dp(q,qprime,q_df, pbprime)
         call evaluate_dp_face(q_face, qprime_face,q, qprime)
 
-        !call create_communicator_quad_layer(q_face(1,:,:,:,:),1,nlayers)
-
+        ! Communicate the interface values within the neighboring processors
         call bcl_create_communicator(qprime_face(1,:,:,:,:),1,nlayers,nq)
 
         flux_deficit_mass_face(1,1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
@@ -950,12 +942,11 @@ module mod_splitting
 
         call create_communicator_quad(flux_deficit_mass_face,2)
 
+        ! Consistency flux terms 
         call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, qprime, &
             sum_layer_mass_flux, qprime_face, flux_deficit_mass_face)
 
-        !call consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
-        !    sum_layer_mass_flux, flux_deficit_mass_face, q_face)
-
+        ! RHS of the consistency terms
         call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
 
         ! Apply consistency to the thickness
@@ -963,9 +954,9 @@ module mod_splitting
         do k = 1,nlayers
             q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
             
-            !if(ifilter > 0 .and. flag_pred == 0) then 
-            !    call filter_mlswe(q_df(1,:,k),1)
-            !end if
+            if(ifilter > 0 .and. flag_pred == 0) then 
+                call filter_mlswe(q_df(1,:,k),1)
+            end if
         end do
         
     end subroutine apply_consistency
@@ -973,14 +964,7 @@ module mod_splitting
     subroutine apply_consistency2(q_df,qb_df,flag_pred)
 
         ! ===========================================================================================================================
-        ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
-        ! The nodal points or degree of freedom of the layer thickness dpprime_df is stored in q_df(1,:,:)
-        ! The quadrature points of the layer thickness dpprime is stored in qprime(1,:,:)
-        ! The face values of the layer thickness dpprime_face is stored in qprime_face(1,:,:,:,:)
-        ! The quadrature points of the layer thickness dp is stored in qb(1,:,:)
-        ! The face values of the layer thickness dp_face is stored in qb_face(1,:,:,:,:)
-        !
-        ! Enforce consistency between the layer masses and the barotropic mass.
+        ! This subroutine enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
 
         use mod_input, only: nlayers, ifilter
@@ -1013,9 +997,9 @@ module mod_splitting
             
         if(flag_pred == 0 .and. ifilter > 0) then 
 
-            !do k = 1,nlayers
-            !    call filter_mlswe(q_df(1,:,k),1)
-            !end do
+            do k = 1,nlayers
+                call filter_mlswe(q_df(1,:,k),1)
+            end do
         end if
 
     end subroutine apply_consistency2

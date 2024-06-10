@@ -1,5 +1,7 @@
 module mod_variables
 
+    ! This routine contains pre-allocation variable for barotropic equations terms 
+
     use mod_grid, only: npoin_q, nface, npoin, face, intma_dg_quad
     use mod_basis, only: nq, ngl
     use mod_input, only: nlayers

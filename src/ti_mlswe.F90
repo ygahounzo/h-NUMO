@@ -8,6 +8,14 @@
 
 subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpprime_df,qprime_df,qp_df_out)
 
+	! q: layer variable dp, u*dp, v*dp at quad points and their face values: q_face
+	! q_df : layer variable dp, u*dp, v*dp at nodal (dof) point
+	! qprime: value dp', u' and v' at quad points and their face values: qprime_face
+	! qb : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at quad points and their face values: qb_face
+	! qb_df: : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at nodal points 
+	! qprime_df: value dp', u' and v' at nodal points
+	! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
+
 	use mod_splitting, only: ti_barotropic, thickness, momentum
 	use mod_input, only: nlayers, dt, dt_btp, dpprime_visc_min, ti_method_btp
 	use mod_grid, only: npoin, npoin_q, nface
@@ -60,7 +68,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 
 	mslwe_elevation = 0.0
 
-	! Prediction step
+	! ====================== Prediction step ====================================
 
 	flag_pred = 1
 
@@ -73,6 +81,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	dpprime_visc(:,:) = qprime_df(1,:,:)
 	dpprime_visc_q(:,:) = qprime(1,:,:)
 
+	! Barotropic solver 
 	call ti_barotropic(qbp,qbp_face,qbp_df,qprime,qprime_face, qprime_df, flag_pred)
 
 	q2 = q
@@ -81,12 +90,14 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	q_df1 = q_df
 	qprime_face1 = qprime_face
 
+	! Layer thickness solver 
 	call thickness(q2,qprime1, q_df1, q_face2, qprime_face1, u_edge, v_edge, dpprime_df1, flag_pred, qbp_df)
 
 	qprime2 = qprime
 	qprime_face2 = qprime_face
 	qprime_df2 = qprime_df
 
+	! Layer momentum solver 
 	call momentum(q2,qprime2,q_df1,q_face2,qprime_face2,qbp,qbp_face,u_edge,v_edge,&
 		qprime_df2, qprime_face,flag_pred,q,q_face,qbp_df,qprime, qprime_face1)
 
@@ -94,7 +105,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qprime_face2(1,:,:,:,:) = qprime_face1(1,:,:,:,:)
 	qprime_df2(1,:,:) = dpprime_df1(:,:)
 
-	! Correction step
+	! ====================== Correction step ====================================
 
 	! Communication of qprime_face2 values within the inter-processor boundary
 
@@ -107,18 +118,10 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	
 	flag_pred = 0
 
-	do k = 1,nlayers
-		do Iq = 1,npoin
-			dpprime_visc(Iq,k) = max(qprime_df_avg(1,Iq,k), dpprime_visc_min)
-		end do 
-
-		do Iq = 1,npoin_q
-			dpprime_visc_q(Iq,k) = max(qprime_avg(1,Iq,k), dpprime_visc_min)
-		end do 
-	end do 
+	dpprime_visc(:,:) = qprime_df_avg(1,:,:)
+	dpprime_visc_q(:,:) = qprime_avg(1,:,:)
 
 	call ti_barotropic(qb,qb_face,qb_df, qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
-
 
 	q2 = q
 	q_face2 = q_face
@@ -141,7 +144,6 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qprime_face_corr(1,:,:,:,:) = 0.5*(qprime_face(1,:,:,:,:) + qprime_face_avg(1,:,:,:,:))
 	qprime_corr(2:3,:,:) = qprime_avg(2:3,:,:)
 	qprime_face_corr(2:3,:,:,:,:) = qprime_face_avg(2:3,:,:,:,:)
-	! qprime_df = qprime_df_avg
 	qprime_df_corr(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
 	qprime_df_corr(2:3,:,:) = qprime_df_avg(2:3,:,:)
 
@@ -171,7 +173,7 @@ subroutine ti_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_face,dpp
 	qp_df_out(4,:,1) = qb_df(3,:)
 	qp_df_out(4,:,2) = qb_df(3,:)
 
-	qp_df_out(5,:,1) = one_plus_eta_df(:)-1.0  !mslwe_elevation(:,1)
+	qp_df_out(5,:,1) = mslwe_elevation(:,1)
 	qp_df_out(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
 end subroutine ti_mlswe

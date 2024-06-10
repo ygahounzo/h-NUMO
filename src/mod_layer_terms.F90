@@ -1,5 +1,12 @@
-module mod_layer_terms
+! ===========================================================================================================================
+! This module contains the routines for the baroclinic flux terms
+!   Author: Yao Gahounzo 
+!   Computing PhD 
+!   Boise State University
+!   Date: March 27, 2023
+! ==========================================================================================================================
 
+module mod_layer_terms
     
     use mod_grid, only: npoin_q, nface, intma_dg_quad, face
     use mod_basis, only: nqx, nqy, nqz, nq
@@ -9,15 +16,16 @@ module mod_layer_terms
 
     public :: layer_mass_advection_terms, evaluate_dp, evaluate_dp_face, &
             compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_windbot_stress_terms, &
-            shear_stress_system, consistency_mass_terms1, consistency_mass_terms, &
-            layer_mom_boundary_df, limiter_Positivity_Preserving_layers_mass, limiter_Positivity_Preserving_layers_mom, &
-            filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, bcl_wet_dry_mass,bcl_wet_dry_mom_df,bcl_wet_dry_mom, &
-            interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, consistency_mass_terms_v2, layer_momentum_advec_terms_upwind
+            shear_stress_system, consistency_mass_terms1, consistency_mass_terms, layer_mom_boundary_df,  &
+            filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, &
+            interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, layer_momentum_advec_terms_upwind
 
     contains
 
     subroutine layer_mass_advection_terms(sum_layer_mass_flux,sum_layer_mass_flux_face,u_edge,v_edge,uvdp_temp,flux_edge, &
                         qprime,qprime_face)
+
+        ! This routines compute the layer mass flux terms using upwind or centered flux
 
         use mod_grid, only: npoin_q, nface, intma_dg_quad, face
         use mod_basis, only: nqx, nqy, nqz, nq
@@ -138,6 +146,8 @@ module mod_layer_terms
     end subroutine layer_mass_advection_terms
 
     subroutine evaluate_dp(q,qprime,q_df,pbprime)
+    
+        ! This routine interpolate layer mass from dofs to quad points 
 
         use mod_basis, only: npts
         use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad
@@ -184,6 +194,8 @@ module mod_layer_terms
     end subroutine evaluate_dp
 
     subroutine evaluate_dp_face(q_face, qprime_face,q,qprime)
+
+        ! This routines extracts the layer mass face values 
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface, face
@@ -251,8 +263,10 @@ module mod_layer_terms
     
     end subroutine evaluate_dp_face
     
-    subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, qprime, &
+    subroutine consistency_mass_terms(flux_adjustment, flux_adjust_edge, qprime, &
         sum_layer_mass_flux, qprime_face, flux_deficit_mass_face)
+
+        ! This routines computes the consistency flux terms 
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
@@ -289,6 +303,8 @@ module mod_layer_terms
 
         end do
 
+        ! Face terms 
+
         do iface = 1,nface
 
             do iquad = 1,nq 
@@ -319,9 +335,9 @@ module mod_layer_terms
             end do 
         end do
 
-    end subroutine consistency_mass_terms1
+    end subroutine consistency_mass_terms
 
-    subroutine consistency_mass_terms(flux_adjustment, flux_adjust_edge, q_df, qprime, &
+    subroutine consistency_mass_terms1(flux_adjustment, flux_adjust_edge, q_df, qprime, &
         sum_layer_mass_flux, flux_deficit_mass_face, q_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl
@@ -434,83 +450,7 @@ module mod_layer_terms
             end do
         end do
 
-    end subroutine consistency_mass_terms
-
-    subroutine consistency_mass_terms_v2(flux_adjustment, flux_adjust_edge, q, &
-        sum_layer_mass_flux, flux_deficit_mass_face, q_face)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq, ngl, npts, npts_quad
-        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface,face, npoin, intma, nelem
-        use mod_initial, only: pbprime, pbprime_face, pbprime_edge
-        use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q
-        use mod_variables, only: btp_mass_flux_ave
-
-        implicit none
-
-        real, dimension(2,npoin_q, nlayers), intent(out)      :: flux_adjustment
-        real, dimension(2,nq, nface, nlayers), intent(out)    :: flux_adjust_edge
-
-        real, dimension(3,npoin_q,nlayers), intent(in)   :: q
-        real,dimension(2,npoin_q), intent(in)          :: sum_layer_mass_flux
-        real, dimension(2,nq,nface), intent(in)        :: flux_deficit_mass_face
-        real, dimension(3,2,nq,nface,nlayers), intent(in) :: q_face
-
-        real, dimension(2,2) :: flux_adjustment_face
-        real, dimension(nlayers)                  :: dp_avail_left, dp_avail_right
-        real, dimension(nlayers) :: sum_left, sum_right
-        integer :: el, er, il, jl, iquad, k, iface
-        real :: weights
-        real :: weights_face, qml, qmr, weights_face_r, weights_face_l
-        integer :: I, ir, jr, kr, kl, ier,m, Iq, jquad, e, qmean(nlayers), ii
-        real, dimension(npts_quad) :: qlocal, inodes
-
-        flux_adjustment = 0.0
-        flux_adjust_edge = 0.0
-
-        do Iq = 1,npoin_q 
-            do k = 1, nlayers
-                
-                weights = q(1,Iq,k) / sum(q(1,Iq,:))
-                flux_adjustment(1,Iq,k) = weights * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
-                flux_adjustment(2,Iq,k) = weights * (btp_mass_flux_ave(2,Iq) - sum_layer_mass_flux(2,Iq))
-            end do
-        end do 
-
-        do iface = 1,nface
-
-            do iquad = 1,nq 
-                do k = 1,nlayers
-
-                    if(sum(q_face(1,1,iquad,iface,:)) > 0.0) then 
-                        weights_face_l = q_face(1,1,iquad,iface,k) / sum(q_face(1,1,iquad,iface,:))
-                    end if 
-                    if(sum(q_face(1,2,iquad,iface,:)) > 0.0) then 
-                        weights_face_r = q_face(1,2,iquad,iface,k) / sum(q_face(1,2,iquad,iface,:))
-                    end if 
-
-                    !weights_face_l = 0.5*(weights_face_l + weights_face_r)
-
-                    if(flux_deficit_mass_face(1,iquad,iface) > 0.0) then 
-
-                        flux_adjust_edge(1,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(1,iquad,iface)
-                    else 
-                        flux_adjust_edge(1,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(1,iquad,iface)
-                    end if 
-
-                    if(flux_deficit_mass_face(2,iquad,iface) > 0.0) then 
-                        flux_adjust_edge(2,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(2,iquad,iface)
-                    else 
-                        flux_adjust_edge(2,iquad,iface,k) = weights_face_r*flux_deficit_mass_face(2,iquad,iface)
-                    end if 
-
-                    !flux_adjust_edge(1,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(1,iquad,iface)
-                    !flux_adjust_edge(2,iquad,iface,k) = weights_face_l*flux_deficit_mass_face(2,iquad,iface)
-                end do 
-            end do 
-        end do
-
-    end subroutine consistency_mass_terms_v2
+    end subroutine consistency_mass_terms1
 
     subroutine compute_momentum_edge_values(udp_left, vdp_left, udp_right, vdp_right, qprime_face)
 
@@ -568,6 +508,8 @@ module mod_layer_terms
 
     subroutine layer_momentum_advec_terms(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
         q, qprime, u_edge, v_edge, udp_left, vdp_left, udp_right, vdp_right)
+
+        ! This routine computes the layer momentum advection flux terms using centered flux 
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface
@@ -728,6 +670,8 @@ module mod_layer_terms
 
     subroutine layer_momentum_advec_terms_upwind(u_udp_temp, u_vdp_temp, v_vdp_temp, udp_flux_edge, vdp_flux_edge, &
         q, qprime, u_edge, v_edge, udp_left, vdp_left, udp_right, vdp_right)
+
+        ! This routine computes the layer momentum advection flux terms using upwind flux 
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, nq
         use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq,nface
@@ -985,6 +929,7 @@ module mod_layer_terms
 
     subroutine layer_pressure_terms(H_r, H_r_face, p, z_elev, qprime, qprime_face, zbot_face, qprime_df ,grad_z)
 
+        ! This routine computes the layer momentum pressure terms
 
         use mod_constants, only : gravity
         use mod_initial, only : alpha_mlswe, zbot_df, pbprime, pbprime_face, zbot
@@ -1325,20 +1270,6 @@ module mod_layer_terms
                     H_r_face(2,iquad,iface,:) = H_r_face(2,iquad,iface,:) * weight
                 end if
 
-                ! ! Wall Boundary conditions
-
-                !if(er == -4) then 
-
-                !    il=imapl_q(1,iquad,1,iface)
-                !    jl=imapl_q(2,iquad,1,iface)
-                !    kl=imapl_q(3,iquad,1,iface)
-                !    I=intma_dg_quad(il,jl,kl,el)
-
-                !    H_r_face(1,iquad,iface,:) = H_r(I,:)
-                !    H_r_face(2,iquad,iface,:) = H_r(I,:)
-
-                !end if
-
             end do
         end do
 
@@ -1391,135 +1322,6 @@ module mod_layer_terms
         tau_bot_int(2,:,nlayers) = tau_bot_ave(2,:)
     
     end subroutine layer_windbot_stress_terms
-
-    subroutine limiter_Positivity_Preserving_layers_mass(q_df)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
-        use mod_input, only : nlayers
-        
-        implicit none
-
-        !global arrays
-        real, intent(inout) :: q_df(3,npoin,nlayers)
-
-        !local arrays
-        real, dimension(npts) :: qlocal, qlim
-        real :: theta, qmean, qmin
-        real :: eps, rho
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !Define Constants
-        eps=1.0e-13
-
-        !loop through elements
-        do k = 1,nlayers
-            do e = 1,nelem
-
-                !Store local DOFs and compute Mean
-                ii=0
-                do j=1,ngly
-                    do i=1,nglx
-                        Ip = intma(i,j,1,e)
-                        ii=ii+1
-                        inodes(ii) = Ip
-                        !Store Primitive Variables
-                        qlocal(ii) = q_df(1,Ip,k)
-                    end do !i
-                end do !j
-
-                qmean = sum(qlocal(:))/npts !area of canonical element in 3D (4 in 2D)
-
-                !Compute Weight
-                qmin = minval(qlocal(:))
-                theta = min(1.0, (qmean - eps)/(abs(qmean - qmin)))
-
-                !Apply Weighted combination of Mean Value and High-Order Solution
-                do ii=1,npts
-                    qlim(ii) = qmean + theta*(qlocal(ii) - qmean)
-                    if (qmin == 0.0 .and. qmean == 0.0) qlim(ii) = 0.0
-                end do !ii
-
-                !Check for Positivity and Store Values
-                do ii=1,npts
-                    Ip = inodes(ii)
-                    qlim(ii) = max(0.0, qlim(ii))
-                    q_df(1,Ip,k) = qlim(ii) 
-                end do !ii
-
-            end do !e
-        end do !k
-
-    end subroutine limiter_Positivity_Preserving_layers_mass
-
-    subroutine limiter_Positivity_Preserving_layers_mom(q_df, dp_df)
-
-        use mod_basis, only : npts, nglx, ngly
-        use mod_grid, only : npoin, nelem, intma
-        use mod_input, only : nlayers
-    
-
-        implicit none
-
-        !global arrays
-        real, intent(inout) :: q_df(2,npoin,nlayers)
-        real, intent(in) :: dp_df(npoin,nlayers)
-
-        !local arrays
-        real, dimension(3,npts) :: qlocal, qlim
-        real, dimension(3) :: qmean, qmin
-        real :: eps, rho, theta
-        integer :: e, i, j, k, l, m, inodes(npts), ii, Ip
-
-        !Define Constants
-        eps=1.0e-13
-
-        !loop through elements
-        do k = 1,nlayers
-            do e=1,nelem
-
-                !Store local DOFs and compute Mean
-                ii=0
-                do j=1,ngly
-                    do i=1,nglx
-                        Ip = intma(i,j,1,e)
-                        ii=ii+1
-                        inodes(ii) = Ip
-                        !Store Primitive Variables
-                        qlocal(1,ii) = dp_df(Ip,k)
-                        do m = 2,3
-                            qlocal(m,ii) = q_df(m-1,Ip,k)
-                        end do !m
-                    end do !i
-                end do !j
-
-                qmean(:) = sum(qlocal(:,:),dim=2)/npts !area of canonical element in 3D (4 in 2D)
-
-                !Compute Weight
-                do m=1,3
-                    qmin(m) = minval(qlocal(m,:))
-                end do !m
-
-                theta = min(1.0, (qmean(1) - eps)/abs(qmean(1) - qmin(1)))
-
-                !Apply Weighted combination of Mean Value and High-Order Solution
-                do ii=1,npts
-                    do m=2,3
-                        qlim(m,ii) = qmean(m) + theta*(qlocal(m,ii) - qmean(m))
-                        if (qmin(m) == 0.0 .and. qmean(m) == 0.0) qlim(m,ii) = 0.0
-                    end do !m
-                end do !ii
-
-                !Check for Positivity and Store Values
-                do ii=1,npts
-                    Ip = inodes(ii)
-                    q_df(:,Ip,k) = qlim(2:3,ii)
-                end do !ii
-
-            end do !e
-        end do !k
-
-    end subroutine limiter_Positivity_Preserving_layers_mom
 
     subroutine velocity_df(q_df, qb_df, flag_pred)
 
@@ -1654,10 +1456,13 @@ module mod_layer_terms
         real :: hi
         real, dimension(2,npoin_q,nlayers) :: uv
         
+        ! Interpolate momentum dofs to quad points
         call evaluate_mom(q,q_df)
 
+        ! Extract velocity 
         call velocity(uv,q, qb)
 
+        ! Compute the new mometum value based on the velocity and layer pressure 
         do k = 1,nlayers
             q(2,:,k) = uv(1,:,k) * q(1,:,k)
             q(3,:,k) = uv(2,:,k) * q(1,:,k)
@@ -1667,16 +1472,11 @@ module mod_layer_terms
 
         call interpolate_layer_from_quad_to_node(q_df, q)
 
-        if(flag_pred == 0 .and. ifilter > 0) then 
-            do k = 1,nlayers
-                call filter_mlswe(q_df(2:3,:,k),2)
-            end do
-            call layer_mom_boundary_df(q_df(2:3,:,:))
-        end if
-
     end subroutine interpolate_mom
 
     subroutine evaluate_mom(q,q_df)
+
+        ! Interpolate from dofs to quadrature points 
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
@@ -1685,7 +1485,6 @@ module mod_layer_terms
         use mod_initial, only: psih, indexq
 
         implicit none
-      
 
         real, intent(inout) :: q(3,npoin_q,nlayers)
         real, intent(in) :: q_df(3,npoin,nlayers)
@@ -1703,7 +1502,6 @@ module mod_layer_terms
                 
                 q(2,Iq,:) = q(2,Iq,:) + q_df(2,I,:)*hi
                 q(3,Iq,:) = q(3,Iq,:) + q_df(3,I,:)*hi
-
             end do
         end do
 
@@ -2172,289 +1970,5 @@ module mod_layer_terms
         q(1:ndim2,:) = b(1:ndim2,:)
     
     end subroutine filter_mlswe
-
-
-    subroutine evaluate_grad_layers(gradq, qp, qp_face)
-
-        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face, intma, npoin
-        use mod_basis, only: npts, nq, ngl, psiq
-        use mod_metrics, only: massinv
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-
-        implicit none
-
-        real, dimension(2, npoin_q), intent(out) :: gradq
-
-        real, dimension(npoin_q), intent(in) :: qp
-        real, dimension(2, nq, nface), intent(in) :: qp_face
-
-        real, dimension(2, npoin) :: qu_df
-
-        real :: nxl, nyl, dhdx, dhdy, wq, var_u, var_v, hi, um, vm
-        integer :: Iq, ip, I, iface, el, er, iquad, ir, jr, kr, il, jl, kl, n
-
-        gradq = 0.0
-        qu_df = 0.0
-
-        do Iq = 1,npoin_q
-            
-            wq = wjac(Iq)
-            var_u = qp(Iq)
-
-            do ip = 1, npts
-
-                I = indexq(Iq,ip)
-
-                !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
-                !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
-
-                qu_df(1,I) = qu_df(1,I) - wq*var_u*dhdx
-                qu_df(2,I) = qu_df(2,I) - wq*var_u*dhdy
-
-            end do
-        end do
-
-        do iface = 1,nface 
-
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do iquad = 1, nq
-
-                wq = jac_faceq(iquad,1,iface)
-
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
-
-                um = 0.5*(qp_face(1,iquad,iface) + qp_face(2,iquad,iface))
-
-                do n = 1, ngl
-
-                    hi = psiq(n,iquad)
-                    
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-
-                    I = intma(il,jl,kl,el)
-
-                    qu_df(1,I) = qu_df(1,I) + wq*hi*nxl*um
-                    qu_df(2,I) = qu_df(2,I) + wq*hi*nyl*um
-
-                    if(er > 0) then
-                            
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-
-                        I = intma(ir,jr,kr,er)
-
-                        qu_df(1,I) = qu_df(1,I) - wq*hi*nxl*um
-                        qu_df(2,I) = qu_df(2,I) - wq*hi*nyl*um
-
-                    end if
-
-                end do
-            end do 
-        end do
-
-        qu_df(1,:) = massinv(:)*qu_df(1,:)
-        qu_df(2,:) = massinv(:)*qu_df(2,:)
-
-        do Iq = 1,npoin_q
-            do ip = 1,npts
-                
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
-                
-                gradq(1,Iq) = gradq(1,Iq) + hi*qu_df(1,I)
-                gradq(2,Iq) = gradq(2,Iq) + hi*qu_df(2,I)
-                
-            end do
-        end do
-
-
-    end subroutine evaluate_grad_layers
-
-    subroutine bcl_wet_dry(q_df)
-
-        use mod_grid, only: npoin, npoin_q, nelem, intma
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-        use mod_constants, only: gravity
-        use mod_basis, only: npts, nglx, ngly
-    
-        implicit none
-        
-        real, intent(inout) :: q_df(3,npoin,nlayers)
-
-        integer :: Iq,e,k,ii,jj,Ip,i,j
-        real :: h_limit, h
-        real :: theta, qmin, depth_dry, hmean, eps
-        real, dimension(3,npts) :: qlocal
-        real, dimension(npts) :: hh
-        real, dimension(3) :: qmean
-        integer :: inode(npts)
-
-        !Define Constants
-        eps=1.0e-3
-
-        depth_dry = 2.0
-
-        do k = 1,nlayers
-
-            !loop through elements
-            do e=1,nelem
-
-                !Store local DOFs and compute Mean
-                ii=0
-                do j=1,ngly
-                    do i=1,nglx
-                        Ip = intma(i,j,1,e)
-                        ii=ii+1
-                        inode(ii) = Ip
-                        !Store Primitive Variables
-                        qlocal(1,ii) = q_df(1,Ip,k)
-                        qlocal(2,ii) = q_df(2,Ip,k)
-                        qlocal(3,ii) = q_df(3,Ip,k)
-                    end do !i
-                end do !j
-
-                !Compute Weight
-                hh = (sum(alpha_mlswe(:))/gravity)*qlocal(1,:)
-                qmin = minval(hh)
-
-                if(qmin < depth_dry) then 
-
-                    qmean(:) = sum(qlocal(:,:),dim=2)/npts !area of canonical element in 3D (4 in 2D)
-                    hmean = sum(hh) / npts
-
-                    if(hmean < depth_dry) then
-                        do ii=1,npts
-                            Ip = inode(ii)
-                            q_df(1,Ip,k) = (gravity/alpha_mlswe(nlayers)) * depth_dry
-                            q_df(2:3,Ip,k) = 0.0
-                        end do !ii
-                    else 
-
-                        theta = min(1.0, (hmean - eps)/abs(hmean - qmin))
-
-                        !Apply Weighted combination of Mean Value and High-Order Solution
-                        do ii=1,npts
-                            Ip = inode(ii)
-                            q_df(1,Ip,k) = qmean(1) + theta*(qlocal(1,ii) - qmean(1))
-                            q_df(2,Ip,k) = qmean(2) + theta*(qlocal(2,ii) - qmean(2))
-                            q_df(3,Ip,k) = qmean(3) + theta*(qlocal(3,ii) - qmean(3))
-                        end do !ii
-                    end if 
-                end if 
-
-            end do !e
-
-        end do
-    
-    end subroutine bcl_wet_dry
-
-    subroutine bcl_wet_dry_mass(q,q_df,neg_pb_pos,neg_pb_pos_q)
-
-        use mod_grid, only: npoin, npoin_q
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-        use mod_constants, only: gravity
-    
-        implicit none
-        
-        real, intent(inout) :: q(5,npoin_q,nlayers)
-        real, intent(inout) :: q_df(5,npoin,nlayers)
-        integer, dimension(npoin,nlayers),intent(out) :: neg_pb_pos
-        integer, dimension(npoin_q,nlayers),intent(out) :: neg_pb_pos_q
-
-        integer :: I, Iq,k
-        real :: p_limit, hmlswe_limit
-
-        hmlswe_limit = 0.01
-
-        ! Compute the wetting and drying treatment for the barotropic
-
-        do k = 1,nlayers
-            p_limit = (gravity/alpha_mlswe(k))*hmlswe_limit
-            do I = 1,npoin
-                if(q_df(1,I,k) < p_limit) then 
-                    q_df(1,I,k) = p_limit
-                    neg_pb_pos(I,k) = 1
-                end if
-            end do
-
-            do Iq = 1,npoin_q
-                
-                if (q(1,Iq,k) < p_limit) then
-                    q(1,Iq,k) = p_limit
-                    neg_pb_pos_q(Iq,k) = 1
-                end if
-            end do
-        end do 
-    
-    end subroutine bcl_wet_dry_mass
-
-    subroutine bcl_wet_dry_mom_df(q,q_df,neg_pb_pos)
-
-        use mod_grid, only: npoin, npoin_q
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-        use mod_constants, only: gravity
-    
-        implicit none
-        
-        real, intent(inout) :: q(5,npoin_q,nlayers)
-        real, intent(inout) :: q_df(5,npoin,nlayers)
-        integer, dimension(npoin,nlayers),intent(in) :: neg_pb_pos
-
-        integer :: I, Iq,k
-
-        ! Compute the wetting and drying treatment for the barotropic
-
-        do k = 1,nlayers
-
-            do I = 1,npoin
-                
-                if (neg_pb_pos(I,k) == 1) then
-                    q_df(2:5,Iq,k) = 0.0
-                end if
-            end do
-        end do 
-    
-    end subroutine bcl_wet_dry_mom_df
-
-    subroutine bcl_wet_dry_mom(q,q_df,neg_pb_pos_q)
-
-        use mod_grid, only: npoin, npoin_q
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime, pbprime_df, alpha_mlswe
-        use mod_constants, only: gravity
-    
-        implicit none
-        
-        real, intent(inout) :: q(5,npoin_q,nlayers)
-        real, intent(inout) :: q_df(5,npoin,nlayers)
-        integer, dimension(npoin_q,nlayers),intent(in) :: neg_pb_pos_q
-
-        integer :: I, Iq,k
-
-        ! Compute the wetting and drying treatment for the barotropic
-
-        do k = 1,nlayers
-
-            do Iq = 1,npoin_q
-                
-                if (neg_pb_pos_q(Iq,k) == 1) then
-                    q(2:5,Iq,k) = 0.0
-                end if
-            end do
-        end do 
-    
-    end subroutine bcl_wet_dry_mom
     
 end module mod_layer_terms
