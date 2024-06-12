@@ -173,7 +173,7 @@ module mod_barotropic_terms
 
             H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
 
-            if(er < 0) then 
+            if(er == -4) then 
 
                 do iquad = 1, nq
 
