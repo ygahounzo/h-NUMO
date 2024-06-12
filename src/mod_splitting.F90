@@ -905,7 +905,7 @@ module mod_splitting
         use mod_basis, only: nq
         use mod_initial, only: pbprime
         use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
-        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms1, filter_mlswe
+        use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, consistency_mass_terms, filter_mlswe
         use mod_variables, only: btp_mass_flux_face_ave
 
         implicit none
@@ -943,7 +943,7 @@ module mod_splitting
         call create_communicator_quad(flux_deficit_mass_face,2)
 
         ! Consistency flux terms 
-        call consistency_mass_terms1(flux_adjustment, flux_adjust_edge, qprime, &
+        call consistency_mass_terms(flux_adjustment, flux_adjust_edge, qprime, &
             sum_layer_mass_flux, qprime_face, flux_deficit_mass_face)
 
         ! RHS of the consistency terms

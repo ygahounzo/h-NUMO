@@ -254,7 +254,7 @@ module mod_laplacian_quad
         call compute_laplacian_IBP_set2nc_quad(rhs_temp,flux_uv_visc)
         ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face)
-        RHS of the viscosity 
+        !RHS of the viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
@@ -369,7 +369,7 @@ module mod_laplacian_quad
         call compute_laplacian_IBP_v2(rhs_temp,flux_uv_visc)
         ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG(rhs_temp,flux_uv_visc_face)
-        RHS of viscosity 
+        !RHS of viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
@@ -466,7 +466,7 @@ module mod_laplacian_quad
         graduvb_face_ave = graduvb_face_ave + graduv_face
         ! Compute interface integral 
         call create_rhs_laplacian_flux_SIPG_v1(rhs_temp,graduv_face)
-        RHS of viscosity 
+        !RHS of viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
