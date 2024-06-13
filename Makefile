@@ -2,7 +2,7 @@ RM = /bin/rm -rf
 MV = /bin/mv -f
 CP = /bin/cp -f
 
-export PLATFORMS:= macbook-p4est-intel hnumo hnumo-debug macbook-p4est-brew
+export PLATFORMS:= macbook-p4est-intel hnumo hnumo-debug macbook-p4est-brew hnumo-hamming-p4est-gcc7
 
 export NUMO_DIR    := $(CURDIR)
 export DEPEND_FILE := $(NUMO_DIR)/depend.mk

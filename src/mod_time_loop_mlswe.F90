@@ -45,7 +45,7 @@ contains
             icase, ifilter, fname_root, lprint_diagnostics, &
             ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
 
-        use mod_papi, only: papi_start, papi_update, papi_print, papi_stop
+        !use mod_papi, only: papi_start, papi_update, papi_print, papi_stop
 
         use mod_layer_terms, only: filter_mlswe
         use mod_barotropic_terms, only: restart_mlswe
@@ -282,7 +282,7 @@ contains
                 inorm=inorm + 1
 
                 !Print PAPI counters
-                call papi_print()
+!                call papi_print()
                 
                 !Write Snapshot File
                 ifnp= inorm

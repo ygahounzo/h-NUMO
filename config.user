@@ -63,6 +63,31 @@ macbook-p4est-brew-dbg:
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
+# Flags for building NUMO on Hamming using the same command used for main NUMA
+#------------------------------------------------------------------------------
+hnumo-hamming-p4est-gcc7:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90" \
+	"LD=mpif90 -Wl,--allow-multiple-definition" \
+	"CC=mpicc" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
+	"AR=ar rv"
+
+old-hnumo-hamming-p4est-gcc7:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90" \
+	"LD=mpif90" \
+	"CC=mpicc" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE=-I${NETCDF_HAMMING_GCC7_PATH}/include -I${P4EST_DIR}/local/include -I$(NUMA_DIR)/include" \
+	"LIBS=$(NUMALIBS) -L${NETCDF_HAMMING_GCC7_PATH}/lib -L${P4EST_DIR}/local/lib -lnetcdff -lnetcdf -L../lib -lmetis_gnu_hamming -lp4est -lsc -llapack -lf77blas -lcblas -latlas -lz" \
+	"AR=ar rv"
+
+#------------------------------------------------------------------------------
 # Default rules
 #------------------------------------------------------------------------------
 %.o $(OBJDIR)/%.o : %.f
