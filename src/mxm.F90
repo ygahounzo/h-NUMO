@@ -1,4 +1,7 @@
 !-----------------------------------------------------------------------
+!Original code from Paul Fischer from NEK5000
+!Modified by F.X. Giraldo to hardwire loop unrolling
+!-----------------------------------------------------------------------
 subroutine mxm(a,n1,b,n2,c,n3)
     !-----------------------------------------------------------------------
     !
@@ -22,7 +25,7 @@ subroutine mxm(a,n1,b,n2,c,n3)
     !      call dgemm('N','N',n1,n3,n1,alpha,a,n1,b,n2,beta,c,n1)
     !      return
 
-    !Use Paul's original codes
+    !Use Paul Fischer's original codes from NEK5000
     !      if (n2==2) then
     !         call mxm44_2(a,n1,b,n2,c,n3)
     !      else
