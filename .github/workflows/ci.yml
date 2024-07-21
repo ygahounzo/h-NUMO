@@ -23,5 +23,8 @@ jobs:
     - name: Compile Fortran code
       run: make hnumo
 
+    - name: Print home directory
+      run: echo $HOME
+
     - name: Run MPI tests
-      run: mpirun -np 1 ~/h-NUMO/bin/numo3d
+      run: mpirun -np 1 $HOME/bin/numo3d
