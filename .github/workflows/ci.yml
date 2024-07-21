@@ -24,4 +24,4 @@ jobs:
       run: make hnumo
 
     - name: Run MPI tests
-      run: mpirun -np 1 ./bin/numo3d
+      run: mpirun -np 1 ../../bin/numo3d
