@@ -30,8 +30,7 @@ module mod_metrics
         jac_1d, mass_1d, massinv_1d, &
         ksiq_x,ksiq_y,ksiq_z, &
         etaq_x,etaq_y,etaq_z, &
-        zetaq_x,zetaq_y,zetaq_z, jacq, xjacq, &
-        mass_e, massinv_e
+        zetaq_x,zetaq_y,zetaq_z, jacq, xjacq
 
     private
     !-----------------------------------------------------------------------
@@ -41,7 +40,7 @@ module mod_metrics
     real, dimension(:,:,:,:), allocatable :: ksiq_x,ksiq_y,ksiq_z, &
         etaq_x,etaq_y,etaq_z, zetaq_x,zetaq_y,zetaq_z, jacq, xjacq
     real, dimension(:),       allocatable :: mass, massinv
-    real, dimension(:,:),     allocatable :: mass_1d, massinv_1d, mass_e, massinv_e
+    real, dimension(:,:),     allocatable :: mass_1d, massinv_1d
     real, dimension(:,:,:),   allocatable :: jac_1d
   !-----------------------------------------------------------------------
 
@@ -91,7 +90,7 @@ contains
 
         integer inbh, ib, ip, ip_g, ic, i, j, k, e
         integer :: AllocateStatus
-        real, dimension(:), allocatable :: mass_recv, mass_e_recv
+        real, dimension(:), allocatable :: mass_recv
         real, dimension(:,:), allocatable :: mass_1d_continuous
         real, dimension(:), allocatable :: mass_cg
 
@@ -100,19 +99,8 @@ contains
           mass_recv(num_send_recv_total), stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Metrics_Create_Mass **"
 
-        if(is_mlswe) then 
-            if(allocated(mass_e)) deallocate(mass_e,massinv_e)
-            allocate(mass_e(npts,npts), massinv_e(npts,npts),                         &
-            mass_e_recv(num_send_recv_total), stat=AllocateStatus )
-            if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Metrics_Create_Mass **"
-        end if  ! is_mlswe
-
         !Compute Mass Matrix (on each element)
         call create_mass(mass,jac)
-
-        if(is_mlswe) then ! Compute element mass matrix added by Yao Gahounzo
-            call create_mass_element(mass_e, massinv_e, jacq)
-        end if  ! is_mlswe
 
         !Compute Inverse Mass Matrix: This is what is used in the CODE
 
@@ -123,7 +111,6 @@ contains
 
         !Deallocate
         deallocate(mass_recv)
-        if(is_mlswe) deallocate(mass_e_recv)
 
     end subroutine mod_metrics_create_mass
 
