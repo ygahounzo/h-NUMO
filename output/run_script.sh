@@ -9,6 +9,6 @@
 #SBATCH -N 1
 #SBATCH --exclusive
 
-cp ~/NUMO_MLSWE/MultiLayers/h-NUMO/bin/numo3d .
+cp ~/h-NUMO/bin/numo3d .
 
-mpirun -np 1 ./numo3d
+mpirun -np 36 ./numo3d
