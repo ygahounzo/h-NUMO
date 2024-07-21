@@ -24,7 +24,7 @@ jobs:
       run: make hnumo
 
     - name: Print home directory
-      run: echo $HOME
+      run: echo $GITHUB_WORKSPACE
 
     - name: Run MPI tests
       run: mpirun -np 1 $HOME/work/h-NUMO/h-NUMO/bin/numo3d
