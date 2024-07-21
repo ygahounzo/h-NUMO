@@ -24,10 +24,13 @@ jobs:
       run: make hnumo
 
     - name: Print home directory
-      run: echo $GITHUB_WORKSPACE
+      run: echo ls $GITHUB_WORKSPACE
 
     - name: Copy executable file
       run: cp $GITHUB_WORKSPACE/bin/numo3d $GITHUB_WORKSPACE/output
+
+    - name: List bin directory contents after compilation
+      run: ls -al $GITHUB_WORKSPACE/output
 
     - name: Run MPI tests
       run: mpirun -np 1 $GITHUB_WORKSPACE/output/numo3d
