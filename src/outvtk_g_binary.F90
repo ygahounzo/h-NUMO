@@ -26,26 +26,20 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
 
-    use mod_bc, only: bb
-
-    use mod_constants, only: pi, earth_radius, rgas, gamma, rgasocp, cv, p00, gravity
+    use mod_constants, only: pi, earth_radius, gravity
   
     use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
 
     use mod_grid, only: npoin, intma, coord, nelem
   
-    use mod_initial, only: q_ref, nvar, nvar_diag, kvector, rho_layers, q_ref_layers, bathymetry
+    use mod_initial, only: nvar, nvar_diag, kvector, rho_layers, bathymetry
 
     use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, icase, out_type, &
-        lout_rho , lout_uvelo , lout_vvelo , lout_wvelo , lout_velo , lout_dvelo, lout_theta , lout_sponge, &
-        lout_thetae , lout_press , lout_temperature, lout_vorticity, lout_qvapor, lout_qcloud, lout_qrain, lout_tau, &
-        lout_radius, eqn_set, lLAV, lSMAG, lkessler, lpassive, format_vtk, space_method, equations, is_swe_layers, is_mlswe
+        eqn_set, format_vtk, space_method, is_mlswe
 
     use mod_mpi_utilities, only: irank, irank0
   
     use mod_parallel, only: nproc, num_send_recv_total
-
-    use mod_viscosity, only: visc_elem
 
     use mod_vtk_binary
   
@@ -262,33 +256,28 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
         ! end do
         ! call vtk_var_scal_R8(npoin,'elevation',var_uns_grid)
 
-        if(lout_uvelo) then
-            !Write u-velo :
-            do i=1,npoin_g
-                var_uns_grid(i) = q_g(2,i)
-            end do
-            
-            call vtk_var_scal_R8(npoin_g,'u',var_uns_grid)
-        end if
 
-        if(lout_vvelo) then
-            !Write v-velo :
-            do i=1,npoin_g
-                var_uns_grid(i) = q_g(3,i)
-            end do
+        !Write u-velo :
+        do i=1,npoin_g
+            var_uns_grid(i) = q_g(2,i)
+        end do
+        
+        call vtk_var_scal_R8(npoin_g,'u',var_uns_grid)
 
-            call vtk_var_scal_R8(npoin_g,'v',var_uns_grid)
-        end if
+        !Write v-velo :
+        do i=1,npoin_g
+            var_uns_grid(i) = q_g(3,i)
+        end do
 
-        if(lout_velo) then
-            !Write velocity vectors:
-            do i=1,npoin_g
-                x_uns(i) = q_g(2,i)
-                y_uns(i) = q_g(3,i)
-                z_uns(i) = 0.0
-            end do
-            call vtk_var_vect_R8('VECT',npoin_g,'MOMENTUM',x_uns, y_uns, z_uns)
-        end if 
+        call vtk_var_scal_R8(npoin_g,'v',var_uns_grid)
+
+        !Write velocity vectors:
+        do i=1,npoin_g
+            x_uns(i) = q_g(2,i)
+            y_uns(i) = q_g(3,i)
+            z_uns(i) = 0.0
+        end do
+        call vtk_var_vect_R8('VECT',npoin_g,'MOMENTUM',x_uns, y_uns, z_uns)
 
         do i=1,npoin_g
             var_uns_grid(i) = qb_g(1,i)
@@ -301,23 +290,19 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
         end do
         call vtk_var_scal_R8(npoin_g,'SSH',var_uns_grid)
     
-        if(lout_uvelo) then
-            !Write u-velo :
-            do i=1,npoin_g
-                var_uns_grid(i) = qb_g(3,i) / qb_g(1,i)
-            end do
-            
-            call vtk_var_scal_R8(npoin_g,'ub',var_uns_grid)
-        end if
+        !Write u-velo :
+        do i=1,npoin_g
+            var_uns_grid(i) = qb_g(3,i) / qb_g(1,i)
+        end do
+        
+        call vtk_var_scal_R8(npoin_g,'ub',var_uns_grid)
 
-        if(lout_vvelo) then
-            !Write v-velo :
-            do i=1,npoin_g
-                var_uns_grid(i) = qb_g(4,i) / qb_g(1,i)
-            end do
+        !Write v-velo :
+        do i=1,npoin_g
+            var_uns_grid(i) = qb_g(4,i) / qb_g(1,i)
+        end do
 
-            call vtk_var_scal_R8(npoin_g,'vb',var_uns_grid)
-        end if
+        call vtk_var_scal_R8(npoin_g,'vb',var_uns_grid)
     
         !Close the file
         call vtk_end()
@@ -335,26 +320,20 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
 
-    use mod_bc, only: bb
-
-    use mod_constants, only: pi, earth_radius, rgas, gamma, rgasocp, cv, p00, gravity
+    use mod_constants, only: pi, earth_radius, gravity
   
     use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
 
     use mod_grid, only: npoin, intma, coord, nelem
   
-    use mod_initial, only: q_ref, nvar, nvar_diag, kvector, rho_layers, q_ref_layers, bathymetry
+    use mod_initial, only: nvar, nvar_diag, kvector, rho_layers, bathymetry
 
     use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, icase, out_type, &
-        lout_rho , lout_uvelo , lout_vvelo , lout_wvelo , lout_velo , lout_dvelo, lout_theta , lout_sponge, &
-        lout_thetae , lout_press , lout_temperature, lout_vorticity, lout_qvapor, lout_qcloud, lout_qrain, lout_tau, &
-        lout_radius, eqn_set, lLAV, lSMAG, lkessler, lpassive, format_vtk, space_method, equations, is_swe_layers, is_mlswe
+        eqn_set, format_vtk, space_method, is_mlswe
 
     use mod_mpi_utilities, only: irank, irank0
   
     use mod_parallel, only: nproc, num_send_recv_total
-
-    use mod_viscosity, only: visc_elem
 
     use mod_vtk_binary
   

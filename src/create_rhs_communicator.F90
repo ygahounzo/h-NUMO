@@ -20,8 +20,6 @@ subroutine create_rhs_precommunicator_quad(q_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: space_method
-
     use mod_ref, only: recv_data_dg_quad, send_data_dg_quad, nmessage
 
     use mod_basis, only: nq
@@ -29,20 +27,17 @@ subroutine create_rhs_precommunicator_quad(q_face,nvarb)
     implicit none
 
     !Global Arrays
-    real, dimension(nvarb,nq,nface), intent(in)  :: q_face
+    real, dimension(nvarb,2,nq,nface), intent(in)  :: q_face
     integer, intent(in) :: nvarb
 
     !-------------------------------
     !     For DG
     !-------------------------------
-    if (space_method == 'dg') then
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad(send_data_dg_quad,q_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad(send_data_dg_quad,q_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad,recv_data_dg_quad,nvarb,nreq,ireq,status)
-        !print*, recv_data_dg_quad
-    end if
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad,recv_data_dg_quad,nvarb,nreq,ireq,status)
 
 end subroutine create_rhs_precommunicator_quad
 
@@ -56,15 +51,11 @@ subroutine create_rhs_postcommunicator_quad(q_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -80,18 +71,15 @@ subroutine create_rhs_postcommunicator_quad(q_face,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad(q_send_quad,q_recv_quad,send_data_dg_quad,recv_data_dg_quad,nvarb)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad(q_send_quad,q_recv_quad,send_data_dg_quad,recv_data_dg_quad,nvarb)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_quad(q_face,q_send_quad,q_recv_quad,nvarb,0)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_quad(q_face,q_send_quad,q_recv_quad,nvarb,0)
 
 end subroutine create_rhs_postcommunicator_quad
 
@@ -105,15 +93,11 @@ subroutine create_communicator_quad(q_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -137,26 +121,21 @@ subroutine create_communicator_quad(q_face,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_quad(q_face,q_send_quad1,q_recv_quad1,nvarb,0)
-
-        ! call mpi_waitall(nreq,ireq,status,ierr)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_quad(q_face,q_send_quad1,q_recv_quad1,nvarb,0)
 
 end subroutine create_communicator_quad
 
@@ -170,15 +149,11 @@ subroutine create_communicator_df(q_df_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -202,26 +177,164 @@ subroutine create_communicator_df(q_df_face,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_df(send_data_dg_df1,q_df_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_df(send_data_dg_df1,q_df_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_df(send_data_dg_df1,recv_data_dg_df1,nvarb,nreq,ireq,status)
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_df(send_data_dg_df1,recv_data_dg_df1,nvarb,nreq,ireq,status)
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_df(q_send_df1,q_recv_df1,send_data_dg_df1,recv_data_dg_df1,nvarb)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_df(q_send_df1,q_recv_df1,send_data_dg_df1,recv_data_dg_df1,nvarb)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_df(q_df_face,q_send_df1,q_recv_df1,nvarb,0)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_df(q_df_face,q_send_df1,q_recv_df1,nvarb,0)
 
 end subroutine create_communicator_df
+
+subroutine btp_create_precommunicator(q_df_face,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send, q_recv, recv_data_dg, send_data_dg
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,2,ngl,nface), intent(inout) :: q_df_face
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    !-----------------------------------
+    ! DG - Discontinuous communicator
+    !-----------------------------------
+
+    !Load all the boundary data into a vector
+    call pack_data_dg_df(send_data_dg,q_df_face,nvarb)
+
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_df(send_data_dg,recv_data_dg,nvarb,nreq,ireq,status)
+
+end subroutine btp_create_precommunicator
+
+subroutine btp_create_postcommunicator(q_df_face,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send, q_recv, recv_data_dg, send_data_dg
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,2,ngl,nface), intent(inout) :: q_df_face
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    !-----------------------------------
+    ! DG - Discontinuous communicator
+    !-----------------------------------
+
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
+
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_df(q_send,q_recv,send_data_dg,recv_data_dg,nvarb)
+
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_df(q_df_face,q_send,q_recv,nvarb,0)
+
+end subroutine btp_create_postcommunicator
+
+
+subroutine create_rhs_lap_precommunicator_df(q_df_face,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_ref, only: lap_recv_data_dg_df1, lap_send_data_dg_df1, lap_q_recv_df1, lap_q_send_df1, nmessage
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,2,ngl,nface), intent(in) :: q_df_face
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    !-----------------------------------
+    ! DG - Discontinuous communicator
+    !-----------------------------------
+
+    !Load all the boundary data into a vector
+    call pack_data_dg_df(lap_send_data_dg_df1,q_df_face,nvarb)
+
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_df(lap_send_data_dg_df1,lap_recv_data_dg_df1,nvarb,nreq,ireq,status)
+
+end subroutine create_rhs_lap_precommunicator_df
+
+subroutine create_rhs_lap_postcommunicator_df(q_df_face,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  nface,nboun
+
+    use mod_ref, only: lap_recv_data_dg_df1, lap_send_data_dg_df1, lap_q_recv_df1, lap_q_send_df1, nmessage
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,2,ngl,nface), intent(inout) :: q_df_face
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    !-----------------------------------
+    ! DG - Discontinuous communicator
+    !-----------------------------------
+
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
+
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_df(lap_q_send_df1,lap_q_recv_df1,lap_send_data_dg_df1,lap_recv_data_dg_df1,nvarb)
+
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_df(q_df_face,lap_q_send_df1,lap_q_recv_df1,nvarb,0)
+
+end subroutine create_rhs_lap_postcommunicator_df
 
 subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 
@@ -233,15 +346,11 @@ subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -265,26 +374,21 @@ subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad_all(send_data_dg_quad1,q_face,grad_uvdp_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad_all(send_data_dg_quad1,q_face,grad_uvdp_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nreq,ireq,status)
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nreq,ireq,status)
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,2*nvarb)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,2*nvarb)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send_quad1,q_recv_quad1,nvarb,0)
-
-        ! call mpi_waitall(nreq,ireq,status,ierr)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send_quad1,q_recv_quad1,nvarb,0)
 
 end subroutine create_communicator_quad_all
 
@@ -296,15 +400,11 @@ subroutine bcl_create_communicator(q_face,nvarb,nlayers,nq)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     !use mod_input, only: nlayers
 
@@ -358,15 +458,11 @@ subroutine create_communicator_quad_layer_all(qprime_face,q_face,nvarb,nlayers)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     !use mod_input, only: nlayers
 
@@ -420,15 +516,11 @@ subroutine create_communicator_quad_1var(q_face)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -451,26 +543,21 @@ subroutine create_communicator_quad_1var(q_face)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad_1v(send_data_dg_quad1,q_face)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad_1v(send_data_dg_quad1,q_face)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,1,nreq,ireq,status)
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,1,nreq,ireq,status)
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad_1v(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad_1v(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_quad_1v(q_face,q_send_quad1,q_recv_quad1,0)
-
-        ! call mpi_waitall(nreq,ireq,status,ierr)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_quad_1v(q_face,q_send_quad1,q_recv_quad1,0)
 
 end subroutine create_communicator_quad_1var
 
@@ -485,15 +572,11 @@ subroutine create_lap_postcommunicator_quad(rhs,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -517,18 +600,15 @@ subroutine create_lap_postcommunicator_quad(rhs,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !To build inter-processor fluxes, All Procs Must Wait
-        call mpi_waitall(nreq,ireq,status,ierr)
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
 
-        !Map Recv buffer to the boundary of the Receiver (unpack data)
-        call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
 
-        !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-        call create_nbhs_face_lap_quad_ip(rhs,q_send_quad1,q_recv_quad1,nvarb,0)
-
-    endif
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_lap_quad_ip(rhs,q_send_quad1,q_recv_quad1,nvarb,0)
 
 end subroutine create_lap_postcommunicator_quad
 
@@ -542,15 +622,11 @@ subroutine create_lap_precommunicator_quad(q_face,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 
@@ -574,14 +650,12 @@ subroutine create_lap_precommunicator_quad(q_face,nvarb)
     !-----------------------------------
     ! DG - Discontinuous communicator
     !-----------------------------------
-    if (space_method(1:2)  == 'dg') then
 
-        !Load all the boundary data into a vector
-        call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
+    !Load all the boundary data into a vector
+    call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
 
-        !non-blocking sends-receives: message size=nmessage
-        call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
-    endif
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
 
 end subroutine create_lap_precommunicator_quad
 
@@ -595,15 +669,11 @@ subroutine create_lap_precommunicator_quad_v1(grad_uvdp,nvarb)
 
     use mod_initial, only: nvar
 
-    use mod_input, only: visc, visc2, nlaplacian, space_method, is_non_conforming_flg
-
     use mod_metrics, only: massinv
 
     use mod_p4est, only: plist
 
     use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad, nmessage
-
-    use mod_viscosity, only: q_visc, rhs_visc
 
     implicit none
 

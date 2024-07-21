@@ -24,8 +24,6 @@ subroutine create_face(face,nface, FACE_LEN)
 
     use mod_global_grid, only: intma_g, bsido_g, nelem_g, nboun_g
 
-    use mod_input, only: decomp_type
-
     use mod_mpi_utilities, only: irank
 
     implicit none
@@ -183,7 +181,7 @@ subroutine create_face(face,nface, FACE_LEN)
 
     ! STEP II: Use BSIDO to Assign Info to Faces on the boundary
     do iboun = 1,nboun_g
-        if (bsido_g(6,iboun) /= 3 .or. decomp_type(1:4) == 'geom') then
+        if (bsido_g(6,iboun) /= 3) then
             !FXG: Skip Periodic Faces since they are treated as regular faces now
             do iface = 1,nface
                 if (issame(bsido_g(1:4,iboun),face(1:4,iface))) then

@@ -10,7 +10,7 @@ subroutine create_global_rhs(rhs,recv_data,mvar,imass)
 
   use mod_grid, only: npoin, npoin_cg, intma, intma_cg, nelem, is_cg_coupled, EToNC
 
-  use mod_input, only: space_method, is_non_conforming_flg, interp_cg_flux_flg
+  use mod_input, only: space_method, is_non_conforming_flg
 
   use mod_metrics, only: massinv
 

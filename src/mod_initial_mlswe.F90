@@ -1,12 +1,9 @@
 !----------------------------------------------------------------------!
-!>@brief This module contains Initial Conditions 
-!>@author J.F. Kelly and F.X. Giraldo
-!> Department of Applied Mathematics
-!> Naval Postgraduate School
-!> Monterey, CA 93943-5216
-!>
-!>@date S. Marras: initialize q_* arrays to zero after allocation.
-!>@date S. Marras: nvar_adiffusio
+!>@brief This module contains Initial Conditions settings
+!   Author: Yao Gahounzo 
+!   Computing PhD 
+!   Boise State University
+!   Date: March 27, 2023
 !----------------------------------------------------------------------!
 module mod_initial_mlswe
 
@@ -298,8 +295,8 @@ module mod_initial_mlswe
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
         use mod_input, only: gravity_in, &
-            nelx, nelz, eqn_set, &
-            xdims, ydims, nlayers,explt_coriolis, dt, dt_btp
+            nelx, nelz, &
+            xdims, ydims, nlayers, dt, dt_btp
 
         !use mod_initial, only: psih, indexq
     
@@ -486,18 +483,23 @@ module mod_initial_mlswe
     end subroutine compute_reference_edge_variables
 
 
-    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, psihg)
+    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
 
         use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
             psiqx, psiqy, psiqz
 
+        use mod_basis, only: dpsix, dpsiy, dpsiz, psix, psiy, psiz
+
         use mod_metrics, only: &
             ksiq_x, ksiq_y, ksiq_z, &
             etaq_x, etaq_y, etaq_z, &
             zetaq_x, zetaq_y, zetaq_z, &
-            jacq
+            jacq, &
+            ksi_x, ksi_y, ksi_z, &
+            eta_x, eta_y, eta_z, &
+            jac
 
         use mod_constants, only: gravity
 
@@ -508,7 +510,10 @@ module mod_initial_mlswe
         real, dimension(npoin_q,npts), intent(out) :: psih, dpsidx,dpsidy
         integer, dimension(npoin_q,npts) :: indexq
         real, dimension(npoin_q), intent(out) :: wjac
-        real, dimension(npoin_q,npoin), intent(out) :: psihg
+
+        real, dimension(npoin,npts), intent(out) :: psih_df, dpsidx_df,dpsidy_df
+        integer, dimension(npoin,npts) :: index_df
+        real, dimension(npoin), intent(out) :: wjac_df
 
         integer :: e, jquad, iquad, Iq, ip, m, n, I
         real :: h_e, h_n
@@ -519,7 +524,12 @@ module mod_initial_mlswe
         dpsidx = 0.0
         dpsidy = 0.0
         indexq = 0
-        psihg = 0.0
+
+        wjac_df = 0.0
+        psih_df = 0.0
+        dpsidx_df = 0.0
+        dpsidy_df = 0.0
+        index_df = 0
 
         do e = 1,nelem
 
@@ -543,8 +553,6 @@ module mod_initial_mlswe
                 
                             indexq(Iq, ip) = I
                             psih(Iq, ip) = psiqx(n, iquad) * psiqy(m, jquad)
-
-                            psihg(Iq,I) = psiqx(n, iquad) * psiqy(m, jquad)
                 
                             ! Xi derivatives
                             h_e = dpsiqx(n, iquad) * psiqy(m, jquad)
@@ -555,6 +563,43 @@ module mod_initial_mlswe
                             ! Pressure terms
                             dpsidx(Iq, ip) = h_e * e_x + h_n * n_x
                             dpsidy(Iq, ip) = h_e * e_y + h_n * n_y
+
+                        end do !n
+                    end do !m
+
+                end do !iquad
+            end do !jquad
+
+            do jquad = 1,ngly
+                do iquad = 1,nglx
+                    
+                    Iq = intma(iquad,jquad,1,e)
+
+                    wjac_df(Iq) = jac(iquad,jquad,1,e)
+
+                    e_x = ksi_x(iquad,jquad,1,e); e_y = ksi_y(iquad,jquad,1,e); 
+                    n_x = eta_x(iquad,jquad,1,e); n_y = eta_y(iquad,jquad,1,e);
+
+                    ip = 0
+                    
+                    do m = 1, ngly 
+                        do n = 1, nglx 
+
+                            I = intma(n,m,1,e)
+                            ip = ip + 1
+                
+                            index_df(Iq, ip) = I
+                            psih_df(Iq, ip) = psix(n, iquad) * psiy(m, jquad)
+                
+                            ! Xi derivatives
+                            h_e = dpsix(n, iquad) * psiy(m, jquad)
+
+                            ! Eta derivatives
+                            h_n = psix(n, iquad) * dpsiy(m, jquad)
+                
+                            ! Pressure terms
+                            dpsidx_df(Iq, ip) = h_e * e_x + h_n * n_x
+                            dpsidy_df(Iq, ip) = h_e * e_y + h_n * n_y
 
                         end do !n
                     end do !m

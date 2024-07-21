@@ -1,15 +1,9 @@
 !----------------------------------------------------------------------!
 !> @brief This module contains the entire time loop of the code.
-!> @author Written by Francis X. Giraldo
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!> @date 11/2009
-!> @author Made into a module by Alex Reinecke.
-!> @author FX Giraldo added Alex Reinecke Split-Explicit: does not work
-!> @date December 5, 2014
-!> @author FX Giraldo added better adaptive time-stepping
-!> @date December 18, 2014
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 02, 2023
 !----------------------------------------------------------------------!
 module mod_time_loop_mlswe
 
@@ -17,7 +11,7 @@ module mod_time_loop_mlswe
   
     !use mod_constants, only: nnorm, pi
     use mod_mpi_communicator, only: ierr, ireq, nreq, status
-    use mod_input, only: ti_method, dt, lprint_diagnostics, llimit, irestart_file_number, out_type
+    use mod_input, only: ti_method, dt, lprint_diagnostics, irestart_file_number, out_type
     use mod_mpi_utilities, only : irank, irank0, MPI_PRECISION, wtime, numproc
     use mod_types, only: r8
     use mod_global_grid, only: npoin_g, nelem_g
@@ -49,7 +43,7 @@ contains
 
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             icase, ifilter, fname_root, lprint_diagnostics, &
-            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data
+            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
 
         use mod_papi, only: papi_start, papi_update, papi_print, papi_stop
 
@@ -71,10 +65,8 @@ contains
 
         integer AllocateStatus
 
-        real cfl_vector(4), cfl_vector_g(4)
         real cfl, cfl_h, cfl_v, cflu
-        real ae01, ae02, ae1, ae2, xm1, xm2
-        real ae01_g, ae02_g, ae1_g, ae2_g, raw_filter
+        real mass_conserv_l, mass_conserv_g, mass_conserv0_g(nlayers)
         integer m, itime
         integer irestart, ntime, inorm
         integer iloop, i, j, icol, ivar, npoin_bound, ifnp, idone, ii
@@ -117,18 +109,33 @@ contains
         dpprime0_df = dpprime_df_init
         qprime0_df = qprime_df_init
 
-        qout_mlswe(1:3,:,:) = q0_df_mlswe(1:3,:,:)
-        qout_mlswe(4:5,:,:) = 0.0
-        if(matlab_viz) then
+        ! q0_mlswe: layer variable dp, u*dp, v*dp at quad points and their face values: q0_mlswe_face
+        ! q0_df_mlswe : layer variable dp, u*dp, v*dp at nodal (dof) point
+        ! qprime0_mlswe: value dp', u' and v' at quad points and their face values: qprime0_face_mlswe
+        ! qb0_mlswe : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at quad points and their face values: qb0_face_mlswe
+        ! qb0_df_mlswe: : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at nodal points 
+        ! qprime0_df: value dp', u' and v' at nodal points
 
-            mslwe_elevation(:,nlayers+1) = zbot_df
-            do l = nlayers,1,-1
-                mslwe_elevation(:,l) = mslwe_elevation(:,l+1) + (alpha_mlswe(l)/gravity)*q0_df_mlswe(1,:,l)
-            end do
+        !qout_mlswe(1:3,:,:) = q0_df_mlswe(1:3,:,:)
 
-            qout_mlswe(5,:,1) = 0.0
-            qout_mlswe(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
-        end if
+        !do l = 1,nlayers
+        !    qout_mlswe(1,:,l) = (alpha_mlswe(l)/gravity)*q0_df_mlswe(1,:,l)
+        !    qout_mlswe(2,:,l) = q0_df_mlswe(2,:,l) / q0_df_mlswe(1,:,l)
+        !    qout_mlswe(3,:,l) = q0_df_mlswe(3,:,l) / q0_df_mlswe(1,:,l)
+        !    qout_mlswe(4,:,l) = q0_df_mlswe(1,:,l)
+        !end do
+
+        !qout_mlswe(5,:,:) = 0.0
+        !if(matlab_viz) then
+
+        !    mslwe_elevation(:,nlayers+1) = zbot_df
+        !    do l = nlayers,1,-1
+        !        mslwe_elevation(:,l) = mslwe_elevation(:,l+1) + (alpha_mlswe(l)/gravity)*q0_df_mlswe(1,:,l)
+        !    end do
+
+        !    qout_mlswe(5,:,1) = 0.0
+        !    qout_mlswe(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
+        !end if
 
         !end initialize layers
 
@@ -155,7 +162,7 @@ contains
            !write layers output
            if(dump_data) then 
                 if(matlab_viz) then
-                    call diagnostics(qout_mlswe,qb0_df_mlswe(1:4,:),itime)
+                    call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime)
                 else
                     do l=1,nlayers
                         !Write Snapshot File
@@ -207,11 +214,26 @@ contains
            if(irank==0)  print*,' Done Reading'
         end if
 
+
+        if(lcheck_conserved) then 
+
+            do l = 1,nlayers
+                call compute_conserved(mass_conserv_l,qout_mlswe(1,:,l))
+
+                mass_conserv_g = 0.0
+
+                call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+
+                mass_conserv0_g(l) = mass_conserv_g
+            end do 
+
+        endif 
+
         idone = 0
         if (lprint_diagnostics) then
                
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            ae01_g,ae02_g,cfl,cflu,ntime)
+            mass_conserv0_g,cfl,cflu,ntime)
         end if
 
         if (irank == irank0) then
@@ -239,14 +261,13 @@ contains
             call cpu_time(time1)
 
             if(ti_method_btp == 'rk35') then 
-                call ti_rk35_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
-                    qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
+                ! TIme integration solver: predictor-corrector and RK35 methods 
+                !call ti_rk35_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
+                !    qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
 
-            elseif(ti_method_btp == 'rk34') then 
-
-                call ti_rk35_bcl(q0_df_mlswe,qb0_df_mlswe,qout_mlswe)
+                call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe, qprime0_df)
             else 
-
+                ! Only predictor-corrector methods 
                 call ti_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
                     qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
             end if
@@ -274,19 +295,19 @@ contains
                 end do
 
                 if(matlab_viz) then
-                    call diagnostics(qout_mlswe,qb0_df_mlswe(1:4,:),inorm)
+                    call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm)
                 else
                     do l=1,nlayers
-                    !Write Snapshot File
-                    ifnp= l
-                    write(fnp4,'(i3)')ifnp
-                    iloop=2 - int(log10(real(ifnp)))
-                    do j=1,iloop
-                        fnp4(j:j)='0'
-                    end do
-                    write(fnp2,'(a1,a3,a1,a4)')"l",fnp4,"_",fnp1
+                        !Write Snapshot File
+                        ifnp= l
+                        write(fnp4,'(i3)')ifnp
+                        iloop=2 - int(log10(real(ifnp)))
+                        do j=1,iloop
+                            fnp4(j:j)='0'
+                        end do
+                        write(fnp2,'(a1,a3,a1,a4)')"l",fnp4,"_",fnp1
 
-                    call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
+                        call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
                     end do
                 end if
 
@@ -294,12 +315,19 @@ contains
 
                 if (lprint_diagnostics) then 
                     call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-                    ae01_g,ae02_g,cfl,cflu,ntime)
+                    mass_conserv0_g,cfl,cflu,ntime)
                 end if
             end if !mod
         end do !time
 
         time2 = wtime()
+
+        idone = 1
+
+        if (lprint_diagnostics) then 
+            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+            mass_conserv0_g,cfl,cflu,ntime)
+        end if
 
         !Clean UP
 

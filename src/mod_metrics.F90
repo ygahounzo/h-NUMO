@@ -76,9 +76,7 @@ contains
         call metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,xjac)
         if(is_mlswe) then ! quads data points added by Yao Gahounzo
             call metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_y,zetaq_z,jacq,xjacq)
-            !call metrics1(ksi_x,ksi_y,eta_x,eta_y,jac,xjac)
         end if  ! is_mlswe
-!        call metrics_curl(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,xjac)
 
     end subroutine mod_metrics_create_metrics
 

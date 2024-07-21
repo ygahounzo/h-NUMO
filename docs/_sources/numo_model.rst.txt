@@ -1,8 +1,6 @@
 The h-NUMO Model
 **********************
 
-The Physics
-============
 
 Governing Equations
 -------------------------
@@ -128,7 +126,7 @@ and the total vertical integration of the horizontal pressure force gives
 Discontinuous Galerkin discretisation
 =======================================
 
-We follow the DG method in Giraldo (2020) to discretize the split layered system.
+We follow the DG method in :cite:`giraldo2020numerical` to discretize the split layered system.
 We divide the computational domain :math:`\Omega \in \mathbb{R}^2` into :math:`N_e` non-overlapping quadrilateral elements
 
 .. math::
@@ -156,11 +154,8 @@ Numerical algorithm
 
 h-NUMO solves for barotropic mementum and thickness as well baroclinic mementum and mass field (thickness) in an arbitrary number of layers.
 
-.. figure:: figs/time_intgretor.png
-   :alt: Time integration
-   :width: 100%
-   :align: center
-   :name: time_int
+
+
 
 
 

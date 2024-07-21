@@ -21,8 +21,9 @@ hnumo-debug-config:
 	FC=mpif77 \
 	CFLAGS="-O2 -Wall")
 
-macbook-p4est-brew-config:
+hnumo-brew-config:
  	$(eval P4EST_CONF += )
 	
-macbook-p4est-intel-dbg-config:		 
+	
+hnumo-brew-dbg-config:		 
  	$(eval P4EST_CONF += --enable-debug)

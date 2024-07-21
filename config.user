@@ -8,18 +8,17 @@ NUMOLIBS=-L$(NUMO_DIR)/lib
 R8=-r8
 
 NUMO_P4EST_DIR := $(NUMO_DIR)/p4est/local
-NUMO_METIS := $(NUMO_DIR)/metis
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/lib"
 export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/local"
 hnumo:
 	$(MAKE) $(TARGET) \
 	"FC=mpif90" \
-	"LD=mpif90 -Wl,--allow-multiple-definition" \
+	"LD=mpif90" \
 	"CC=mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
-	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${NUMO_METIS}/include" \
-	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -L${NUMO_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 hnumo-debug:
@@ -29,40 +28,39 @@ hnumo-debug:
 	"CC=mpicc" \
 	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
 	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include -I${NUMO_METIS}/include" \
-	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -L${NUMO_METIS}/lib -lmetis -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
 # Flags for building NUMO on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
-# user must install gcc openmpi metis netcdf vtk using Homebrew
+# user must install gcc openmpi using Homebrew
 #------------------------------------------------------------------------------
-OMPI_COMPILE_BREW := /usr/local/bin
+#OMPI_COMPILE_BREW := /usr/local/bin
+OMPI_COMPILE_BREW := /usr/local/Cellar/open-mpi/5.0.3_1/bin
+#OMPI_COMPILE_BREW := /opt/local/bin
 P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
-NETCDF_DIR_BREW := /usr/local
-METIS_DIR_BREW := /usr/local/lib
-SUPERLU_DIR_BREW := $(NUMO_DIR)/superlu
 
-macbook-p4est-brew:	
+hnumo-brew:	
 	$(MAKE) $(TARGET) \
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -L${METIS_DIR_BREW} -lmetis -lp4est -lsc -llapack -lblas" \
+	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
-macbook-p4est-brew-dbg:	
+hnumo-brew-dbg:	
 	$(MAKE) $(TARGET) \
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -L${METIS_DIR_BREW} -lmetis -lp4est -lsc -llapack -lblas" \
+	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------

@@ -1,21 +1,42 @@
-subroutine diagnostics(q,qb,itime)
+subroutine diagnostics(q,q_df,qb,itime)
 
     use mod_input, only: nlayers, dt, dt_btp
     use mod_global_grid, only: coord_g, npoin_g
     use mod_grid, only: npoin, intma, coord, nelem
     use mod_mpi_utilities, only: irank, irank0
-    use mod_initial, only: zbot_df
+    use mod_initial, only: alpha_mlswe, zbot_df
+    use mod_constants, only: gravity
 
     implicit none
 
-    real, intent(in) :: q(5,npoin,nlayers)
+    real, intent(in) :: q_df(3,npoin,nlayers)
     real, intent(in) :: qb(4,npoin)
     integer, intent(in) :: itime
-
+    real, intent(out) :: q(5,npoin,nlayers)
+    
     character*7:: tempchar
     character*4 :: num
     integer AllocateStatus,i,j,k,iloop
     real :: q_gg(5,npoin_g,nlayers), ql(5,npoin), zbot_g(npoin_g), coord_dg_gathered(3,npoin_g), qb_g(4,npoin_g), q_g(5,npoin_g)
+    real, dimension(npoin,nlayers+1) :: mslwe_elevation
+
+    do k = 1,nlayers
+		q(1,:,k) = (alpha_mlswe(k)/gravity)*q_df(1,:,k)
+		q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+		q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+		q(4,:,k) = q_df(1,:,k)
+	end do
+
+    mslwe_elevation = 0.0
+
+	mslwe_elevation(:,nlayers+1) = zbot_df
+
+	do k = nlayers,1,-1
+		mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + q(1,:,k)
+	end do
+
+	q(5,:,1) = mslwe_elevation(:,1)
+	q(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
     ! Gather Data onto Head node
    

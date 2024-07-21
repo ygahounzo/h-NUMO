@@ -1,7 +1,7 @@
 !-----------------------------------------------------------------!
 !>@brief This subroutine builds the Initial Conditions for the multilayer Shallow Water Equations
 !>@author Written by Yao Gahounzo
-!>@date 2018-03-01
+!>@date March 27, 2023
 !
 !-----------------------------------------------------------------!
 
@@ -26,11 +26,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
       nelx, nelz, eqn_set, &
       xdims, ydims,nlayers, icase
 
-   !use mod_input, only: 
-   
    use mod_types, only : r8
-   
-   use mod_constants, only : gamma
    
    use mpi
    
@@ -113,7 +109,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
    select case (icase)
       
-   case (2023) 
+   case (2023) ! bump test (wave propagation)
 
       gravity = 9.806
        
@@ -149,7 +145,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
       end do
 
-   case(2024) 
+   case(2024) ! lake at rest (well-balanced) test 
 
       gravity = 9.806
 
@@ -188,7 +184,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
       end do  
 
-   case(2022) 
+   case(2022) ! 
 
       gravity = 9.806
 
@@ -219,29 +215,29 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
       end do  
 
-   case (1000) !as 500, but two layers
+   case (1000) ! double-gyre 
 
       gravity = 9.806
 
-      rho_0 = 1027.01037
-      alpha(1) = 1.0/rho_0
+      !rho_0 = 1027.01037
+      !alpha(1) = 1.0/rho_0
 
-      do k = 2,nlayers
-         alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
-      end do
+      !do k = 2,nlayers
+      !   alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
+      !end do
        
-      !layer_dz_eq(1) = 1000.0
-      !layer_dz_eq(2) = 900.0
+      layer_dz_eq(1) = 1000.0
+      layer_dz_eq(2) = 900.0
 
-      layer_dz_eq(:) = 10.0e3/real(nlayers)
+      !layer_dz_eq(:) = 10.0e3/real(nlayers)
 
-      !alpha(1) = 0.976e-3
-      !alpha(2) = 0.972e-3
+      alpha(1) = 0.976e-3
+      alpha(2) = 0.972e-3
 
       ! Bottom topography (flat)
       zbot_df(:) = - sum(layer_dz_eq)
 
-   case (1100) !as 500, but two layers
+   case (1100) ! double-gyre 
 
       gravity = 9.806
        
@@ -428,7 +424,7 @@ end subroutine initial_conditions_mlswe
 !--------------------------------------------------
 subroutine initial_grid_cube_shallow()
 
-    use mod_input, only: xdims, ydims, icase, h0_in, &
+    use mod_input, only: xdims, ydims, icase, &
                          x_boundary, y_boundary, z_boundary
 
     implicit none

@@ -33,7 +33,7 @@
 #ifdef P4_TO_P8
 #include <p8est_bits.h>
 #include <p8est_connectivity.h>
-#include <p8est_connrefine.h>
+// #include <p8est_connrefine.h> // Yao Gahounzo (06/24/2024) comment out to use with new p4est
 #include <p8est_extended.h>
 #include <p8est_ghost.h>
 #include <p8est_lnodes.h>
@@ -42,7 +42,7 @@
 #else
 #include <p4est_bits.h>
 #include <p4est_connectivity.h>
-#include <p4est_connrefine.h>
+// #include <p4est_connrefine.h> // Yao Gahounzo (06/24/2024) comment out to use with new p4est
 #include <p4est_extended.h>
 #include <p4est_ghost.h>
 #include <p4est_lnodes.h>
@@ -102,7 +102,8 @@ typedef struct
   real *coord_dg;
   real *coord_cg;
 
-  p4est_locidx_t *intma;
+  p4est_locidx_t *intma_table;
+  p4est_locidx_t *D2C_mask;
   int *NC_face;
   int *NC_edge;
   int num_send_recv_total;
@@ -133,7 +134,7 @@ typedef struct
   p4est_topidx_t *bc_el_label;
   p4est_topidx_t *vc_el_type;
   p4est_topidx_t *vc_el_label;
-  p4est_locidx_t nel_vc_sponge; //numbers of elements with sponge
+  p4est_locidx_t nel_vc_sponge; // numbers of elements with sponge
 } p4est_bc_info_t;
 
 /* ------------------------------------- */
@@ -143,7 +144,11 @@ static p4est_t *stored_p4est = NULL;
 static int refine_level = 0;
 static p4est_bc_info_t *bc_data;
 
+#ifdef P4_TO_P8
+extern mpi_context_t mpi_context;
+#else
 mpi_context_t mpi_context;
+#endif
 
 /**
  * \param [in] p4est          The forest is not changed.
@@ -306,6 +311,75 @@ static p4est_connectivity_t *p4est_connectivity_new_cubed_sphere(void)
                                      NULL, &num_ctt, NULL, NULL);
 }
 
+#else
+
+static p4est_connectivity_t *p8est_connectivity_new_cubed_sphere(void)
+{
+  const p4est_topidx_t num_vertices = 16;
+  const p4est_topidx_t num_trees = 6;
+  const double vertices[16 * 3] = {
+      +1, -1, -1, // 0
+      +1, +1, -1, // 1
+      +1, -1, +1, // 2
+      +1, +1, +1, // 3
+      -1, -1, +1, // 4
+      -1, +1, +1, // 5
+      -1, -1, -1, // 6
+      -1, +1, -1, // 7
+      +2, -2, -2, // 8
+      +2, +2, -2, // 9
+      +2, -2, +2, // 10
+      +2, +2, +2, // 11
+      -2, -2, +2, // 12
+      -2, +2, +2, // 13
+      -2, -2, -2, // 14
+      -2, +2, -2, // 15
+  };
+  //       0---1
+  //       | 3 |
+  //   0---6---7---1
+  //   | 5 | 2 | 4 |
+  //   2---4---5---3
+  //       | 1 |
+  //       2---3
+  //       | 0 |
+  //       0---1
+  const p4est_topidx_t tree_to_vertex[6 * 8] = {
+      0, 1, 2, 3, 8,  9,  10, 11, // 0
+      2, 3, 4, 5, 10, 11, 12, 13, // 1
+      4, 5, 6, 7, 12, 13, 14, 15, // 2
+      6, 7, 0, 1, 14, 15, 8,  9,  // 3
+      5, 3, 7, 1, 13, 11, 15, 9,  // 4
+      2, 4, 0, 6, 10, 12, 8,  14, // 5
+  };
+
+  p4est_connectivity_t *conn =
+      p4est_connectivity_new(num_vertices, num_trees, 0, 0, 0, 0);
+  for (int tree = 0; tree < conn->num_trees; ++tree)
+  {
+    // Fill tree_to_vertex
+    for (int c = 0; c < P4EST_CHILDREN; ++c)
+      conn->tree_to_vertex[P4EST_CHILDREN * tree + c] =
+          tree_to_vertex[P4EST_CHILDREN * tree + c];
+
+    // Fill with data to make valid connectivity
+    for (int face = 0; face < P4EST_FACES; ++face)
+    {
+      conn->tree_to_tree[P4EST_FACES * tree + face] = tree;
+      conn->tree_to_face[P4EST_FACES * tree + face] = face;
+    }
+  }
+
+  // Fill vertices
+  for (int n = 0; n < 3 * num_vertices; ++n)
+    conn->vertices[n] = vertices[n];
+
+  // Compute real tree_to_* fields and complete (edge and) corner fields.
+  p4est_connectivity_complete(conn);
+
+  return conn;
+}
+
 #endif
 
 /* Start p4est */
@@ -386,11 +460,13 @@ static int compare(const void *a, const void *b)
 static int which_bc(char *line)
 {
 
-  const int num_bc_types = 9;
-  const char *bc_list_label[9] = {"FREE_SLIP", "NO_SLIP", "T_DIRICHLET",
-                                  "S_DIRICHLET", "OUTFLOW", "U_SPONGE",
-				  "T_SPONGE", "S_SPONGE", "TS_ICE"};
-  const int bc_list_condition[9] = {4, 5, 50, 500, 6, 1, 10, 100, 770};
+  const int num_bc_types = 13;
+  const char *bc_list_label[13] = {
+      "FREE_SLIP",  "NO_SLIP",  "T_DIRICHLET", "S_DIRICHLET", "OUTFLOW",
+      "U_SPONGE",   "T_SPONGE", "S_SPONGE",    "TS_ICE",      "PERIODIC",
+      "TOP_SPONGE", "INFLOW",   "OUTFLOW"};
+  const int bc_list_condition[13] = {4,   5,   50, 500, 6, 1, 10,
+                                     100, 770, 3,  6,   5, 6};
 
   int bc = 0;
 
@@ -401,6 +477,11 @@ static int which_bc(char *line)
       bc += bc_list_condition[i];
       // return bc_list_condition[i];
     }
+  }
+  if (bc == 0)
+  {
+    P4EST_LERROR("Not a valid bc type\n");
+    P4EST_LERROR(line);
   }
   return bc;
 }
@@ -455,12 +536,12 @@ static char *p4est_connectivity_getline_upper(FILE *stream)
 
 /* This function reads the mesh file and fills bc info*/
 static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
-				    p4est_topidx_t *num_elem,
+                                    p4est_topidx_t *num_elem,
                                     p4est_topidx_t *bc_physical_type,
                                     p4est_topidx_t *bc_el_label,
                                     p4est_topidx_t *bc_to_vertex,
-				    p4est_topidx_t *vc_el_type,
-				    p4est_topidx_t *vc_el_label)
+                                    p4est_topidx_t *vc_el_type,
+                                    p4est_topidx_t *vc_el_label)
 {
   int reading_elements = 0;
   int reading_elsets = 0;
@@ -491,6 +572,12 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
     element_label = malloc(*num_bc * sizeof(int));
     vc_el_label_list = malloc(*num_elem * sizeof(int));
   }
+  else
+  {
+    physical_type = NULL;
+    element_label = NULL;
+    vc_el_label_list = NULL;
+  }
 
   for (;;)
   {
@@ -506,50 +593,55 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
     /* check for control line */
     if (line[0] == '*')
     {
-      reading_elements = reading_elsets = reading_elsets_volume = reading_elements_volume = wrong_element = 0;
+      reading_elements = reading_elsets = reading_elsets_volume =
+          reading_elements_volume = wrong_element = 0;
       if (strstr(line, "*ELEMENT"))
       {
 
         if (
 #ifdef P4_TO_P8
             strstr(line, "TYPE=C2D4") || strstr(line, "TYPE=CPS4") ||
-            strstr(line, "TYPE=S4") || strstr(line, "TYPE=CPS3") //quad elements, mostly CPS4
+            strstr(line, "TYPE=S4") ||
+            strstr(line, "TYPE=CPS3") // quad elements, mostly CPS4
 #else
             strstr(line, "TYPE=T3D2")
 #endif
-                )
-	  {
-	    if (strstr(line, "TYPE=CPS3")) // we don't want triangles
-	      wrong_element = 1;
-	    reading_elements = 1;
-	    ++lines_free;
-	    P4EST_FREE(line);
-	    continue;
-	  } 
-	else if (strstr(line, "TYPE=C3D8")) // just counting 3D elements
-	  {
-	    reading_elements_volume = 1;
-	    ++lines_free;
-	    P4EST_FREE(line);
-	    continue;
-	  }
+        )
+        {
+          if (strstr(line, "TYPE=CPS3")) // we don't want triangles
+            wrong_element = 1;
+          reading_elements = 1;
+          ++lines_free;
+          P4EST_FREE(line);
+          continue;
+        }
+        else if (strstr(line, "TYPE=C3D8")) // just counting 3D elements
+        {
+          reading_elements_volume = 1;
+          ++lines_free;
+          P4EST_FREE(line);
+          continue;
+        }
       }
-      else if (strstr(line, "*ELSET") && strstr(line, ":BC_")) //boundary conditions (faces)
+      else if (strstr(line, "*ELSET") &&
+               strstr(line, ":BC_")) // boundary conditions (faces)
       {
-
 
         // find which bc is prescribed
         boundary_condition = which_bc(line);
+        P4EST_ASSERT(boundary_condition > 0);
 
         reading_elsets = 1;
         ++lines_free;
         P4EST_FREE(line);
         continue;
       }
-      else if (strstr(line, "*ELSET") && strstr(line, ":VC_")) //volume condition (sponge)
+      else if (strstr(line, "*ELSET") &&
+               strstr(line, ":VC_")) // volume condition (sponge)
       {
         // find which vc is prescribed
         boundary_condition = which_bc(line);
+        P4EST_ASSERT(boundary_condition > 0);
         reading_elsets_volume = 1;
         ++lines_free;
         P4EST_FREE(line);
@@ -593,9 +685,10 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
         }
         else
         {
-          retval = sscanf(line, "%lld, %lld, %lld"
+          retval = sscanf(line,
+                          "%lld, %lld, %lld"
 #ifdef P4_TO_P8
-                                ", %lld, %lld"
+                          ", %lld, %lld"
 #endif
                           ,
                           &el_num, &v[0], &v[1]
@@ -603,7 +696,7 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
                           ,
                           &v[2], &v[3]
 #endif
-                          );
+          );
 
           if (retval != P4EST_CHILDREN / 2 + 1)
           {
@@ -672,7 +765,7 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
           }
         }
 
-        if (ivc > *num_elem) 
+        if (ivc > *num_elem)
         {
           P4EST_LERROR(
               "Encountered vc element that will not fit in vc array\n");
@@ -685,33 +778,34 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
     }
     else if (reading_elements_volume)
     {
-      if(fill_bc_data)
-	{
-	  long long int v[P4EST_CHILDREN];
-	  long long int el_num;
-	  int retval;
+      if (fill_bc_data)
+      {
+        long long int v[P4EST_CHILDREN];
+        long long int el_num;
+        int retval;
 
-          retval = sscanf(line, "%lld, %lld, %lld, %lld, %lld"
+        retval = sscanf(line,
+                        "%lld, %lld, %lld, %lld, %lld"
 #ifdef P4_TO_P8
-			  ", %lld, %lld, %lld, %lld"
+                        ", %lld, %lld, %lld, %lld"
 #endif
-                          ,
-                          &el_num, &v[0], &v[1], &v[2], &v[3]
+                        ,
+                        &el_num, &v[0], &v[1], &v[2], &v[3]
 #ifdef P4_TO_P8
-                          ,
-                          &v[4], &v[5], &v[6], &v[7]
+                        ,
+                        &v[4], &v[5], &v[6], &v[7]
 #endif
-                          );
-	  
-          if (retval != P4EST_CHILDREN + 1)
-          {
-            P4EST_LERROR("Premature end of file");
-            P4EST_FREE(line);
-            return 1;
-          }
+        );
 
-	  vc_el_label_list[num_elements_volume] = el_num;
-	}
+        if (retval != P4EST_CHILDREN + 1)
+        {
+          P4EST_LERROR("Premature end of file");
+          P4EST_FREE(line);
+          return 1;
+        }
+
+        vc_el_label_list[num_elements_volume] = el_num;
+      }
 
       ++num_elements_volume;
     }
@@ -733,24 +827,21 @@ static int p4est_bc_read_inp_stream(FILE *stream, p4est_topidx_t *num_bc,
         }
       }
     }
-    
-    for (int i = 0; i < ivc; i++) //could be shorter loop
-      {
-	for (int j = 0; j < *num_elem; j++)
-	  {
-	    if (vc_el_label[i] == vc_el_label_list[j])
-	      {
-		vc_el_label[i] = j;
-		continue;
-	      }
-	    
-	  }
-      }
 
+    for (int i = 0; i < ivc; i++) // could be shorter loop
+    {
+      for (int j = 0; j < *num_elem; j++)
+      {
+        if (vc_el_label[i] == vc_el_label_list[j])
+        {
+          vc_el_label[i] = j;
+          continue;
+        }
+      }
+    }
   }
   *num_bc = num_elements;
   *num_elem = num_elements_volume;
-
 
   if (num_elsets == 0 || num_elements == 0)
   {
@@ -783,7 +874,8 @@ static p4est_bc_info_t *p4est_bc_read_inp(const char *filename)
   rewind(fid);
 
   // read number of bc elements
-  p4est_bc_read_inp_stream(fid, &num_bc, &num_elem, NULL, NULL, NULL, NULL, NULL);
+  p4est_bc_read_inp_stream(fid, &num_bc, &num_elem, NULL, NULL, NULL, NULL,
+                           NULL);
 
   rewind(fid);
 
@@ -797,21 +889,22 @@ static p4est_bc_info_t *p4est_bc_read_inp(const char *filename)
   bc_data->vc_el_type = malloc(num_elem * sizeof(p4est_topidx_t));
   bc_data->vc_el_label = malloc(num_elem * sizeof(p4est_topidx_t));
 
-  memset(bc_data->vc_el_type, 0,sizeof(p4est_topidx_t) * num_elem);
-  memset(bc_data->vc_el_label, 0,sizeof(p4est_topidx_t) * num_elem);
+  memset(bc_data->vc_el_type, 0, sizeof(p4est_topidx_t) * num_elem);
+  memset(bc_data->vc_el_label, 0, sizeof(p4est_topidx_t) * num_elem);
 
   // read boundary element data
   p4est_bc_read_inp_stream(fid, &num_bc, &num_elem, bc_data->bc_physical_type,
-                           bc_data->bc_el_label, bc_data->bc_to_vertex, bc_data->vc_el_type,
-			   bc_data->vc_el_label);
+                           bc_data->bc_el_label, bc_data->bc_to_vertex,
+                           bc_data->vc_el_type, bc_data->vc_el_label);
 
   int i = 0;
-  for(i=0; i< num_elem; i++)
-    {
-      if(bc_data->vc_el_type[i]==0) break;
-    }
+  for (i = 0; i < num_elem; i++)
+  {
+    if (bc_data->vc_el_type[i] == 0)
+      break;
+  }
   bc_data->nel_vc_sponge = i;
-  
+
   // sort vertices
   for (int i = 0; i < num_bc; i++)
   {
@@ -852,24 +945,23 @@ dead:
   return NULL;
 }
 
-//Function finds whether the element e is in the set s of length n.
+// Function finds whether the element e is in the set s of length n.
 
 static int is_in(p4est_topidx_t e, p4est_topidx_t *s, int n)
 {
   long long int i;
   int match = 0;
 
-  for (i=0; i<n; i++)
+  for (i = 0; i < n; i++)
+  {
+    if (e == s[i])
     {
-      if(e==s[i]) 
-	{
-	  match = 1;
-	  break;
-	}
+      match = 1;
+      break;
     }
+  }
   return match;
 }
-
 
 // Function matches the vertices to the boundary element read from external
 // meshfile
@@ -887,26 +979,27 @@ static int get_bc(p4est_topidx_t *v, p4est_bc_info_t *bc_data)
 
   // loop over all boundary faces extracted from the meshfile
   for (i = 0; i < nbf; i++)
-    {
-   
+  {
+
     count = 0;
     // get vertices from the boundary face (presorted)
     for (int j = 0; j < nvert; j++)
-      {
-	v_bc = bc_data->bc_to_vertex[nvert * i + j];
-	if (v[j] == v_bc)
-	  count++;
-      }
+    {
+      v_bc = bc_data->bc_to_vertex[nvert * i + j];
+      if (v[j] == v_bc)
+        count++;
+    }
     if (count == nvert)
-      {
-	return bc_data->bc_physical_type[i];
-	not_found_match = 0;
-	break;
-      }
+    {
+      return bc_data->bc_physical_type[i];
+      not_found_match = 0;
+      break;
+    }
   }
   if (not_found_match)
   {
-    P4EST_LERROR("Did not find a match for external boundary condition! - check .inp file for errors\n");
+    P4EST_LERROR("Did not find a match for external boundary condition! - "
+                 "check .inp file for errors\n");
     return -1;
   }
 }
@@ -919,15 +1012,16 @@ static p4est_topidx_t get_vc(p4est_topidx_t qt, p4est_bc_info_t *bc_data)
   int not_found_match = 1;
 
   for (i = 0; i < bc_data->nel_vc_sponge; i++)
+  {
+    if (qt == bc_data->vc_el_label[i])
     {
-      if (qt==bc_data->vc_el_label[i])
-	{
-	  return bc_data->vc_el_type[i];
-	  not_found_match = 0;
-	  break;
-	}
+      return bc_data->vc_el_type[i];
+      not_found_match = 0;
+      break;
     }
-  if(not_found_match) return 0;
+  }
+  if (not_found_match)
+    return 0;
 }
 
 /* ------------------------------------------------------ */
@@ -936,7 +1030,8 @@ static p4est_topidx_t get_vc(p4est_topidx_t qt, p4est_bc_info_t *bc_data)
 void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
                    int *read_external_grid_flg, int *is_non_conforming_flg,
                    int *refine_elements, int *xperiodic_flg, int *yperiodic_flg,
-                   int *zperiodic_flg, int *mFACE_LEN, int *mORIENT, int *lrestoring_sponge)
+                   int *zperiodic_flg, int *mFACE_LEN, int *mORIENT,
+                   int *lrestoring_sponge)
 {
   /* March 2015, Modified by Simone Marras to read external grids into p4est
      (abaqus format: see instructions on input file format in
@@ -958,7 +1053,6 @@ void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
   int is_geometry_cube;
   int is_non_conforming;
   int is_restoring;
-  
 
   nx = *nnx;
   ny = *nny;
@@ -999,7 +1093,8 @@ void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
 #ifdef P4_TO_P8
       if (!is_geometry_cube)
       {
-        connectivity = p8est_connectivity_new_shell();
+        // connectivity = p8est_connectivity_new_shell();
+        connectivity = p8est_connectivity_new_cubed_sphere();
       }
       else
       {
@@ -1029,10 +1124,12 @@ void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
       connectivity = p4est_connectivity_read_inp("EXTERNAL_MESH.inp");
       p4est_connectivity_memory_used(connectivity);
 
-#ifdef P4EST_WITH_METIS 
-      //      p4est_connectivity_reorder (mpi->mpicomm, 0, connectivity, P4EST_CONNECT_FACE); 
-#endif /\* P4EST_WITH_METIS *\/
-      
+#ifdef P4EST_WITH_METIS
+//      p4est_connectivity_reorder (mpi->mpicomm, 0, connectivity,
+//      P4EST_CONNECT_FACE);
+#endif
+      /* P4EST_WITH_METIS */
+
       bc_data = p4est_bc_read_inp("EXTERNAL_MESH.inp");
     }
 
@@ -1051,6 +1148,8 @@ void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
   /* Set refinement refinement flag */
   if (is_non_conforming)
   {
+    p4est_ghost_t *ghost = p4est_ghost_new(p4est, connect_type);
+    p4est_mesh_t *mesh = p4est_mesh_new_ext(p4est, ghost, 1, 0, connect_type);
     /*Fill refine flag in user_data*/
     {
       user_data_t *data;
@@ -1060,12 +1159,16 @@ void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
       for (q = 0; q < p4est->local_num_quadrants; ++q)
       {
         /*  find which quadrant */
-        quad = p4est_mesh_quadrant_cumulative(p4est, q, 0, NULL);
+        quad = p4est_mesh_get_quadrant(p4est, mesh, q);
         data = (user_data_t *)quad->p.user_data;
         /*  assign user_int from do_refine */
         data->iref = refine_elements[q];
       }
     }
+    p4est_mesh_destroy(mesh);
+    mesh = NULL;
+    p4est_ghost_destroy(ghost);
+    ghost = NULL;
   }
 
   /* refine, balance and partition*/
@@ -1084,7 +1187,8 @@ void P2N_FUN(init)(int *is_cube, int *nnx, int *nny, int *nnz, int *nref_levs,
 }
 
 void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
-                        int *read_external_grid_flg, p4esttonuma_t **p2n, int *lrestoring_sponge)
+                        int *read_external_grid_flg, p4esttonuma_t **p2n,
+                        int *lrestoring_sponge)
 {
   mpi_context_t *mpi = &mpi_context;
   p4est_t *p4est = stored_p4est;
@@ -1144,21 +1248,44 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
   /* nface_dg: number of dg faces */
   (*p2n)->nface_dg = P4EST_FACES * p4est->local_num_quadrants;
 
-  if(is_restoring)
-    {
-      (*p2n)->vc_el_type = malloc(sizeof(p4est_topidx_t) * (*p2n)->nelem);
-      memset((*p2n)->vc_el_type,0,sizeof(p4est_topidx_t) * (*p2n)->nelem);
-    }
+  if (is_restoring)
+  {
+    (*p2n)->vc_el_type = malloc(sizeof(p4est_topidx_t) * (*p2n)->nelem);
+    memset((*p2n)->vc_el_type, 0, sizeof(p4est_topidx_t) * (*p2n)->nelem);
+  }
 
   /* Get coordinates */
   fill_coordinates(nop + 1, xgl, p4est, lnodes, *p2n);
 
-  /* Get intma                                                                *
-   * intma(1:nglx,1:ngly,1:nglz,1:nelem): gives point number (1...npoin) for  *
+  /* Get intma_table *
+   * intma_table(1:nglx,1:ngly,1:nglz,1:nelem): gives point number (1...npoin)
+   * for  *
    * each point in each element (ngl*=nop*+1, nop: polynomial degree)         */
-  (*p2n)->intma = malloc(sizeof(p4est_locidx_t) * (*p2n)->npoin_dg);
+  (*p2n)->intma_table = malloc(sizeof(p4est_locidx_t) * (*p2n)->npoin_dg);
+  (*p2n)->D2C_mask = malloc(sizeof(p4est_locidx_t) * (*p2n)->npoin_dg);
+  memset((*p2n)->D2C_mask, 0, sizeof(p4est_locidx_t) * (*p2n)->npoin_dg);
+  p4est_locidx_t *C2D_found =
+      malloc(sizeof(p4est_locidx_t) * lnodes->owned_count);
+  memset(C2D_found, 0, sizeof(p4est_locidx_t) * lnodes->owned_count);
   for (ll = 0; ll < (*p2n)->npoin_dg; ++ll)
-    (*p2n)->intma[ll] = lnodes->element_nodes[ll] + 1;
+  {
+    p4est_locidx_t cg_index = lnodes->element_nodes[ll];
+    (*p2n)->intma_table[ll] = cg_index + 1;
+    if (cg_index < lnodes->owned_count && C2D_found[cg_index] == 0)
+    {
+      (*p2n)->D2C_mask[ll] = 1;
+      C2D_found[cg_index] = 1;
+    }
+    else
+      (*p2n)->D2C_mask[ll] = 0;
+  }
+
+#ifdef P4EST_ENABLE_DEBUG
+  /* If in debug mode check the mapping is complete */
+  for (p4est_locidx_t n = 0; n < lnodes->owned_count; ++n)
+    P4EST_ASSERT(C2D_found[n] > 0);
+#endif
+  free(C2D_found);
 
   /* Count the number of elements that touch non-conforming elements */
   p4est_locidx_t *EToNC = (*p2n)->EToNC =
@@ -1191,7 +1318,7 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
                           ,
                           NC_edge + m * P8EST_EDGES
 #endif
-                          );
+      );
       ++m;
     }
 
@@ -1361,8 +1488,6 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
     }
   */
 
-
-
   /*
    * Count boundary faces
    */
@@ -1519,22 +1644,22 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
           // check whether the vertices match any of the bc elements
 
           (*p2n)->face_type[sk] = get_bc(v, bc_data);
-          if ((*p2n)->face_type[sk] > 0) 
-	    {
-	      count_matching_faces++;
-	    }
-	  else if((*p2n)->face_type[sk] == -1)
-	    {
+          if ((*p2n)->face_type[sk] > 0)
+          {
+            count_matching_faces++;
+          }
+          else if ((*p2n)->face_type[sk] == -1)
+          {
 #ifdef P4_TO_P8
-	      printf("Missed BC: %d %d %d %d\n",v[0],v[1],v[2],v[3]);
+            printf("Missed BC: %d %d %d %d\n", v[0], v[1], v[2], v[3]);
 #else
-	      printf("Missed BC: %d %d\n",v[0],v[1]);
+            printf("Missed BC: %d %d\n", v[0], v[1]);
 #endif
-	      //	      printf("Coords: (%f %f %f),(%f %f %f),(%f %f %f),(%f %f %f)\n",
-	      //     (*p2n)->coord_dg
-	      count_mismatched_bcs++;
-	    } 
-	  
+            //	      printf("Coords: (%f %f %f),(%f %f %f),(%f %f %f),(%f %f
+            //%f)\n",
+            //     (*p2n)->coord_dg
+            count_mismatched_bcs++;
+          }
 
           (*p2n)->face[FACE_LEN * sk + 7] = -(*p2n)->face_type[sk];
           (*p2n)->bsido[6 * skb + 5] = -(*p2n)->face_type[sk];
@@ -1683,18 +1808,19 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
       }
     }
 
-    //Check whether this quadrant is in the sponge zone
-    //to do that I need to check whether tree vertices of local elements 
+    // Check whether this quadrant is in the sponge zone
+    // to do that I need to check whether tree vertices of local elements
     // match the vertices of sponge elements in the external mesh
     if (read_external && is_restoring)
-      {
-	int qtt = mesh->quad_to_tree[q];
-	(*p2n)->vc_el_type[q] = get_vc(qtt,bc_data);
-      }
-    
+    {
+      int qtt = mesh->quad_to_tree[q];
+      (*p2n)->vc_el_type[q] = get_vc(qtt, bc_data);
+    }
   }
 
-  if(count_mismatched_bcs>0) printf("Found %d mismatched BCs and %d matched.\n",count_mismatched_bcs,count_matching_faces);
+  if (count_mismatched_bcs > 0)
+    printf("Found %d mismatched BCs and %d matched.\n", count_mismatched_bcs,
+           count_matching_faces);
 
   if (is_dg)
     (*p2n)->nboun = num_processor_boundary_faces;
@@ -1731,8 +1857,8 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
 
   // Save a list of sponge elements
 
-
-  if(read_external) {
+  if (read_external)
+  {
     free(bc_data->vc_el_label);
     free(bc_data->vc_el_type);
     free(bc_data->bc_el_label);
@@ -1753,7 +1879,7 @@ void P2N_FUN(fill_data)(int *nnop, double *xgl, int *nis_dg, int *iboundary,
   int neighbor = 0;
   for (q = 0; q < mesh->local_num_quadrants; ++q)
   {
-    quad = p4est_mesh_quadrant_cumulative(p4est, q, 0, NULL);
+    quad = p4est_mesh_get_quadrant(p4est, mesh, q);
     // save quad level
     (*p2n)->level_list[q] = quad->level;
     // if refined add to partition list
@@ -1836,13 +1962,12 @@ void P2N_FUN(get_mesh_scalars)(p4esttonuma_t **p2n, int *npoin, int *nelem,
 }
 
 /* Function passes to NUMA array data describing mesh. Called from MOD_P4EST*/
-void P2N_FUN(get_mesh_arrays)(p4esttonuma_t **p2n, real *coord, int *intma,
-                              int *NC_face, int *NC_edge, int *EToNC, int *face,
-                              int *face_type, int *num_send_recv, int *nbh_proc,
-                              int *nbh_send_recv, int *nbh_send_recv_multi,
-                              int *nbh_send_recv_half, int *bsido,
-                              int *level_list, int *plist, int *nis_cgc, 
-			      int *vc_el_type, int *lrestoring_sponge)
+void P2N_FUN(get_mesh_arrays)(
+    p4esttonuma_t **p2n, real *coord, int *intma_table, int *NC_face,
+    int *NC_edge, int *EToNC, int *face, int *face_type, int *num_send_recv,
+    int *nbh_proc, int *nbh_send_recv, int *nbh_send_recv_multi,
+    int *nbh_send_recv_half, int *bsido, int *level_list, int *plist,
+    int *nis_cgc, int *vc_el_type, int *lrestoring_sponge, int *D2C_mask)
 {
   int i;
   int is_cgc;
@@ -1861,7 +1986,10 @@ void P2N_FUN(get_mesh_arrays)(p4esttonuma_t **p2n, real *coord, int *intma,
   }
 
   for (i = 0; i < (*p2n)->npoin_dg; ++i)
-    intma[i] = (*p2n)->intma[i];
+    intma_table[i] = (*p2n)->intma_table[i];
+
+  for (i = 0; i < (*p2n)->npoin_dg; ++i)
+    D2C_mask[i] = (*p2n)->D2C_mask[i];
 
   for (i = 0; i < (*p2n)->num_nbh; ++i)
     num_send_recv[i] = (*p2n)->num_send_recv[i];
@@ -1904,11 +2032,11 @@ void P2N_FUN(get_mesh_arrays)(p4esttonuma_t **p2n, real *coord, int *intma,
     NC_edge[i] = (*p2n)->NC_edge[i];
 #endif
 
-  if(is_restoring){
-    for (i=0; i < (*p2n)->nelem; ++i)
+  if (is_restoring)
+  {
+    for (i = 0; i < (*p2n)->nelem; ++i)
       vc_el_type[i] = (*p2n)->vc_el_type[i];
   }
-
 }
 
 /* Function frees memory used by P4EST*/
@@ -1917,7 +2045,7 @@ void P2N_FUN(free)(p4esttonuma_t **p2n, int *lrestoring_sponge)
 
   int is_restoring = *lrestoring_sponge;
 
-  if(is_restoring)
+  if (is_restoring)
     free((*p2n)->vc_el_type);
   free((*p2n)->EToNC);
   free((*p2n)->NC_face);
@@ -1925,7 +2053,8 @@ void P2N_FUN(free)(p4esttonuma_t **p2n, int *lrestoring_sponge)
     free((*p2n)->NC_edge);
   free((*p2n)->coord_dg);
   free((*p2n)->coord_cg);
-  free((*p2n)->intma);
+  free((*p2n)->intma_table);
+  free((*p2n)->D2C_mask);
   free((*p2n)->num_send_recv);
   free((*p2n)->nbh_proc);
   free((*p2n)->nbh_send_recv);
@@ -2048,7 +2177,7 @@ void P2N_FUN(mark_elements)(int *hadapt)
                 ,
                 NULL
 #endif
-                );
+  );
 }
 
 #define P2N_FLAG_COARSEN (1 << 0)
@@ -2106,10 +2235,12 @@ void P2N_FUN(coarsen_refine_p4est)(int32_t *num_dst)
   adapt_p4est(P2N_FLAG_COARSEN | P2N_FLAG_REFINE, num_dst);
 }
 
-void P2N_FUN(dump_forest)(const char* fname)
+/* Sohail Reddy (08/05/2020): comment out to use with new p4est
+void P2N_FUN(dump_forest)(const char *fname)
 {
-  //p4est_vtk_write_all (stored_p4est, NULL, 1, 1, 1, 1, 0, 0, 0, fname);
+  p4est_vtk_write_all(stored_p4est, NULL, 1, 1, 1, 1, 0, 0, 0, fname);
 }
+*/
 
 static void get_elm_lvl(p4est_iter_volume_info_t *info, void *user_data)
 {
@@ -2136,7 +2267,7 @@ void P2N_FUN(get_element_lvl)(int8_t *lvl, int32_t *N)
                 ,
                 NULL
 #endif
-                );
+  );
 }
 
 void P2N_FUN(repartition)(int64_t *qid_src, int64_t *qid_dst)

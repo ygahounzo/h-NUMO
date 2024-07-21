@@ -127,10 +127,10 @@ module mod_splitting_v2
     end subroutine thickness_v2
 
 
-    subroutine momentum_v2(q,qprime,q_df,q_face,qprime_face,qb,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
+    subroutine momentum_v2(q,qprime,q_df,q_face,qprime_face,qb,qb_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,flag_pred,&
-        q2,q_face2,qb_df,qprime2, qprime_face3, ope2_ave, uvb_df_ave, dpprime_df)
+        q2,q_face2,qb_df,qprime2, qprime_face3, ope2_ave, uvb_df_ave)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
@@ -152,7 +152,7 @@ module mod_splitting_v2
 
         use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
-        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_layer_v5, bcl_create_laplacian
+        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
         implicit none
 
@@ -163,6 +163,7 @@ module mod_splitting_v2
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: q_face
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face, qprime_face2, qprime_face3
         real, dimension(4,npoin_q), intent(in) :: qb
+        real, dimension(4,2,nq,nface), intent(in) :: qb_face
         
         real, dimension(npoin_q), intent(in) :: ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave
         real, dimension(2,2,nq,nface), intent(in) :: uvb_face_ave
@@ -170,7 +171,6 @@ module mod_splitting_v2
         real, dimension(2, npoin_q), intent(in) :: tau_wind_ave, tau_bot_ave, uvb_ave
         real, dimension(2, nq, nface), intent(in) :: Qu_face_ave, Qv_face_ave, Quv_face_ave, ope_face_ave
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-        real, dimension(npoin,nlayers), intent(in) :: dpprime_df
         real, dimension(npoin), intent(in) :: ope_ave_df
         integer, intent(in) :: flag_pred
         real, dimension(2,nq, nface, nlayers), intent(in)   :: u_edge, v_edge
@@ -226,8 +226,6 @@ module mod_splitting_v2
         ! Compute the RHS viscosity terms
         if(method_visc > 0) then 
             call create_laplacian_mlswe_layer_v3(rhs_visc_bcl,qprime2,qprime_face2,uvb_ave,uvb_face_ave)
-            !call create_laplacian_mlswe_layer_v5(rhs_visc_bcl,qprime2,qprime_face2,uvb_ave,uvb_face_ave)
-            !call bcl_create_laplacian(rhs_visc_bcl,qprime2,qprime_face2,uvb_ave,uvb_face_ave, dpprime_df(:,:))
         end if
 
         ! Compute the RHS of the layer momentum equation
@@ -286,6 +284,7 @@ module mod_splitting_v2
 
         use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
+        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
         implicit none
 
@@ -367,7 +366,7 @@ module mod_splitting_v2
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of  dp  and  dp' at cell edges and quadrature points.
 
         call evaluate_dp(q,qprime_temp,q_df, pbprime)
-        !call evaluate_dp_face(q_face, qprime_face_temp,q, qprime_temp)
+        call evaluate_dp_face(q_face, qprime_face_temp,q, qprime_temp)
 
         ! Store the degree of freedom (nodal points) values of dpprime_df ( or q_df(1,:,:)) in the array dpprime_df for use in layer_pressure_terms.
 
@@ -382,7 +381,7 @@ module mod_splitting_v2
         call rhs_momentum(rhs_mom, rhs_visc_bcl, qprime,q_face,qprime_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
             Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
             qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,&
-            q,qprime2, qprime_face, ope2_ave, uvb_df_ave, qprime_df)
+            q,qprime2, qprime_face, ope2_ave, uvb_df_ave)
 
         ! Compute the momentum equation variables for the next time step
 
@@ -443,23 +442,24 @@ module mod_splitting_v2
         ! Evaluate velocity and momentum at the quad points
         call evaluate_mom(q,q_df)
         ! Extract faces values
-        !call evaluate_mom_face(q_face, q)
+        call evaluate_mom_face(q_face, q)
 
         ! Compute uprime and vprime at the quad and nodal points
 
         do k = 1,nlayers
-            qprime(1,:,k) = qprime_temp(1,:,k)
+
             qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
             qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
-
-            qprime_df(1,:,k) = dpprime_df(:,k)
             qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
 
-            !qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
-            !qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
+            qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
 
-            !qprime_face(1,:,:,:,k) = qprime_face_temp(1,:,:,:,k)
+            qprime(1,:,k) = qprime_temp(1,:,k)
+            qprime_df(1,:,k) = dpprime_df(:,k)
+
+            qprime_face(1,:,:,:,k) = qprime_face_temp(1,:,:,:,k)
         end do 
 
     end subroutine momentum_mass_v2
@@ -526,7 +526,7 @@ module mod_splitting_v2
     subroutine rhs_momentum(rhs_mom, rhs_visc_bcl, qprime,q_face,qprime_face,ope_ave,one_plus_eta_edge_2_ave,uvb_ave,u_edge,v_edge,Qu_ave,&
         Qv_ave,Quv_ave,H_ave,uvb_face_ave,ope_face_ave,Qu_face_ave,Qv_face_ave,Quv_face_ave,H_face_ave,&
         qprime_df,ope_ave_df,tau_bot_ave,tau_wind_ave,qprime_face2,&
-        q2,qprime2, qprime_face3, ope2_ave, uvb_df_ave, qprime_df2)
+        q2,qprime2, qprime_face3, ope2_ave, uvb_df_ave)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer momentum for the splitting system using two-level time integration
@@ -546,7 +546,7 @@ module mod_splitting_v2
 
         use mod_layer_terms, only: bcl_wet_dry_mom_df,bcl_wet_dry_mom
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl
-        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3, create_laplacian_mlswe_layer_v5, bcl_create_laplacian
+        use mod_laplacian_quad, only: create_laplacian_mlswe_layer_v3
 
         implicit none
 
@@ -560,7 +560,7 @@ module mod_splitting_v2
         real, dimension(nq,nface), intent(in) :: H_face_ave, one_plus_eta_edge_2_ave
         real, dimension(2, npoin_q), intent(in) :: tau_wind_ave, tau_bot_ave, uvb_ave
         real, dimension(2, nq, nface), intent(in) :: Qu_face_ave, Qv_face_ave, Quv_face_ave, ope_face_ave
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, qprime_df2
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(npoin), intent(in) :: ope_ave_df
         real, dimension(2,nq, nface, nlayers), intent(in)   :: u_edge, v_edge
         real, dimension(3,npoin_q,nlayers), intent(in) :: q2
@@ -606,9 +606,6 @@ module mod_splitting_v2
         ! Compute the RHS viscosity terms
         if(method_visc > 0) then 
             call create_laplacian_mlswe_layer_v3(rhs_visc_bcl,qprime2,qprime_face2,uvb_ave,uvb_face_ave)
-            !call create_laplacian_mlswe_layer_v5(rhs_visc_bcl,qprime2,qprime_face2,uvb_ave,uvb_face_ave)
-
-            !call bcl_create_laplacian(rhs_visc_bcl,qprime2,qprime_face2,uvb_ave,uvb_face_ave, qprime_df2(1,:,:))
         end if
 
         ! Compute the RHS of the layer momentum equation

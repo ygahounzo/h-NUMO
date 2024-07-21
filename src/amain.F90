@@ -1,28 +1,12 @@
 !-----------------------------------------------------------------!
-!>@brief This code solves the 3D Euler Equations using CG and DG
-!>@details It uses SET 2NC, 2C and 3C as described in Giraldo et al. SISC 2010 
-!> using SE w/inexact integration and the following time-integrators: 
-!> 1) explicit SSP RK2, RK3, RK34, RK35,
-!> 2) IMEX 1D & 3D BDF2 (Schur and No Schur forms), 
-!> 3) IMEX 1D & 3D LF2  (Schur and No Schur forms), and
-!> 4) IMEX 1D & 3D ARK methods (Schur and No Schur Forms).
-!> 5) IMEX 1D & 3D AM2, BDF23 methods (Schur and No Schur Forms).
-!>The grids are Hexahedra but can be unstructured.
-!>@author  F.X. Giraldo and J.F. Kelly 
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!>@date 1 August 2010 James F. Kelly
-!> NUMA3dCG: A parallel implementation of NUMA for both spherical and 
-!> Cartesian grids.  The spatial discretization is based on spectral elements
-!> (or continuous Galerkin).  Domain decomposition utilizes either geometric
-!> decomposition (e.g. NSEAM-style cube grid decomposition) or METIS-based
-!> decomposition.
-!>@date January 2014 F.X. Giraldo
-!> Cleaned to remove redundant arrays, rename arrays to better names, and 
-!> modified to handle Periodic Boundary conditions by
-!>@date Dec 2014 Daniel S. Abdi
-!> Modified to merge parallel CG/DG
+!>@brief This code solves the multilayer shallow water equations (2D in the horizontal and Nl number of layers in the vertical) using DG
+!> using exact integration and the following time-integrators: 
+!> explicit predictor-correction (Higdon, 2025) and RK35,
+!>The grids are quadrilateral but can be unstructured.
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: July 02, 2023
 !-----------------------------------------------------------------!
 program numa3d
 
@@ -99,44 +83,31 @@ end program numa3d
 !---------------------------------------------------
 subroutine initialize_fields()
 
-  use mod_array_util, only: create_arrays, delete_arrays, get_dimensions
-
-  use mod_bc, only: mod_bc_create, mod_bc_create_iperiodic
+  use mod_bc, only: mod_bc_create
 
   use mod_mpi_communicator, only: mod_mpi_communicator_create
-
-  !use mod_dss, only: mod_dss_create
 
   use mod_face, only: mod_face_create, mod_face_create_boundary, face_send
 
   use mod_filter, only: mod_filter_create_rhs
 
-  use mod_global_grid, only: mod_global_grid_bcs, mod_global_grid_dimensions
+  use mod_grid, only: nboun
 
-  use mod_grid, only: do_1dIMEX, mod_grid_create_column, mod_grid_init_node_column, nboun
-
-  use mod_initial, only: mod_initial_create, q_init, nvar, q_exact, q_ref
+  use mod_initial, only: mod_initial_create, q_init, nvar
 
   use mod_input, only: &
        nopx, nopy, nopz, &
-       solver_type, solver_tol, delta, ti_method, &
-       si_method, si_dimension, precon_order, decomp_type, nproc_z, visc, visc2, visc4, nlaplacian, &
-       lnazarov, &
-       lLES, &
-       lSMAG, &
-       lkessler, &
-       lpassive, &
-       lgrid_only, &
-       Iter_Type, space_method, &
-       lp4est, lp6est, is_non_conforming_flg
+       space_method, &
+       lp4est, lp6est
 
   use mod_metrics, only: mod_metrics_create_metrics, mod_metrics_create_mass
 
   use mod_mpi_utilities
 
-  use mod_parallel, only: nproc, mod_parallel_create_send_recv, mod_parallel_reorder
+  use mod_parallel, only: nproc, mod_parallel_reorder
 
-  use mod_viscosity, only: mod_viscosity_create
+  use mod_variables, only: mod_allocate_mlswe
+  use mod_ref, only: mod_ref_create
 
   implicit none
 
@@ -172,12 +143,6 @@ subroutine initialize_fields()
   call mod_initial_create()
   if (irank == irank0) print *, "Initial Fields Created"
 
-  !print*, "nproc = ", nproc
-
-  ! Create DSS operator
-  !call mod_dss_create()
-  !if (irank == irank0) print *, "DSS operator Created"
-
   ! Create Boundary Condtions
   call mod_bc_create() 
   if (irank == irank0) print *, "Boundary Conditions Created"
@@ -186,31 +151,22 @@ subroutine initialize_fields()
   call mod_metrics_create_mass()
   if (irank == irank0) print *, "Mass Matrix Created"
 
-  !--------------------------------------------------------------------------------
-  !    Create Iterative Solver Arrays
-  !--------------------------------------------------------------------------------
-
-  !CPU only code
+  ! Create Reference Fields
+  call mod_ref_create()
+  if (irank == irank0) print *, "Reference Fields Created"
 
    !Create RHS Vectors for the Filter
    call mod_filter_create_rhs()
    if (irank == irank0) print *, "Filter RHS Created"
 
-   !Create Hyper-Viscosity Arrays
-   call mod_viscosity_create()
-   if (irank == irank0) print *, "Viscosity Arrays Created"
-
-   ! Initialize local 2D and 3D arrays
-   call get_dimensions()
-   if (irank == irank0) print *, "GET_DIMENSIONS Created"
-
-   call create_arrays()
-   if (irank == irank0) print *, "CREATE_ARRAYS Created"
-
    !Create DG Communicator arrays
    if (space_method == 'dg') then
       call mod_mpi_communicator_create()
    end if
+
+   ! allocate btp_variables
+
+   call mod_allocate_mlswe()
 
 end subroutine initialize_fields
 
@@ -223,13 +179,12 @@ subroutine initialize_grid()
 
   use mod_constants, only: mod_constants_create
 
-  use mod_grid, only: mod_grid_create, mod_grid_init_coord, npoin, nelem, nboun, face, nface, &
-       do_1dIMEX, mod_grid_create_column, mod_grid_init_node_column, coord, mod_grid_rotate
+  use mod_grid, only: npoin, nelem, nboun, face, nface
 
   !use mod_initial, only: q_init, nvar
 
-  use mod_input, only: mod_input_create, nopx, nopy, nopz, equations, geometry_type, &
-       decomp_type, nproc_z, space_method, lp4est, lp6est, icase
+  use mod_input, only: mod_input_create, nopx, nopy, nopz, &
+      space_method, lp4est, lp6est, icase
 
   use mod_mpi_utilities
 

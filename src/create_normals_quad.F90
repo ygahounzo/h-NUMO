@@ -1,14 +1,9 @@
 !----------------------------------------------------------------------!
-!>This module builds the Faces and Normals
-!>@author  J.F. Kelly on 11/2009
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!>@date 11 October 2009
-!> Creates normals for spectral element hexahedra
-!>@date 16 November 2009
-!>@date December 2014, Daniel S. Abdi, Fixed bug in jac_faceq
-!> and modified for inter-processor faces
+!>This module builds the Faces and Normals at quadrature points
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: March 27, 2023
 !----------------------------------------------------------------------!
 subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
@@ -16,9 +11,7 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
     use mod_grid, only: intma_dg_quad, coord, intma
 
-    use mod_input, only: geometry_type, lp4est, lp6est
-
-    use mod_interface, only: compute_local_gradient_quad_v3
+    use mod_gradient, only: compute_local_gradient_quad_v3
 
     implicit none
 
@@ -32,16 +25,12 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
     integer :: iface, i, j, k, ip, l, m
     integer :: ilocl, ilocr, iel, ier, ndim
     real :: ww, nx, ny, nz, nlen
-    logical :: is_sphere
 
     !local arrays
     real, dimension(nglx,ngly,nglz) :: x, y, z
     real, dimension(nqx,nqy,nqz) :: x_ksiq, x_etaq, x_zetaq
     real, dimension(nqx,nqy,nqz) :: y_ksiq, y_etaq, y_zetaq
     real, dimension(nqx,nqy,nqz) :: z_ksiq, z_etaq, z_zetaq
-
-    is_sphere = .false.
-    if(geometry_type(1:6) == 'sphere') is_sphere = .true.
   
     !Initialize MXM dimension
     ndim=1
@@ -75,39 +64,32 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
                 end do !j
             end do !k
 
-            
-            !stop
-        
-            if (.not. is_sphere) then
-                !Construct Mapping Derivatives
+            !Construct Mapping Derivatives
 
-                call compute_local_gradient_quad_v3(x_ksiq,x_etaq,x_zetaq,x,nglx,ngly,nglz,nqx,nqy,nqz)
-                call compute_local_gradient_quad_v3(y_ksiq,y_etaq,y_zetaq,y,nglx,ngly,nglz,nqx,nqy,nqz)
-                call compute_local_gradient_quad_v3(z_ksiq,z_etaq,z_zetaq,z,nglx,ngly,nglz,nqx,nqy,nqz)
-            end if
+            call compute_local_gradient_quad_v3(x_ksiq,x_etaq,x_zetaq,x,nglx,ngly,nglz,nqx,nqy,nqz)
+            call compute_local_gradient_quad_v3(y_ksiq,y_etaq,y_zetaq,y,nglx,ngly,nglz,nqx,nqy,nqz)
+            call compute_local_gradient_quad_v3(z_ksiq,z_etaq,z_zetaq,z,nglx,ngly,nglz,nqx,nqy,nqz)
 
             !set jacobian matrix J for 2D
-            if(.not. is_sphere) then
-                do k=1,nqz
-                    do j=1,nqy
-                        do i=1,nqx
-                            if(nqx == 1) then
-                                x_ksiq(i,j,k) = 1.0;  y_ksiq(i,j,k) = 0.0;  z_ksiq(i,j,k) = 0.0;
-                                x_etaq(i,j,k) = 0.0;  x_zetaq(i,j,k) = 0.0;
-                            endif
-                            if(nqy == 1) then
-                                x_etaq(i,j,k) = 0.0;  y_etaq(i,j,k) = 1.0;  z_etaq(i,j,k) = 0.0;
-                                y_ksiq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0;
-                            endif
-                            if(nqz == 1) then
-                                x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0;
-                                z_ksiq(i,j,k) = 0.0; z_etaq(i,j,k) = 0.0;
-                            endif
-                        enddo
+
+            do k=1,nqz
+                do j=1,nqy
+                    do i=1,nqx
+                        if(nqx == 1) then
+                            x_ksiq(i,j,k) = 1.0;  y_ksiq(i,j,k) = 0.0;  z_ksiq(i,j,k) = 0.0;
+                            x_etaq(i,j,k) = 0.0;  x_zetaq(i,j,k) = 0.0;
+                        endif
+                        if(nqy == 1) then
+                            x_etaq(i,j,k) = 0.0;  y_etaq(i,j,k) = 1.0;  z_etaq(i,j,k) = 0.0;
+                            y_ksiq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0;
+                        endif
+                        if(nqz == 1) then
+                            x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0;
+                            z_ksiq(i,j,k) = 0.0; z_etaq(i,j,k) = 0.0;
+                        endif
                     enddo
                 enddo
-            endif
-
+            enddo
               
             !Compute Normals
             select case (ilocl)
@@ -237,10 +219,10 @@ end subroutine create_normals_quad
 !----------------------------------------------------------------------!
 !>@brief Create (global) data structure imapl_q and imapr_q, which denote the node
 !> points which need to be sent to the left element and the right element
-!> in the construction of DG-fluxes
-!>@author James F. Kelly
-!>@date 11 October 2010
-!>@date 28 May 2015, Daniel S. Abdi
+!>@ author by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: March 27, 2023
 !----------------------------------------------------------------------!
 subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
 
@@ -269,7 +251,6 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
         ier= face(8,iface)
 
         call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-        !if(face_type(iface)==21) call mod_grid_get_face_nq(ilocr, nq_i, nq_j,nq_ij)
 
         ii = 0
         do l = 1,nq_i
@@ -391,333 +372,3 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
 !stop
 
 end subroutine create_imaplr_quad
-
-subroutine create_imaplr_quad1(imapl_q,imapr_q,face,nface)
-
-    use mod_basis, only: nq, nq2, nqx, nqy, nqz, FACE_LEN
-  
-    use mod_grid, only: intma_dg_quad, mod_grid_get_face_nq, face_type
-
-    use mod_input, only : lgpu, is_non_conforming_flg
-  
-    implicit none
-  
-    integer nface, nq_i, nq_j, nq_ij, plane_ij
-    integer face(FACE_LEN,nface), imapl_q(3,nq,nq,nface), imapr_q(3,nq,nq,nface)
-    integer iface, ilocl, ilocr, i, j, k, ii, l, m, iel, ier, il, ir,ip
-    integer jmapl_q(3,nq2), jmapr_q(3,nq2),  orderl(nq2), orderr(nq2)
-    !real nv_q(3,nq,nq,nface),jac_faceq(nq,nq,nface)
-    real nvc_q(3,nq,nq), jac_facecq(nq,nq)
-    real x, y, z
-
-    integer ik,jk,kk
-
-    do iface = 1,nface
-        ilocl=face(5,iface)
-        ilocr=face(6,iface)
-        iel= face(7,iface)
-        ier= face(8,iface)
-
-        call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-        !if(face_type(iface)==21) call mod_grid_get_face_nq(ilocr, nq_i, nq_j,nq_ij)
-
-        ii = 0
-        do l = 1,nq_i
-            do m = 1,nq_j
-                ii = ii + 1
-
-                !store Left-Side local GridPoint Pointers
-                select case (ilocl)
-                    case(1)
-                        ! Face 1: zeta = -1
-                        i = l
-                        j = m
-                        k = 1
-                    case(2)
-                        ! Face 2: zeta = +1
-                        i = l
-                        j = m
-                        k = nqz
-                    case(3)
-                        ! Face 3: eta = -1
-                        i = l
-                        j = 1
-                        k = m
-                    case(4)
-                        ! Face 4: eta = +1
-                        i = l
-                        j = nqy
-                        k = m
-                    case(5)
-                        ! Face 5: ksi = -1
-                        i = 1
-                        j = l
-                        k = m
-                    case(6)
-                        ! Face 6: ksi = +1
-                        i = nqx
-                        j = l
-                        k = m
-                end select
-                jmapl_q(1,ii)=i
-                jmapl_q(2,ii)=j
-                jmapl_q(3,ii)=k
-
-                !Now Store Right-Side Local GridPoint Pointers
-                select case (ilocr)
-
-                    case(1)
-                        ! Face 1: zeta = -1
-                        i = l
-                        j = m
-                        k = 1
-                    case(2)
-                        ! Face 2: zeta = +1
-                        i = l
-                        j = m
-                        k = nqz
-                    case(3)
-                        ! Face 3: eta = -1
-                        i = l
-                        j = 1
-                        k = m
-                    case(4)
-                        ! Face 4: eta = +1
-                        i = l
-                        j = nqy
-                        k = m
-                    case(5)
-                        ! Face 5: ksi = -1
-                        i = 1
-                        j = l
-                        k = m
-                    case(6)
-                        ! Face 6: ksi = +1
-                        i = nqx
-                        j = l
-                        k = m
-                end select
-                jmapr_q(1,ii)=i
-                jmapr_q(2,ii)=j
-                jmapr_q(3,ii)=k
-            end do   !m
-        end do !l
-     
-        nq_ij=nq_i * nq_j
-        do l=1,nq_ij
-            orderl(l)=l
-            orderr(l)=l
-        end do
-
-        !store imapl_q,imapr_q
-        ii = 0
-        do i=1,nq_i
-            do j=1,nq_j
-                ii = ii + 1
-                il=orderl(ii)
-                ir=orderr(ii)
-                imapl_q(:,i,j,iface)=jmapl_q(:,il)
-                imapr_q(:,i,j,iface)=jmapr_q(:,ir)
-            end do
-        end do !l
-
-    end do !iface
-
-!stop
-
-end subroutine create_imaplr_quad1
-
-!----------------------------------------------------------------------!
-!>This subroutine computes normals for one face of a given element
-!>@author  M.A. Kopera on 05/2015
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!----------------------------------------------------------------------!
-subroutine compute_normals_element_quad(nx,ny,nz,jac_faceq,element,iloc)
-  
-    use mod_basis, only: nq, nqx, nqy, nqz, wnqx, wnqy, wnqz,nq,nqx,nqy,nqz
-
-    use mod_grid, only: intma, coord
-
-    use mod_interface, only: compute_local_gradient_v3
-  
-    use mod_input, only: geometry_type
-
-    use mod_interface, only: compute_local_gradient_quad_v3
-  
-    implicit none
-
-    !global
-    real, dimension(nq,nq), intent(out) :: nx,ny,nz
-    real, dimension(nq,nq), intent(out) :: jac_faceq
-    integer, intent(in) :: element, iloc
-
-    !local
-    integer :: iface, i, j, k, ip, l, m
-    integer :: ilocl, ilocr, iel, ier, ndim
-    real :: ww, nlen
-    logical :: is_sphere
-  
-    !local arrays
-    real, dimension(nqx,nqy,nqz) :: x, y, z
-    real, dimension(nqx,nqy,nqz) :: x_ksiq, x_etaq, x_zetaq, &
-        y_ksiq, y_etaq, y_zetaq, &
-        z_ksiq, z_etaq, z_zetaq
-
-    is_sphere = .false.
-    if(geometry_type(1:6) == 'sphere') is_sphere = .true.
-  
-    !initialize the global matrix
-    nx=0.0
-    ny=0.0
-    nz=0.0
-    jac_faceq=0.0
-   
-    !Store Element Variables
-    do k=1,nqz
-        do j=1,nqy
-            do i=1,nqx
-                ip=intma(i,j,k,element)
-                x(i,j,k)=coord(1,ip)
-                y(i,j,k)=coord(2,ip)
-                z(i,j,k)=coord(3,ip)
-            end do !i
-        end do !j
-    end do !k
-
-    if (.not. is_sphere) then
-        !Construct Mapping Derivatives
-        call compute_local_gradient_quad_v3(x_ksiq,x_etaq,x_zetaq,x,nqx,nqy,nqz,nqx,nqy,nqz)
-        call compute_local_gradient_quad_v3(y_ksiq,y_etaq,y_zetaq,y,nqx,nqy,nqz,nqx,nqy,nqz)
-        call compute_local_gradient_quad_v3(z_ksiq,z_etaq,z_zetaq,z,nqx,nqy,nqz,nqx,nqy,nqz)
-    end if
-        
-    !set jacobian matrix J for 2D
-    if(.not. is_sphere) then
-        do k=1,nqz
-            do j=1,nqy
-                do i=1,nqx
-                    if(nqx == 1) then
-                        x_ksiq(i,j,k) = 1.0;  y_ksiq(i,j,k) = 0.0;  z_ksiq(i,j,k) = 0.0;
-                        x_etaq(i,j,k) = 0.0;  x_zetaq(i,j,k) = 0.0;
-                    endif
-                    if(nqy == 1) then
-                        x_etaq(i,j,k) = 0.0;  y_etaq(i,j,k) = 1.0;  z_etaq(i,j,k) = 0.0;
-                        y_ksiq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0;
-                    endif
-                    if(nqz == 1) then
-                        x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0;
-                        z_ksiq(i,j,k) = 0.0; z_etaq(i,j,k) = 0.0;
-                    endif
-                enddo
-            enddo
-        enddo
-    endif
-        
-    !Compute Normals
-    select case (iloc)
-              
-        case(1)
-            ! Face 1: zeta = -1
-            do l=1,nqx
-                do m = 1,nqy
-                    ww=wnqx(l)*wnqy(m)
-                    i = l
-                    j = m
-                    k = 1
-                    nx(l,m) = + y_etaq(i,j,k)*z_ksiq(i,j,k) - z_etaq(i,j,k)*y_ksiq(i,j,k)
-                    ny(l,m) = - x_etaq(i,j,k)*z_ksiq(i,j,k) + z_etaq(i,j,k)*x_ksiq(i,j,k)
-                    nz(l,m) = + x_etaq(i,j,k)*y_ksiq(i,j,k) - y_etaq(i,j,k)*x_ksiq(i,j,k)
-                    jac_faceq(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(2)
-            ! Face 2: zeta = +1
-            do l=1,nqx
-                do m=1,nqy
-                    ww=wnqx(l)*wnqy(m)
-                    i = l
-                    j = m
-                    k = nqz
-                    nx(l,m) = - y_etaq(i,j,k)*z_ksiq(i,j,k) + z_etaq(i,j,k)*y_ksiq(i,j,k)
-                    ny(l,m) = + x_etaq(i,j,k)*z_ksiq(i,j,k) - z_etaq(i,j,k)*x_ksiq(i,j,k)
-                    nz(l,m) = - x_etaq(i,j,k)*y_ksiq(i,j,k) + y_etaq(i,j,k)*x_ksiq(i,j,k)
-                    jac_faceq(l,m) =ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(3)
-            ! Face 3: eta = -1
-            do l=1,nqx
-                do m=1,nqz
-                    ww=wnqx(l)*wnqz(m)
-                    i = l
-                    j = 1
-                    k = m
-                    nx(l,m) = + y_ksiq(i,j,k)*z_zetaq(i,j,k) - z_ksiq(i,j,k)*y_zetaq(i,j,k)
-                    ny(l,m) = - x_ksiq(i,j,k)*z_zetaq(i,j,k) + z_ksiq(i,j,k)*x_zetaq(i,j,k)
-                    nz(l,m) = + x_ksiq(i,j,k)*y_zetaq(i,j,k) - y_ksiq(i,j,k)*x_zetaq(i,j,k)
-                    jac_faceq(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(4)
-            ! Face 4: eta = +1
-            do l=1,nqx
-                do m=1,nqz
-                    ww=wnqx(l)*wnqz(m)
-                    i = l
-                    j = nqy
-                    k = m
-                    nx(l,m) = - y_ksiq(i,j,k)*z_zetaq(i,j,k) + z_ksiq(i,j,k)*y_zetaq(i,j,k)
-                    ny(l,m) = + x_ksiq(i,j,k)*z_zetaq(i,j,k) - z_ksiq(i,j,k)*x_zetaq(i,j,k)
-                    nz(l,m) = - x_ksiq(i,j,k)*y_zetaq(i,j,k) + y_ksiq(i,j,k)*x_zetaq(i,j,k)
-                    jac_faceq(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-     
-        case(5)
-            ! Face 5: ksi = -1
-            do l=1,nqy
-                do m=1,nqz
-                    ww=wnqy(l)*wnqz(m)
-                    i = 1
-                    j = l
-                    k = m
-                    nx(l,m) = - y_etaq(i,j,k)*z_zetaq(i,j,k) + z_etaq(i,j,k)*y_zetaq(i,j,k)
-                    ny(l,m) = + x_etaq(i,j,k)*z_zetaq(i,j,k) - z_etaq(i,j,k)*x_zetaq(i,j,k)
-                    nz(l,m) = - x_etaq(i,j,k)*y_zetaq(i,j,k) + y_etaq(i,j,k)*x_zetaq(i,j,k)
-                    jac_faceq(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-
-        case(6)
-            ! Face 6: ksi = +1
-            do l=1,nqy
-                do m=1,nqz
-                    ww=wnqy(l)*wnqz(m)
-                    i = nqx
-                    j = l
-                    k = m
-                    nx(l,m) = + y_etaq(i,j,k)*z_zetaq(i,j,k) - z_etaq(i,j,k)*y_zetaq(i,j,k)
-                    ny(l,m) = - x_etaq(i,j,k)*z_zetaq(i,j,k) + z_etaq(i,j,k)*x_zetaq(i,j,k)
-                    nz(l,m) = + x_etaq(i,j,k)*y_zetaq(i,j,k) - y_etaq(i,j,k)*x_zetaq(i,j,k)
-                    jac_faceq(l,m) = ww*sqrt(nx(l,m)**2+ny(l,m)**2+nz(l,m)**2)
-                end do !m
-            end do !l
-    end select
-	   
-    ! Normalize the normals
-    do l=1,nq
-        do m = 1,nq
-            nlen = sqrt(nx(l,m)**2 + ny(l,m)**2 + nz(l,m)**2)
-            nx(l,m) = nx(l,m)/nlen
-            ny(l,m) = ny(l,m)/nlen
-            nz(l,m) = nz(l,m)/nlen
-        end do
-    end do
-
-
-end subroutine compute_normals_element_quad

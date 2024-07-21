@@ -4,21 +4,21 @@
 !> Department of Applied Mathematics
 !> Naval Postgraduate School
 !> Monterey, CA 93943-5216
-!>
-!>@date S. Marras: initialize q_* arrays to zero after allocation.
-!>@date S. Marras: nvar_adiffusio
+!>@ modified by Yao Gahounzo 
+!>      Computing PhD 
+!       Boise State University
+!       Date: April 03, 2023
 !----------------------------------------------------------------------!
 module mod_initial
 
-    use mod_constants, only: gravity, cv, cp, rgas, p00, earth_radius, gamma, omega
+    use mod_constants, only: gravity, earth_radius, omega
 
     use mod_grid, only:  npoin, coord, npoin_cg, nface, npoin_q
 
     use mod_basis, only: nq, npts, ngl
 
-    use mod_input, only: equations, time_initial, time_final, time_restart, time_scale, &
-        geometry_type, icase, lkessler, lpassive, lphysics, visc, nlaplacian, lLES, lout_vorticity, &
-        llimit, limit_threshold, lsalinity, lALE, is_swe_layers, nlayers, dt, dt_btp, is_mlswe, kstages
+    use mod_input, only: time_initial, time_final, time_restart, time_scale, &
+        geometry_type, icase, nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
         wind_stress_coriolis, compute_reference_edge_variables, Tensor_product, ssprk_coefficients
@@ -37,7 +37,6 @@ module mod_initial
         q_ref_layers, &
         coriolis_constant, kvector, shear_stress, bathymetry, &
         nvar, nvar_diag, nvart, ntracers, &
-        moist_coe, &
         nrhs_mxm, &
         height, &
         pi_values,&
@@ -48,7 +47,7 @@ module mod_initial
         coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
         coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, grad_zbot_quad, &
         psih, dpsidx,dpsidy, indexq, wjac, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
-        ssprk_a, ssprk_beta, psihg
+        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df
 
     private
 
@@ -72,11 +71,10 @@ module mod_initial
     real, dimension(:,:,:), allocatable :: zbot_face
     real, dimension(:,:), allocatable :: grad_zbot_quad
 
-    real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psihg
-    integer, dimension(:,:), allocatable :: indexq
-    real, dimension(:), allocatable :: wjac, ssprk_beta
+    real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psih_df,dpsidx_df,dpsidy_df
+    integer, dimension(:,:), allocatable :: indexq, index_df
+    real, dimension(:), allocatable :: wjac, ssprk_beta, wjac_df
 
-    integer :: moist_coe
     integer :: nvar, nvart, nvar_diag
     integer :: nrhs_mxm, N_btp
   !-----------------------------------------------------------------------
@@ -99,33 +97,9 @@ module mod_initial
         nvart=nvar
         !Define the number of diagnostic variables
         nvar_diag=0
-    
-        if(equations(1:5) == 'euler') then
-            !Define the scaling for time units (default in seconds)
-            if (icase == 13 .or. icase == 200) nvar=6
-
-            moist_coe = 0 !Default value
-            if (icase == 201 .and. lkessler .or. lphysics .or. lpassive) then
-                nvar      = 8
-                moist_coe = 1
-            end if
-            if (icase == 1000) nvar=8
-            if (icase == 1001) nvar=8
-
-            if (lsalinity) then
-               nvar = 6 !account for salinity (r,u,v,w,T,S)
-               nvart=nvar
-            end if
-
-        endif
-
-
-        !Update nvar for LES model:
-        if(lLES) nvar = nvar + 1
 
         !Store Number of RHS for MXM calls in CREATE_RHS_VOLUME
         nrhs_mxm=nvar + 1 !1 is for Pressure
-        if (visc > 0 .and. nlaplacian == 1) nrhs_mxm = nrhs_mxm + 4 !3 is for (U,V,W,Theta) for viscosity
 
         !Store Number of Tracers
         ntracers=nvar-5
@@ -160,7 +134,7 @@ module mod_initial
             psih(npoin_q,npts), dpsidx(npoin_q,npts), dpsidy(npoin_q,npts), indexq(npoin_q,npts), wjac(npoin_q), &
             fdt_btp(npoin), fdt2_btp(npoin), a_btp(npoin), b_btp(npoin), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
             b_bcl(npoin), a_bclp(npoin), b_bclp(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
-            ssprk_a(kstages,3), ssprk_beta(kstages), psihg(npoin_q,npoin))
+            ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin),psih_df(npoin,npts),dpsidx_df(npoin,npts),dpsidy_df(npoin,npts),index_df(npoin,npts))
 
             q_mlswe_init = 0.0
             qprime_mlswe_init = 0.0
@@ -181,7 +155,7 @@ module mod_initial
     
         if(is_mlswe) then
 
-            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, psihg)
+            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
 
             call initial_conditions_mlswe(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
                 qprime_face_mlswe_init, pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
