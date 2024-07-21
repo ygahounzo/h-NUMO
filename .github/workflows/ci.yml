@@ -27,4 +27,4 @@ jobs:
       run: echo $HOME
 
     - name: Run MPI tests
-      run: mpirun -np 1 $HOME/bin/numo3d
+      run: mpirun -np 1 $HOME/work/h-NUMO/h-NUMO/bin/numo3d
