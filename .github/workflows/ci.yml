@@ -32,6 +32,6 @@ jobs:
     - name: List bin directory contents after compilation
       run: ls -al $GITHUB_WORKSPACE/CI
 
-    - name: Run MPI tests
+    - name: Run bump test
       working-directory: CI
       run: mpirun -np 1 ./numo3d
