@@ -444,15 +444,15 @@ contains
             ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
             vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
-            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + 0.5*one_plus_eta_edge(:) * (Q_uu_dp_edge(1,:, iface) + Q_uu_dp_edge(2,:, iface))
-            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + 0.5*one_plus_eta_edge(:) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:, iface)
+            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
 
-            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + 0.5*one_plus_eta_edge(:) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
-            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + 0.5*one_plus_eta_edge(:) * (Q_vv_dp_edge(1,:, iface) + Q_vv_dp_edge(2,:, iface))
+            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
+            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:, iface)
 
             ! Compute pressure forcing H_face at each element face.
 
-            H_face_temp(:) = (one_plus_eta_edge(:)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
+            H_face_temp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
 
             ! Accumulate sums for time averaging
 
@@ -600,15 +600,15 @@ contains
             ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
             vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
-            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + 0.5*one_plus_eta_edge(:) * (Q_uu_dp_edge(1,:, iface) + Q_uu_dp_edge(2,:, iface))
-            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + 0.5*one_plus_eta_edge(:) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:, iface)
+            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
 
-            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + 0.5*one_plus_eta_edge(:) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
-            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + 0.5*one_plus_eta_edge(:) * (Q_vv_dp_edge(1,:, iface) + Q_vv_dp_edge(2,:, iface))
+            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
+            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:, iface)
 
             ! Compute pressure forcing H_face at each element face.
 
-            H_face_temp(:) = (one_plus_eta_edge(:)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
+            H_face_temp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
 
             ! Accumulate sums for time averaging
 

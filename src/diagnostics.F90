@@ -38,23 +38,23 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
 	q(5,:,1) = mslwe_elevation(:,1)
 	q(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
-    if(idone == 0) then 
+    ! Gather Data onto Head node
 
-        ! Gather Data onto Head node
+    do k = 1, nlayers
+        ql = q(:,:,k)
+        call gather_data(q_g,ql,5)
+        q_gg(:,:,k) = q_g(:,:)
+    enddo
+    call gather_data(qb_g,qb,4)
+
+    call gather_data(coord_dg_gathered,coord,3)
+
+    call gather_data(zbot_g,zbot_df,1)
     
-        do k = 1, nlayers
-            ql = q(:,:,k)
-            call gather_data(q_g,ql,5)
-            q_gg(:,:,k) = q_g(:,:)
-        enddo
-        call gather_data(qb_g,qb,4)
 
-        call gather_data(coord_dg_gathered,coord,3)
+    if (irank == irank0) then
 
-        call gather_data(zbot_g,zbot_df,1)
-        
-
-        if (irank == irank0) then
+        if(idone == 0) then
 
             ! Generate the name of the file to which the data will be written,
             ! and open the file.  
@@ -94,9 +94,8 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
             close(10)
 
         end if
-    end if
 
-    
+    end if
 
     return 
 end subroutine diagnostics

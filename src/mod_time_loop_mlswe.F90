@@ -217,7 +217,7 @@ contains
 
         if(lcheck_conserved) then 
 
-            call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,1)
+            if (.not. dump_data) call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,1)
 
             do l = 1,nlayers
                 call compute_conserved(mass_conserv_l,qout_mlswe(1,:,l))
@@ -326,7 +326,7 @@ contains
         idone = 1
 
         !if (lprint_diagnostics) then 
-            call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+            if (.not. dump_data) call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
             mass_conserv0_g,cfl,cflu,ntime)
         !end if

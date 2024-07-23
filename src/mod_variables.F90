@@ -28,7 +28,7 @@ module mod_variables
     private 
     ! module variable and parameters 
     real, dimension(:,:,:), allocatable :: Qu_face, Qv_face, one_plus_eta_face, flux_edge
-    real, dimension(:,:,:), allocatable :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
+    real, dimension(:,:), allocatable :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
     real, dimension(:), allocatable :: Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope_ave_df, one_plus_eta_out, pbprime_visc
     real, dimension(:), allocatable :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave
     real, dimension(:,:), allocatable :: tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2, btp_mass_flux_ave, uvb_ave, uvb_ave_df, dpprime_visc, dpprime_visc_q
@@ -69,7 +69,7 @@ module mod_variables
         endif 
 
         allocate(Q_uu_dp(npoin_q), Q_uv_dp(npoin_q), Q_vv_dp(npoin_q), H_bcl(npoin_q), &
-            Q_uu_dp_edge(2,nq,nface), Q_uv_dp_edge(2,nq,nface), Q_vv_dp_edge(2,nq,nface), H_bcl_edge(2,nq,nface), &
+            Q_uu_dp_edge(nq,nface), Q_uv_dp_edge(nq,nface), Q_vv_dp_edge(nq,nface), H_bcl_edge(nq,nface), &
             Qu_face(2,nq,nface), Qv_face(2,nq,nface), one_plus_eta_face(2,nq,nface), flux_edge(2,nq,nface), one_plus_eta_df(npoin), &
             tau_bot(2,npoin_q), btp_mass_flux(2,npoin_q), H_face(nq,nface), one_plus_eta_edge_2(nq,nface), &
             Quu(npoin_q), Qvv(npoin_q), Quv(npoin_q), H(npoin_q), one_plus_eta(npoin_q), &

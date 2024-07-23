@@ -67,7 +67,7 @@ matlab_viz = T,
 adjust_H_vertical_sum = 2,
 mlswe_bc_strong = T
 dg_integ_exact = F,
-dump_data = F,
+dump_data = T,
 flux_type = 'upwind',
 method_consistency = 1,
 
@@ -106,7 +106,7 @@ out_type='vtk',
 	       	  !vtk=Visual ToolKit (Paraview) output
 	       	  !none=No Output
 
-lprint_diagnostics=F, 
+lprint_diagnostics=T, 
 			   !T=true=print diagnostics
 			   !F=false=do NOT print diagnostics
 

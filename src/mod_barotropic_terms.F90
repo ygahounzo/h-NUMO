@@ -173,7 +173,7 @@ module mod_barotropic_terms
 
             ! Compute pressure forcing H_face at each element face.
 
-            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
+            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * H_bcl_edge(:,iface)
 
             if(er == -4) then 
 
@@ -198,11 +198,11 @@ module mod_barotropic_terms
             upl = qb_face(3, 1, :, iface); upr = qb_face(3, 2, :, iface)
             vpl = qb_face(4, 1, :, iface); vpr = qb_face(4, 2, :, iface)
 
-            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uu_dp_edge(1,:, iface) + Q_uu_dp_edge(2,:, iface))
-            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + one_plus_eta_edge(:,iface) * Q_uu_dp_edge(:, iface)
+            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + one_plus_eta_edge(:,iface) * Q_uv_dp_edge(:, iface)
 
-            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
-            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_vv_dp_edge(1,:, iface) + Q_vv_dp_edge(2,:, iface))
+            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + one_plus_eta_edge(:,iface) * Q_uv_dp_edge(:, iface)
+            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + one_plus_eta_edge(:,iface) * Q_vv_dp_edge(:, iface)
 
         end do
 
@@ -384,7 +384,7 @@ module mod_barotropic_terms
 
             ! Compute pressure forcing H_face at each element face.
 
-            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
+            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * H_bcl_edge(:,iface)
 
             ! Compute momentum flux terms at each element face 
 
@@ -394,11 +394,11 @@ module mod_barotropic_terms
             upl = qb_face(3, 1, :, iface); upr = qb_face(3, 2, :, iface)
             vpl = qb_face(4, 1, :, iface); vpr = qb_face(4, 2, :, iface)
 
-            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uu_dp_edge(1,:, iface) + Q_uu_dp_edge(2,:, iface))
-            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + one_plus_eta_edge(:,iface) * Q_uu_dp_edge(:, iface)
+            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + one_plus_eta_edge(:,iface) * Q_uv_dp_edge(:, iface)
 
-            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
-            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_vv_dp_edge(1,:, iface) + Q_vv_dp_edge(2,:, iface))
+            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + one_plus_eta_edge(:,iface) * Q_uv_dp_edge(:, iface)
+            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + one_plus_eta_edge(:,iface) * Q_vv_dp_edge(:, iface)
 
         end do
 
@@ -726,7 +726,7 @@ module mod_barotropic_terms
 
             ! Compute H_face at each element face.
 
-            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * 0.5*(H_bcl_edge(1,:,iface) + H_bcl_edge(2,:,iface))
+            H_face(:,iface) = (one_plus_eta_edge_2(:,iface)**2) * H_bcl_edge(:,iface)
 
             if(er ==-4) then 
 
@@ -749,11 +749,11 @@ module mod_barotropic_terms
             upl = qb_face(3, 1, :, iface); upr = qb_face(3, 2, :, iface)
             vpl = qb_face(4, 1, :, iface); vpr = qb_face(4, 2, :, iface)
 
-            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uu_dp_edge(1,:, iface) + Q_uu_dp_edge(2,:, iface))
-            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
+            Qu_face(1,:,iface) = 0.5*(ul*upl + ur*upr) + one_plus_eta_edge(:,iface) * Q_uu_dp_edge(:, iface)
+            Qu_face(2,:,iface) = 0.5*(vl*upl + vr*upr) + one_plus_eta_edge(:,iface) * Q_uv_dp_edge(:, iface)
 
-            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_uv_dp_edge(1,:, iface) + Q_uv_dp_edge(2,:, iface))
-            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + 0.5*one_plus_eta_edge(:,iface) * (Q_vv_dp_edge(1,:, iface) + Q_vv_dp_edge(2,:, iface))
+            Qv_face(1,:,iface) = 0.5*(ul*vpl + ur*vpr) + one_plus_eta_edge(:,iface) * Q_uv_dp_edge(:, iface)
+            Qv_face(2,:,iface) = 0.5*(vl*vpl + vr*vpr) + one_plus_eta_edge(:,iface) * Q_vv_dp_edge(:, iface)
 
         end do
 
@@ -1530,15 +1530,15 @@ module mod_barotropic_terms
 
             end do
 
-            Q_uu_dp_edge(1,:,iface) = left_uudp
-            Q_uu_dp_edge(2,:,iface) = right_uudp
-            Q_uv_dp_edge(1,:,iface) = left_uvdp 
-            Q_uv_dp_edge(2,:,iface) = right_uvdp
-            Q_vv_dp_edge(1,:,iface) = left_vvdp 
-            Q_vv_dp_edge(2,:,iface) = right_vvdp
+            Q_uu_dp_edge(:,iface) = 0.5*(left_uudp + right_uudp)
+            !Q_uu_dp_edge(2,:,iface) = right_uudp
+            Q_uv_dp_edge(:,iface) = 0.5*(left_uvdp + right_uvdp)
+            !Q_uv_dp_edge(2,:,iface) = right_uvdp
+            Q_vv_dp_edge(:,iface) = 0.5*(left_vvdp + right_vvdp)
+            !Q_vv_dp_edge(2,:,iface) = right_vvdp
 
-            H_bcl_edge(1,:,iface) = left_dp
-            H_bcl_edge(2,:,iface) = right_dp
+            H_bcl_edge(:,iface) = 0.5*(left_dp + right_dp)
+            !H_bcl_edge(2,:,iface) = right_dp
 
         end do
 

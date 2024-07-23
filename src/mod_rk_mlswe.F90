@@ -221,11 +221,7 @@ module mod_rk_mlswe
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
                                 Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
-                                btp_mass_flux_ave, uvb_ave, one_plus_eta, &
-                                Qu_face, Qv_face, one_plus_eta_face, flux_edge, H_bcl_edge, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
-                                H_face, one_plus_eta_edge_2, one_plus_eta_edge, &
-                                Quu, Qvv, Quv, H, Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, one_plus_eta_df, &
-                                btp_mass_flux, tau_bot, uvb_ave_df
+                                btp_mass_flux_ave, uvb_ave, uvb_ave_df
 
         use mod_variables, only: graduvb_face_ave, graduvb_ave
 
@@ -290,8 +286,8 @@ module mod_rk_mlswe
 
                 ! Compute RHS for the barotropic
 
-                call create_rhs_btp_v1(rhs,qb1_df,qprime)
-                !call create_rhs_btp_v2(rhs,qb1_df,qprime)
+                !call create_rhs_btp_v1(rhs,qb1_df,qprime)
+                call create_rhs_btp_v2(rhs,qb1_df,qprime)
 
                 ! Update barotropic variables
 
@@ -323,7 +319,7 @@ module mod_rk_mlswe
         ! Compute time averages of the various quantities listed earlier,
         ! over all barotropic substeps of the baroclinic time interval.   
 
-        one_plus_eta_out = one_plus_eta_df
+        !one_plus_eta_out = one_plus_eta_df
 
         N_inv = 1.0 / real(kstages*N_btp)
 
