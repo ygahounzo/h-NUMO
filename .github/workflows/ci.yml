@@ -27,10 +27,10 @@ jobs:
       run: echo ls $GITHUB_WORKSPACE
 
     - name: Copy executable file
-      run: cp $GITHUB_WORKSPACE/bin/numo3d $GITHUB_WORKSPACE/CI
+      run: cp $GITHUB_WORKSPACE/bin/numo3d $GITHUB_WORKSPACE/CI/bump
 
     - name: List bin directory contents after compilation
-      run: ls -al $GITHUB_WORKSPACE/CI
+      run: ls -al $GITHUB_WORKSPACE/CI/bump
 
     - name: Run bump test
       working-directory: CI/bump
