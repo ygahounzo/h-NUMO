@@ -10,7 +10,7 @@ module mod_laplacian_quad
 
     use mod_grid, only: npoin, npoin_q, face, nface, intma_dg_quad, intma, mod_grid_get_face_ngl, mod_grid_get_face_nq
     use mod_face, only: imapl_q, imapr_q, normal_vector_q, jac_faceq, imapl, imapr, normal_vector, jac_face
-    use mod_input, only: visc_mlswe, nlayers, mass_exact, xdims, ydims, nelx
+    use mod_input, only: visc_mlswe, nlayers, xdims, ydims, nelx
     use mod_basis, only: ngl, nq, psiq, npts
     use mod_barotropic_terms, only: evaluate_quprime2, compute_gradient_uv, compute_gradient_uv_v1
     use mod_metrics, only: massinv, jacq
@@ -850,10 +850,10 @@ module mod_laplacian_quad
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
-                u_visc = dpsidx(Iq,ip)*grad_dpuvp(1,Iq) + dpsidy(Iq,ip)*grad_dpuvp(2,Iq)
-                v_visc = dpsidx(Iq,ip)*grad_dpuvp(3,Iq) + dpsidy(Iq,ip)*grad_dpuvp(4,Iq)
+                u_visc = dpsidx(ip,Iq)*grad_dpuvp(1,Iq) + dpsidy(ip,Iq)*grad_dpuvp(2,Iq)
+                v_visc = dpsidx(ip,Iq)*grad_dpuvp(3,Iq) + dpsidy(ip,Iq)*grad_dpuvp(4,Iq)
 
                 lap_q(1,I) = lap_q(1,I) - wq*u_visc
                 lap_q(2,I) = lap_q(2,I) - wq*v_visc
@@ -885,10 +885,10 @@ module mod_laplacian_quad
 
             do ip = 1,npts
 
-                I = index_df(Iq,ip)
+                I = index_df(ip,Iq)
 
-                u_visc = dpsidx_df(Iq,ip)*grad_dpuvp(1,Iq) + dpsidy_df(Iq,ip)*grad_dpuvp(2,Iq)
-                v_visc = dpsidx_df(Iq,ip)*grad_dpuvp(3,Iq) + dpsidy_df(Iq,ip)*grad_dpuvp(4,Iq)
+                u_visc = dpsidx_df(ip,Iq)*grad_dpuvp(1,Iq) + dpsidy_df(ip,Iq)*grad_dpuvp(2,Iq)
+                v_visc = dpsidx_df(ip,Iq)*grad_dpuvp(3,Iq) + dpsidy_df(ip,Iq)*grad_dpuvp(4,Iq)
 
                 lap_q(1,I) = lap_q(1,I) - wq*u_visc
                 lap_q(2,I) = lap_q(2,I) - wq*v_visc
@@ -926,10 +926,10 @@ module mod_laplacian_quad
 
             do ip = 1,npts
 
-                I = index_df(Iq,ip)
+                I = index_df(ip,Iq)
 
-                lap_q(1,I) = lap_q(1,I) - wq*(dpsidx_df(Iq,ip)*qq(1) + dpsidy_df(Iq,ip)*qq(2))
-                lap_q(2,I) = lap_q(2,I) - wq*(dpsidx_df(Iq,ip)*qq(3) + dpsidy_df(Iq,ip)*qq(4))
+                lap_q(1,I) = lap_q(1,I) - wq*(dpsidx_df(ip,Iq)*qq(1) + dpsidy_df(ip,Iq)*qq(2))
+                lap_q(2,I) = lap_q(2,I) - wq*(dpsidx_df(ip,Iq)*qq(3) + dpsidy_df(ip,Iq)*qq(4))
 
             end do
         end do
@@ -965,10 +965,10 @@ module mod_laplacian_quad
 
             do ip = 1,npts
 
-                I = index_df(Iq,ip)
+                I = index_df(ip,Iq)
 
-                lap_q(1,I) = lap_q(1,I) - wq*(dpsidx_df(Iq,ip)*qq(1) + dpsidy_df(Iq,ip)*qq(2))
-                lap_q(2,I) = lap_q(2,I) - wq*(dpsidx_df(Iq,ip)*qq(3) + dpsidy_df(Iq,ip)*qq(4))
+                lap_q(1,I) = lap_q(1,I) - wq*(dpsidx_df(ip,Iq)*qq(1) + dpsidy_df(ip,Iq)*qq(2))
+                lap_q(2,I) = lap_q(2,I) - wq*(dpsidx_df(ip,Iq)*qq(3) + dpsidy_df(ip,Iq)*qq(4))
 
             end do
         end do

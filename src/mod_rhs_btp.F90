@@ -20,7 +20,7 @@ module mod_rhs_btp
     use mod_initial, only: q_ref, coriolis_constant, kvector, nvar
 
 
-    use mod_input, only: nlayers, mass_exact
+    use mod_input, only: nlayers
 
     use mod_metrics, only: &
         ksiq_x, ksiq_y, ksiq_z, &
@@ -270,13 +270,13 @@ contains
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 !Xi derivatives                                                                                
-                dhdx = dpsidx(Iq,ip)
+                dhdx = dpsidx(ip,Iq)
                 !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
+                dhdy = dpsidy(ip,Iq)
 
                 rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
                 rhs(2,I) = rhs(2,I) + wq*(hi*source_x + dhdx*(Hq + quux) + quvxy*dhdy)
@@ -318,8 +318,8 @@ contains
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
 
             do ip = 1,npts 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 dp = dp + hi*qb_df(1,I)
                 dpp = dpp + hi*qb_df(2,I)
@@ -360,14 +360,14 @@ contains
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
-                hi = psih(Iq,ip)
+                hi = psih(ip,Iq)
 
                 !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
+                dhdx = dpsidx(ip,Iq)
                 !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
+                dhdy = dpsidy(ip,Iq)
 
                 rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
                 rhs(2,I) = rhs(2,I) + wq*(hi*source_x + dhdx*(Hq + quux) + quvxy*dhdy)
@@ -720,14 +720,14 @@ contains
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
-                hi = psih(Iq,ip)
+                hi = psih(ip,Iq)
 
                 !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
+                dhdx = dpsidx(ip,Iq)
                 !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
+                dhdy = dpsidy(ip,Iq)
 
                 rhs_mom(1,I) = rhs_mom(1,I) + wq*(hi*source_x + dhdx*Hq + quux*dhdx + quvxy*dhdy)
                 rhs_mom(2,I) = rhs_mom(2,I) + wq*(hi*source_y + dhdy*Hq + quvxy*dhdx + qvvy*dhdy)
@@ -776,14 +776,14 @@ contains
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
-                hi = psih(Iq,ip)
+                hi = psih(ip,Iq)
 
                 !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
+                dhdx = dpsidx(ip,Iq)
                 !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
+                dhdy = dpsidy(ip,Iq)
 
                 rhs(1,I) = rhs(1,I) + wq*(dhdx*var_u + dhdy*var_v)
                 rhs(2,I) = rhs(2,I) + wq*(hi*source_x + dhdx*Hq + quux*dhdx + quvxy*dhdy)
@@ -1027,9 +1027,9 @@ contains
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
-                pb_advec(I) = pb_advec(I) + wq*(dpsidx(Iq,ip)*var_u + dpsidy(Iq,ip)*var_v)
+                pb_advec(I) = pb_advec(I) + wq*(dpsidx(ip,Iq)*var_u + dpsidy(ip,Iq)*var_v)
 
             end do
         end do

@@ -10,7 +10,7 @@ module mod_layer_terms
     
     use mod_grid, only: npoin_q, nface, intma_dg_quad, face, npoin
     use mod_basis, only: nqx, nqy, nqz, nq
-    use mod_input, only: nlayers, flux_type
+    use mod_input, only: nlayers
         
     implicit none
 
@@ -27,7 +27,7 @@ module mod_layer_terms
 
         ! This routines compute the layer mass flux terms using upwind or centered flux
 
-        use mod_input, only: nlayers, bcl_flux
+        use mod_input, only: nlayers
         use mod_face, only: normal_vector_q
         use mod_variables, only: uvb_ave,ope_ave, uvb_face_ave,ope_face_ave, sum_layer_mass_flux, sum_layer_mass_flux_face, &
                                     u_edge, v_edge, uvdp_temp, flux_edge_bcl
@@ -133,8 +133,8 @@ module mod_layer_terms
         do Iq = 1,npoin_q   
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 q(1,Iq,:) = q(1,Iq,:) + q_df(1,I,:)*hi
 
@@ -176,8 +176,8 @@ module mod_layer_terms
         do Iq = 1,npoin_q   
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 qprime(1,Iq,:) = qprime(1,Iq,:) + dprime_df(I,:)*hi
 
@@ -493,7 +493,7 @@ module mod_layer_terms
 
     subroutine compute_momentum_edge_values(qprime_face)
 
-        use mod_input, only: nlayers, bcl_flux
+        use mod_input, only: nlayers
         use mod_variables, only: uvb_face_ave, ope_face_ave, udp_left, vdp_left, udp_right, vdp_right
   
         implicit none
@@ -535,7 +535,7 @@ module mod_layer_terms
 
         ! This routine computes the layer momentum advection flux terms using centered flux 
 
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, adjust_bcl_mom_flux
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
         use mod_variables, only: Quv_face_ave, Qu_face_ave, Qv_face_ave, ope_ave, Qu_ave, Qv_ave, Quv_ave, uvb_ave, &
                                 udp_left, vdp_left, udp_right, vdp_right, u_udp_temp, u_vdp_temp, v_vdp_temp, &
@@ -550,13 +550,12 @@ module mod_layer_terms
         real, dimension(npoin_q) :: uu_dp_flux_deficitq, uv_dp_flux_deficitq, vv_dp_flux_deficitq, one_over_sumuq, one_over_sumvq, weightq
         real :: sum_uu, sum_uv, sum_vv, uu_dp_flux_deficit, uv_dp_flux_deficit, vv_dp_flux_deficit
         real :: sumu, sumv, one_over_sumu, one_over_sumv, weight
-        integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl, mom_consistency
+        integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl
         real :: vu_dp_flux_deficit, sum_vu
         real, parameter :: eps1 = 1.0e-12 !  Parameter used to prevent division by zero.
         real, dimension(npoin_q) :: temp_u, temp_v, temp_dp
         real, dimension(npoin_q,nlayers) :: temp_uu, temp_vv
 
-        mom_consistency = 1
 
         do k = 1, nlayers
 
@@ -596,7 +595,7 @@ module mod_layer_terms
 
         ! *****   End computation of fluxes at cell edges   *****
 
-        if(mom_consistency == 1) then 
+        if(adjust_bcl_mom_flux == 1) then 
 
             uu_dp_flux_deficitq = Qu_ave(:) - sum(u_udp_temp(:,:), dim=2)
             uv_dp_flux_deficitq = Quv_ave(:) - sum(u_vdp_temp(1,:,:), dim=2)
@@ -688,7 +687,7 @@ module mod_layer_terms
 
         ! This routine computes the layer momentum advection flux terms using upwind flux 
 
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, adjust_bcl_mom_flux
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
         use mod_variables, only: Quv_face_ave, Qu_face_ave, Qv_face_ave, ope_ave, Qu_ave, Qv_ave, Quv_ave, uvb_ave, &
                                 udp_left, vdp_left, udp_right, vdp_right, u_udp_temp, u_vdp_temp, v_vdp_temp, &
@@ -703,14 +702,12 @@ module mod_layer_terms
         real, dimension(npoin_q) :: uu_dp_flux_deficitq, uv_dp_flux_deficitq, vv_dp_flux_deficitq, one_over_sumuq, one_over_sumvq, weightq
         real :: sum_uu, sum_uv, sum_vv, uu_dp_flux_deficit, uv_dp_flux_deficit, vv_dp_flux_deficit
         real :: sumu, sumv, one_over_sumu, one_over_sumv, weight
-        integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl, mom_consistency
+        integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl
         real :: vu_dp_flux_deficit, sum_vu
         real, parameter :: eps1 = 1.0e-12 !  Parameter used to prevent division by zero.
         real :: uu, vv, nxl, nyl
         real, dimension(npoin_q) :: temp_u, temp_v, temp_dp
         real, dimension(npoin_q,nlayers) :: temp_uu, temp_vv
-
-        mom_consistency = 1
 
         do k = 1, nlayers
 
@@ -766,7 +763,7 @@ module mod_layer_terms
 
         ! *****   End computation of fluxes at cell edges   *****
 
-        if(mom_consistency == 1) then 
+        if(adjust_bcl_mom_flux == 1) then 
 
             uu_dp_flux_deficitq = Qu_ave(:) - sum(u_udp_temp(:,:), dim=2)
             uv_dp_flux_deficitq = Quv_ave(:) - sum(u_vdp_temp(1,:,:), dim=2)
@@ -1034,8 +1031,8 @@ module mod_layer_terms
 
                 do Iq = 1,npoin_q
                     do ip = 1,npts
-                        I = indexq(Iq,ip)
-                        hi = psih(Iq,ip) 
+                        I = indexq(ip,Iq)
+                        hi = psih(ip,Iq) 
 
                         temp_uu(Iq,k) = temp_uu(Iq,k) + hi*q_df(2,I,k)
                         temp_vv(Iq,k) = temp_vv(Iq,k) + hi*q_df(3,I,k)
@@ -1596,7 +1593,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, dp_cutoff1, dp_cutoff2, icase, ifilter
+        use mod_input, only: nlayers, icase, ifilter
         use mod_face, only: imapl
 
         implicit none
@@ -1739,7 +1736,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, dp_cutoff1, dp_cutoff2, icase, ifilter
+        use mod_input, only: nlayers, icase, ifilter
         use mod_face, only: imapl
 
         implicit none
@@ -1773,7 +1770,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, dp_cutoff1, dp_cutoff2, icase, ifilter
+        use mod_input, only: nlayers, icase, ifilter
         use mod_face, only: imapl
 
         implicit none
@@ -1807,7 +1804,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, dp_cutoff1, dp_cutoff2, icase, ifilter
+        use mod_input, only: nlayers, icase, ifilter
         use mod_initial, only: pbprime_df
 
         implicit none
@@ -1847,7 +1844,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, dp_cutoff1, dp_cutoff2, icase, ifilter
+        use mod_input, only: nlayers, icase, ifilter
         use mod_initial, only: pbprime_df
 
         implicit none
@@ -1879,7 +1876,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, dp_cutoff1, dp_cutoff2, icase, ifilter
+        use mod_input, only: nlayers, icase, ifilter
         use mod_face, only: imapl
 
         implicit none
@@ -1948,8 +1945,8 @@ module mod_layer_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
                 
                 q(2,Iq,:) = q(2,Iq,:) + q_df(2,I,:)*hi
                 q(3,Iq,:) = q(3,Iq,:) + q_df(3,I,:)*hi
@@ -1982,8 +1979,8 @@ module mod_layer_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
                 
                 q(2,Iq,:) = q(2,Iq,:) + q_df(2,I,:)*hi
                 q(3,Iq,:) = q(3,Iq,:) + q_df(3,I,:)*hi
@@ -2018,8 +2015,8 @@ module mod_layer_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 qprime(2,Iq,:) = qprime(2,Iq,:) + qprime_df(2,I,:)*hi
                 qprime(3,Iq,:) = qprime(3,Iq,:) + qprime_df(3,I,:)*hi
@@ -2054,8 +2051,8 @@ module mod_layer_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 qprime(1,Iq,:) = qprime(1,Iq,:) + hi*qprime_df(1,I,:)
                 qprime(2,Iq,:) = qprime(2,Iq,:) + hi*qprime_df(2,I,:)

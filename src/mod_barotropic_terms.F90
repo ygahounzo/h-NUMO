@@ -11,7 +11,7 @@ module mod_barotropic_terms
     
     use mod_grid, only: npoin_q, nface, intma_dg_quad
     use mod_basis, only: nqx, nqy, nqz, nq
-    use mod_input, only: nlayers, mass_exact
+    use mod_input, only: nlayers
         
     implicit none
 
@@ -437,8 +437,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hn = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hn = psih(ip,Iq)
 
                 uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
                 uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
@@ -535,8 +535,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hn = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hn = psih(ip,Iq)
 
                 uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
                 uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
@@ -839,8 +839,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                hn = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hn = psih(ip,Iq)
 
                 qb(2,Iq) = qb(2,Iq) + hn*qb_df(2,I)
 
@@ -882,8 +882,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
                 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
                 
                 qb(3,Iq) = qb(3,Iq) + hi*qb_df(3,I)
                 qb(4,Iq) = qb(4,Iq) + hi*qb_df(4,I)
@@ -926,8 +926,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
                 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
 
                 qb(2,Iq) = qb(2,Iq) + hi*qb_df(2,I)
                 qb(3,Iq) = qb(3,Iq) + hi*qb_df(3,I)
@@ -1713,12 +1713,12 @@ module mod_barotropic_terms
 
             do ip = 1, npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
                 !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
+                dhdx = dpsidx(ip,Iq)
                 !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
+                dhdy = dpsidy(ip,Iq)
 
                 qu_df(1,I) = qu_df(1,I) - wq*var_u*dhdx
                 qu_df(2,I) = qu_df(2,I) - wq*var_u*dhdy
@@ -1788,8 +1788,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
                 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
                 
                 quprime(1,Iq) = quprime(1,Iq) + hi*qu_df(1,I)
                 quprime(2,Iq) = quprime(2,Iq) + hi*qu_df(2,I)
@@ -1938,12 +1938,12 @@ module mod_barotropic_terms
 
             do ip = 1, npts
 
-                I = indexq(Iq,ip)
+                I = indexq(ip,Iq)
 
                 !Xi derivatives
-                dhdx = dpsidx(Iq,ip)
+                dhdx = dpsidx(ip,Iq)
                 !Eta derivatives
-                dhdy = dpsidy(Iq,ip)
+                dhdy = dpsidy(ip,Iq)
 
                 qu_df(1,I) = qu_df(1,I) - wq*var_u*dhdx
                 qu_df(2,I) = qu_df(2,I) - wq*var_u*dhdy
@@ -2013,8 +2013,8 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q
             do ip = 1,npts
                 
-                I = indexq(Iq,ip)
-                hi = psih(Iq,ip)
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
                 
                 quvprime(1,1,Iq) = quvprime(1,1,Iq) + hi*qu_df(1,I)
                 quvprime(1,2,Iq) = quvprime(1,2,Iq) + hi*qu_df(2,I)
@@ -2082,10 +2082,10 @@ module mod_barotropic_terms
             do Iq = 1,npoin_q 
                 do ip = 1,npts 
 
-                    I = indexq(Iq,ip) 
+                    I = indexq(ip,Iq)
 
-                    q(:,Iq,k) = q(:,Iq,k) + psih(Iq,ip)*q_df(:,I,k)
-                    qprime(:,Iq,k) = qprime(:,Iq,k) + psih(Iq,ip)*qprime_df(:,I,k)
+                    q(:,Iq,k) = q(:,Iq,k) + psih(ip,Iq)*q_df(:,I,k)
+                    qprime(:,Iq,k) = qprime(:,Iq,k) + psih(ip,Iq)*qprime_df(:,I,k)
 
                 end do
             end do 
@@ -2094,9 +2094,9 @@ module mod_barotropic_terms
         do Iq = 1,npoin_q 
             do ip = 1,npts 
 
-                I = indexq(Iq,ip) 
+                I = indexq(ip,Iq) 
 
-                qb(:,Iq) = qb(:,Iq) + psih(Iq,ip)*qb_df(:,I)
+                qb(:,Iq) = qb(:,Iq) + psih(ip,Iq)*qb_df(:,I)
             end do 
         end do 
 
@@ -2275,9 +2275,9 @@ module mod_barotropic_terms
 
             do ip = 1,npts
 
-                I = indexq(Iq,ip)
-                dhdx = dpsidx(Iq,ip)
-                dhdy = dpsidy(Iq,ip)
+                I = indexq(ip,Iq)
+                dhdx = dpsidx(ip,Iq)
+                dhdy = dpsidy(ip,Iq)
 
                 grad_uv(1,1,Iq) = grad_uv(1,1,Iq) + dhdx*uv(1,I)
                 grad_uv(1,2,Iq) = grad_uv(1,2,Iq) + dhdy*uv(1,I)
@@ -2312,9 +2312,9 @@ module mod_barotropic_terms
 
             do ip = 1,npts
 
-                I = index_df(Iq,ip)
-                dhdx = dpsidx_df(Iq,ip)
-                dhdy = dpsidy_df(Iq,ip)
+                I = index_df(ip,Iq)
+                dhdx = dpsidx_df(ip,Iq)
+                dhdy = dpsidy_df(ip,Iq)
 
                 grad_uv(1,Iq) = grad_uv(1,Iq) + dhdx*uv(1,I)
                 grad_uv(2,Iq) = grad_uv(2,Iq) + dhdy*uv(1,I)

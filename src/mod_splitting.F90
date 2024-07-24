@@ -345,7 +345,7 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
 
-        use mod_input, only: nlayers, dt, icase, ifilter, method_consistency
+        use mod_input, only: nlayers, dt, icase, ifilter
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df, pbprime
@@ -529,7 +529,7 @@ module mod_splitting
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe, ifilter, method_consistency
+        use mod_input, only: nlayers, dt, ad_mlswe, ifilter
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
         use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, &
@@ -696,7 +696,7 @@ module mod_splitting
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc, flux_type
+        use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs, rhs_layer_shear_stress
         use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, &
                                     layer_windbot_stress_terms, layer_momentum_advec_terms_upwind, layer_momentum_advec_terms_upwind_v1
@@ -753,7 +753,7 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df
-        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
+        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs, consistency_mass_rhs
         use mod_layer_terms, only: consistency_mass_terms, evaluate_dpp, evaluate_dpp_face
         use mod_variables, only: btp_mass_flux_face_ave, flux_adjustment, flux_adjust_edge
 
@@ -793,10 +793,12 @@ module mod_splitting
         call create_communicator_quad(flux_deficit_mass_face,2)
 
         ! Consistency flux terms 
-        call consistency_mass_terms(qprime, qprime_face, flux_deficit_mass_face)
+        !call consistency_mass_terms(qprime, qprime_face, flux_deficit_mass_face)
 
         ! RHS of the consistency terms
-        call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
+        !call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
+
+        call consistency_mass_rhs(dp_advec, qprime, qprime_face, flux_deficit_mass_face)
 
         ! Apply consistency to the thickness
 

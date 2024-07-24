@@ -45,9 +45,9 @@ module mod_input
         bcast_type, &
         space_method, &
         imass, &
-        ad_mlswe, cd_mlswe, dp_cutoff1, dp_cutoff2, &
+        ad_mlswe, cd_mlswe, &
         dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
-        adjust_H_vertical_sum, is_mlswe_linear, botfr, mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type, method_consistency, lcheck_conserved
+        adjust_H_vertical_sum, botfr, mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux
  
    public :: eqn_set, is_mlswe
  
@@ -124,18 +124,15 @@ module mod_input
  
    real(kind=r8) :: ad_mlswe = 0.0
    real(kind=r8) :: cd_mlswe = 0.0
-   real(kind=r8) :: dp_cutoff1 = 0.0
-   real(kind=r8) :: dp_cutoff2 = 0.0
    real(kind=r8) :: dp_tau_bot = 0.0
    real(kind=r8) :: dp_tau_wind = 0.0
    integer :: method_visc = 0
-   integer :: method_consistency = 2
    integer :: botfr = 0
-   integer :: adjust_H_vertical_sum = 0
+   integer :: adjust_H_vertical_sum = 2
+   integer :: adjust_bcl_mom_flux = 1
    real(kind=r8) :: visc_mlswe = 0.0
    real(kind=r8) :: dpprime_visc_min = 0.0
    real(kind=r8) :: max_shear_dz = 0.0
-   real(kind=r8) :: bcl_flux = 0.0
  
    !-----------------------------------------------------------------------
    ! Namelist Variables
@@ -282,12 +279,9 @@ module mod_input
    
    logical :: is_mlswe = .false.  !added by Yao Gahounzo
    logical :: matlab_viz = .false. !added by Yao Gahounzo
-   logical :: is_mlswe_linear = .false. !added by Yao Gahounzo
-   logical :: mass_exact = .false. !added by Yao Gahounzo
    logical :: mlswe_bc_strong = .false. !added by Yao Gahounzo
    logical :: dg_integ_exact = .true. ! added by Yao Gahounzo
    logical :: dump_data = .true. ! added by Yao Gahounzo
-   character(len=12) :: flux_type = 'centered'
    logical :: lcheck_conserved = .false. ! added by Yao Gahounzo
 
  
@@ -364,9 +358,9 @@ module mod_input
          lread_external_bathy, &
          limit_threshold, &
          imass, &
-         ad_mlswe, cd_mlswe, dp_cutoff1, dp_cutoff2, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
-         visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, is_mlswe_linear, botfr, &
-         mass_exact, bcl_flux, mlswe_bc_strong, dg_integ_exact, dump_data, flux_type, method_consistency, lcheck_conserved
+         ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
+         visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, botfr, &
+         mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &

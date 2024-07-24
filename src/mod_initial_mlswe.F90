@@ -507,12 +507,12 @@ module mod_initial_mlswe
 
         implicit none 
 
-        real, dimension(npoin_q,npts), intent(out) :: psih, dpsidx,dpsidy
-        integer, dimension(npoin_q,npts) :: indexq
+        real, dimension(npts,npoin_q), intent(out) :: psih, dpsidx,dpsidy
+        integer, dimension(npts,npoin_q) :: indexq
         real, dimension(npoin_q), intent(out) :: wjac
 
-        real, dimension(npoin,npts), intent(out) :: psih_df, dpsidx_df,dpsidy_df
-        integer, dimension(npoin,npts) :: index_df
+        real, dimension(npts,npoin), intent(out) :: psih_df, dpsidx_df,dpsidy_df
+        integer, dimension(npts,npoin) :: index_df
         real, dimension(npoin), intent(out) :: wjac_df
 
         integer :: e, jquad, iquad, Iq, ip, m, n, I
@@ -551,8 +551,8 @@ module mod_initial_mlswe
                             I = intma(n,m,1,e)
                             ip = ip + 1
                 
-                            indexq(Iq, ip) = I
-                            psih(Iq, ip) = psiqx(n, iquad) * psiqy(m, jquad)
+                            indexq(ip,Iq) = I
+                            psih(ip,Iq) = psiqx(n, iquad) * psiqy(m, jquad)
                 
                             ! Xi derivatives
                             h_e = dpsiqx(n, iquad) * psiqy(m, jquad)
@@ -561,8 +561,8 @@ module mod_initial_mlswe
                             h_n = psiqx(n, iquad) * dpsiqy(m, jquad)
                 
                             ! Pressure terms
-                            dpsidx(Iq, ip) = h_e * e_x + h_n * n_x
-                            dpsidy(Iq, ip) = h_e * e_y + h_n * n_y
+                            dpsidx(ip,Iq) = h_e * e_x + h_n * n_x
+                            dpsidy(ip,Iq) = h_e * e_y + h_n * n_y
 
                         end do !n
                     end do !m
@@ -588,8 +588,8 @@ module mod_initial_mlswe
                             I = intma(n,m,1,e)
                             ip = ip + 1
                 
-                            index_df(Iq, ip) = I
-                            psih_df(Iq, ip) = psix(n, iquad) * psiy(m, jquad)
+                            index_df(ip,Iq) = I
+                            psih_df(ip,Iq) = psix(n, iquad) * psiy(m, jquad)
                 
                             ! Xi derivatives
                             h_e = dpsix(n, iquad) * psiy(m, jquad)
@@ -598,8 +598,8 @@ module mod_initial_mlswe
                             h_n = psix(n, iquad) * dpsiy(m, jquad)
                 
                             ! Pressure terms
-                            dpsidx_df(Iq, ip) = h_e * e_x + h_n * n_x
-                            dpsidy_df(Iq, ip) = h_e * e_y + h_n * n_y
+                            dpsidx_df(ip,Iq) = h_e * e_x + h_n * n_x
+                            dpsidy_df(ip,Iq) = h_e * e_y + h_n * n_y
 
                         end do !n
                     end do !m

@@ -47,7 +47,7 @@ geometry_type='cube',
 
 &input
 dt= 100,
-dt_btp = 1.8,
+dt_btp = 1.6,
 !dt_safety_factor = 0.5,
 time_initial = 0.0,
 time_final   = 10800,
@@ -64,12 +64,11 @@ visc_mlswe = 1.0,
 dpprime_visc_min = 0.0,
 max_shear_dz = 20.0,
 matlab_viz = T,
-adjust_H_vertical_sum = 2,
-mlswe_bc_strong = T
+adjust_H_vertical_sum = 0,
+adjust_bcl_mom_flux = 0,
+mlswe_bc_strong = T,
 dg_integ_exact = F,
 dump_data = T,
-flux_type = 'upwind',
-method_consistency = 1,
 
 !----case
 icase=2023,
@@ -82,7 +81,7 @@ ti_method = 'btp_bcl',
 	      !rk35; (Optimized RK35)
 
 ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
-kstages=5,
+kstages=4,
 
 space_method = 'dg', !dg=discontinuous Galerkin
 	    	

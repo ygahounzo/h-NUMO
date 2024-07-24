@@ -32,8 +32,8 @@ subroutine compute_conserved(mass_conserv,q)
 
         do ip = 1,npts
 
-            I = index_df(Iq,ip)
-            hi = psih_df(Iq,ip)
+            I = index_df(ip,Iq)
+            hi = psih_df(ip,Iq)
             
             mass_conserv = mass_conserv + wq*hi*q(I)
 
