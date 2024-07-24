@@ -33,5 +33,5 @@ jobs:
       run: ls -al $GITHUB_WORKSPACE/CI
 
     - name: Run bump test
-      working-directory: CI
+      working-directory: CI/bump
       run: mpirun -np 1 ./numo3d
