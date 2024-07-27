@@ -30,12 +30,11 @@ module mod_rk_mlswe
         use mod_initial, only: N_btp, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, one_over_pbprime_df, ssprk_a, ssprk_beta
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages
+        use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
         use mod_rhs_btp, only: create_rhs_btp
         use mod_barotropic_terms, only: btp_mass_advection_terms, btp_bcl_coeffs, &
                                         btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, btp_bcl_grad_coeffs
 
-        use mod_input, only: method_visc
         use mod_barotropic_terms, only: btp_mom_boundary_df, compute_btp_terms, btp_interpolate_avg_v1
         use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian, btp_create_laplacian_v3
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
@@ -102,7 +101,7 @@ module mod_rk_mlswe
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
         call btp_bcl_coeffs(qprime,qprime_face)
-        call btp_bcl_grad_coeffs(qprime_df)
+        if (method_visc > 0) call btp_bcl_grad_coeffs(qprime_df)
 
         qb2_df = 0.0
 
@@ -210,14 +209,11 @@ module mod_rk_mlswe
         use mod_initial, only: N_btp, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, one_over_pbprime_df, ssprk_a, ssprk_beta
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages
+        use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
         use mod_rhs_btp, only: create_rhs_btp_v1, create_rhs_btp_v2
-        use mod_barotropic_terms, only: btp_mass_advection_terms, btp_bcl_coeffs, &
-                                        btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, btp_bcl_grad_coeffs
+        use mod_barotropic_terms, only: btp_bcl_coeffs, btp_bcl_grad_coeffs
 
-        use mod_input, only: method_visc
         use mod_barotropic_terms, only: btp_mom_boundary_df, btp_interpolate_avg_v1
-        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian, btp_create_laplacian_v3
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
                                 Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
@@ -267,7 +263,7 @@ module mod_rk_mlswe
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
         call btp_bcl_coeffs(qprime,qprime_face)
-        call btp_bcl_grad_coeffs(qprime_df)
+        if (method_visc > 0) call btp_bcl_grad_coeffs(qprime_df)
 
         qb2_df = 0.0
 

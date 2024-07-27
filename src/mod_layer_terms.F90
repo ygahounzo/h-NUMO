@@ -19,7 +19,8 @@ module mod_layer_terms
             shear_stress_system, consistency_mass_terms1, consistency_mass_terms, layer_mom_boundary_df,  &
             filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, &
             interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, layer_momentum_advec_terms_upwind, evaluate_bcl, evaluate_bcl_v1, &
-            layer_momentum_advec_terms_upwind_v1, evaluate_dpp, evaluate_dpp_face, evaluate_bcl_v2, evaluate_mom_v3, evaluate_bcl_v3
+            layer_momentum_advec_terms_upwind_v1, evaluate_dpp, evaluate_dpp_face, evaluate_bcl_v2, &
+            evaluate_mom_v3, evaluate_bcl_v3, evaluate_consistency_face
 
     contains
 
@@ -216,8 +217,6 @@ module mod_layer_terms
         do iface = 1, nface
 
             !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
             el = face(7,iface)
             er = face(8,iface)
 
@@ -276,8 +275,6 @@ module mod_layer_terms
         do iface = 1, nface
 
             !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
             el = face(7,iface)
             er = face(8,iface)
 
@@ -308,6 +305,74 @@ module mod_layer_terms
         ! end do
     
     end subroutine evaluate_dpp_face
+
+    subroutine evaluate_consistency_face(mass_deficit_mass_face,qprime)
+
+        ! This routines extracts the layer mass face values 
+
+        use mod_grid, only:  npoin_q, intma_dg_quad, nface, face
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q
+        use mod_variables, only: sum_layer_mass_flux_face, btp_mass_flux_face_ave
+        use mod_initial, only: pbprime_face
+
+        implicit none
+        real, intent(out) :: mass_deficit_mass_face(2,2,nq,nface,nlayers)
+        real, intent(in) :: qprime(3,npoin_q,nlayers)
+    
+        ! Local variables
+        integer :: iface, iquad, jquad, k, il, jl, kl, el, er, ir, jr, kr, I
+        real :: qprime_l, qprime_r, weights_face_l, weights_face_r
+
+        mass_deficit_mass_face = 0.0
+
+        do k = 1,nlayers
+
+            do iface = 1, nface
+
+                !Store Left Side Variables
+
+                el = face(7,iface)
+                er = face(8,iface)
+
+                do iquad = 1, nq
+
+                    il = imapl_q(1,iquad,1,iface)
+                    jl = imapl_q(2,iquad,1,iface)
+                    kl = imapl_q(3,iquad,1,iface)
+
+                    I = intma_dg_quad(il,jl,kl,el)
+                    qprime_l = qprime(1,I,k)
+
+                    if(er > 0) then
+
+                        ir = imapr_q(1,iquad,1,iface)
+                        jr = imapr_q(2,iquad,1,iface)
+                        kr = imapr_q(3,iquad,1,iface)
+
+                        I = intma_dg_quad(ir,jr,kr,er)
+                        qprime_r = qprime(1,I,k)
+
+                    else
+                        qprime_r = qprime_l
+
+                    end if
+  
+                    weights_face_l = qprime_l / pbprime_face(1,iquad,iface)
+                    weights_face_r = qprime_r / pbprime_face(2,iquad,iface)
+
+                    mass_deficit_mass_face(1,1,iquad,iface,k) = weights_face_l*(btp_mass_flux_face_ave(1,iquad,iface) - sum_layer_mass_flux_face(1,iquad,iface))
+                    mass_deficit_mass_face(2,1,iquad,iface,k) = weights_face_l*(btp_mass_flux_face_ave(2,iquad,iface) - sum_layer_mass_flux_face(2,iquad,iface))
+
+                    mass_deficit_mass_face(1,2,iquad,iface,k) = weights_face_r*(btp_mass_flux_face_ave(1,iquad,iface) - sum_layer_mass_flux_face(1,iquad,iface))
+                    mass_deficit_mass_face(2,2,iquad,iface,k) = weights_face_r*(btp_mass_flux_face_ave(2,iquad,iface) - sum_layer_mass_flux_face(2,iquad,iface))
+                end do 
+            end do
+        end do
+
+        call bcl_create_communicator(mass_deficit_mass_face,2,nlayers,nq)
+    
+    end subroutine evaluate_consistency_face
     
     subroutine consistency_mass_terms(qprime, qprime_face, flux_deficit_mass_face)
 
@@ -936,7 +1001,7 @@ module mod_layer_terms
 
         ! This routine computes the layer momentum advection flux terms using upwind flux 
 
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, adjust_bcl_mom_flux
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
         use mod_variables, only: Quv_face_ave, Qu_face_ave, Qv_face_ave, ope_ave, Qu_ave, Qv_ave, Quv_ave, uvb_ave, &
                                 udp_left, vdp_left, udp_right, vdp_right, u_udp_temp, u_vdp_temp, v_vdp_temp, &
@@ -953,29 +1018,27 @@ module mod_layer_terms
         real, dimension(npoin_q) :: uu_dp_flux_deficitq, uv_dp_flux_deficitq, vv_dp_flux_deficitq, one_over_sumuq, one_over_sumvq, weightq
         real :: sum_uu, sum_uv, sum_vv, uu_dp_flux_deficit, uv_dp_flux_deficit, vv_dp_flux_deficit
         real :: sumu, sumv, one_over_sumu, one_over_sumv, weight
-        integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl, mom_consistency, ip
+        integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl, ip
         real :: vu_dp_flux_deficit, sum_vu
         real, parameter :: eps1 = 1.0e-12 !  Parameter used to prevent division by zero.
         real :: uu, vv, nxl, nyl, hi
         real, dimension(npoin_q) :: temp_u, temp_v, temp_dp
         real, dimension(npoin_q,nlayers) :: temp_uu, temp_vv
 
-        mom_consistency = 1
+        !do k = 1, nlayers
 
-        do k = 1, nlayers
+        !    temp_dp = qprime(1,:,k) * ope_ave(:)
 
-            temp_dp = qprime(1,:,k) * ope_ave(:)
-
-            temp_u = qprime(2,:,k) + uvb_ave(1,:)
-            u_udp_temp(:, k) = temp_dp * temp_u**2 
+        !    temp_u = qprime(2,:,k) + uvb_ave(1,:)
+        !    u_udp_temp(:, k) = temp_dp * temp_u**2 
             
-            temp_v = qprime(3,:,k) + uvb_ave(2,:)
-            v_vdp_temp(:, k) = temp_dp * temp_v**2 
+        !    temp_v = qprime(3,:,k) + uvb_ave(2,:)
+        !    v_vdp_temp(:, k) = temp_dp * temp_v**2 
 
-            u_vdp_temp(1,:,k) = temp_u * temp_v * temp_dp
-            u_vdp_temp(2,:,k) = temp_v * temp_u * temp_dp
+        !    u_vdp_temp(1,:,k) = temp_u * temp_v * temp_dp
+        !    u_vdp_temp(2,:,k) = temp_v * temp_u * temp_dp
 
-        end do
+        !end do
 
         ! In the following computation of momentum fluxes at cell edges, 
         ! udp_flux_edge  iface a numerical approximation to the flux of udp
@@ -1016,7 +1079,7 @@ module mod_layer_terms
 
         ! *****   End computation of fluxes at cell edges   *****
 
-        if(mom_consistency == 1) then 
+        if(adjust_bcl_mom_flux == 1) then 
 
             uu_dp_flux_deficitq = Qu_ave(:) - sum(u_udp_temp(:,:), dim=2)
             uv_dp_flux_deficitq = Quv_ave(:) - sum(u_vdp_temp(1,:,:), dim=2)
@@ -1426,38 +1489,7 @@ module mod_layer_terms
                     end do
 
                 end if
-            end do
-        end do
 
-        ! Adjust the values of  H_r, at quadrature points, so that the vertical sum of
-        ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic 
-        ! time interval.
-
-        if(adjust_H_vertical_sum == 1) then 
-            do I = 1, npoin_q
-
-                acceleration = 0.0
-                if (pbprime(I) > 0.0) then
-                    acceleration = (H_ave(I) - sum(H_r(I,:))) / pbprime(I)
-                end if
-                H_r(I,:) = H_r(I,:) + dpprime_H(I,:) * acceleration
-            end do
-
-        elseif(adjust_H_vertical_sum == 2) then 
-            do I = 1, npoin_q
-                weight = 1.0
-                acceleration = sum(H_r(I,:))
-                if(acceleration > 0.0) then 
-                    weight = H_ave(I) / acceleration
-                end if
-                H_r(I,:) = H_r(I,:) * weight
-            end do
-        end if
-        
-        do iface = 1, nface
-            el = face(7,iface)
-            er = face(8,iface)
-            do iquad = 1, nq
                 if(er /= -4) then
                     do k = 1, nlayers-1          ! interface at the bottom of layer k
             
@@ -1475,37 +1507,54 @@ module mod_layer_terms
             
                     end do
                 end if
-            
-                ! Adjust the vertical sums of  H_r,  for the sake of consistency
-                ! between the layer equations and the barotropic equations.
+            end do ! iquad 
+        end do ! iface 
 
-                ! Adjust the values of  H_r, at element faces, so that the vertical sum of
-                ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic 
-                ! time interval.
+        ! Adjust the vertical sums of  H_r,  for the sake of consistency
+        ! between the layer equations and the barotropic equations.
+        
+        ! Adjust the values of  H_r, at quadrature points, so that the vertical sum of
+        ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic 
+        ! time interval.
+        ! Adjust the values of  H_r, at element faces, so that the vertical sum of
+        ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic 
+        ! time interval.
 
-                ! The difference between the time-averaged  H  and the vertical sum of
-                ! H_r  must be distributed over the layers via some sort of 
-                ! weighting scheme. We conider the following approaches:
+        ! The difference between the time-averaged  H  and the vertical sum of
+        ! H_r  must be distributed over the layers via some sort of 
+        ! weighting scheme. We conider the following approaches:
 
-                ! (1) Weight according to layer thickness.  
-                !       That is, the weight for layer r is  
-                !       (Delta p)_r / (sum of (Delta p)_s over all layers s) =  (Delta p)_r / p_b
-                !                                                          =  (Delta p')_r / p'_b
-                !       The adjusted  H_r  is then
-                !       (H_r)_adjusted = H_r + [(Delta p')_r / p'_b] * [ H_ave - sum(H_s) ] 
-                !
-                ! (2) Weight according to the current value of H_r.
-                !       That is, the weight for layer r is  
-                !       H_r / (sum of H_s over all layers s).  
-                !       The adjusted  H_r  is then
-                !       (H_r)_adjusted  =   H_r + [ H_r/(sum H_s)] * [ H_ave - sum(H_s) ]
-                !                       =   H_r +   H_r * H_ave/(sum H_s)  -  H_r
-                !                       =   H_r * H_ave/(sum H_s)
-                !       Therefore, at each quadrature point and cell edge, multiply
-                !       the current value of  H_r  by the layer-independent ratio
-                !       H_ave/(sum H_s),  which should be approximately equal to  1.  
+        ! (1) Weight according to layer thickness.  
+        !       That is, the weight for layer r is  
+        !       (Delta p)_r / (sum of (Delta p)_s over all layers s) =  (Delta p)_r / p_b
+        !                                                          =  (Delta p')_r / p'_b
+        !       The adjusted  H_r  is then
+        !       (H_r)_adjusted = H_r + [(Delta p')_r / p'_b] * [ H_ave - sum(H_s) ] 
+        !
+        ! (2) Weight according to the current value of H_r.
+        !       That is, the weight for layer r is  
+        !       H_r / (sum of H_s over all layers s).  
+        !       The adjusted  H_r  is then
+        !       (H_r)_adjusted  =   H_r + [ H_r/(sum H_s)] * [ H_ave - sum(H_s) ]
+        !                       =   H_r +   H_r * H_ave/(sum H_s)  -  H_r
+        !                       =   H_r * H_ave/(sum H_s)
+        !       Therefore, at each quadrature point and cell edge, multiply
+        !       the current value of  H_r  by the layer-independent ratio
+        !       H_ave/(sum H_s),  which should be approximately equal to  1. 
 
-                if(adjust_H_vertical_sum == 1) then 
+        if(adjust_H_vertical_sum == 1) then 
+            do I = 1, npoin_q
+
+                acceleration = 0.0
+                if (pbprime(I) > 0.0) then
+                    acceleration = (H_ave(I) - sum(H_r(I,:))) / pbprime(I)
+                end if
+                H_r(I,:) = H_r(I,:) + dpprime_H(I,:) * acceleration
+            end do
+
+            do iface = 1, nface
+                do iquad = 1, nq
+
                     ! Left side of face
                     acceleration = 0.0
                     if (pbprime_face(1,iquad,iface) > 0.0) then
@@ -1519,8 +1568,22 @@ module mod_layer_terms
                         acceleration = (H_face_ave(iquad,iface) - sum(H_r_face(2,iquad,iface,:))) / pbprime_face(2,iquad,iface)
                     end if
                     H_r_face(2,iquad,iface,:) = H_r_face(2,iquad,iface,:) + dpprime_H_face(2,iquad,iface,:)*acceleration
+                end do 
+            end do 
 
-                elseif(adjust_H_vertical_sum == 2) then
+        elseif(adjust_H_vertical_sum == 2) then 
+            do I = 1, npoin_q
+                weight = 1.0
+                acceleration = sum(H_r(I,:))
+                if(acceleration > 0.0) then 
+                    weight = H_ave(I) / acceleration
+                end if
+                H_r(I,:) = H_r(I,:) * weight
+            end do
+
+            do iface = 1, nface
+                do iquad = 1, nq
+
                     ! Left side of face
                     weight = 1.0
                     acceleration = sum(H_r_face(1,iquad,iface,:))
@@ -1535,10 +1598,9 @@ module mod_layer_terms
                         weight = H_face_ave(iquad,iface) / acceleration
                     end if
                     H_r_face(2,iquad,iface,:) = H_r_face(2,iquad,iface,:) * weight
-                end if
-
-            end do
-        end do
+                end do 
+            end do 
+        end if
 
     end subroutine layer_pressure_terms
 
@@ -1567,9 +1629,9 @@ module mod_layer_terms
         tau_bot_int = 0.0
         temp = 0.0
 
-        do k = 1, nlayers
-            pprime_temp(:, k+1) = pprime_temp(:, k) + qprime(1,:,k)
-        end do
+        !do k = 1, nlayers
+        !    pprime_temp(:, k+1) = pprime_temp(:, k) + qprime(1,:,k)
+        !end do
 
         ! write(num, '(i1)') irank
         ! open(unit=100, file='tau_wind_int'//trim(num)//'.dat', status='unknown')
@@ -1577,6 +1639,7 @@ module mod_layer_terms
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
     
         do k = 1, nlayers
+            pprime_temp(:, k+1) = pprime_temp(:, k) + qprime(1,:,k)
             do Iq = 1,npoin_q 
                 temp1 = (min(pprime_temp(Iq,k+1), Pstress) - min(pprime_temp(Iq,k), Pstress))/ Pstress
                 tau_wind_int(1,Iq,k) = temp1*tau_wind(1,Iq)

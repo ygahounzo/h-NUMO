@@ -32,6 +32,17 @@ hnumo-debug:
 	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
+hnumo-prof:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90 -pg" \
+	"LD=mpif90 -pg" \
+	"CC=mpicc -pg" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -pg" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include -pg" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
+	"AR=ar rv"
+
 #------------------------------------------------------------------------------
 # Flags for building NUMO on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
 # user must install gcc openmpi using Homebrew

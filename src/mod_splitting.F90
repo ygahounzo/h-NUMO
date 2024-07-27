@@ -697,7 +697,7 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, method_visc
-        use mod_create_rhs_mlswe, only: layer_momentum_rhs, rhs_layer_shear_stress
+        use mod_create_rhs_mlswe, only: layer_momentum_rhs, rhs_layer_shear_stress, layer_momentum_rhs_v1
         use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, &
                                     layer_windbot_stress_terms, layer_momentum_advec_terms_upwind, layer_momentum_advec_terms_upwind_v1
         use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v1, bcl_create_laplacian_v2
@@ -724,13 +724,13 @@ module mod_splitting
 
         call layer_pressure_terms(qprime, qprime_face, qprime_df)
 
-        call compute_momentum_edge_values(qprime_face3)
+        !call compute_momentum_edge_values(qprime_face3)
 
-        call layer_momentum_advec_terms_upwind_v1(q_df, qprime)
+        !call layer_momentum_advec_terms_upwind_v1(q_df, qprime)
 
         ! Compute the wind stress terms
 
-        call layer_windbot_stress_terms(qprime)
+        !call layer_windbot_stress_terms(qprime)
 
         if(method_visc == 3) then
             call bcl_create_laplacian_v2(rhs_visc_bcl)
@@ -738,7 +738,9 @@ module mod_splitting
 
         ! Compute the RHS of the layer momentum equation
 
-        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl)
+        !call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime)
+
+        call layer_momentum_rhs_v1(rhs_mom, rhs_visc_bcl, qprime, qprime_face3)
 
     end subroutine rhs_momentum
 
@@ -753,10 +755,11 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df
-        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs, consistency_mass_rhs
-        use mod_layer_terms, only: consistency_mass_terms, evaluate_dpp, evaluate_dpp_face
+        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs, consistency_mass_rhs, consistency_mass_rhs_v1
+        use mod_layer_terms, only: consistency_mass_terms, evaluate_dpp, evaluate_dpp_face, evaluate_consistency_face
         use mod_variables, only: btp_mass_flux_face_ave, flux_adjustment, flux_adjust_edge
-
+        use mod_metrics, only: massinv
+        
         implicit none
     
         ! Input variables
@@ -771,6 +774,7 @@ module mod_splitting
         real, dimension(2,2,nq,nface)  :: flux_deficit_mass_face
         integer :: k
         real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
+        real :: mass_deficit_mass_face(2,2,nq,nface,nlayers)
 
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
 
@@ -779,18 +783,18 @@ module mod_splitting
         end do
 
         call evaluate_dpp(qprime,dpprime_df)
-        call evaluate_dpp_face(qprime_face,qprime)
+        !call evaluate_dpp_face(qprime_face,qprime)
 
         ! Communicate the interface values within the neighboring processors
-        call bcl_create_communicator(qprime_face(1,:,:,:,:),1,nlayers,nq)
+        !call bcl_create_communicator(qprime_face(1,:,:,:,:),1,nlayers,nq)
 
-        flux_deficit_mass_face(1,1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
-        flux_deficit_mass_face(2,1,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
+        !flux_deficit_mass_face(1,1,:,:) = btp_mass_flux_face_ave(1,:,:) - sum_layer_mass_flux_face(1,:,:)
+        !flux_deficit_mass_face(2,1,:,:) = btp_mass_flux_face_ave(2,:,:) - sum_layer_mass_flux_face(2,:,:)
 
-        flux_deficit_mass_face(1,2,:,:) = flux_deficit_mass_face(1,1,:,:)
-        flux_deficit_mass_face(2,2,:,:) = flux_deficit_mass_face(2,1,:,:)
+        !flux_deficit_mass_face(1,2,:,:) = flux_deficit_mass_face(1,1,:,:)
+        !flux_deficit_mass_face(2,2,:,:) = flux_deficit_mass_face(2,1,:,:)
 
-        call create_communicator_quad(flux_deficit_mass_face,2)
+        !call create_communicator_quad(flux_deficit_mass_face,2)
 
         ! Consistency flux terms 
         !call consistency_mass_terms(qprime, qprime_face, flux_deficit_mass_face)
@@ -798,12 +802,16 @@ module mod_splitting
         ! RHS of the consistency terms
         !call layer_mass_advection_rhs(dp_advec, flux_adjustment, flux_adjust_edge)
 
-        call consistency_mass_rhs(dp_advec, qprime, qprime_face, flux_deficit_mass_face)
+        !call consistency_mass_rhs(dp_advec, qprime, qprime_face, flux_deficit_mass_face)
+
+        call evaluate_consistency_face(mass_deficit_mass_face,qprime)
+
+        call consistency_mass_rhs_v1(dp_advec, qprime, mass_deficit_mass_face)
 
         ! Apply consistency to the thickness
 
         do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+            q_df(1,:,k) = q_df(1,:,k) + dt*massinv(:)*dp_advec(:,k)
         end do
         
     end subroutine apply_consistency
