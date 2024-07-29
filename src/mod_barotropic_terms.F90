@@ -22,7 +22,7 @@ module mod_barotropic_terms
                 evaluate_quprime2, evaluate_visc_terms, restart_mlswe_variales, restart_mlswe, &
                 compute_gradient_uv, compute_btp_mom_terms, compute_gradient_uv_v1, btp_bcl_grad_coeffs, &
                 compute_btp_volume_terms, compute_btp_face_terms, btp_interpolate_avg, btp_extract_df, &
-                btp_interpolate_avg_v1, btp_extract_face, btp_extract_face_v1
+                btp_interpolate_avg_v1, btp_extract_face, btp_extract_face_v1, btp_bcl_coeffs_v1
 
     contains
 
@@ -1531,18 +1531,209 @@ module mod_barotropic_terms
             end do
 
             Q_uu_dp_edge(:,iface) = 0.5*(left_uudp + right_uudp)
-            !Q_uu_dp_edge(2,:,iface) = right_uudp
             Q_uv_dp_edge(:,iface) = 0.5*(left_uvdp + right_uvdp)
-            !Q_uv_dp_edge(2,:,iface) = right_uvdp
             Q_vv_dp_edge(:,iface) = 0.5*(left_vvdp + right_vvdp)
-            !Q_vv_dp_edge(2,:,iface) = right_vvdp
-
             H_bcl_edge(:,iface) = 0.5*(left_dp + right_dp)
-            !H_bcl_edge(2,:,iface) = right_dp
 
         end do
 
     end subroutine btp_bcl_coeffs
+
+    subroutine btp_bcl_coeffs_v1(qprime,qprime_face, qprime_df)
+        
+        ! Compute baroclinic coefficients in the advective barotropic momentum fluxes and in the barotropic pressure forcing. 
+
+        use mod_grid, only: npoin_q, nface, npoin, face, intma
+        use mod_input, only: nlayers, dpprime_visc_min
+        use mod_basis, only: nqx, nqy, nqz, nq, ngl
+        use mod_initial, only: alpha_mlswe
+
+        use mod_Tensorproduct, only: compute_gradient_quad, interpolate_layer_from_quad_to_node_1d
+        use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, H_bcl_edge, &
+                                    Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
+                                    dpprime_visc,pbprime_visc,btp_dpp_graduv, btp_dpp_uvp, &
+                                    dpp_uvp, dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face
+
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl, imapr, normal_vector
+        
+        implicit none
+
+        real, intent(in)  :: qprime(3,npoin_q,nlayers), qprime_face(3,2,nq,nface,nlayers)
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+        
+        real, dimension(nq) :: left_uudp, right_uudp, left_uvdp
+        real, dimension(nq) :: right_uvdp, right_vvdp, left_vvdp
+
+        real, dimension(nq,nlayers+1) :: pprime_l, pprime_r
+        real, dimension(npoin_q,nlayers+1) :: pprime
+        real, dimension(nq) :: left_dp, right_dp
+        real, dimension(4, npoin) :: graduv
+
+        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, k, ivar
+        real :: un(nlayers), nx, ny
+        
+        ! Compute Q_uu_dp, Q_uv_dp, Q_vv_dp at quadrature points
+        Q_uu_dp = 0.0
+        Q_uv_dp = 0.0
+        Q_vv_dp = 0.0
+        H_bcl = 0.0
+
+        btp_dpp_graduv = 0.0
+        pbprime_visc = 0.0
+
+        ! Compute Q_up_up_quad and Q_up_vp_quad at quadrature points.
+
+        pprime(:,1) = 0.0
+
+        do k = 1, nlayers
+            Q_uu_dp(:) = Q_uu_dp(:) + qprime(2,:,k)*(qprime(2,:,k) * qprime(1,:,k))
+            Q_uv_dp(:) = Q_uv_dp(:) + qprime(3,:,k)*(qprime(2,:,k) * qprime(1,:,k))
+            Q_vv_dp(:) = Q_vv_dp(:) + qprime(3,:,k)*(qprime(3,:,k) * qprime(1,:,k))
+
+            ! Pressure term in barotropic momentum equation
+
+            pprime(:,k+1) = pprime(:,k) + qprime(1,:,k)
+            H_bcl(:) = H_bcl(:) + 0.5*alpha_mlswe(k)*(pprime(:,k+1)**2 - pprime(:,k)**2)
+
+
+            ! For viscosity terms 
+
+            call compute_gradient_uv_v1(graduv, qprime_df(2:3,:,k))
+            
+            dpp_graduv(1,:,k) = dpprime_visc(:,k)*graduv(1,:)
+            dpp_graduv(2,:,k) = dpprime_visc(:,k)*graduv(2,:)
+            dpp_graduv(3,:,k) = dpprime_visc(:,k)*graduv(3,:)
+            dpp_graduv(4,:,k) = dpprime_visc(:,k)*graduv(4,:)
+
+            dpp_uvp(1,:,k) =  dpprime_visc(:,k)*qprime_df(2,:,k)
+            dpp_uvp(2,:,k) =  dpprime_visc(:,k)*qprime_df(3,:,k)
+
+            btp_dpp_graduv(:,:) = btp_dpp_graduv(:,:) + dpp_graduv(:,:,k)
+            pbprime_visc(:) =  pbprime_visc(:) + dpprime_visc(:,k)
+
+        end do
+
+        
+        do iface = 1, nface
+
+            iel=face(7,iface)
+            ier=face(8,iface)
+                
+            left_uudp = 0.0
+            right_uudp = 0.0
+            left_uvdp = 0.0
+            right_uvdp = 0.0
+            right_vvdp = 0.0
+            left_vvdp = 0.0
+
+            left_dp = 0.0
+            right_dp = 0.0
+
+            pprime_l(:,1) = 0.0
+            pprime_r(:,1) = 0.0
+
+            do k = 1, nlayers
+
+                left_uudp = left_uudp + qprime_face(2,1,:,iface,k)*qprime_face(2,1,:,iface,k)*qprime_face(1,1,:,iface,k)
+                left_uvdp = left_uvdp + qprime_face(3,1,:,iface,k)*qprime_face(2,1,:,iface,k)*qprime_face(1,1,:,iface,k)
+                left_vvdp = left_vvdp + qprime_face(3,1,:,iface,k)*qprime_face(3,1,:,iface,k)*qprime_face(1,1,:,iface,k)
+                right_uudp = right_uudp + qprime_face(2,2,:,iface,k)*qprime_face(2,2,:,iface,k)*qprime_face(1,2,:,iface,k)
+                right_uvdp = right_uvdp + qprime_face(3,2,:,iface,k)*qprime_face(2,2,:,iface,k)*qprime_face(1,2,:,iface,k)
+                right_vvdp = right_vvdp + qprime_face(3,2,:,iface,k)*qprime_face(3,2,:,iface,k)*qprime_face(1,2,:,iface,k)
+
+                pprime_l(:,k+1) = pprime_l(:,k) + qprime_face(1,1,:,iface,k)
+                left_dp = left_dp + 0.5*alpha_mlswe(k) *(pprime_l(:,k+1)**2 - pprime_l(:,k)**2)
+
+                pprime_r(:,k+1) = pprime_r(:,k) + qprime_face(1,2,:,iface,k)
+                right_dp = right_dp + 0.5*alpha_mlswe(k) *(pprime_r(:,k+1)**2 - pprime_r(:,k)**2)
+
+            end do
+
+            Q_uu_dp_edge(:,iface) = 0.5*(left_uudp + right_uudp)
+            Q_uv_dp_edge(:,iface) = 0.5*(left_uvdp + right_uvdp)
+            Q_vv_dp_edge(:,iface) = 0.5*(left_vvdp + right_vvdp)
+            H_bcl_edge(:,iface) = 0.5*(left_dp + right_dp)
+
+            do iquad = 1,ngl
+                !Get Pointers
+                il=imapl(1,iquad,1,iface)
+                jl=imapl(2,iquad,1,iface)
+                kl=imapl(3,iquad,1,iface)
+                Iq = intma(il,jl,kl,iel)
+
+                !Variables
+                graduv_dpp_face(1,1,iquad,iface,:) = dpp_graduv(1,Iq,:)
+                graduv_dpp_face(2,1,iquad,iface,:) = dpp_graduv(2,Iq,:)
+                graduv_dpp_face(3,1,iquad,iface,:) = dpp_graduv(3,Iq,:)
+                graduv_dpp_face(4,1,iquad,iface,:) = dpp_graduv(4,Iq,:)
+
+                graduv_dpp_face(5,1,iquad,iface,:) = dpprime_visc(Iq,:)
+
+                if (ier > 0 ) then
+
+                    !Get Pointers
+                    ir=imapr(1,iquad,1,iface)
+                    jr=imapr(2,iquad,1,iface)
+                    kr=imapr(3,iquad,1,iface)
+                    Iq=intma(ir,jr,kr,ier)
+
+                    !Variables
+                    graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:)
+                    graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:)
+                    graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:)
+                    graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:)
+
+                    graduv_dpp_face(5,2,iquad,iface,:) = dpprime_visc(Iq,:)
+
+                else
+                    !default values
+                    graduv_dpp_face(1,2,iquad,iface,:) = graduv_dpp_face(1,1,iquad,iface,:)
+                    graduv_dpp_face(2,2,iquad,iface,:) = graduv_dpp_face(2,1,iquad,iface,:)
+
+                    graduv_dpp_face(3,2,iquad,iface,:) = graduv_dpp_face(3,1,iquad,iface,:)
+                    graduv_dpp_face(4,2,iquad,iface,:) = graduv_dpp_face(4,1,iquad,iface,:)
+
+                    graduv_dpp_face(5,2,iquad,iface,:) = graduv_dpp_face(5,1,iquad,iface,:)
+
+                    if(ier == -4) then 
+                        nx = normal_vector(1,iquad,1,iface)
+                        ny = normal_vector(2,iquad,1,iface)
+
+                        un = dpp_graduv(1,Iq,:)*nx + dpp_graduv(2,Iq,:)*ny
+
+                        graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:) - 2.0*un*nx
+                        graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:) - 2.0*un*ny
+
+                        un = dpp_graduv(3,Iq,:)*nx + dpp_graduv(4,Iq,:)*ny
+
+                        graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:) - 2.0*un*nx
+                        graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:) - 2.0*un*ny
+
+                    end if 
+                end if
+            end do 
+
+        end do
+
+        call bcl_create_communicator(graduv_dpp_face,5,nlayers,ngl)
+
+        btp_graduv_dpp_face = 0.0
+
+        do iface=1,nface
+            do iquad = 1,ngl
+                
+                do k = 1,nlayers
+
+                    btp_graduv_dpp_face(:,1,iquad,iface) = btp_graduv_dpp_face(:,1,iquad,iface) + graduv_dpp_face(:,1,iquad,iface,k)
+
+                    btp_graduv_dpp_face(:,2,iquad,iface) = btp_graduv_dpp_face(:,2,iquad,iface) + graduv_dpp_face(:,2,iquad,iface,k)
+
+                end do 
+
+            end do 
+        end do 
+
+    end subroutine btp_bcl_coeffs_v1
 
 
     subroutine btp_bcl_grad_coeffs(qprime_df)

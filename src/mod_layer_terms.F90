@@ -20,7 +20,7 @@ module mod_layer_terms
             filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, &
             interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, layer_momentum_advec_terms_upwind, evaluate_bcl, evaluate_bcl_v1, &
             layer_momentum_advec_terms_upwind_v1, evaluate_dpp, evaluate_dpp_face, evaluate_bcl_v2, &
-            evaluate_mom_v3, evaluate_bcl_v3, evaluate_consistency_face
+            evaluate_mom_v3, evaluate_bcl_v3, evaluate_consistency_face, layer_pressure_terms_v1
 
     contains
 
@@ -1603,6 +1603,202 @@ module mod_layer_terms
         end if
 
     end subroutine layer_pressure_terms
+
+    subroutine layer_pressure_terms_v1(qprime, qprime_face, qprime_df)
+
+        ! This routine computes the layer momentum pressure terms
+
+        use mod_constants, only : gravity
+        use mod_initial, only : alpha_mlswe, zbot_df, pbprime, pbprime_face, zbot, zbot_face
+        use mod_grid, only : nface, npoin, npoin_q, face, intma_dg_quad
+        use mod_basis, only : nq
+        use mod_input, only : nlayers, adjust_H_vertical_sum
+        use mod_face, only: imapl_q, imapr_q
+        use mod_Tensorproduct, only: interpolate_layer_from_quad_to_node_1d, compute_gradient_quad
+        use mod_variables, only: ope_ave, H_ave, ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, ope_ave_df, &
+                                H_r, H_r_face, p, z_elev, grad_z
+
+        implicit none
+
+        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+
+        ! local variables
+        real, dimension(nlayers) :: alpha_over_g, g_over_alpha
+        real, dimension(nq,nface,nlayers+1) :: z_edge_plus, z_edge_minus
+        real, dimension(2,nq,nface,nlayers+1) :: p_face, z_face
+        real, dimension(nq,nface,nlayers+1) :: p_edge_plus, p_edge_minus
+        real, dimension(nq,nlayers) :: dp_plus, dp_minus, dpl_temp, dpr_temp
+        integer :: iface, ilr, k, iquad, ktemp, I
+        real :: z_intersect_topl,z_intersect_botl, dz_intersect, Hr_plus, Hl_minus, Hl_plus, Hr_minus
+        real :: p_intersect_bot, p_intersect_top, z_intersect_topr,z_intersect_botr
+        real, dimension(nq) :: one_plus_eta_edge, ope_face_l, ope_face_r
+        real :: H_corr,p_inc, H_corr1,p_inc1, H_corr2,p_inc2, temp
+        integer :: Iq, el, er
+        
+        z_elev = 0.0
+        grad_z = 0.0
+        z_face = 0.0
+        p_face = 0.0
+
+        do k=1,nlayers
+            alpha_over_g(k) = alpha_mlswe(k)/gravity
+            g_over_alpha(k) = gravity/alpha_mlswe(k)
+        enddo
+
+        ! Find elevation at the top of layer k
+
+        z_elev(:,nlayers+1) = zbot_df(:)
+            
+        do k = nlayers,1,-1
+            z_elev(:,k) = z_elev(:,k+1) + alpha_over_g(k) * (qprime_df(1,:,k) * ope_ave_df(:))
+        end do
+
+        ! Compute the gradient of elevation z
+
+        do k = 1, nlayers+1
+            call compute_gradient_quad(grad_z(:,:,k),z_elev(:,k))
+        end do
+
+        ! Find pressure at the bottom of layer k and layer height
+        p(:,1) = 0.0
+        do k = 1,nlayers
+            p(:,k+1) = p(:,k) + qprime(1,:,k) * ope_ave(:)
+            H_r(:,k) = 0.5*alpha_mlswe(k) * (p(:,k+1)**2 - p(:,k)**2)
+        end do
+        
+        ! Compute H_r at the element face
+
+        do iface = 1, nface
+
+            ope_face_l = ope_face_ave(1,:,iface)
+            ope_face_r = ope_face_ave(2,:,iface)
+            p_face(:,:,iface,1) = 0.0
+
+            one_plus_eta_edge = one_plus_eta_edge_2_ave(:,iface)
+
+            do k=1,nlayers
+                dpl_temp(:,k) = ope_face_l * qprime_face(1,1,:,iface,k)
+                p_face(1,:,iface,k+1) = p_face(1,:,iface,k) + dpl_temp(:,k)
+
+                dpr_temp(:,k) = ope_face_r * qprime_face(1,2,:,iface,k)
+                p_face(2,:,iface,k+1) = p_face(2,:,iface,k) + dpr_temp(:,k)
+
+                dp_plus(:,k) = one_plus_eta_edge * qprime_face(1,1,:,iface,k)
+                dp_minus(:,k) = one_plus_eta_edge * qprime_face(1,2,:,iface,k)
+            end do
+            
+            z_face(1,:,iface,nlayers+1) = zbot_face(1,:,iface)
+            z_face(2,:,iface,nlayers+1) = zbot_face(2,:,iface)
+
+            z_edge_plus(:,iface,nlayers+1) = zbot_face(1,:,iface)
+            z_edge_minus(:,iface,nlayers+1) = zbot_face(2,:,iface)
+
+            do k=nlayers,1,-1
+                z_face(1,:,iface,k) = z_face(1,:,iface,k+1) + alpha_over_g(k) * dpl_temp(:,k)
+                z_face(2,:,iface,k) = z_face(2,:,iface,k+1) + alpha_over_g(k) * dpr_temp(:,k)
+
+                z_edge_plus(:,iface,k) = z_edge_plus(:,iface,k+1) + alpha_over_g(k) * dp_plus(:,k)
+                z_edge_minus(:,iface,k) = z_edge_minus(:,iface,k+1) + alpha_over_g(k) * dp_minus(:,k)
+            end do
+
+            p_edge_plus(:,iface,2) = dp_plus(:,1)
+            p_edge_minus(:,iface,2) = dp_minus(:,1)
+
+            do k = 2,nlayers
+                p_edge_plus(:,iface,k+1) = p_edge_plus(:,iface,k) + dp_plus(:,k)
+                p_edge_minus(:,iface,k+1) = p_edge_minus(:,iface,k) + dp_minus(:,k)
+            end do
+
+            ! Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+                do k = 1, nlayers
+        
+                    ! ====== Begin computation of H_r for the right side ====
+        
+                    ! Computation from + side for layer k
+                    Hl_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(iquad, iface, k+1)**2 - p_edge_plus(iquad, iface, k)**2)
+
+                    ! Computation from - side for layer k
+                    Hl_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(iquad, iface, k+1)**2 - p_edge_minus(iquad, iface, k)**2)
+                    
+                    Hr_minus = 0.0
+                    Hr_plus = 0.0
+    
+                    do ktemp = 1, nlayers
+        
+                        ! Computation from - side for layer k
+                        z_intersect_topr = min(z_edge_minus(iquad, iface, ktemp), z_edge_plus(iquad, iface, k))
+                        z_intersect_botr = max(z_edge_minus(iquad, iface, ktemp+1), z_edge_plus(iquad, iface, k+1))
+                        dz_intersect = z_intersect_topr - z_intersect_botr
+        
+                        if (dz_intersect > 0.0) then
+        
+                            p_intersect_bot = p_edge_minus(iquad,iface,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_botr - z_edge_minus(iquad,iface,ktemp+1))
+                            p_intersect_top = p_edge_minus(iquad,iface,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_topr - z_edge_minus(iquad,iface,ktemp+1))
+                            Hr_minus = Hr_minus + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+        
+                        end if
+
+                        ! Computation from + side for layer k
+
+                        z_intersect_topl = min(z_edge_plus(iquad, iface, ktemp), z_edge_minus(iquad, iface, k))
+                        z_intersect_botl = max(z_edge_plus(iquad, iface, ktemp+1), z_edge_minus(iquad, iface, k+1))
+                        dz_intersect = z_intersect_topl - z_intersect_botl
+        
+                        if (dz_intersect > 0.0) then
+        
+                            p_intersect_bot = p_edge_plus(iquad, iface, ktemp+1) - g_over_alpha(ktemp)*(z_intersect_botl - z_edge_plus(iquad, iface, ktemp+1))   
+                            p_intersect_top = p_edge_plus(iquad, iface, ktemp+1) - g_over_alpha(ktemp)*(z_intersect_topl - z_edge_plus(iquad, iface, ktemp+1))
+                            Hr_plus = Hr_plus + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+        
+                        end if
+        
+                    end do
+        
+                    H_r_face(1, iquad, iface, k) = 0.5*(Hl_plus + Hr_minus)
+                    H_r_face(2, iquad, iface, k) = 0.5*(Hr_plus + Hl_minus)
+        
+                end do
+            end do ! iquad 
+
+            ! Wall Boundary conditions
+
+            if(er == -4) then 
+                do k = 1,nlayers
+
+                    H_r_face(1,:,iface,k) = 0.5*alpha_mlswe(k)*(p_face(1,:,iface,k+1)**2 - p_face(1,:,iface,k)**2)
+                    H_r_face(2,:,iface,k) = 0.5*alpha_mlswe(k)*(p_face(2,:,iface,k+1)**2 - p_face(2,:,iface,k)**2)
+                end do
+            end if
+
+            if(er /= -4) then
+
+                do iquad = 1,nq
+                    do k = 1, nlayers-1          ! interface at the bottom of layer k
+            
+                        ! Corrections at the left side of a face.
+                        p_inc1 = g_over_alpha(k)*(z_face(1, iquad, iface, k+1) - z_edge_plus(iquad, iface, k+1))
+                        H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1, iquad, iface, k+1) + p_inc1)**2 - p_face(1, iquad, iface, k+1)**2)
+                        H_r_face(1, iquad, iface, k) = H_r_face(1, iquad, iface, k) - H_corr1
+                        H_r_face(1, iquad, iface, k+1) = H_r_face(1, iquad, iface, k+1) + H_corr1
+            
+                        ! Corrections at the right side of a face.
+                        p_inc2 = g_over_alpha(k)*(z_face(2, iquad, iface, k+1) - z_edge_minus(iquad, iface, k+1))
+                        H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2, iquad, iface, k+1) + p_inc2)**2 - p_face(2, iquad, iface, k+1)**2)
+                        H_r_face(2, iquad, iface, k) = H_r_face(2, iquad, iface, k) - H_corr2
+                        H_r_face(2, iquad, iface, k+1) = H_r_face(2, iquad, iface, k+1) + H_corr2
+            
+                    end do
+                end do 
+            end if
+        end do ! iface 
+
+    end subroutine layer_pressure_terms_v1
 
     subroutine layer_windbot_stress_terms(qprime)
 

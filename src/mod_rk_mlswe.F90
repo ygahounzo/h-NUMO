@@ -211,7 +211,7 @@ module mod_rk_mlswe
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
         use mod_rhs_btp, only: create_rhs_btp_v1, create_rhs_btp_v2
-        use mod_barotropic_terms, only: btp_bcl_coeffs, btp_bcl_grad_coeffs
+        use mod_barotropic_terms, only: btp_bcl_coeffs, btp_bcl_grad_coeffs, btp_bcl_coeffs_v1
 
         use mod_barotropic_terms, only: btp_mom_boundary_df, btp_interpolate_avg_v1
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
@@ -240,18 +240,18 @@ module mod_rk_mlswe
         uvb_ave_df  = 0.0
         ope_ave = 0.0
         btp_mass_flux_ave = 0.0
-        H_ave = 0.0
-        Qu_ave = 0.0
-        Qv_ave = 0.0
-        Quv_ave = 0.0
+        !H_ave = 0.0
+        !Qu_ave = 0.0
+        !Qv_ave = 0.0
+        !Quv_ave = 0.0
         ope_ave_df = 0.0
         uvb_face_ave  = 0.0
         ope_face_ave = 0.0
         btp_mass_flux_face_ave = 0.0
-        H_face_ave = 0.0
-        Qu_face_ave = 0.0
-        Qv_face_ave = 0.0
-        Quv_face_ave = 0.0
+        !H_face_ave = 0.0
+        !Qu_face_ave = 0.0
+        !Qv_face_ave = 0.0
+        !Quv_face_ave = 0.0
         tau_wind_ave = 0.0
         tau_bot_ave = 0.0
         ope2_ave = 0.0
@@ -262,8 +262,10 @@ module mod_rk_mlswe
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
-        call btp_bcl_coeffs(qprime,qprime_face)
-        if (method_visc > 0) call btp_bcl_grad_coeffs(qprime_df)
+        !call btp_bcl_coeffs(qprime,qprime_face)
+        !if (method_visc > 0) call btp_bcl_grad_coeffs(qprime_df)
+
+        !call btp_bcl_coeffs_v1(qprime,qprime_face, qprime_df)
 
         qb2_df = 0.0
 
@@ -299,9 +301,8 @@ module mod_rk_mlswe
                 qb1_df = qb_df
         
                 !Store the 2nd stage for SSP(5,3)
-                if (kstages == 5 .and. ik == 2) then
-                    qb2_df = qb_df
-                end if
+
+                if (kstages == 5 .and. ik == 2) qb2_df = qb_df
 
                 uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
                 uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
@@ -319,23 +320,20 @@ module mod_rk_mlswe
 
         N_inv = 1.0 / real(kstages*N_btp)
 
-        !uvb_ave = N_inv*uvb_ave
         uvb_ave_df = N_inv*uvb_ave_df
 
         ope_ave = N_inv*ope_ave
-        H_ave = N_inv*H_ave 
-        Qu_ave = N_inv*Qu_ave
-        Qv_ave = N_inv*Qv_ave 
-        Quv_ave = N_inv*Quv_ave 
+        !H_ave = N_inv*H_ave 
+        !Qu_ave = N_inv*Qu_ave
+        !Qv_ave = N_inv*Qv_ave 
+        !Quv_ave = N_inv*Quv_ave 
         btp_mass_flux_ave = N_inv*btp_mass_flux_ave
 
-        !uvb_face_ave = N_inv*uvb_face_ave 
-
         ope_face_ave = N_inv*ope_face_ave 
-        H_face_ave = N_inv*H_face_ave 
-        Qu_face_ave = N_inv*Qu_face_ave 
-        Qv_face_ave = N_inv*Qv_face_ave 
-        Quv_face_ave = N_inv*Quv_face_ave 
+        !H_face_ave = N_inv*H_face_ave 
+        !Qu_face_ave = N_inv*Qu_face_ave 
+        !Qv_face_ave = N_inv*Qv_face_ave 
+        !Quv_face_ave = N_inv*Quv_face_ave 
         btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
 
         one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 
