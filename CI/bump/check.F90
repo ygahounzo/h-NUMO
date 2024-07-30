@@ -17,7 +17,7 @@ program code_verification
     nlayers = 2
     Nfield = 4
     output_file = 'output.log'
-    ref_filename = 'mlswe_ref_FIN.txt'
+    ref_filename = 'ref_mlswe_FIN.txt'
     fin_filename = 'mlswe_FIN.txt'
     
     ! Read the content of the reference file
