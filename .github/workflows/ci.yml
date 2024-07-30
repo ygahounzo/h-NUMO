@@ -34,4 +34,4 @@ jobs:
 
     - name: Run bump test
       working-directory: CI/bump
-      run: mpirun -np 1 ./numo3d
+      run: mpirun -np 1 ./run_check.sh

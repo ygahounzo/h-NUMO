@@ -13,16 +13,14 @@ module mod_rhs_btp
     use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad
 
     use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
-        psiqx, psiqy, psiqz
+        psiqx, psiqy, psiqz, nq, ngl
 
-    use mod_grid, only: intma, coord
+    use mod_grid, only: intma, npoin_q, npoin, nface
 
-    use mod_initial, only: q_ref, coriolis_constant, kvector, nvar
-
+    use mod_laplacian_quad, only: btp_create_laplacian_v3
     use mod_barotropic_terms, only: btp_extract_face_v1, btp_extract_df, btp_extract_face
 
-
-    use mod_input, only: nlayers
+    use mod_input, only: nlayers, method_visc
 
     use mod_metrics, only: &
         ksiq_x, ksiq_y, ksiq_z, &
@@ -38,11 +36,6 @@ contains
 
 
     subroutine create_rhs_btp(rhs,qb,qb_df,qprime,qb_face)
-
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
-        use mod_laplacian_quad, only: btp_create_laplacian_v3
 
         implicit none
 
@@ -64,7 +57,7 @@ contains
 
         ! Compute RHS viscosity terms
 
-        if(method_visc == 3) then
+        if(method_visc > 0) then
             call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
         end if
 
@@ -74,12 +67,6 @@ contains
     end subroutine create_rhs_btp
 
     subroutine create_rhs_btp_v1(rhs,qb_df,qprime)
-
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
-        use mod_laplacian_quad, only: btp_create_laplacian_v3
-        use mod_barotropic_terms, only: btp_extract_face
 
         implicit none
 
@@ -102,7 +89,7 @@ contains
 
         ! Compute RHS viscosity terms
 
-        if(method_visc == 3) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
+        if(method_visc > 0) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
 
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
@@ -110,12 +97,6 @@ contains
     end subroutine create_rhs_btp_v1
 
     subroutine create_rhs_btp_v2(rhs,qb_df,qprime)
-
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
-        use mod_laplacian_quad, only: btp_create_laplacian_v3
-        use mod_barotropic_terms, only: btp_extract_face_v1, btp_extract_df
 
         implicit none
 
@@ -138,7 +119,7 @@ contains
 
         ! Compute RHS viscosity terms
 
-        if(method_visc == 3) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
+        if(method_visc > 0) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
 
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
@@ -146,12 +127,6 @@ contains
     end subroutine create_rhs_btp_v2
 
     subroutine create_rhs_btp_v3(rhs,qb_df,qprime)
-
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
-        use mod_laplacian_quad, only: btp_create_laplacian_v3
-        use mod_barotropic_terms, only: btp_extract_face_v1, btp_extract_df
 
         implicit none
 
@@ -175,7 +150,7 @@ contains
 
         ! Compute RHS viscosity terms
 
-        if(method_visc == 3) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
+        if(method_visc > 0) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
 
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
@@ -183,12 +158,6 @@ contains
     end subroutine create_rhs_btp_v3
 
     subroutine create_rhs_btp_mass(rhs_advec,qb_df)
-
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
-        use mod_laplacian_quad, only: btp_create_laplacian_v3
-        use mod_barotropic_terms, only: btp_extract_face_v1, btp_extract_df
 
         implicit none
 
@@ -210,12 +179,6 @@ contains
     end subroutine create_rhs_btp_mass
 
     subroutine create_rhs_btp_mom(rhs_mom,qb_df,qprime)
-
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
-        use mod_laplacian_quad, only: btp_create_laplacian_v3
-        use mod_barotropic_terms, only: btp_extract_face_v1, btp_extract_df
 
         implicit none
 
@@ -241,18 +204,13 @@ contains
 
         ! Compute RHS viscosity terms
 
-        if(method_visc == 3) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
+        if(method_visc > 0) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
 
         rhs_mom(:,:) = rhs_mom(:,:) + rhs_visc_btp(:,:)
 
     end subroutine create_rhs_btp_mom
 
     subroutine create_rhs_btp_momentum(rhs_mom,qb,qb_face)
-
-
-        use mod_metrics, only: massinv
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
 
         implicit none
 
@@ -270,10 +228,6 @@ contains
 
     subroutine create_rhs_btp_mom_mass(rhs,qb,qb_face)
 
-        use mod_metrics, only: massinv
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-
         implicit none
 
         real, dimension(3, npoin), intent(out) :: rhs
@@ -287,10 +241,6 @@ contains
     end subroutine create_rhs_btp_mom_mass
 
     subroutine btp_mass_advection_rhs(pb_advec)
-
-        use mod_metrics, only: massinv 
-        use mod_grid, only: npoin_q, npoin, nface
-        use mod_basis, only: nq
 
         implicit none
 
@@ -711,7 +661,7 @@ contains
 
     subroutine creat_btp_fluxes(rhs,qb_face)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin, intma, nface,face
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave,Qu_face_ave, Qv_face_ave, &
@@ -859,7 +809,7 @@ contains
 
     subroutine creat_btp_fluxes_v1(rhs,qb_df_face)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: psiq, ngl
         use mod_grid, only:  npoin, intma, nface,face
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave,Qu_face_ave, Qv_face_ave, &
@@ -1015,7 +965,7 @@ contains
 
     subroutine creat_btp_fluxes_mass(rhs_advec,qb_face)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin, intma, nface,face
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: btp_mass_flux_face_ave 
@@ -1113,7 +1063,7 @@ contains
 
     subroutine creat_btp_fluxes_mom(rhs_mom,qb_face)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin, intma, nface,face
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave,Qu_face_ave, Qv_face_ave, &
@@ -1358,7 +1308,7 @@ contains
 
     subroutine Apply_btp_fluxes(rhs_mom,qb_face)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
@@ -1456,7 +1406,7 @@ contains
 
     subroutine Apply_btp_fluxes_v1(rhs,qb_face)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
@@ -1600,7 +1550,7 @@ contains
 
     subroutine Apply_btp_flux_mass(pb_advec)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
+        use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: flux_edge

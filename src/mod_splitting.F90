@@ -1202,7 +1202,7 @@ module mod_splitting
 
         call layer_pressure_terms_v1(qprime, qprime_face, qprime_df)
 
-        if(method_visc == 3) call bcl_create_laplacian_v2(rhs_visc_bcl)
+        if(method_visc > 0) call bcl_create_laplacian_v2(rhs_visc_bcl)
 
         ! Compute the RHS of the layer momentum equation
 

@@ -11,6 +11,7 @@ program code_verification
     character(len=256) :: ref_file_content(1000), fin_file_content(1000)
     integer :: ref_line_count, fin_line_count
     character(len=20) :: str
+    real :: mass_loss_ref, mass_loss_fin
 
     ! Initialize variables
     nlayers = 2
@@ -33,7 +34,9 @@ program code_verification
     endif
 
     write(str, '(I2)') nlayers
+    write(10, '(A)') ' '
     write(10, '(A)') 'Code verification for ' // trim(adjustl(str)) // ' layers model'
+    write(10, '(A)') ' '
 
     do nl = 1, nlayers
         index_layer = 6 * (nl - 1) + 1
@@ -43,10 +46,20 @@ program code_verification
         write(10, '(A)') trim(adjustl(ref_line))
 
         ! Extract data from the reference file
-        call parse_line_mass(ref_file_content(index_layer+1), field_ref, field_max_ref, field_min_ref)
+        !call parse_line_mass(ref_file_content(index_layer+1), mass_loss_ref)
+
+        ! Print mass loss 
+        call get_line(ref_file_content, index_layer+1, ref_line)
+        write(10, '(A)') trim(adjustl(ref_line))
 
         ! Extract data from the fin file
-        call parse_line_mass(fin_file_content(index_layer+1), field_ref, field_max, field_min)
+        call parse_line_mass(fin_file_content(index_layer+1), mass_loss_fin)
+
+        if(mass_loss_fin .gt. 1.0e-12) then 
+            print*, 'Layer ', nl, 'mass_loss = ', mass_loss_fin, ' to large'
+
+            stop
+        endif 
 
         do ifield = 2, Nfield
             index_field = ifield + index_layer
@@ -65,6 +78,8 @@ program code_verification
             write(10, '(A3, A3, E10.5, E10.5)') field_ref, ' = ', error_field_max, error_field_min
 
         end do
+
+        write(10, '(A)') ' '
     end do
 
     close(10)
@@ -120,10 +135,12 @@ subroutine parse_line_mass(line, field_value)
     implicit none
     character(len=256), intent(in) :: line
     real, intent(out) :: field_value
+    character(len=4) :: field
 
-    print*, line
+    !print*, line
 
-    read(line, '(A15, F24.16)') field_value
+    read(line, '(A13,4X, E12.8)') field, field_value
 
-    print*, field_value
+    !print*, field
+    !print*, field_value
 end subroutine parse_line_mass

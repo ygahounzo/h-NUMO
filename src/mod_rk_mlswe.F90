@@ -194,7 +194,7 @@ module mod_rk_mlswe
     end subroutine ti_barotropic_rk_mlswe
 
 
-    subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime,qprime_face, qprime_df)
+    subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime)
 
         ! ===========================================================================================================================
         ! This subroutine predicts and corrects the barotropic quantities for the splitting system using SSPRK35 time integration
@@ -226,8 +226,6 @@ module mod_rk_mlswe
 
         real, dimension(4,npoin), intent(inout) :: qb_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real, dimension(3,2,nq,nface, nlayers), intent(in) :: qprime_face
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(3,npoin) :: rhs
         real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
@@ -261,11 +259,6 @@ module mod_rk_mlswe
 
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
-
-        !call btp_bcl_coeffs(qprime,qprime_face)
-        !if (method_visc > 0) call btp_bcl_grad_coeffs(qprime_df)
-
-        !call btp_bcl_coeffs_v1(qprime,qprime_face, qprime_df)
 
         qb2_df = 0.0
 

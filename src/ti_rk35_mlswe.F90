@@ -23,7 +23,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
 	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe, ti_barotropic_ssprk_mlswe
-
+	use mod_barotropic_terms, only: btp_bcl_coeffs_v1
 	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 
 	implicit none
@@ -69,7 +69,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	dpprime_visc(:,:) = qprime_df(1,:,:)
 	dpprime_visc_q(:,:) = qprime(1,:,:)
 
-	call ti_barotropic_ssprk_mlswe(qbp_df,qprime,qprime_face, qprime_df)
+	call btp_bcl_coeffs_v1(qprime,qprime_face, qprime_df)
+	call ti_barotropic_ssprk_mlswe(qbp_df,qprime)
 
 	qprime2 = qprime
 	qprime_face2 = qprime_face
@@ -91,7 +92,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	dpprime_visc(:,:) = qprime_df_avg(1,:,:)
 	dpprime_visc_q(:,:) = qprime_avg(1,:,:)
 
-	call ti_barotropic_ssprk_mlswe(qb_df,qprime_avg,qprime_face_avg, qprime_df_avg)
+	call btp_bcl_coeffs_v1(qprime_avg,qprime_face_avg, qprime_df_avg)
+	call ti_barotropic_ssprk_mlswe(qb_df,qprime_avg)
 
 	!qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
