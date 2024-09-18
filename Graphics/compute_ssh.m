@@ -9,22 +9,19 @@ file_num_end = 720;       % end animating with this file number
 delta_file_num = 1;      % what is the skip between the file numbers
 
 
-bc = 'noslip'; % or noslip
-nop = 2; % 2, 4
-nu = 50; % 50, 500 viscosity
-Ne = 50;
+bc = 'freeslip'; % or noslip
+nop = 4; % polynomial order
+nu = 50; % viscosity
+Ne = 25; % number of elements 
 
-name_root = sprintf('./FALCON/N%d_Ne%d_v%d_%s/outbora',nop,Ne,nu,bc);
-% name_root = sprintf('/Volumes/GLACIE/NUMO_Data_viz/N%d_Ne%d_v%d_%s/outbora',nop,Ne,nu,bc);
+name_root = './Double_gyre/';
 
 ii = 0;
 
 % Bottom depth
 layer_dz_eq = [1489.5,8438.5];
 depth = sum(layer_dz_eq);
-
-% save_folder = sprintf('./NUMO_SSH/ssh_numo_ne%dv%d_N%d_%s/', Ne,nu, nop,bc);
-save_folder = sprintf('./NUMO_SSH_v1/ssh_numo_v%d_%s_unstruct/',nu,bc);
+save_folder = sprintf('./NUMO_SSH/ssh_numo_v%d_%s/',nu,bc);
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
@@ -43,9 +40,9 @@ for ifile = file_num_start:delta_file_num:file_num_end
 
     % Compute KE for NUMO
 
-    name_file = [name_root, sprintf('%04d', ifile)];
+    name_file = [name_root, sprintf('mlswe%04d', ifile)];
 
-    [npoin,pb,ub,vb,h,u,v,coord,dt,nk, dt_btp,~] = load_data_numo1(name_file);
+    [npoin,pb,ub,vb,h,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
 
     z = zeros(npoin,nk+1);
 
@@ -63,9 +60,8 @@ for ifile = file_num_start:delta_file_num:file_num_end
     ymin=min(coord(2,:)); ymax=max(coord(2,:));
     xe = coord(1,:);
     ye = coord(2,:);
-    %idm = 101; jdm = 101;
-    dx = 20e3;
-    dy = 20e3;
+    dx = 20e3; % put the appropriate grid resolution
+    dy = 20e3; % put the appropriate grid resolution
     [xi,yi] = meshgrid(xmin:dx:xmax,ymin:dy:ymax);
 
     sshi = griddata(xe,ye,ssh,xi,yi,'cubic');

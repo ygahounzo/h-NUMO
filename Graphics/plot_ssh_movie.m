@@ -9,32 +9,26 @@ delta_file_num = 1;      % what is the skip between the file numbers
 
 fig = figure('Position',[10 10 800 400]); 
 
-bc = 'noslip';
-bc1 = 'no-slip';
+bc = 'freeslip';
+bc1 = 'free-slip';
 
-nop = 4; % 2, 4
-nu = 50; % 50, 500 viscosity
+nop = 4; % polynomialorder
+nu = 50; % viscosity
 Ne = 50; % number of element in the DG 
 
-idm = 201; % number of grid points in x
-jdm = 201; % number of grid points in y
+idm = 101; % number of grid points in x
+jdm = 101; % number of grid points in y
 kdm = 2;  % number of layers
 
 name_root = sprintf('./NUMO_SSH/ssh_numo_ne%dv50_N%d_%s/numo',Ne,nop,bc);  % numo  
-name_root_hycom = sprintf('./HYCOM_SSH/hycom_ssh_10kmv50_%s/hycom',bc); % hycom
-    
-name_root1 = sprintf('./NUMO_SSH/ssh_numo_ne%dv500_N%d_%s/numo',Ne,nop,bc);  % numo
-name_root_hycom1 = sprintf('./HYCOM_SSH/hycom_ssh_10kmv500_%s/hycom',bc); % hycom
 
-
-% save_folder = './BB86';
 save_folder = './SSH_movie';
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
 end
 
-f = sprintf('%s/ssh_10km_numo_hycom_%s_N%d',save_folder,bc,nop);
+f = sprintf('%s/ssh_20km_numo_%s_N%d',save_folder,bc,nop);
 
 myVideo = VideoWriter(f,'MPEG-4'); %open video file
 myVideo.FrameRate = 10; 
@@ -65,9 +59,8 @@ for ifile = file_num_start:delta_file_num:file_num_end
     ssh_numo = 1e2*ssh_numo;
     ssh_hycom = 1e2*ssh_hycom;
 
-    tcl = tiledlayout(1,2,"TileSpacing","compact");
+    tcl = tiledlayout(1,1,"TileSpacing","compact");
 
-    nexttile
     [C,h] = contourf(X_numo,Y_numo,ssh_numo,levels);
     clabel(C,h,v);
     % colorbar()
@@ -82,22 +75,6 @@ for ifile = file_num_start:delta_file_num:file_num_end
     axis equal
     hold off
 
-    nexttile
-    [C,h] = contourf(X_hycom,Y_hycom,ssh_hycom,levels);
-    clabel(C,h,v);
-    % colorbar()
-    clim([-25 25])
-
-    % xlabel(sprintf("X [km]"))
-    % ylabel(sprintf("Y [km]"))
-    title("HYCOM")
-    % set(gca,'YTick',[])
-    set(gca,'Xticklabel',[]) ;
-    set(gca,'Yticklabel',[]) ;
-    axis equal
-    hold off
-
-    % sgtitle(sprintf('SSH: %s, \\nu = 50 m^2/s, day = %d',bc1,ifile*10),'FontSize',15, 'fontweight', 'bold')
     sgtitle(sprintf('SSH: \\nu = 50 m^2/s, day = %d',ifile*10),'FontSize',15, 'fontweight', 'bold')
     set(findall(fig,'-property','FontSize'),'FontSize',15, 'fontweight', 'bold', 'LineWidth', 1)
     

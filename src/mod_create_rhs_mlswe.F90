@@ -28,40 +28,14 @@ module mod_create_rhs_mlswe
         zetaq_x, zetaq_y, zetaq_z, &
         jacq, massinv
 
-    public :: layer_momentum_rhs, layer_mass_advection_rhs, btp_mass_advection_rhs, &
+    public :: layer_momentum_rhs, btp_mass_advection_rhs, &
               interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, layer_mass_rhs, &
-              consistency_mass_rhs, layer_momentum_rhs_v1, consistency_mass_rhs_v1
+              consistency_mass_rhs
               
 contains
 
 
-    subroutine layer_momentum_rhs(rhs_mom, rhs_visc, qprime)
-
-        use mod_input, only: nlayers
-        use mod_metrics, only: massinv
-        use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad, nface
-        use mod_basis, only: nq
-
-        implicit none
-        real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
-        real, dimension(2,npoin,nlayers), intent(in) :: rhs_visc
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime 
-
-        integer :: k,I
-
-        call create_rhs_dynamics_volume_layers(rhs_mom, qprime)
-
-        call Apply_layers_fluxes(rhs_mom)
-
-        do k = 1, nlayers
-
-            rhs_mom(1,:,k) = massinv(:)*rhs_mom(1,:,k) + rhs_visc(1,:,k)
-            rhs_mom(2,:,k) = massinv(:)*rhs_mom(2,:,k) + rhs_visc(2,:,k)
-        end do
-
-    end subroutine layer_momentum_rhs
-
-    subroutine layer_momentum_rhs_v1(rhs_mom, rhs_visc, qprime, qprime_face)
+    subroutine layer_momentum_rhs(rhs_mom, rhs_visc, qprime, qprime_face)
 
         use mod_input, only: nlayers
         use mod_metrics, only: massinv
@@ -76,9 +50,9 @@ contains
 
         integer :: k,I
 
-        call create_rhs_dynamics_volume_layers_v1(rhs_mom, qprime)
+        call create_rhs_dynamics_volume_layers(rhs_mom, qprime)
 
-        call Apply_layers_fluxes_v1(rhs_mom, qprime_face)
+        call Apply_layers_fluxes(rhs_mom, qprime_face)
 
         do k = 1, nlayers
 
@@ -86,37 +60,7 @@ contains
             rhs_mom(2,:,k) = massinv(:)*rhs_mom(2,:,k) + rhs_visc(2,:,k)
         end do
 
-    end subroutine layer_momentum_rhs_v1
-
-    subroutine layer_mass_advection_rhs(dp_advec, uvdp_temp, flux_edge)
-
-        use mod_metrics, only: massinv
-        use mod_input, only: nlayers
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-
-        implicit none
-
-        real, dimension(npoin, nlayers), intent(out) :: dp_advec
-        real, dimension(2, npoin_q, nlayers), intent(in) :: uvdp_temp
-        real, dimension(2, nq, nface, nlayers), intent(in) :: flux_edge
-        
-        integer :: k,I
-
-        ! Compute the mass advection term for the degree of freedom for dp in each layer
-
-        call create_layers_volume_mass(dp_advec, uvdp_temp)
-
-        ! Compute the mass flux term 
-
-        call create_layer_mass_flux(dp_advec, flux_edge)
-
-        do k = 1, nlayers
-
-            dp_advec(:,k) = massinv(:)*dp_advec(:,k)
-        end do
-        
-    end subroutine layer_mass_advection_rhs
+    end subroutine layer_momentum_rhs
 
     subroutine layer_mass_rhs(dp_advec, qprime, qprime_face)
 
@@ -135,11 +79,11 @@ contains
 
         ! Compute the mass advection term for the degree of freedom for dp in each layer
 
-        call create_layers_volume_mass_v1(dp_advec, qprime)
+        call create_layers_volume_mass(dp_advec, qprime)
 
         ! Compute the mass flux term 
 
-        call create_layer_mass_flux_v1(dp_advec, qprime_face)
+        call create_layer_mass_flux(dp_advec, qprime_face)
 
         do k = 1, nlayers
 
@@ -148,38 +92,7 @@ contains
         
     end subroutine layer_mass_rhs
 
-    subroutine consistency_mass_rhs(dp_advec, qprime, qprime_face, flux_deficit_mass_face)
-
-        use mod_metrics, only: massinv
-        use mod_input, only: nlayers
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-
-        implicit none
-
-        real, dimension(npoin, nlayers), intent(out) :: dp_advec
-        real, dimension(3, npoin_q, nlayers), intent(in) :: qprime
-        real, dimension(3, 2, nq, nface, nlayers), intent(in) :: qprime_face
-        real, dimension(2,2,nq,nface), intent(in)  :: flux_deficit_mass_face
-        
-        integer :: k
-
-        ! Compute the mass advection term for the degree of freedom for dp in each layer
-
-        call create_consistency_volume_mass(dp_advec, qprime)
-
-        ! Compute the mass flux term 
-
-        call create_consistency_mass_flux(dp_advec, qprime_face, flux_deficit_mass_face)
-
-        do k = 1, nlayers
-
-            dp_advec(:,k) = massinv(:)*dp_advec(:,k)
-        end do
-        
-    end subroutine consistency_mass_rhs
-
-    subroutine consistency_mass_rhs_v1(dp_advec, qprime, flux_deficit_mass_face)
+    subroutine consistency_mass_rhs(dp_advec, qprime, flux_deficit_mass_face)
 
         use mod_metrics, only: massinv
         use mod_input, only: nlayers
@@ -200,14 +113,14 @@ contains
 
         ! Compute the mass flux term 
 
-        call create_consistency_mass_flux_v1(dp_advec, flux_deficit_mass_face)
+        call create_consistency_mass_flux(dp_advec, flux_deficit_mass_face)
 
         !do k = 1, nlayers
 
         !    dp_advec(:,k) = massinv(:)*dp_advec(:,k)
         !end do
         
-    end subroutine consistency_mass_rhs_v1
+    end subroutine consistency_mass_rhs
 
     subroutine interpolate_layer_from_quad_to_node(q_df,q)
 
@@ -338,85 +251,6 @@ contains
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, tau_wind
 
         use mod_variables, only: H_r,u_udp_temp, v_vdp_temp, p, u_vdp_temp, grad_z, &
-                    tau_wind_int, tau_bot_int, tau_bot_ave
-
-        implicit none 
-
-        real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime 
-
-        real :: wq, hi, dhdx, dhdy, bot_layer, tau_wind_u, tau_wind_v, temp1
-        real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y, Pstress
-
-        integer :: k, I, Iq, ip
-        real, dimension(npoin_q,nlayers+1) :: pprime_temp 
-
-        rhs_mom = 0.0
-        bot_layer = 0.0
-
-        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
-
-        do k = 1,nlayers
-        
-            pprime_temp(:, k+1) = pprime_temp(:, k) + qprime(1,:,k)
-
-            if(k == nlayers) bot_layer = 1.0
-
-            do Iq = 1, npoin_q
-
-                wq = wjac(Iq)
-
-                Hq = H_r(Iq,k)
-
-                var_uu = u_udp_temp(Iq,k) 
-                var_uv = u_vdp_temp(1,Iq,k)
-                var_vu = u_vdp_temp(2,Iq,k)
-                var_vv = v_vdp_temp(Iq,k)
-
-                ! wind stress 
-                temp1 = (min(pprime_temp(Iq,k+1), Pstress) - min(pprime_temp(Iq,k), Pstress))/ Pstress
-                tau_wind_u = temp1*tau_wind(1,Iq)
-                tau_wind_v = temp1*tau_wind(2,Iq)
-
-                !source_x = gravity*tau_wind_int(1,Iq,k) - gravity*tau_bot_int(1,Iq,k) + &
-                !            gravity*(p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
-                !source_y = gravity*tau_wind_int(2,Iq,k) - gravity*tau_bot_int(2,Iq,k) + &
-                !            gravity*(p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1)) 
-
-                source_x = gravity*(tau_wind_u - bot_layer*tau_bot_ave(1,Iq) + &
-                            p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
-                source_y = gravity*(tau_wind_v - bot_layer*tau_bot_ave(2,Iq) + &
-                            p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1))                                                                                                                      
-
-                do ip = 1, npts
-
-                    I = indexq(ip,Iq)
-
-                    hi = psih(ip,Iq)
-
-                    !Xi derivatives                                                                                
-                    dhdx = dpsidx(ip,Iq)
-                    !Eta derivatives
-                    dhdy = dpsidy(ip,Iq)
-
-                    rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*(hi*source_x + dhdx*(Hq + var_uu) + var_uv*dhdy)
-                    rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*(hi*source_y + var_vu*dhdx + dhdy*(Hq +var_vv))
-
-                end do
-            end do
-        end do !k
-
-    end subroutine create_rhs_dynamics_volume_layers
-
-    subroutine create_rhs_dynamics_volume_layers_v1(rhs_mom, qprime)
-
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
-        use mod_basis, only: npts, dpsiqx
-        use mod_input, only: nlayers
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, tau_wind
-
-        use mod_variables, only: H_r,u_udp_temp, v_vdp_temp, p, u_vdp_temp, grad_z, &
                     tau_wind_int, tau_bot_int, tau_bot_ave, ope_ave, uvb_ave
 
         implicit none 
@@ -429,13 +263,13 @@ contains
 
         integer :: k, I, Iq, ip
         real, dimension(npoin_q,nlayers+1) :: pprime_temp 
-        real :: temp_dp, temp_u, temp_v
+        real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
 
         rhs_mom = 0.0
         bot_layer = 0.0
 
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
-        
+        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth at which bottom stress is reduced to 0
         do k = 1,nlayers
         
             pprime_temp(:, k+1) = pprime_temp(:, k) + qprime(1,:,k)
@@ -460,12 +294,21 @@ contains
                 temp1 = (min(pprime_temp(Iq,k+1), Pstress) - min(pprime_temp(Iq,k), Pstress))/ Pstress
                 tau_wind_u = temp1*tau_wind(1,Iq)
                 tau_wind_v = temp1*tau_wind(2,Iq)
+                
+                Ptop_k = pprime_temp(Iq,k)
+                Pbot_k = pprime_temp(Iq,k+1)
+                tempbot = max(pprime_temp(Iq,nlayers+1)-Pbstress,Pbot_k)-max(pprime_temp(Iq,nlayers+1)-Pbstress,min(Ptop_k,Pbot_k))
+                
+                tempbot = 1.0 !tempbot/qprime(1,Iq,k)
 
-                source_x = gravity*(tau_wind_u - bot_layer*tau_bot_ave(1,Iq) + &
+                !source_x = gravity*(tau_wind_u - bot_layer*tau_bot_ave(1,Iq) + &
+                !            p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
+                !source_y = gravity*(tau_wind_v - bot_layer*tau_bot_ave(2,Iq) + &
+                !            p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1))                                                                                                                      
+                source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
                             p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
-                source_y = gravity*(tau_wind_v - bot_layer*tau_bot_ave(2,Iq) + &
+                source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
                             p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1))                                                                                                                      
-
                 do ip = 1, npts
 
                     I = indexq(ip,Iq)
@@ -484,104 +327,9 @@ contains
             end do
         end do !k
 
-    end subroutine create_rhs_dynamics_volume_layers_v1
+    end subroutine create_rhs_dynamics_volume_layers
 
-    subroutine Apply_layers_fluxes(rhs_mom)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
-        use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
-        use mod_input, only: nlayers, dt, dt_btp
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_constants, only: gravity
-        use mod_initial, only: alpha_mlswe, coeff_mass_pbpert_LR
-
-        use mod_variables, only: udp_flux_edge, vdp_flux_edge, H_r_face
-
-        implicit none
-
-        real, dimension(2, npoin, nlayers), intent(inout) :: rhs_mom
-    
-        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, nq_i, nq_j
-        integer :: plane_ij, kl, kr, jquad, ngl_i, ngl_j, n, m
-        real :: wq, hi, nxl, nyl, gprime, h1, h2, clam_temp, lam
-        real :: hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k
-        real, dimension(nq) :: h_l, h_r, var_uudp, var_uvdp, var_vudp, var_vvdp
-        real, dimension(nlayers) :: unl, unr, Hl, Hr, ul, vl, ur, vr
-        real :: h1_l, h1_r, h2_l, h2_r, claml1, clamr1, claml2, clamr2, clam1, clam2
-        real :: Ucl, Ucr, hgl, hgr, claml, clamr, clam
-
-        !gprime = gravity *alpha_mlswe(2)*(1.0/alpha_mlswe(2) - 1.0/alpha_mlswe(1))
-    
-        do k = 1, nlayers
-
-            do iface = 1, nface
-
-                !Store Left Side Variables
-                ilocl = face(5,iface)
-                ilocr = face(6,iface)
-                el = face(7,iface)
-                er = face(8,iface)
-
-                h_l = H_r_face(1,:,iface,k)
-                h_r = H_r_face(2,:,iface,k)
-
-                var_uudp = udp_flux_edge(1,:,iface,k)
-                var_uvdp = udp_flux_edge(2,:,iface,k)
-
-                var_vudp = vdp_flux_edge(1,:,iface,k)
-                var_vvdp = vdp_flux_edge(2,:,iface,k)   
-
-                do iquad = 1, nq
-
-                    wq = jac_faceq(iquad,1,iface)
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    hlx_k = nxl*h_l(iquad)
-                    hrx_k = nxl*h_r(iquad)
-
-                    hly_k = nyl*h_l(iquad)  
-                    hry_k = nyl*h_r(iquad)
-        
-                    flux_x = nxl*var_uudp(iquad) + nyl*var_uvdp(iquad)
-                    flux_y = nxl*var_vudp(iquad) + nyl*var_vvdp(iquad)
-
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-                        
-                        il = imapl(1,n,1,iface)
-                        jl = imapl(2,n,1,iface)
-                        kl = imapl(3,n,1,iface)
-
-                        I = intma(il,jl,kl,el)
-
-                        rhs_mom(1,I,k) = rhs_mom(1,I,k) - wq*hi*(hlx_k + flux_x)
-                        rhs_mom(2,I,k) = rhs_mom(2,I,k) - wq*hi*(hly_k + flux_y)
-
-                        if(er > 0) then
-
-                            ir = imapr(1,n,1,iface)
-                            jr = imapr(2,n,1,iface)
-                            kr = imapr(3,n,1,iface)
-
-                            I = intma(ir,jr,kr,er)
-
-                            rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*hi*(hrx_k + flux_x)
-                            rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*hi*(hry_k + flux_y)
-
-                        end if
-
-                    end do
-                end do
-
-            end do
-        end do
-    
-    end subroutine Apply_layers_fluxes
-
-    subroutine Apply_layers_fluxes_v1(rhs_mom, qprime_face)
+    subroutine Apply_layers_fluxes(rhs_mom, qprime_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
@@ -705,52 +453,9 @@ contains
             end do
         end do
     
-    end subroutine Apply_layers_fluxes_v1
+    end subroutine Apply_layers_fluxes
 
-    subroutine create_layers_volume_mass(dp_advec, uvdp_temp)
-
-        use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma
-        use mod_basis, only: npts
-        use mod_input, only: nlayers
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
-
-        implicit none 
-
-        real, dimension(2, npoin_q, nlayers), intent(in) :: uvdp_temp
-        real, dimension(npoin,nlayers), intent(out) :: dp_advec
-
-
-        real :: wq, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z, hi, dhde, dhdn
-
-        integer :: k, e, iquad, jquad, kquad, l, n, m, I, Iq, ip
-        real :: var_u, var_v
-
-        dp_advec = 0.0
-
-        do k=1,nlayers
-
-            do Iq = 1, npoin_q
-                    
-                wq = wjac(Iq)
-
-                var_u = uvdp_temp(1,Iq,k) 
-                var_v = uvdp_temp(2,Iq,k)
-
-                do ip = 1, npts
-
-                    I = indexq(ip,Iq)
-
-                    dp_advec(I,k) = dp_advec(I,k) + wq*(dpsidx(ip,Iq)*var_u + dpsidy(ip,Iq)*var_v)
-
-                end do
-            end do
-
-        end do !k
-
-    end subroutine create_layers_volume_mass
-
-    subroutine create_layers_volume_mass_v1(dp_advec, qprime)
+    subroutine create_layers_volume_mass(dp_advec, qprime)
 
         use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma
         use mod_basis, only: npts
@@ -798,7 +503,7 @@ contains
 
         end do !k
 
-    end subroutine create_layers_volume_mass_v1
+    end subroutine create_layers_volume_mass
 
     subroutine create_consistency_volume_mass(dp_advec, qprime)
 
@@ -846,84 +551,7 @@ contains
 
     end subroutine create_consistency_volume_mass
 
-    subroutine create_layer_mass_flux(dp_advec, flux_edge)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
-        use mod_grid, only:  npoin_q, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
-        use mod_input, only: nlayers
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_constants, only: gravity
-        use mod_initial, only: alpha_mlswe
-
-        implicit none
-
-        real, dimension(npoin, nlayers), intent(inout) :: dp_advec
-        real, dimension(2, nq, nface, nlayers), intent(in) :: flux_edge
-    
-        integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
-        integer :: plane_ij, kl, kr, jquad, ngl_i, ngl_j, n, m
-        real :: wq, nxl, nyl, hi
-        real, dimension(nq) :: var_x, var_y
-        real :: qx_k, qy_k, flux
-        real :: h1_l, h1_r, h2_l, h2_r, claml1, clamr1, claml2, clamr2, clam1, clam2
-        real :: claml, clamr, gprime, clam, Ucl, Ucr, hgl, hgr
-
-        !gprime = gravity *alpha_mlswe(2)*(1.0/alpha_mlswe(2) - 1.0/alpha_mlswe(1))
-    
-        do k = 1, nlayers
-            do iface = 1, nface
-
-                !Store Left Side Variables
-                el = face(7,iface)
-                er = face(8,iface)
-
-                var_x = flux_edge(1,:,iface,k)
-                var_y = flux_edge(2,:,iface,k)
-
-                do iquad = 1, nq
-
-                    wq = jac_faceq(iquad,1,iface)
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    qx_k = var_x(iquad);  qy_k = var_y(iquad)
-
-                    flux = nxl*qx_k + nyl*qy_k
-
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-                        
-                        il = imapl(1,n,1,iface)
-                        jl = imapl(2,n,1,iface)
-                        kl = imapl(3,n,1,iface)
-
-                        I = intma(il,jl,kl,el)
-
-                        dp_advec(I,k) = dp_advec(I,k) - wq*hi*flux
-
-                        if(er > 0) then
-
-                            ir = imapr(1,n,1,iface)
-                            jr = imapr(2,n,1,iface)
-                            kr = imapr(3,n,1,iface)
-
-                            I = intma(ir,jr,kr,er)
-
-                            dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
-
-                        end if
-
-                    end do
-                end do
-
-            end do
-        end do
-    
-    end subroutine create_layer_mass_flux
-
-    subroutine create_layer_mass_flux_v1(dp_advec, qprime_face)
+    subroutine create_layer_mass_flux(dp_advec, qprime_face)
 
         use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin_q, intma,  nface, face
@@ -1032,110 +660,9 @@ contains
             end do
         end do
     
-    end subroutine create_layer_mass_flux_v1
+    end subroutine create_layer_mass_flux
 
-    subroutine create_consistency_mass_flux(dp_advec, qprime_face, flux_deficit_mass_face)
-
-        use mod_basis, only: nq, psiq, ngl
-        use mod_grid, only:  npoin_q, intma,  nface, face
-        use mod_input, only: nlayers
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: uvb_face_ave, ope_face_ave, sum_layer_mass_flux_face
-        use mod_initial, only: pbprime_face
-
-        implicit none
-
-        real, dimension(npoin, nlayers), intent(inout) :: dp_advec
-        real, dimension(3, 2, nq, nface, nlayers), intent(in) :: qprime_face
-        real, dimension(2,2,nq,nface,nlayers), intent(in)  :: flux_deficit_mass_face
-    
-        integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
-        integer :: kl, kr, jquad, n, m
-        real :: wq, nxl, nyl, hi, flux, weights_face_l, weights_face_r
-        real, dimension(nq) :: flux_edge_u, flux_edge_v
-    
-        do k = 1, nlayers
-            do iface = 1, nface
-
-                el = face(7,iface)
-                er = face(8,iface)
-
-                do iquad = 1,nq 
-                    !weights_face_l = qprime_face(1,1,iquad,iface,k) / pbprime_face(1,iquad,iface)
-                    !weights_face_r = qprime_face(1,2,iquad,iface,k) / pbprime_face(2,iquad,iface)
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    !if(flux_deficit_mass_face(1,1,iquad,iface)*nxl > 0.0) then 
-
-                    !    flux_edge_u(iquad) = weights_face_l*flux_deficit_mass_face(1,1,iquad,iface)
-                    !else 
-                    !    flux_edge_u(iquad) = weights_face_r*flux_deficit_mass_face(1,2,iquad,iface)
-                    !end if 
-
-                    !if(flux_deficit_mass_face(2,1,iquad,iface)*nyl > 0.0) then 
-                    !    flux_edge_v(iquad) = weights_face_l*flux_deficit_mass_face(2,1,iquad,iface)
-                    !else 
-                    !    flux_edge_v(iquad) = weights_face_r*flux_deficit_mass_face(2,2,iquad,iface)
-                    !end if 
-
-                    if(flux_deficit_mass_face(1,1,iquad,iface,k)*nxl > 0.0) then 
-
-                        flux_edge_u(iquad) = flux_deficit_mass_face(1,1,iquad,iface,k)
-                    else 
-                        flux_edge_u(iquad) = flux_deficit_mass_face(1,2,iquad,iface,k)
-                    end if 
-
-                    if(flux_deficit_mass_face(2,1,iquad,iface,k)*nyl > 0.0) then 
-                        flux_edge_v(iquad) = flux_deficit_mass_face(2,1,iquad,iface,k)
-                    else 
-                        flux_edge_v(iquad) = flux_deficit_mass_face(2,2,iquad,iface,k)
-                    end if 
-                enddo 
-
-                do iquad = 1, nq
-
-                    wq = jac_faceq(iquad,1,iface)
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    flux = nxl*flux_edge_u(iquad) + nyl*flux_edge_v(iquad)
-
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-                        
-                        il = imapl(1,n,1,iface)
-                        jl = imapl(2,n,1,iface)
-                        kl = imapl(3,n,1,iface)
-
-                        I = intma(il,jl,kl,el)
-
-                        dp_advec(I,k) = dp_advec(I,k) - wq*hi*flux
-
-                        if(er > 0) then
-
-                            ir = imapr(1,n,1,iface)
-                            jr = imapr(2,n,1,iface)
-                            kr = imapr(3,n,1,iface)
-
-                            I = intma(ir,jr,kr,er)
-
-                            dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
-
-                        end if
-
-                    end do
-                end do
-
-            end do
-        end do
-    
-    end subroutine create_consistency_mass_flux
-
-    subroutine create_consistency_mass_flux_v1(dp_advec, flux_deficit_mass_face)
+    subroutine create_consistency_mass_flux(dp_advec, flux_deficit_mass_face)
 
         use mod_basis, only: nq, psiq, ngl
         use mod_grid, only:  npoin_q, intma,  nface, face
@@ -1218,6 +745,6 @@ contains
             end do
         end do
     
-    end subroutine create_consistency_mass_flux_v1
+    end subroutine create_consistency_mass_flux
 
 end module mod_create_rhs_mlswe

@@ -48,9 +48,8 @@ geometry_type='cube',
 &input
 dt= 100,
 dt_btp = 1.6,
-!dt_safety_factor = 0.5,
 time_initial = 0.0,
-time_final   = 10800,
+time_final   = 100, !10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 lrestart_file = .false.,
@@ -89,13 +88,6 @@ si_dimension = '3d',
 	       	     !1d IMEX in the vertical/radial direction; 
 	       	     !3d IMEX
 
-filter_mux=0.05,
-filter_muy=0.05,
-filter_muz=0.05,
-ifilter=0,
-filter_weight_type='erf',
-!filter_basis_type='modal',
-filter_basis_type='legendre',
 fname_root='mlswe',
 format_vtk='ascii',
 out_type='vtk',

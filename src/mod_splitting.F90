@@ -19,7 +19,7 @@ module mod_splitting
         
     implicit none
 
-    public :: ti_barotropic, thickness, momentum, momentum_mass, ti_barotropic_v1, ti_barotropic_v2
+    public :: ti_barotropic, thickness, momentum, momentum_mass
     
     contains
 
@@ -44,7 +44,7 @@ module mod_splitting
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers
         use mod_rhs_btp, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_mom_mass
         use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                        btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, &
+                                        btp_mass_advection_terms, btp_bcl_coeffs_quad, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, &
                                         btp_bcl_grad_coeffs
 
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
@@ -61,7 +61,7 @@ module mod_splitting
         use mod_input, only: method_visc
         use mod_barotropic_terms, only: btp_mom_boundary_df, compute_btp_terms, compute_btp_mom_terms
         use mod_layer_terms, only: filter_mlswe
-        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian, btp_create_laplacian_v3
+        use mod_laplacian_quad, only: btp_create_laplacian
 
 
         implicit none
@@ -114,7 +114,7 @@ module mod_splitting
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
-        call btp_bcl_coeffs(qprime,qprime_face)
+        call btp_bcl_coeffs_quad(qprime,qprime_face)
         call btp_bcl_grad_coeffs(qprime_df)
 
         qb_init = qb
@@ -136,12 +136,8 @@ module mod_splitting
 
             ! Compute RHS viscosity terms
 
-            if(method_visc == 1) then
-                call btp_create_laplacian_v1(rhs_visc_btp,qprime,qprime_face,qb_init,qb_face_init)
-            elseif(method_visc == 2) then
-                call btp_create_laplacian(rhs_visc_btp,qprime_df,qb_df)
-            elseif(method_visc == 3) then 
-                call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
+            if(method_visc > 0) then
+                call btp_create_laplacian(rhs_visc_btp,qb_df)
             end if
 
             ! Compute RHS for the barotropic
@@ -225,12 +221,8 @@ module mod_splitting
 
             ! Compute RHS viscosity terms
 
-            if(method_visc == 1) then
-                call btp_create_laplacian_v1(rhs_visc_btp1,qprime,qprime_face,qb,qb_face)
-            elseif(method_visc == 2) then
-                call btp_create_laplacian(rhs_visc_btp1,qprime_df,qb_df)
-            elseif(method_visc == 3) then 
-                call btp_create_laplacian_v3(rhs_visc_btp1,qb_df)
+            if(method_visc > 0) then
+                call btp_create_laplacian(rhs_visc_btp1,qb_df)
             end if
 
             ! Compute RHS for the barotropic momentum equation
@@ -332,487 +324,6 @@ module mod_splitting
 
     end subroutine ti_barotropic
 
-    subroutine ti_barotropic_v2(qb_df, qprime,qprime_face, qprime_df)
-
-        ! ===========================================================================================================================
-        ! This subroutine predicts and corrects the barotropic quantities for the splitting system using two-level time integration
-        ! The nodal points or degree of freedom of the barotropic variables (pb_df(or pbpert), pbub_df, pbvb_df) are stored in qb_df
-        ! The quadrature points of the barotropic variables (pb, pbpert, ub, vb, pbub, pbvb) are stored in qb. pb = pbprime + pb_df
-        ! The face values of the barotropic variables are stored in qb_face
-        ! The quadrature points variables of(dpprime, uprime, vprime) are stored in qprime
-        !
-        ! During the prediction step, use the baroclinic quantities from baroclinic time level  n. 
-        ! During the correction step, use averages of the predicted values and values from baroclinic time level n.
-        ! 
-        ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
-        ! ===========================================================================================================================
-
-        use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, one_over_pbprime_df
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, ifilter, nlayers
-        use mod_rhs_btp, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_mom_mass, create_rhs_btp_v3
-        use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                        btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, &
-                                        btp_bcl_grad_coeffs
-
-        use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
-                                ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
-                                Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
-                                btp_mass_flux_ave, uvb_ave, one_plus_eta, &
-                                Qu_face, Qv_face, one_plus_eta_face, flux_edge, H_bcl_edge, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
-                                H_face, one_plus_eta_edge_2, one_plus_eta_edge, &
-                                Quu, Qvv, Quv, H, Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, one_plus_eta_df, &
-                                btp_mass_flux, tau_bot, uvb_ave_df
-
-        use mod_variables, only: graduvb_face_ave, graduvb_ave
-
-        use mod_input, only: method_visc
-        use mod_barotropic_terms, only: btp_mom_boundary_df, compute_btp_terms, compute_btp_mom_terms, btp_interpolate_avg_v1
-        use mod_layer_terms, only: filter_mlswe
-        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian, btp_create_laplacian_v3
-
-
-        implicit none
-
-        real, dimension(4,npoin), intent(inout) :: qb_df
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real, dimension(3,2,nq,nface, nlayers), intent(in) :: qprime_face
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-
-        real, dimension(4,npoin) :: qb_df2
-        real, dimension(4,npoin_q) :: qb_init
-        real, dimension(4,2,nq,nface) :: qb_face_init
-        real, dimension(2,npoin) :: rhs_mom, rhs_visc_btp, rhs_visc_btp1
-        real, dimension(npoin) :: pb_advec, tempu, tempv
-        real, dimension(4,npoin_q) :: qb
-        real, dimension(4,2,nq,nface) :: qb_face
-
-        real, dimension(2,nq,nface) :: qb_com1
-        real, dimension(2,2,nq,nface) :: qb_com2
-        real, dimension(3,npoin) :: rhs_mom1
-        real, dimension(2,npoin) :: qb_df_temp
-
-        integer :: mstep, I, Iq, iquad, iface, ilr, k
-        real :: N_inv
-
-        one_plus_eta_edge_2_ave = 0.0
-        uvb_ave  = 0.0
-        uvb_ave_df  = 0.0
-        ope_ave = 0.0
-        btp_mass_flux_ave = 0.0
-        H_ave = 0.0
-        Qu_ave = 0.0
-        Qv_ave = 0.0
-        Quv_ave = 0.0
-        ope_ave_df = 0.0
-        uvb_face_ave  = 0.0
-        ope_face_ave = 0.0
-        btp_mass_flux_face_ave = 0.0
-        H_face_ave = 0.0
-        Qu_face_ave = 0.0
-        Qv_face_ave = 0.0
-        Quv_face_ave = 0.0
-        tau_wind_ave = 0.0
-        tau_bot_ave = 0.0
-        rhs_visc_btp = 0.0
-        ope2_ave = 0.0
-        graduvb_face_ave = 0.0
-        graduvb_ave = 0.0
-
-        ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
-        ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
-
-        call btp_bcl_coeffs(qprime,qprime_face)
-        call btp_bcl_grad_coeffs(qprime_df)
-
-        qb_init = qb
-        qb_face_init = qb_face
-
-        ! ========== The time loop begins here ==================
-
-        do mstep = 1, N_btp
-
-            ! ============================================ Prediction steps ==========================================================
-
-            ! Communicate the grid cell face values of the barotropic variables to the neighboring processors.
-
-            call create_communicator_quad(qb_face_init,4)
-
-            ! ******** Barotropic mass & momentum equation ***********
-
-            call compute_btp_terms(qb_init,qb_face_init, qprime, qb_df)
-
-            ! Compute RHS viscosity terms
-
-            if(method_visc == 3) call btp_create_laplacian_v3(rhs_visc_btp,qb_df)
-
-            ! Compute RHS for the barotropic
-
-            call create_rhs_btp_mom_mass(rhs_mom1,qb_init,qb_face_init)
-
-            ! Predict barotropic 
-
-            qb_df2(2,:) = qb_df(2,:) + dt_btp * rhs_mom1(1,:)
-            qb_df2(3,:) = qb_df(3,:) + fdt_btp(:)*qb_df(4,:) + dt_btp*(rhs_mom1(2,:) + rhs_visc_btp(1,:))
-            qb_df2(4,:) = qb_df(4,:) - fdt_btp(:)*qb_df(3,:) + dt_btp*(rhs_mom1(3,:) + rhs_visc_btp(2,:))
-
-            qb_df2(1,:) = qb_df2(2,:) + pbprime_df(:)
-
-            call btp_mom_boundary_df(qb_df2(3:4,:))
-
-            ! Use basis functions and the predicted degrees of freedom to compute predicted values of
-            ! pb*ubar, pb*vbar, pbpert, and pb at endpoints and quadrature points in the grid cells.
-            ! Then use division to compute ubar and vbar at those points.
-
-            call btp_evaluate_mom_dp(qb,qb_df2)
-            call btp_evaluate_mom_dp_face(qb_face, qb)
-
-            ! Communication of the faces values within the processors
-            call create_communicator_quad(qb_face,4)
-
-            ! Accumulate sums for time averaging
-
-            uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
-
-            ope_ave = ope_ave + one_plus_eta
-            btp_mass_flux_ave = btp_mass_flux_ave + btp_mass_flux
-            H_ave = H_ave + H;  Qu_ave = Qu_ave + Quu
-            Qv_ave = Qv_ave + Qvv;  Quv_ave = Quv_ave + Quv; ope_ave_df = ope_ave_df + one_plus_eta_df
-
-            ope_face_ave = ope_face_ave + one_plus_eta_face
-            btp_mass_flux_face_ave = btp_mass_flux_face_ave + flux_edge
-            H_face_ave = H_face_ave + H_face; Qu_face_ave = Qu_face_ave + Qu_face; Qv_face_ave = Qv_face_ave + Qv_face
-
-            one_plus_eta_edge_2_ave = one_plus_eta_edge_2_ave + one_plus_eta_edge_2
-            ope2_ave = ope2_ave + one_plus_eta**2 
-
-            ! ============================================ Correction steps ==========================================================
-
-            ! ******** Barotropic mass equation ***********
-
-            ! Compute the mass advection term, using data from barotropic previous time and predicted data for barotropic level.
-
-            btp_mass_flux = qb(3:4,:)
-
-            call btp_mass_advection_terms(qb_face)
-
-            ! Compute RHS for the barotropic mass equation
-
-            call btp_mass_advection_rhs(pb_advec)
-
-            ! Correct barotropic mass
-
-            qb_df(2,:) = qb_df(2,:) + 0.5*dt_btp * (pb_advec(:) + rhs_mom1(1,:))
-            qb_df(1,:) = qb_df(2,:) + pbprime_df(:)
-
-            ! Evaluate the corrected barotropic mass at the quadrature points and face 
-
-            call btp_evaluate_pb(qb, qb_df)
-            call btp_evaluate_pb_face(qb_face, qb)
-
-            ! Communication of the dp values within the processors
-
-            qb_com1(:,:,:) = qb_face(2,:,:,:)
-
-            call create_communicator_quad_1var(qb_face(2,:,:,:))
-
-            ! ******** Barotropic momentum equation ***********
-
-            call compute_btp_mom_terms(qb,qb_face,qprime,qb_df)
-
-            ! Compute RHS viscosity terms
-
-            if(method_visc == 3) call btp_create_laplacian_v3(rhs_visc_btp1,qb_df)
-
-            ! Compute RHS for the barotropic momentum equation
-
-            call create_rhs_btp_momentum(rhs_mom,qb,qb_face)
-
-            rhs_mom = 0.5*(rhs_mom1(2:3,:) + rhs_mom) + 0.5*(rhs_visc_btp1 + rhs_visc_btp)
-
-            ! Correct barotropic momentum
-
-            qb_df_temp(1,:) = qb_df(3,:) + dt_btp*rhs_mom(1,:)
-            qb_df_temp(2,:) = qb_df(4,:) + dt_btp*rhs_mom(2,:)
-
-            call btp_mom_boundary_df(qb_df_temp(:,:))
-
-            tempu = qb_df_temp(1,:) + fdt2_btp(:)*qb_df(4,:)
-            tempv = qb_df_temp(2,:) - fdt2_btp(:)*qb_df(3,:)
-
-            qb_df(3,:) = a_btp(:) * tempu + b_btp(:) * tempv
-            qb_df(4,:) = -b_btp(:) * tempu + a_btp(:) * tempv
-
-            call btp_mom_boundary_df(qb_df(3:4,:))
-
-            ! Evaluate the corrected barotropic momentum at the quadrature points and face
-
-            call btp_evaluate_mom(qb,qb_df)
-            call btp_evaluate_mom_face(qb_face, qb)
-
-            qb_face(2,:,:,:)= qb_com1(:,:,:)
-
-            ! Accumulate sums for time averaging
-
-            uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
-
-            ope_ave = ope_ave + one_plus_eta; tau_bot_ave = tau_bot_ave + tau_bot
-            btp_mass_flux_ave = btp_mass_flux_ave + btp_mass_flux
-            H_ave = H_ave + H;  Qu_ave = Qu_ave + Quu
-            Qv_ave = Qv_ave + Qvv;  Quv_ave = Quv_ave + Quv; ope_ave_df = ope_ave_df + one_plus_eta_df
-
-            ope_face_ave = ope_face_ave + one_plus_eta_face
-            btp_mass_flux_face_ave = btp_mass_flux_face_ave + flux_edge
-            H_face_ave = H_face_ave + H_face; Qu_face_ave = Qu_face_ave + Qu_face; Qv_face_ave = Qv_face_ave + Qv_face
-
-            one_plus_eta_edge_2_ave = one_plus_eta_edge_2_ave + one_plus_eta_edge_2
-
-            tau_wind_ave = tau_wind_ave + tau_wind
-            ope2_ave = ope2_ave + one_plus_eta**2
-
-            qb_init = qb
-            qb_face_init = qb_face
-
-        end do
-
-        ! Update the barotropic variables at the baroclinic time level n+1
-
-        one_plus_eta_out = one_plus_eta_df
-
-        N_inv = 1.0 / real(2*N_btp)
-
-        uvb_ave = N_inv*uvb_ave
-
-        ope_ave = N_inv*ope_ave
-        H_ave = N_inv*H_ave 
-        Qu_ave = N_inv*Qu_ave
-        Qv_ave = N_inv*Qv_ave 
-        Quv_ave = N_inv*Quv_ave 
-        btp_mass_flux_ave = N_inv*btp_mass_flux_ave
-
-        uvb_face_ave = N_inv*uvb_face_ave 
-
-        ope_face_ave = N_inv*ope_face_ave 
-        H_face_ave = N_inv*H_face_ave 
-        Qu_face_ave = N_inv*Qu_face_ave 
-        Qv_face_ave = N_inv*Qv_face_ave 
-        Quv_face_ave = N_inv*Quv_face_ave 
-        btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
-
-        one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 
-        ope2_ave = ope2_ave*N_inv
-
-        ope_ave_df = N_inv*ope_ave_df
-
-        tau_wind_ave = tau_wind_ave / real(N_btp)
-        tau_bot_ave = tau_bot_ave * N_inv
-        graduvb_face_ave = N_inv*graduvb_face_ave 
-        graduvb_ave = N_inv*graduvb_ave
-
-        call btp_interpolate_avg_v1()
-
-    end subroutine ti_barotropic_v2
-
-    subroutine ti_barotropic_v1(qb_df,qprime,qprime_face, qprime_df)
-
-        ! ===========================================================================================================================
-        ! This subroutine predicts and corrects the barotropic quantities for the splitting system using two-level time integration
-        ! The nodal points or degree of freedom of the barotropic variables (pb_df(or pbpert), pbub_df, pbvb_df) are stored in qb_df
-        ! The quadrature points of the barotropic variables (pb, pbpert, ub, vb, pbub, pbvb) are stored in qb. pb = pbprime + pb_df
-        ! The face values of the barotropic variables are stored in qb_face
-        ! The quadrature points variables of(dpprime, uprime, vprime) are stored in qprime
-        !
-        ! During the prediction step, use the baroclinic quantities from baroclinic time level  n. 
-        ! During the correction step, use averages of the predicted values and values from baroclinic time level n.
-        ! 
-        ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
-        ! ===========================================================================================================================
-
-        use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, one_over_pbprime_df
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, ifilter, nlayers
-        use mod_rhs_btp, only: create_rhs_btp_mass, create_rhs_btp_mom, create_rhs_btp_v3
-        use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
-                                        btp_mass_advection_terms, btp_bcl_coeffs, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, &
-                                        btp_bcl_grad_coeffs
-
-        use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
-                                ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
-                                Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
-                                btp_mass_flux_ave, uvb_ave, one_plus_eta, &
-                                Qu_face, Qv_face, one_plus_eta_face, flux_edge, H_bcl_edge, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
-                                H_face, one_plus_eta_edge_2, one_plus_eta_edge, &
-                                Quu, Qvv, Quv, H, Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, one_plus_eta_df, &
-                                btp_mass_flux, tau_bot, uvb_ave_df
-
-        use mod_variables, only: graduvb_face_ave, graduvb_ave
-
-        use mod_input, only: method_visc
-        use mod_barotropic_terms, only: btp_mom_boundary_df, compute_btp_terms, compute_btp_mom_terms, btp_interpolate_avg_v1
-        use mod_layer_terms, only: filter_mlswe
-        use mod_laplacian_quad, only: btp_create_laplacian_v1, btp_create_laplacian, btp_create_laplacian_v3
-
-
-        implicit none
-
-        real, dimension(4,npoin), intent(inout) :: qb_df
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real, dimension(3,2,nq,nface, nlayers), intent(in) :: qprime_face
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-
-        real, dimension(4,npoin) :: qb_df2
-        real, dimension(2,npoin) :: rhs_mom, rhs_visc_btp, rhs_visc_btp1
-        real, dimension(npoin) :: pb_advec, tempu, tempv
-
-        real, dimension(2,nq,nface) :: qb_com1
-        real, dimension(2,2,nq,nface) :: qb_com2
-        real, dimension(3,npoin) :: rhs_mom1
-        real, dimension(2,npoin) :: qb_df_temp
-
-        integer :: mstep, I, Iq, iquad, iface, ilr, k
-        real :: N_inv
-
-        one_plus_eta_edge_2_ave = 0.0
-        uvb_ave  = 0.0
-        uvb_ave_df  = 0.0
-        ope_ave = 0.0
-        btp_mass_flux_ave = 0.0
-        H_ave = 0.0
-        Qu_ave = 0.0
-        Qv_ave = 0.0
-        Quv_ave = 0.0
-        ope_ave_df = 0.0
-        uvb_face_ave  = 0.0
-        ope_face_ave = 0.0
-        btp_mass_flux_face_ave = 0.0
-        H_face_ave = 0.0
-        Qu_face_ave = 0.0
-        Qv_face_ave = 0.0
-        Quv_face_ave = 0.0
-        tau_wind_ave = 0.0
-        tau_bot_ave = 0.0
-        rhs_visc_btp = 0.0
-        ope2_ave = 0.0
-        graduvb_face_ave = 0.0
-        graduvb_ave = 0.0
-
-        ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
-        ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
-
-        call btp_bcl_coeffs(qprime,qprime_face)
-        if (method_visc > 0) call btp_bcl_grad_coeffs(qprime_df)
-
-        ! ========== The time loop begins here ==================
-
-        do mstep = 1, N_btp
-
-            ! ============================================ Prediction steps ==========================================================
-
-            ope_ave_df = ope_ave_df + (1.0 + qb_df(2,:) * one_over_pbprime_df(:))
-
-            call create_rhs_btp_v3(rhs_mom1,qb_df,qprime)
-
-            ! Predict barotropic 
-
-            qb_df2(2,:) = qb_df(2,:) + dt_btp*rhs_mom1(1,:)
-            qb_df2(3,:) = qb_df(3,:) + fdt_btp(:)*qb_df(4,:) + dt_btp*rhs_mom1(2,:)
-            qb_df2(4,:) = qb_df(4,:) - fdt_btp(:)*qb_df(3,:) + dt_btp*rhs_mom1(3,:)
-
-            qb_df2(1,:) = qb_df2(2,:) + pbprime_df(:)
-
-            call btp_mom_boundary_df(qb_df2(3:4,:))
-
-            ! Accumulate sums for time averaging
-
-            uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
-
-            ! ============================================ Correction steps ==========================================================
-
-            ! ******** Barotropic mass equation ***********
-
-            ! Compute the mass advection term, using data from barotropic previous time and predicted data for barotropic level.
-            ! Compute RHS for the barotropic mass equation
-
-            call create_rhs_btp_mass(pb_advec,qb_df2)
-
-            ! Correct barotropic mass
-
-            qb_df(2,:) = qb_df(2,:) + 0.5*dt_btp * (pb_advec(:) + rhs_mom1(1,:))
-            qb_df(1,:) = qb_df(2,:) + pbprime_df(:)
-
-            qb_df2(1:2,:) = qb_df(1:2,:)
-
-            ! ******** Barotropic momentum equation ***********
-
-            ! Compute RHS for the barotropic momentum equation
-
-            call create_rhs_btp_mom(rhs_mom,qb_df2,qprime)
-
-            rhs_mom = 0.5*(rhs_mom1(2:3,:) + rhs_mom)
-
-            ! Correct barotropic momentum
-
-            qb_df_temp(1,:) = qb_df(3,:) + dt_btp*rhs_mom(1,:)
-            qb_df_temp(2,:) = qb_df(4,:) + dt_btp*rhs_mom(2,:)
-
-            call btp_mom_boundary_df(qb_df_temp(:,:))
-
-            tempu = qb_df_temp(1,:) + fdt2_btp(:)*qb_df(4,:)
-            tempv = qb_df_temp(2,:) - fdt2_btp(:)*qb_df(3,:)
-
-            qb_df(3,:) = a_btp(:) * tempu + b_btp(:) * tempv
-            qb_df(4,:) = -b_btp(:) * tempu + a_btp(:) * tempv
-
-            call btp_mom_boundary_df(qb_df(3:4,:))
-
-            ! Accumulate sums for time averaging
-
-            uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
-            uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
-            ope_ave_df = ope_ave_df + (1.0 + qb_df(2,:) * one_over_pbprime_df(:))
-
-            tau_wind_ave = tau_wind_ave + tau_wind
-
-        end do
-
-        ! Update the barotropic variables at the baroclinic time level n+1
-
-        N_inv = 1.0 / real(2*N_btp)
-
-        ope_ave = N_inv*ope_ave
-        H_ave = N_inv*H_ave 
-        Qu_ave = N_inv*Qu_ave
-        Qv_ave = N_inv*Qv_ave 
-        Quv_ave = N_inv*Quv_ave 
-        btp_mass_flux_ave = N_inv*btp_mass_flux_ave
-
-        ope_face_ave = N_inv*ope_face_ave 
-        H_face_ave = N_inv*H_face_ave 
-        Qu_face_ave = N_inv*Qu_face_ave 
-        Qv_face_ave = N_inv*Qv_face_ave 
-        Quv_face_ave = N_inv*Quv_face_ave 
-        btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
-
-        one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 
-        ope2_ave = ope2_ave*N_inv
-
-        ope_ave_df = N_inv*ope_ave_df
-
-        tau_wind_ave = tau_wind_ave / real(N_btp)
-        tau_bot_ave = tau_bot_ave * N_inv
-
-        graduvb_face_ave = N_inv*graduvb_face_ave 
-        graduvb_ave = N_inv*graduvb_ave
-
-        call btp_interpolate_avg_v1()
-
-    end subroutine ti_barotropic_v1
-
     subroutine thickness(qprime, q_df, qprime_face, dpprime_df, qb_df)
 
         ! ===========================================================================================================================
@@ -904,10 +415,8 @@ module mod_splitting
         use mod_input, only: nlayers, dt, ad_mlswe, ifilter
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
-        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, evaluate_mom_face_v1, &
-                                    interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, &
-                                    shear_stress_system, velocity_df, evaluate_bcl, evaluate_bcl_v1, &
-                                    evaluate_mom_face, evaluate_bcl_v3
+        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, &
+                                    shear_stress_system, velocity_df, evaluate_bcl_v1
 
         implicit none
 
@@ -993,7 +502,7 @@ module mod_splitting
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
 
-        call evaluate_bcl_v3(q_df, qprime_df, qb_df)
+        call evaluate_bcl_v1(q_df, qprime_df, qb_df)
 
     end subroutine momentum
 
@@ -1013,10 +522,7 @@ module mod_splitting
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
         use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, &
-                                    evaluate_mom_face_v1, evaluate_dp, evaluate_dp_face, &
-                                    velocity_df, evaluate_bcl, evaluate_bcl_v1, evaluate_dpp, evaluate_dpp_face, evaluate_bcl_v2
-
-        use mod_layer_terms, only: interpolate_mom, velocity, velocity_face, evaluate_mom_face_all, evaluate_mom_face
+                                    velocity_df, evaluate_bcl
 
         implicit none
 
@@ -1124,46 +630,9 @@ module mod_splitting
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
 
-        call evaluate_bcl_v2(qprime, qprime_face, q_df, qprime_df, qb_df)
+        call evaluate_bcl(qprime, qprime_face, q_df, qprime_df, qb_df)
 
     end subroutine momentum_mass
-
-
-    subroutine rhs_thickness(dp_advec, qprime, qprime_face)
-
-        ! ===========================================================================================================================
-        ! This subroutine compute the RHS of the layer mass equation and stored it in dp_advec
-
-        ! ===========================================================================================================================
-
-        use mod_input, only: nlayers, dt, icase, ifilter
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs
-        use mod_layer_terms, only: layer_mass_advection_terms
-        use mod_variables, only: u_edge, v_edge, sum_layer_mass_flux_face, sum_layer_mass_flux, uvdp_temp, flux_edge_bcl
-
-        implicit none
-    
-        ! Input variables
-        real, intent(in) :: qprime(3,npoin_q,nlayers)
-        real, intent(in) :: qprime_face(3,2,nq,nface,nlayers)
-    
-        ! Output variables
-        real, intent(out) :: dp_advec(npoin,nlayers)
-
-        ! =========================================== layer mass ===============================================================
-    
-        ! Compute the mass advection term.   
-
-        call layer_mass_advection_terms(qprime,qprime_face)
-
-        ! Compute RHS for layer thickness, return the result in array  dp_advec .
-
-        call layer_mass_advection_rhs(dp_advec, uvdp_temp, flux_edge_bcl)
-        
-    end subroutine rhs_thickness
-
 
     subroutine rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df, qprime_face3, q_df)
 
@@ -1175,10 +644,9 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, method_visc
-        use mod_create_rhs_mlswe, only: layer_momentum_rhs, rhs_layer_shear_stress, layer_momentum_rhs_v1
-        use mod_layer_terms, only: compute_momentum_edge_values, layer_momentum_advec_terms, layer_pressure_terms, layer_pressure_terms_v1, &
-                                    layer_windbot_stress_terms, layer_momentum_advec_terms_upwind, layer_momentum_advec_terms_upwind_v1
-        use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v1, bcl_create_laplacian_v2
+        use mod_create_rhs_mlswe, only: layer_momentum_rhs
+        use mod_layer_terms, only: layer_pressure_terms
+        use mod_laplacian_quad, only: bcl_create_laplacian
 
         use mod_variables, only: H_r,u_udp_temp, v_vdp_temp, p, z_elev, udp_left, &
                     vdp_left, udp_right, vdp_right, u_vdp_temp, grad_z, u_edge, v_edge, udp_flux_edge, vdp_flux_edge, &
@@ -1200,13 +668,13 @@ module mod_splitting
 
         ! Compute the pressure terms
 
-        call layer_pressure_terms_v1(qprime, qprime_face, qprime_df)
+        call layer_pressure_terms(qprime, qprime_face, qprime_df)
 
-        if(method_visc > 0) call bcl_create_laplacian_v2(rhs_visc_bcl)
+        if(method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
 
         ! Compute the RHS of the layer momentum equation
 
-        call layer_momentum_rhs_v1(rhs_mom, rhs_visc_bcl, qprime, qprime_face3)
+        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime, qprime_face3)
 
     end subroutine rhs_momentum
 
@@ -1221,8 +689,8 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df
-        use mod_create_rhs_mlswe, only: layer_mass_advection_rhs, consistency_mass_rhs, consistency_mass_rhs_v1
-        use mod_layer_terms, only: consistency_mass_terms, evaluate_dpp, evaluate_dpp_face, evaluate_consistency_face
+        use mod_create_rhs_mlswe, only: consistency_mass_rhs
+        use mod_layer_terms, only: evaluate_dpp, evaluate_dpp_face, evaluate_consistency_face
         use mod_variables, only: btp_mass_flux_face_ave, flux_adjustment, flux_adjust_edge
         use mod_metrics, only: massinv
         
@@ -1253,7 +721,7 @@ module mod_splitting
 
         ! RHS of the consistency terms
 
-        call consistency_mass_rhs_v1(dp_advec, qprime, mass_deficit_mass_face)
+        call consistency_mass_rhs(dp_advec, qprime, mass_deficit_mass_face)
 
         ! Apply consistency to the thickness
 
