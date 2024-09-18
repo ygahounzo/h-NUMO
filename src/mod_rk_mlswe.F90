@@ -11,7 +11,7 @@ module mod_rk_mlswe
         
     implicit none
 
-    public :: ti_barotropic_rk_mlswe, ti_barotropic_ssprk_mlswe
+    public :: ti_barotropic_ssprk_mlswe
     
     contains
 

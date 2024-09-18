@@ -30,7 +30,18 @@ module mod_rhs_btp
 
     public :: create_rhs_btp, &
                 create_rhs_btp_momentum, create_rhs_btp_mom_mass, btp_mass_advection_rhs
-              
+             
+    ! Define a procedure pointer to hold different routines
+    procedure(botfr_switch), pointer :: bottom_friction
+
+    ! Define an interface for the routines (ensures they share the same signature)
+    interface
+        subroutine botfr_switch(ubfr,vbfr,u,v)
+            real, intent(out) :: ubfr,vbfr
+            real, intent(in)  :: u,v
+        end subroutine botfr_switch
+    end interface
+
 contains
 
     subroutine create_rhs_btp(rhs,qb_df,qprime)
@@ -195,10 +206,10 @@ contains
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
         use mod_constants, only: gravity
-        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad, one_over_pbprime
+        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad, one_over_pbprime, alpha_mlswe
         use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, uvb_ave, btp_mass_flux_ave
         use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
-        use mod_input, only: nlayers, cd_mlswe
+        use mod_input, only: nlayers, cd_mlswe, botfr
 
         implicit none 
 
@@ -207,14 +218,30 @@ contains
         real, dimension(3,npoin), intent(out) :: rhs
 
         real :: source_x, source_y, Hq, quux, quvxy, qvvy
-        real :: wq, hi, dhdx, dhdy, speed1, tau_bot_u, tau_bot_v, ope, &
-                dp, dpp, udp, vdp, ub, vb
+        real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, ubfr, vbfr
 
         integer :: I, Iq, ip
 
-        speed1 = cd_mlswe/gravity
+        !speed1 = cd_mlswe/gravity
 
         rhs = 0.0
+        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
+        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth at which bottom stress is reduced to 0
+        
+        coef_fric = 0.0
+
+        select case(botfr)
+            case (1)
+                bottom_friction => linear_bot_friction
+                coef_fric = (cd_mlswe/gravity)*Pbstress
+            case (2)
+                bottom_friction => quadratic_bot_friction
+                coef_fric = (cd_mlswe/alpha_mlswe(nlayers))
+            case default
+                bottom_friction => no_friction
+        end select
+
 
         do Iq = 1, npoin_q
 
@@ -233,9 +260,18 @@ contains
             wq = wjac(Iq)
         
             ub = udp/dp; vb = vdp/dp
-        
-            tau_bot_u = speed1 * qprime(1,Iq,nlayers)*(qprime(2,Iq,nlayers) + ub)
-            tau_bot_v = speed1 * qprime(1,Iq,nlayers)*(qprime(3,Iq,nlayers) + vb)
+            
+            ubot = qprime(2,Iq,nlayers) + ub
+            vbot = qprime(3,Iq,nlayers) + vb
+
+            call bottom_friction(ubfr,vbfr,ubot,vbot)
+             
+            !tau_bot_u = speed1 * qprime(1,Iq,nlayers)*(qprime(2,Iq,nlayers) + ub)
+            !tau_bot_v = speed1 * qprime(1,Iq,nlayers)*(qprime(3,Iq,nlayers) + vb)
+
+            tau_bot_u = coef_fric * ubfr
+            tau_bot_v = coef_fric * vbfr
+
 
             source_x = coriolis_quad(Iq)*vdp + gravity*(tau_wind(1,Iq) - tau_bot_u) - &
                         gravity*dp*grad_zbot_quad(1,Iq)
@@ -859,5 +895,39 @@ contains
         pb_advec(:) = massinv(:)*pb_advec(:)
     
     end subroutine Apply_btp_flux_mass
+    
+    subroutine linear_bot_friction(ubfr,vbfr,u,v)
+        
+        real, intent(in) :: u,v
+        real, intent(out) :: ubfr, vbfr
+
+        ubfr = u
+        vbfr = v
+
+    end subroutine linear_bot_friction
+
+    subroutine quadratic_bot_friction(ubfr,vbfr,u,v)
+
+        real, intent(in) :: u,v
+        real, intent(out) :: ubfr, vbfr
+
+        real :: speed
+
+        speed = sqrt(u**2 + v**2)
+
+        ubfr = speed*u
+        vbfr = speed*v
+
+    end subroutine quadratic_bot_friction
+
+    subroutine no_friction(ubfr,vbfr,u,v)
+        
+        real, intent(in) :: u,v
+        real, intent(out) :: ubfr, vbfr
+
+        ubfr = 0.0
+        vbfr = 0.0
+
+    end subroutine no_friction
 
 end module mod_rhs_btp

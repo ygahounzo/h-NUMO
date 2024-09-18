@@ -1,13 +1,11 @@
 
 warning('off', 'all')
-file_num_start = 360;     % start animating with this file number
-file_num_end = 360;       % end animating with this file number
+file_num_start = 720;     % start animating with this file number
+file_num_end = 720;       % end animating with this file number
 delta_file_num = 10;      % what is the skip between the file numbers
                           % (must match the actual file numbers)
 
-name_root = '/Volumes/GLACIE/NUMO/N4_Ne25_v50_freeslip/outbora';
-% name_root = './FALCON/N4_Ne25_v50_freeslip/outbora';
-% name_root = './R2/N2_Ne50_v50_noslip/outbora';
+name_root = './Double_gyre/';
 
 save_folder = './BB86';
 
@@ -41,7 +39,7 @@ for ifile = file_num_start:delta_file_num:file_num_end
     v = -1300:400:600;
 
     %READ DATA FROM MATLAB OUTPUT FILE
-    name_fortran_data_file = [name_root, sprintf('%04d', ifile)];
+    name_fortran_data_file = [name_root, sprintf('mlswe%04d', ifile)];
 
     [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,dt,nk] = load_data_Higdon(name_fortran_data_file);
   
@@ -79,15 +77,13 @@ for ifile = file_num_start:delta_file_num:file_num_end
     hold off
 
     subplot(1,2,2);
-    %colormap(vals)
+
     dp = dp_df(:,ilayer) - 1489.4;
     qi = griddata(xe,ye,dp,xi,yi,'cubic');
     xii = xi ./1e5; yii = yi ./1e5;
-
-    vals = get_cmapspd200();
     [C,h] = contourf(xii,yii,qi,levels);
     clabel(C,h,v);
-    % clim([-1000,1000])
+    clim([-1000,1000])
     colorbar()
     axis equal
     hold off

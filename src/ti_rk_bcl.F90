@@ -22,11 +22,11 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
-	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe, ti_barotropic_ssprk_mlswe
+	use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
 
 	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 	use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
-    use mod_layer_terms, only: evaluate_bcl_v2, interpolate_qprime
+    use mod_layer_terms, only: interpolate_qprime
 
 	implicit none
 

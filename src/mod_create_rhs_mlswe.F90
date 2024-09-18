@@ -263,13 +263,13 @@ contains
 
         integer :: k, I, Iq, ip
         real, dimension(npoin_q,nlayers+1) :: pprime_temp 
-        real :: temp_dp, temp_u, temp_v
+        real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
 
         rhs_mom = 0.0
         bot_layer = 0.0
 
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
-        
+        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth at which bottom stress is reduced to 0
         do k = 1,nlayers
         
             pprime_temp(:, k+1) = pprime_temp(:, k) + qprime(1,:,k)
@@ -294,12 +294,21 @@ contains
                 temp1 = (min(pprime_temp(Iq,k+1), Pstress) - min(pprime_temp(Iq,k), Pstress))/ Pstress
                 tau_wind_u = temp1*tau_wind(1,Iq)
                 tau_wind_v = temp1*tau_wind(2,Iq)
+                
+                Ptop_k = pprime_temp(Iq,k)
+                Pbot_k = pprime_temp(Iq,k+1)
+                tempbot = max(pprime_temp(Iq,nlayers+1)-Pbstress,Pbot_k)-max(pprime_temp(Iq,nlayers+1)-Pbstress,min(Ptop_k,Pbot_k))
+                
+                tempbot = 1.0 !tempbot/qprime(1,Iq,k)
 
-                source_x = gravity*(tau_wind_u - bot_layer*tau_bot_ave(1,Iq) + &
+                !source_x = gravity*(tau_wind_u - bot_layer*tau_bot_ave(1,Iq) + &
+                !            p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
+                !source_y = gravity*(tau_wind_v - bot_layer*tau_bot_ave(2,Iq) + &
+                !            p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1))                                                                                                                      
+                source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
                             p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
-                source_y = gravity*(tau_wind_v - bot_layer*tau_bot_ave(2,Iq) + &
+                source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
                             p(Iq,k) * grad_z(2,Iq,k) - p(Iq,k+1) * grad_z(2,Iq,k+1))                                                                                                                      
-
                 do ip = 1, npts
 
                     I = indexq(ip,Iq)
