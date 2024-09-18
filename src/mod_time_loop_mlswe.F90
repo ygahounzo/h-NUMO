@@ -112,6 +112,7 @@ contains
         !Initialize/Restart
         inorm=0
         itime=0
+        idone = 0
     
         irestart=nint(time_restart/dt)
         if(irestart == 0) then
@@ -171,7 +172,7 @@ contains
                 fnp4(j:j)='0'
                 end do
 
-                fnp=trim('outbora') // trim(fnp4)
+                fnp=trim('mlswe') // trim(fnp4)
 
                 call read_mlswe(q_df_read,qb_df_read,fnp)
 
@@ -201,7 +202,6 @@ contains
 
         endif 
 
-        idone = 0
         if (lprint_diagnostics) then
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
             mass_conserv0_g,cfl,cflu,ntime)
@@ -212,12 +212,9 @@ contains
             print *, "Begin Time Integration: "
         end if
 
-        !Recompute LAMBDA and ALHS for direct solver if DT changed
-
         !------------------------------
         !     Time Loop
         !------------------------------
-        idone=0
         rhs_time = 0.0
         
         do while (time < time_final)
