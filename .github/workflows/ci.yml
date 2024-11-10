@@ -1,0 +1,37 @@
+name: hnumo CI
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Fortran compiler
+      run: sudo apt-get install -y gfortran
+
+    - name: Set up Open MPI
+      run: sudo apt-get install -y openmpi-bin libopenmpi-dev
+
+    - name: Compile Fortran code
+      run: make hnumo
+
+    - name: Print home directory
+      run: echo ls $GITHUB_WORKSPACE
+
+    - name: Copy executable file
+      run: cp $GITHUB_WORKSPACE/bin/numo3d $GITHUB_WORKSPACE/CI/bump
+
+    - name: List bin directory contents after compilation
+      run: ls -al $GITHUB_WORKSPACE/CI/bump
+
+    - name: Run bump test
+      working-directory: CI/bump
+      run: mpirun -np 1 ./run_check.sh

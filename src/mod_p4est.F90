@@ -47,7 +47,7 @@ module mod_p4est
     ncol, ncol_cg, nz_cg, node_column_table, face, nface, face_type, nboun,    &
     index2d, mod_grid_init_unified, mod_grid_init_coord,                       &
     mod_grid_init_coord_dg_to_cg, is_non_conforming,                           &
-    NC_face, NC_edge, EToNC, nNC
+    NC_face, NC_edge, EToNC, nNC, D2C_mask
 
   use mod_metrics, only: mod_metrics_create_metrics
 
@@ -365,8 +365,13 @@ contains
 
        if (irank == irank0) print*, '------------------Entering P6est_Mesh_Arrays-------------------------'
        ! FIXME: Handle non-conforming
-       call p6esttonuma_get_mesh_arrays(p2n, coord, intma_table, face, face_type, num_send_recv, &
-            nbh_proc, nbh_send_recv, bsido, node_column_table, is_cgc)
+       call p6esttonuma_get_mesh_arrays(p2n, coord, intma_table, NC_face, NC_edge, EToNC, face, &
+              face_type, num_send_recv, &
+              nbh_proc, nbh_send_recv, &
+              nbh_send_recv_multi, &
+              nbh_send_recv_half, &
+              bsido, node_column_table, is_cgc, &
+              D2C_mask)
        call p6esttonuma_free(p2n)
        plist = 0
        if (irank == irank0) print*, '------------------Exiting P6est_Mesh_Arrays-------------------------'
@@ -407,14 +412,14 @@ contains
                 NC_face, NC_edge, EToNC, face, face_type,                      &
                 num_send_recv, nbh_proc, nbh_send_recv, nbh_send_recv_multi,   &
                 nbh_send_recv_half, bsido, lev_list, plist, is_cgc, vc_el_type, &
-                lrestoring_sponge)
+                lrestoring_sponge, D2C_mask)
            call p4esttonuma_free(p2n,lrestoring_sponge)
        else
            call p8esttonuma_get_mesh_arrays(p2n, coord, intma_table,           &
                 NC_face, NC_edge, EToNC, face, face_type,                      &
                 num_send_recv, nbh_proc, nbh_send_recv, nbh_send_recv_multi,   &
                 nbh_send_recv_half, bsido, lev_list, plist, is_cgc, vc_el_type, &
-                lrestoring_sponge)
+                lrestoring_sponge, D2C_mask)
            ! call p8esttonuma_dump_forest()
            call p8esttonuma_free(p2n,lrestoring_sponge)
            ! print*, "K = ", nelem, ";"
@@ -584,11 +589,11 @@ contains
 
   end subroutine mod_p4est_create_grid
 
-  subroutine mod_p4est_dump_mesh(fnp)
-    implicit none
-    character :: fnp*100
-    call p8esttonuma_dump_forest(trim(fnp) // CHAR(0))
-  end subroutine mod_p4est_dump_mesh
+  !subroutine mod_p4est_dump_mesh(fnp)
+  !  implicit none
+  !  character :: fnp*100
+  !  call p8esttonuma_dump_forest(trim(fnp) // CHAR(0))
+  !end subroutine mod_p4est_dump_mesh
 
 !--------------------------------------------------------------------!
 !>@brief Initialization of some data after extracting p4est grid

@@ -47,10 +47,9 @@ geometry_type='cube',
 
 &input
 dt= 100,
-dt_btp = 1.8,
-!dt_safety_factor = 0.5,
+dt_btp = 1.6,
 time_initial = 0.0,
-time_final   = 10800,
+time_final   = 100, !10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 lrestart_file = .false.,
@@ -64,12 +63,11 @@ visc_mlswe = 1.0,
 dpprime_visc_min = 0.0,
 max_shear_dz = 20.0,
 matlab_viz = T,
-adjust_H_vertical_sum = 2,
-mlswe_bc_strong = T
-dg_integ_exact = T,
+adjust_H_vertical_sum = 0,
+adjust_bcl_mom_flux = 0,
+mlswe_bc_strong = T,
+dg_integ_exact = F,
 dump_data = T,
-flux_type = 'upwind',
-method_consistency = 1,
 
 !----case
 icase=2023,
@@ -82,7 +80,7 @@ ti_method = 'btp_bcl',
 	      !rk35; (Optimized RK35)
 
 ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
-kstages=5,
+kstages=4,
 
 space_method = 'dg', !dg=discontinuous Galerkin
 	    	
@@ -90,13 +88,6 @@ si_dimension = '3d',
 	       	     !1d IMEX in the vertical/radial direction; 
 	       	     !3d IMEX
 
-filter_mux=0.05,
-filter_muy=0.05,
-filter_muz=0.05,
-ifilter=0,
-filter_weight_type='erf',
-!filter_basis_type='modal',
-filter_basis_type='legendre',
 fname_root='mlswe',
 format_vtk='ascii',
 out_type='vtk',

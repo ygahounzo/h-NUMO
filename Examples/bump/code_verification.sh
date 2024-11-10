@@ -13,16 +13,16 @@ for nl in $(seq 1 $nlayers)
 do
     index_layer=$((6*(nl-1) + 1))
 
-    sed -n "${index_layer}p" mlswe_ref_FIN.txt >> $output_file
+    sed -n "${index_layer}p" ref_mlswe_FIN.txt >> $output_file
 
     for ifield in $(seq 2 $Nfield)
     do
         index_field=$((ifield+index_layer))
-        # sed -n "${index_field}p" mlswe_ref_FIN.txt | awk '{printf("%-3s  = %10.5f %10.5f\n", $4, ($5-$6), ($6-$6))}' >> $output_file
+        # sed -n "${index_field}p" ref_mlswe_FIN.txt | awk '{printf("%-3s  = %10.5f %10.5f\n", $4, ($5-$6), ($6-$6))}' >> $output_file
 
-        field_ref=$(sed -n "${index_field}p" mlswe_ref_FIN.txt | awk '{printf $4}')
-        field_max_ref=$(sed -n "${index_field}p" mlswe_ref_FIN.txt | awk '{printf $5}')
-        field_min_ref=$(sed -n "${index_field}p" mlswe_ref_FIN.txt | awk '{printf $6}')
+        field_ref=$(sed -n "${index_field}p" ref_mlswe_FIN.txt | awk '{printf $4}')
+        field_max_ref=$(sed -n "${index_field}p" ref_mlswe_FIN.txt | awk '{printf $5}')
+        field_min_ref=$(sed -n "${index_field}p" ref_mlswe_FIN.txt | awk '{printf $6}')
 
         field_max=$(sed -n "${index_field}p" mlswe_FIN.txt | awk '{printf $5}')
         field_min=$(sed -n "${index_field}p" mlswe_FIN.txt | awk '{printf $6}')

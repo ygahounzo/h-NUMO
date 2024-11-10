@@ -38,6 +38,7 @@ module mod_grid
         sigma, &
         index2d, &
         intma_table, &
+        D2C_mask, &
         intma_dg_quad, &  !< DG quadrature points indexing added by Yao
         NC_face, &
         NC_edge, &
@@ -70,6 +71,7 @@ module mod_grid
     real,    dimension(:),        allocatable :: sigma
     integer, dimension(:,:),      allocatable :: index2d
     integer, dimension(:,:,:,:),  allocatable :: intma_table
+    integer, dimension(:,:,:,:),  allocatable :: D2C_mask
     integer(C_INT), dimension(:,:), allocatable :: NC_face
     integer(C_INT), dimension(:,:), allocatable :: NC_edge
     integer(C_INT), dimension(:),   allocatable :: EToNC
@@ -364,6 +366,7 @@ contains
             deallocate(coord_cg, coord,  sigma, &
                 index2d, &
                 intma_table, &
+                D2C_mask, &
                 NC_face, &
                 NC_edge, &
                 EToNC, &
@@ -378,6 +381,7 @@ contains
         allocate(coord_cg(3,npoin_cg), coord(3,npoin),  sigma(npoin_cg), &
              index2d(2,npoin_cg), &
             intma_table(nglx,ngly,nglz,nelem), &
+            D2C_mask(nglx,ngly,nglz,nelem), &
             NC_face(P4EST_FACES, nNC),  &
             NC_edge(P8EST_EDGES, nNC),  &
             EToNC(nelem),  &
@@ -394,6 +398,7 @@ contains
         sigma = 0.0
         index2d = 0
         intma_table = 0
+        D2C_mask = 0
 
     end subroutine mod_grid_init_unified
 
