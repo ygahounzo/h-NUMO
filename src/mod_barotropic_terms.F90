@@ -1017,8 +1017,8 @@ module mod_barotropic_terms
 
         real, intent(inout) :: qb(2,npoin)
 
-        integer :: iface, ilr, iquad,jquad, m, il, jl, ir, jr, el, er, ilocl, ilocr, I,kl,kr,plane_ij,nq_i,nq_j
-        integer :: bcflag
+        integer :: iface, ilr, m, il, jl, el, er, ilocl, ilocr, I, kl
+        integer :: bcflag, n
         real :: nx, ny, unl, upnl
 
       
@@ -1030,15 +1030,15 @@ module mod_barotropic_terms
 
 		if(er == -4) then
 
-		    do iquad = 1, ngl
+		    do n = 1, ngl
 
-		        il=imapl(1,iquad,1,iface)
-		        jl=imapl(2,iquad,1,iface)
-		        kl=imapl(3,iquad,1,iface)
+		        il=imapl(1,n,1,iface)
+		        jl=imapl(2,n,1,iface)
+		        kl=imapl(3,n,1,iface)
 		        I=intma(il,jl,kl,el)
 
-		        nx = normal_vector(1,iquad,1,iface)
-		        ny = normal_vector(2,iquad,1,iface)
+		        nx = normal_vector(1,n,1,iface)
+		        ny = normal_vector(2,n,1,iface)
 
 		        unl = qb(1,I)*nx + qb(2,I)*ny
 
@@ -1046,6 +1046,20 @@ module mod_barotropic_terms
 		        qb(2,I) = qb(2,I) - unl*ny
 		        
 		    end do
+
+                elseif(er == -2) then
+                    
+                    do n = 1, ngl
+
+                        il=imapl(1,n,1,iface)
+                        jl=imapl(2,n,1,iface)
+                        kl=imapl(3,n,1,iface)
+                        I=intma(il,jl,kl,el)
+
+                        qb(1,I) = 0.0
+                        qb(2,I) = 0.0
+
+                    enddo
 
 		end if
 

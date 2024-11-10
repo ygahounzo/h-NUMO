@@ -7,9 +7,6 @@
 !----------------------------------------------------------------------!
 module mod_time_loop_mlswe
 
-    !use mod_bc, only: create_bc_list
-  
-    !use mod_constants, only: nnorm, pi
     use mod_mpi_communicator, only: ierr, ireq, nreq, status
     use mod_input, only: ti_method, dt, lprint_diagnostics, irestart_file_number, out_type
     use mod_mpi_utilities, only : irank, irank0, MPI_PRECISION, wtime, numproc
@@ -44,8 +41,6 @@ contains
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             icase, ifilter, fname_root, lprint_diagnostics, &
             ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
-
-        use mod_papi, only: papi_start, papi_update, papi_print, papi_stop
 
         use mod_layer_terms, only: filter_mlswe
         use mod_barotropic_terms, only: restart_mlswe
@@ -212,8 +207,6 @@ contains
             print *, "Begin Time Integration: "
         end if
 
-        !Recompute LAMBDA and ALHS for direct solver if DT changed
-
         !------------------------------
         !     Time Loop
         !------------------------------
@@ -251,9 +244,6 @@ contains
             if (mod(itime,irestart) == 0 .and. dump_data) then
                 inorm=inorm + 1
 
-                !Print PAPI counters
-                call papi_print()
-                
                 !Write Snapshot File
                 ifnp= inorm
                 write(fnp1,'(i4)')ifnp
@@ -297,8 +287,6 @@ contains
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
             mass_conserv0_g,cfl,cflu,ntime)
         !end if
-
-        !Clean UP
 
         if(allocated(q0_mlswe)) deallocate(q0_mlswe)
         if(allocated(qprime0_mlswe)) deallocate(qprime0_mlswe)

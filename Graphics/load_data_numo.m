@@ -1,4 +1,4 @@
-function [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,dt,nk, dt_btp] = load_data_numo(name_fortran_data_file)
+function [npoin,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_fortran_data_file)
 
     %   Load the data written by the Fortran DG code.
 
@@ -15,27 +15,26 @@ function [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,dt,nk, dt_btp] = load_data_
 
     dim = npoin;
     pb = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    %pb = reshape(pb, dim);
 
     dim = npoin;
-    ubp = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    %ubp = reshape(ubp, dim);
+    upb = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
+    ub = upb./pb;
 
     dim = npoin;
-    vbp = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    %vbp = reshape(vbp, dim);
+    vpb = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
+    vb = vpb./pb;
 
     dim = [npoin,nk];
-    dp_df = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    dp_df = reshape(dp_df, dim);
+    dp = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
+    dp = reshape(dp, dim);
 
     dim = [npoin,nk];
-    udp_df = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    udp_df = reshape(udp_df, dim);
+    u = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
+    u = reshape(u, dim);
 
     dim = [npoin,nk];
-    vdp_df = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    vdp_df = reshape(vdp_df, dim);
+    v = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
+    v = reshape(v, dim);
 
 %     dim = [npoin,nk+1];
 %     z = temp(count: (count+prod(dim)-1));  count=count+prod(dim);

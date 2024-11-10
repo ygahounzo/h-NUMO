@@ -36,12 +36,12 @@ for ifile = file_num_start:delta_file_num:file_num_end
     nstep = ifile;
 
     levels = -1200:100:600;
-    v = -1300:400:600;
+    vl = -1300:400:600;
 
     %READ DATA FROM MATLAB OUTPUT FILE
     name_fortran_data_file = [name_root, sprintf('mlswe%04d', ifile)];
 
-    [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,dt,nk] = load_data_Higdon(name_fortran_data_file);
+    [npoin,pb,ub,vb,dp,u,v,coord,dt,nk] = load_data_numo(name_fortran_data_file);
   
     % Interpolate the solution
     xmin=min(coord(1,:)); xmax=max(coord(1,:));
@@ -57,8 +57,8 @@ for ifile = file_num_start:delta_file_num:file_num_end
 
     subplot(1,2,1);
     
-    uu = udp_df(:,ilayer);
-    vv = vdp_df(:,ilayer);
+    uu = u(:,ilayer);
+    vv = v(:,ilayer);
     uui = griddata(xe,ye,uu,xi,yi,'cubic');
     vvi = griddata(xe,ye,vv,xi,yi,'cubic');
     [n,m] = size(uui);
@@ -78,11 +78,11 @@ for ifile = file_num_start:delta_file_num:file_num_end
 
     subplot(1,2,2);
 
-    dp = dp_df(:,ilayer) - 1489.4;
+    dp = dp(:,ilayer) - 1489.4;
     qi = griddata(xe,ye,dp,xi,yi,'cubic');
     xii = xi ./1e5; yii = yi ./1e5;
     [C,h] = contourf(xii,yii,qi,levels);
-    clabel(C,h,v);
+    clabel(C,h,vl);
     clim([-1000,1000])
     colorbar()
     axis equal
@@ -92,53 +92,5 @@ for ifile = file_num_start:delta_file_num:file_num_end
     
     
 end
-
-
-function [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,dt,nk] = load_data_Higdon(name_fortran_data_file)
-
-    %   Load the data written by the Fortran DG code.
-
-    temp = load(name_fortran_data_file, '-ascii');
-
-    count = 1;
-    nk = temp(count);  count=count+1;
-    npoin = temp(count);  count=count+1;
-    dt = temp(count);  count=count+1;
-    dt_btp = temp(count);  count=count+1;
-    dim = [2,npoin];
-    coord = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    coord = reshape(coord, dim);
-
-    dim = npoin;
-    pb = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    %pb = reshape(pb, dim);
-
-    dim = npoin;
-    ubp = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    %ubp = reshape(ubp, dim);
-
-    dim = npoin;
-    vbp = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    %vbp = reshape(vbp, dim);
-
-    dim = [npoin,nk];
-    dp_df = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    dp_df = reshape(dp_df, dim);
-
-    dim = [npoin,nk];
-    udp_df = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    udp_df = reshape(udp_df, dim);
-
-    dim = [npoin,nk];
-    vdp_df = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-    vdp_df = reshape(vdp_df, dim);
-
-%     dim = [npoin,nk+1];
-%     z = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-%     z = reshape(z, dim);
-
-end
-
-
 
 

@@ -4,7 +4,7 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
     use mod_global_grid, only: coord_g, npoin_g
     use mod_grid, only: npoin, intma, coord, nelem
     use mod_mpi_utilities, only: irank, irank0
-    use mod_initial, only: alpha_mlswe, zbot_df
+    use mod_initial, only: alpha_mlswe, zbot_df, one_over_pbprime_df
     use mod_constants, only: gravity
 
     implicit none
@@ -35,7 +35,8 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
 		mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + q(1,:,k)
 	end do
 
-	q(5,:,1) = mslwe_elevation(:,1)
+	q(5,:,1) = qb(2,:)*one_over_pbprime_df(:) !mslwe_elevation(:,1)
+	!q(5,:,1) = mslwe_elevation(:,1)
 	q(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
     ! Gather Data onto Head node

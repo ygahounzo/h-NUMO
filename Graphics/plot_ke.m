@@ -15,7 +15,7 @@ nop = 4;
         
 % 20 km
 res = 20;
-name_root = sprintf('./KE_nop/NUMO_KE_N%d/ke_numo_%dkmv%d_%s',nop,res,nu,bc);  % numo ke
+name_root = sprintf('./KE_nop/NUMO_KE_N%d/ke_numo_%dkmv%d_%s_lfr',nop,res,nu,bc);  % numo ke
 
 [Time,ke_numo_l1,ke_numo_l2,ket_numo] = load_data_ke(name_root);
 

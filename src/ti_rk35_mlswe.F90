@@ -124,9 +124,11 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_df(2:3,:,:) = qprime_df_corr(2:3,:,:)
 
 	do k = 1,nlayers
-		qp_df_out(1,:,k) = (alpha_mlswe(k)/gravity)*q_df(1,:,k)
-		qp_df_out(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
-		qp_df_out(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+		qp_df_out(1,:,k) = q_df(1,:,k) !(alpha_mlswe(k)/gravity)*q_df(1,:,k)
+		!qp_df_out(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+		!qp_df_out(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+		qp_df_out(2,:,k) = qprime_df(2,:,k) + qb_df(3,:)/qb_df(1,:)
+		qp_df_out(3,:,k) = qprime_df(3,:,k) + qb_df(4,:)/qb_df(1,:)
 		qp_df_out(4,:,k) = q_df(1,:,k)
 	end do
 

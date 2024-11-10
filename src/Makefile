@@ -37,7 +37,6 @@ SOURCEF += mod_gradient.F90
 SOURCEF += mod_legendre.F90
 SOURCEF += mod_metrics.F90
 SOURCEF += mod_mpi_communicator.F90
-SOURCEF += mod_papi.F90
 SOURCEF += mod_parallel.F90
 SOURCEF += mod_p4est.F90
 SOURCEF += mod_ref.F90

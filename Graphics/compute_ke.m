@@ -5,7 +5,7 @@ clear all
 warning('off', 'all')
 
 file_num_start = 1;     % start animating with this file number
-file_num_end = 720;       % end animating with this file number
+file_num_end = 625;       % end animating with this file number
 delta_file_num = 1;      % what is the skip between the file numbers
 
 n = ceil(file_num_end / delta_file_num);
@@ -35,14 +35,14 @@ if ~exist(save_folder, 'dir')
     mkdir(save_folder);
 end
 
-name_root = './Double_gyre/'; % make to put the correct path to your output files
+name_root = './N4_Ne25_freeslip_lfr/'; % make to put the correct path to your output files
 
 ii = 0;
 
 %READ DATA FROM MATLAB OUTPUT FILE
 
 name_file = [name_root, sprintf('mlswe%04d', 1)];
-[~,pb,ubp,vbp,dp_df,u_df,v_df,coord,dt,nk, dt_btp] = load_data_numo(name_file);
+[~,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
 
 xmin=min(coord(1,:)); xmax=max(coord(1,:));
 ymin=min(coord(2,:)); ymax=max(coord(2,:));
@@ -67,17 +67,17 @@ for ifile = file_num_start:delta_file_num:file_num_end
     
     %READ DATA FROM MATLAB OUTPUT FILE
     name_file = [name_root, sprintf('mlswe%04d', ifile)];
-    [~,pb,ubp,vbp,dp_df,u_df,v_df,coord,dt,nk, dt_btp] = load_data_numo(name_file);
+    [~,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
 
 
-    u(:,:,1) = griddata(xe,ye,u_df(:,1),xi,yi,'cubic');
-    u(:,:,2) = griddata(xe,ye,u_df(:,2),xi,yi,'cubic');
+    u(:,:,1) = griddata(xe,ye,u(:,1),xi,yi,'cubic');
+    u(:,:,2) = griddata(xe,ye,u(:,2),xi,yi,'cubic');
 
-    v(:,:,1) = griddata(xe,ye,v_df(:,1),xi,yi,'cubic');
-    v(:,:,2) = griddata(xe,ye,v_df(:,2),xi,yi,'cubic');
+    v(:,:,1) = griddata(xe,ye,v(:,1),xi,yi,'cubic');
+    v(:,:,2) = griddata(xe,ye,v(:,2),xi,yi,'cubic');
 
-    dp(:,:,1) = griddata(xe,ye,dp_df(:,1),xi,yi,'cubic');
-    dp(:,:,2) = griddata(xe,ye,dp_df(:,2),xi,yi,'cubic');
+    dp(:,:,1) = griddata(xe,ye,dp(:,1),xi,yi,'cubic');
+    dp(:,:,2) = griddata(xe,ye,dp(:,2),xi,yi,'cubic');
 
     vol(:,:,1) = area_numo.*dp(:,:,1);
     vol(:,:,2) = area_numo.*dp(:,:,2);
@@ -105,7 +105,7 @@ Time = linspace(0,file_num_end/36,n);
 
 temp = [n;Time'; ke1; ke2; ke];
 
-file = [save_folder,sprintf('/ke_numo_20kmv%d_%s', nu,bc)];
+file = [save_folder,sprintf('/ke_numo_20kmv%d_%s_lfr', nu,bc)];
 
 eval( ['save ',  file, ' temp -ascii -double'] )
 

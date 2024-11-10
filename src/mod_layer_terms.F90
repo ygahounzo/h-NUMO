@@ -356,7 +356,7 @@ module mod_layer_terms
         real :: sumu, sumv, one_over_sumu, one_over_sumv, weight
         integer :: k, iface, I, iquad , Iq, el, er, il, jl, kl, ip
         real :: vu_dp_flux_deficit, sum_vu
-        real, parameter :: eps1 = 1.0e-12 !  Parameter used to prevent division by zero.
+        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
         real :: uu, vv, nxl, nyl, hi
         real, dimension(npoin_q) :: temp_u, temp_v, temp_dp
         real, dimension(npoin_q,nlayers) :: temp_uu, temp_vv
@@ -1089,7 +1089,7 @@ module mod_layer_terms
 
             ! Wall Boundary conditions
 
-            if(er == -4) then 
+            if(er < 0.0) then 
                 do k = 1,nlayers
 
                     H_r_face(1,:,iface,k) = 0.5*alpha_mlswe(k)*(p_face(1,:,iface,k+1)**2 - p_face(1,:,iface,k)**2)
@@ -1097,7 +1097,7 @@ module mod_layer_terms
                 end do
             end if
 
-            if(er /= -4) then
+            !if(er /= -4) then
 
                 do iquad = 1,nq
                     do k = 1, nlayers-1          ! interface at the bottom of layer k
@@ -1116,7 +1116,7 @@ module mod_layer_terms
             
                     end do
                 end do 
-            end if
+            !end if
         end do ! iface 
 
     end subroutine layer_pressure_terms
@@ -1209,7 +1209,7 @@ module mod_layer_terms
         call extract_velocity(uv_df, q_df, qb_df)
 
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
+        
         do k = 1,nlayers
             qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
             qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
@@ -1249,7 +1249,7 @@ module mod_layer_terms
             qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
         end do 
-
+        
     end subroutine evaluate_bcl_v1
 
     subroutine extract_velocity(uv_df, q_df, qb_df)
@@ -1299,7 +1299,7 @@ module mod_layer_terms
                 uv_df(:,I,:) = 0.0
             end if
         end do
-
+        
     end subroutine extract_velocity
 
     subroutine evaluate_mom(q,q_df)
@@ -1400,21 +1400,21 @@ module mod_layer_terms
 
                     qprime_face(1:3,2,iquad,iface,:) = qprime_face(1:3,1,iquad,iface,:)
 
-                    if(er == -4) then
+                    !if(er == -4) then
 
-                        nx = normal_vector_q(1,iquad,1,iface)
-                        ny = normal_vector_q(2,iquad,1,iface)
+                    !    nx = normal_vector_q(1,iquad,1,iface)
+                    !    ny = normal_vector_q(2,iquad,1,iface)
 
-                        un = qprime(2,I,:)*nx + qprime(3,I,:)*ny
+                    !    un = qprime(2,I,:)*nx + qprime(3,I,:)*ny
 
-                        qprime_face(2,2,iquad,iface,:) = qprime(2,I,:) - 2.0*un*nx
-                        qprime_face(3,2,iquad,iface,:) = qprime(3,I,:) - 2.0*un*ny
+                        !qprime_face(2,2,iquad,iface,:) = qprime(2,I,:) - 2.0*un*nx
+                        !qprime_face(3,2,iquad,iface,:) = qprime(3,I,:) - 2.0*un*ny
 
-                    elseif(er == -2) then 
+                    !elseif(er == -2) then 
 
-                        qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
+                        !qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
                         
-                    end if
+                    !end if
                 end if
 
             end do
@@ -1531,6 +1531,21 @@ module mod_layer_terms
                     q(2,I,:) = q(2,I,:) - upnl*ny
 
                 end do
+
+            elseif(er == -2) then
+
+                do n = 1, ngl
+
+                    il=imapl(1,n,1,iface)
+                    jl=imapl(2,n,1,iface)
+                    kl=imapl(3,n,1,iface)
+                    I=intma(il,jl,kl,el)
+
+                    q(1,I,:) = 0.0
+                    q(2,I,:) = 0.0
+
+                end do
+
             end if
     
         end do
