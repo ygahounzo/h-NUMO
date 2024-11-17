@@ -27,18 +27,14 @@ contains
 
         use mod_grid, only: npoin,  index2d, ncol, coord, npoin_q, nface
         use mod_basis, only: nq
-
         use mod_initial, only: q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, q_mlswe_face_init, qprime_face_mlswe_init, qb_mlswe_init, &
             qb_face_mlswe_init, qb_df_mlswe_init, dpprime_df_init, layer_dz_eq, qprime_df_init, alpha_mlswe, zbot_df
-
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             icase, ifilter, fname_root, lprint_diagnostics, &
             ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
-
         use mod_layer_terms, only: filter_mlswe
         use mod_barotropic_terms, only: restart_mlswe
         use mod_constants, only: gravity
-
         use mpi
 
         implicit none
@@ -109,7 +105,6 @@ contains
         time = time_initial
 
         if (time_initial == 0) then
-
 
            !write Initial Data
            if (irank == irank0) then
@@ -218,7 +213,6 @@ contains
             call cpu_time(time1)
 
             if(ti_method_btp == 'rk35') then 
-
                 call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe, qprime0_df)
             else 
                 ! Only predictor-corrector methods 

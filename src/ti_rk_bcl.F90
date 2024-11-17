@@ -26,7 +26,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
 	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 	use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
-    use mod_layer_terms, only: interpolate_qprime
+        use mod_layer_terms, only: interpolate_qprime
 
 	implicit none
 
@@ -79,8 +79,8 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	! Communication of qprime_face_avg values within the processor boundary
 	call bcl_create_communicator(qprime_face2(1,:,:,:,:),1,nlayers,nq)
 
-    qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
-    qprime2(1,:,:) = 0.5*(qprime(1,:,:) + qprime2(1,:,:))
+        qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
+        qprime2(1,:,:) = 0.5*(qprime(1,:,:) + qprime2(1,:,:))
 	qprime_face2(1,:,:,:,:) = 0.5*(qprime_face(1,:,:,:,:) + qprime_face2(1,:,:,:,:))
 
 	call momentum(qprime2,q_df,qprime_face2,qprime_df2,qb_df,qprime_face)

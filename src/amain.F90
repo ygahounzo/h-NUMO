@@ -11,13 +11,9 @@
 program numa3d
 
   use mod_time_loop_mlswe, only: time_loop, rhs_time, write_time
-
   use mod_types, only : r8
-
   use mod_input, only: lp4est, lp6est
-
   use mod_mpi_utilities
-
   use mod_p4est, only: mod_p4est_finalize
 
   implicit none
@@ -84,28 +80,18 @@ end program numa3d
 subroutine initialize_fields()
 
   use mod_bc, only: mod_bc_create
-
   use mod_mpi_communicator, only: mod_mpi_communicator_create
-
   use mod_face, only: mod_face_create, mod_face_create_boundary, face_send
-
   use mod_filter, only: mod_filter_create_rhs
-
   use mod_grid, only: nboun
-
   use mod_initial, only: mod_initial_create, q_init, nvar
-
   use mod_input, only: &
        nopx, nopy, nopz, &
        space_method, &
        lp4est, lp6est
-
   use mod_metrics, only: mod_metrics_create_metrics, mod_metrics_create_mass
-
   use mod_mpi_utilities
-
   use mod_parallel, only: nproc, mod_parallel_reorder
-
   use mod_variables, only: mod_allocate_mlswe
   use mod_ref, only: mod_ref_create
 
@@ -176,18 +162,12 @@ end subroutine initialize_fields
 subroutine initialize_grid()
 
   use mod_basis, only: mod_basis_create
-
   use mod_constants, only: mod_constants_create
-
   use mod_grid, only: npoin, nelem, nboun, face, nface
-
   !use mod_initial, only: q_init, nvar
-
   use mod_input, only: mod_input_create, nopx, nopy, nopz, &
       space_method, lp4est, lp6est, icase
-
   use mod_mpi_utilities
-
   use mod_p4est, only: mod_p4est_create
 
   implicit none
