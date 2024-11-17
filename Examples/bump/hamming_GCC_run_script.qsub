@@ -24,18 +24,6 @@ module load openmpi/2.0.4
 module load netcdf-fortran/4.4.4
 module load lib/atlas+lapack/3.10.2+3.5.0
 
-#Run with PGI
-#module load compile/pgi/20.4
-#module load mpi/openmpi-pgi/3.1.3
-#module load lib/netcdf-pgi/4.6.2
-#module load lib/netlib-lapack/3.9.1
-#module load lib/atlas/3.10.2
-#export PGI_OPTL_LIB_DIRS=$LD_LIBRARY_PATH
-
-#Run with Nvidia
-#module load sdk/nvidia
-#module load lib/netcdf-nvhpc
-
 pwd
 NUMODIR=/smallwork/fxgirald/research/github/h-NUMO
 echo " numo3d Directory is: " $NUMADIR
