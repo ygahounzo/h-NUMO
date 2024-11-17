@@ -30,3 +30,20 @@ macbook-p4est-brew-config:
 macbook-p4est-intel-dbg-config:		 
  	$(eval P4EST_CONF += --enable-debug)
 
+hnumo-prof-config:
+	$(eval P4EST_CONF = 	--enable-mpi \
+	--enable-p6est\
+	--without-blas \
+	--disable-shared \
+	CC=mpicc \
+	CXX=mpicxx \
+	F77=mpif90 \
+	FC=mpif77 \
+	CFLAGS="-O2 -Wall")
+
+hnumo-brew-config:
+ 	$(eval P4EST_CONF += )
+	
+	
+hnumo-brew-dbg-config:		 
+ 	$(eval P4EST_CONF += --enable-debug)

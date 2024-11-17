@@ -131,10 +131,10 @@ module mod_initial
             coeff_mass_pbpert_LR(nq,nface), coeff_pbpert_L(nq,nface),coeff_pbpert_R(nq,nface),coeff_pbub_LR(nq,nface), &
             coeff_mass_pbub_L(nq,nface),coeff_mass_pbub_R(nq,nface), &
             zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), &
-            psih(npoin_q,npts), dpsidx(npoin_q,npts), dpsidy(npoin_q,npts), indexq(npoin_q,npts), wjac(npoin_q), &
+            psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), indexq(npts,npoin_q), wjac(npoin_q), &
             fdt_btp(npoin), fdt2_btp(npoin), a_btp(npoin), b_btp(npoin), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
             b_bcl(npoin), a_bclp(npoin), b_bclp(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
-            ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin),psih_df(npoin,npts),dpsidx_df(npoin,npts),dpsidy_df(npoin,npts),index_df(npoin,npts))
+            ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin),psih_df(npts,npoin),dpsidx_df(npts,npoin),dpsidy_df(npts,npoin),index_df(npts,npoin))
 
             q_mlswe_init = 0.0
             qprime_mlswe_init = 0.0

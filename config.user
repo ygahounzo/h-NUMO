@@ -13,7 +13,7 @@ export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/local"
 hnumo:
 	$(MAKE) $(TARGET) \
 	"FC=mpif90" \
-	"LD=mpif90 -Wl,--allow-multiple-definition" \
+	"LD=mpif90" \
 	"CC=mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
@@ -32,15 +32,27 @@ hnumo-debug:
 	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
+hnumo-prof:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90 -pg" \
+	"LD=mpif90 -pg" \
+	"CC=mpicc -pg" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -pg" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include -pg" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
+	"AR=ar rv"
+
 #------------------------------------------------------------------------------
 # Flags for building NUMO on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
 # user must install gcc openmpi using Homebrew
 #------------------------------------------------------------------------------
-OMPI_COMPILE_BREW := /usr/local/bin
+#OMPI_COMPILE_BREW := /usr/local/bin
+OMPI_COMPILE_BREW := /usr/local/Cellar/open-mpi/5.0.3_1/bin
+#OMPI_COMPILE_BREW := /opt/local/bin
 P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
-SUPERLU_DIR_BREW := $(NUMO_DIR)/superlu
 
-macbook-p4est-brew:	
+hnumo-brew:	
 	$(MAKE) $(TARGET) \
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \
@@ -48,10 +60,10 @@ macbook-p4est-brew:
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
 	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas" \
+	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
-macbook-p4est-brew-dbg:	
+hnumo-brew-dbg:	
 	$(MAKE) $(TARGET) \
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \

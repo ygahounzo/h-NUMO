@@ -56,23 +56,16 @@ lrestart_file = .false.,
 ad_mlswe = 0.0, 
 botfr = 1, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 1.0e-7, !(cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction)
-dp_cutoff1 = 5.0e6, 
-dp_cutoff2 = 1.0e7, 
-dp_tau_bot = 1.0e5, 
-dp_tau_wind = 1.0e6,
 method_visc = 3,  !0=no viscosity
 visc_mlswe = 50.0,
 dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,
 matlab_viz = T,
-adjust_H_vertical_sum = 2,
-mass_exact = F,
-bcl_flux = 0.0,
-mlswe_bc_strong = T
-dg_integ_exact = T,
+adjust_H_vertical_sum = 0,
+adjust_bcl_mom_flux = 0,
+mlswe_bc_strong = T,
+dg_integ_exact = F,
 dump_data = T,
-flux_type = 'upwind',
-method_consistency = 1,
 
 !----case
 icase=1100,
@@ -85,7 +78,7 @@ ti_method = 'btp_bcl',
 	      !rk35; (Optimized RK35)
 
 ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
-kstages=5,
+kstages=4,
 
 space_method = 'dg', 
 	    	
@@ -96,7 +89,7 @@ si_dimension = '3d',
 filter_mux=0.05,
 filter_muy=0.05,
 filter_muz=0.05,
-ifilter=1,
+ifilter=0,
 filter_weight_type='erf',
 filter_basis_type='legendre',
 fname_root='mlswe',

@@ -22,8 +22,8 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df
 	use mod_basis, only: nq
-	use mod_rk_mlswe, only: ti_barotropic_rk_mlswe
-
+	use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
+	use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
 	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 
 	implicit none
@@ -51,44 +51,35 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	real, dimension(4,npoin_q) :: qbp
 	real, dimension(4,2,nq,nface) :: qbp_face
 
-	integer :: k, Iq, iquad, iface, ilr, flag_pred
+	integer :: k
 
 
 	! Output variables
-	real, dimension(2,nq, nface, nlayers) :: u_edge, v_edge
 	real, dimension(2,nq,nface,nlayers) :: dprime_face_corr
 
 	mslwe_elevation = 0.0
 
-	! Prediction step
+	! ==================== Prediction step =================================
 
-	flag_pred = 1
+	!call create_communicator_quad_layer_all(qprime_face,q_face,3,nlayers)
+	call bcl_create_communicator(qprime_face,3,nlayers,nq)
 
-	call create_communicator_quad_layer_all(qprime_face,q_face,3,nlayers)
-
-	qbp = qb
-	qbp_face = qb_face
 	qbp_df = qb_df
 
 	dpprime_visc(:,:) = qprime_df(1,:,:)
 	dpprime_visc_q(:,:) = qprime(1,:,:)
 
-	call ti_barotropic_rk_mlswe(qbp,qbp_face,qbp_df,qprime,qprime_face, qprime_df, flag_pred)
-
+	call btp_bcl_coeffs_qdf(qprime,qprime_face, qprime_df)
+	call ti_barotropic_ssprk_mlswe(qbp_df,qprime)
 
 	qprime2 = qprime
 	qprime_face2 = qprime_face
 	q_df2 = q_df
 	qprime_df2 = qprime_df
-	q2 = q
-	q_face2 = q_face
 
+	call momentum_mass(qprime2,q_df2,qprime_face2,qprime_df2,qbp_df, qprime_face)
 
-	call momentum_mass(q2,qprime2,q_df2,q_face2,qprime_face2,qbp,qbp_face,&
-        qprime_df2,qprime_face2,flag_pred,q,q_face,qbp_df,qprime, qprime_face)
-
-
-	! Correction step
+	! ==================== Correction step =================================
 
 	! Communication of qprime_face2 values within the inter-processor boundary
 	call bcl_create_communicator(qprime_face2,3,nlayers,nq)
@@ -97,24 +88,16 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_face_avg = 0.5*(qprime_face2 + qprime_face)
 
 	qprime_df_avg = 0.5*(qprime_df2 + qprime_df)
-	
-	flag_pred = 0
 
 	dpprime_visc(:,:) = qprime_df_avg(1,:,:)
 	dpprime_visc_q(:,:) = qprime_avg(1,:,:)
 
-	call ti_barotropic_rk_mlswe(qb,qb_face,qb_df,qprime_avg,qprime_face_avg, qprime_df_avg, flag_pred)
-
-
-	q2 = q
-	q_face2 = q_face
-
-	qprime2 = qprime_avg
-	qprime_face2 = qprime_face_avg
+	call btp_bcl_coeffs_qdf(qprime_avg,qprime_face_avg, qprime_df_avg)
+	call ti_barotropic_ssprk_mlswe(qb_df,qprime_avg)
 
 	!qprime_face_avg(1,:,:,:,:) = qprime_face(1,:,:,:,:) ! No correction for thickness
 
-	call thickness(q,qprime_avg, q_df, q_face, qprime_face_avg, u_edge, v_edge, dpprime_df2, flag_pred, qb_df)
+	call thickness(qprime_avg, q_df, qprime_face_avg, dpprime_df2, qb_df)
 
 	dprime_face_corr = qprime_face_avg(1,:,:,:,:)
 
@@ -130,8 +113,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_df_corr(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
 	qprime_df_corr(2:3,:,:) = qprime_df_avg(2:3,:,:)
 
-	call momentum(q,qprime_corr,q_df,q_face,qprime_face_corr,qb,qb_face,u_edge,v_edge,&
-		qprime_df_corr, qprime_face2,flag_pred,q2,q_face2,qb_df,qprime2,qprime_face)
+	call momentum(qprime_corr,q_df,qprime_face_corr,qprime_df_corr,qb_df,qprime_face)
 
 	qprime(1,:,:) = qprime_avg(1,:,:)
 	qprime(2:3,:,:) = qprime_corr(2:3,:,:)
@@ -142,9 +124,11 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	qprime_df(2:3,:,:) = qprime_df_corr(2:3,:,:)
 
 	do k = 1,nlayers
-		qp_df_out(1,:,k) = (alpha_mlswe(k)/gravity)*q_df(1,:,k)
-		qp_df_out(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
-		qp_df_out(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+		qp_df_out(1,:,k) = q_df(1,:,k) !(alpha_mlswe(k)/gravity)*q_df(1,:,k)
+		!qp_df_out(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+		!qp_df_out(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+		qp_df_out(2,:,k) = qprime_df(2,:,k) + qb_df(3,:)/qb_df(1,:)
+		qp_df_out(3,:,k) = qprime_df(3,:,k) + qb_df(4,:)/qb_df(1,:)
 		qp_df_out(4,:,k) = q_df(1,:,k)
 	end do
 

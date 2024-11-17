@@ -20,7 +20,7 @@
    51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-//#define VTK_OUTPUT
+// #define VTK_OUTPUT
 
 #include <sc.h>
 
@@ -29,6 +29,7 @@
 
 #include <p4est_bits.h>
 #include <p4est_connectivity.h>
+#include <p4est_extended.h>
 #include <p4est_mesh.h>
 #include <p6est.h>
 #include <p6est_extended.h>
@@ -36,7 +37,9 @@
 #include <p6est_lnodes.h>
 #include <p6est_vtk.h>
 
-#include <p4est_connrefine.h>
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+// #include <p4est_connrefine.h>  // Yao Gahounzo (06/24/2024) comment out to use with new p4est
 
 // define single/double precision
 #ifdef SINGLE
@@ -47,7 +50,9 @@
 
 typedef struct
 {
-  p4est_topidx_t a;
+  int col_iref; // Marker for tracking refinement
+  int col_oref; // original marker needed for flagging neighbors
+                // (so corner connection do not propagate more than one element)
 } user_data_t;
 
 typedef struct
@@ -71,12 +76,20 @@ typedef struct
   int nelz;  // number of elements in a column
   real *coord_dg;
   real *coord_cg;
-  p4est_locidx_t *intma;
+  p4est_locidx_t *intma_table;
+  p4est_locidx_t *D2C_mask;
   int num_send_recv_total;
   int *num_send_recv;
   int *nbh_proc;
   int *nbh_send_recv;
-  int log_zroots;
+  p4est_locidx_t *nbh_send_recv_multi;
+  p4est_locidx_t *nbh_send_recv_half;
+
+  int *EToNC;
+  int nNC;
+  int *NC_face;
+  int *NC_edge;
+  int FACE_LEN;
 
   p4est_locidx_t nbsido;
   p4est_locidx_t nface;
@@ -85,7 +98,7 @@ typedef struct
   p4est_locidx_t *face;
   p4est_locidx_t *face_type;
   p4est_locidx_t *node_column;
-} p4esttonuma_t;
+} p6esttonuma_t;
 
 typedef struct
 {
@@ -96,23 +109,11 @@ typedef struct
 } face_sort_t;
 
 static int my_rank;
-
-static int cmpfunc(const void *lhs, const void *rhs)
-{
-  int diff = (((face_sort_t *)lhs)->proc - ((face_sort_t *)rhs)->proc);
-  if (diff == 0)
-  {
-    diff = ((face_sort_t *)lhs)->ghostk - ((face_sort_t *)rhs)->ghostk;
-    if (diff == 0)
-    {
-      diff = ((face_sort_t *)lhs)->nf - ((face_sort_t *)rhs)->nf;
-    }
-  }
-  return diff;
-}
-
-static int refine_level = 0;
-static int refine_zlevel = 0;
+static const p4est_connect_type_t CONNECT_TYPE = P4EST_CONNECT_FULL;
+static const p8est_connect_type_t p8est_connect_type = P8EST_CONNECT_FULL;
+#ifdef VTK_OUTPUT
+int p4est_output_count = 0;
+#endif
 
 /* This function was added here by MAK to create cubed-sphere topology
  */
@@ -141,10 +142,9 @@ static p4est_connectivity_t *p4est_connectivity_new_cubed_sphere(void)
                                      NULL, &num_ctt, NULL, NULL);
 }
 
-/* This function fills COORD and INTMA arrays for NUMA */
-static void fill_coordinates_p6est(int Nrp, int Nrpv, real *r, real *rz,
-                                   p6est_t *p6est, p6est_lnodes_t *lnodes,
-                                   p4esttonuma_t *p2n)
+static void fill_coordinates_intma_p6est(int Nrp, int Nrpv, real *r, real *rz,
+                                         p6est_t *p6est, p6est_lnodes_t *lnodes,
+                                         p6esttonuma_t *p2n)
 {
 
   p6est_connectivity_t *connectivity = p6est->connectivity;
@@ -160,9 +160,9 @@ static void fill_coordinates_p6est(int Nrp, int Nrpv, real *r, real *rz,
   int n, m, l, i, c;
   real h2, h2z, eta_x, eta_y, eta_z = 0.;
   real vxyz[P8EST_CHILDREN][3];
-  size_t num_cols, zz, zy, first, last;
+  size_t num_cols, zy, first, last;
   p4est_topidx_t jt;
-  p4est_locidx_t quad_count, Ntotal;
+  p4est_locidx_t quad_count, nelem_p6est;
   sc_array_t *columns;
   p4est_tree_t *tree;
   p4est_quadrant_t *col;
@@ -173,10 +173,15 @@ static void fill_coordinates_p6est(int Nrp, int Nrpv, real *r, real *rz,
   real w[P8EST_CHILDREN];
 
   /* Allocate coordinates in DG storage */
-  Ntotal = (int)p6est->layers->elem_count;
-  p2n->coord_dg = (real *)malloc(sizeof(real) * 3 * Ntotal * Nrp * Nrp * Nrpv);
-  p2n->coord_cg = (real *)malloc(sizeof(real) * 3 * lnodes->num_local_nodes);
-  p2n->intma = malloc(sizeof(p4est_locidx_t) * lnodes->vnodes * Ntotal);
+  nelem_p6est = (int)lnodes->num_local_elements;
+  p2n->coord_dg = (real *)malloc(sizeof(real) * 3 * p2n->npoin_dg);
+  p2n->coord_cg = (real *)malloc(sizeof(real) * 3 * p2n->npoin);
+  p2n->intma_table = malloc(sizeof(p4est_locidx_t) * p2n->npoin_dg);
+  p2n->D2C_mask = malloc(sizeof(p4est_locidx_t) * p2n->npoin_dg);
+  memset(p2n->D2C_mask, 0, sizeof(p4est_locidx_t) * p2n->npoin_dg);
+  p4est_locidx_t *C2D_found =
+      malloc(sizeof(p4est_locidx_t) * lnodes->owned_count);
+  memset(C2D_found, 0, sizeof(p4est_locidx_t) * lnodes->owned_count);
 
   // loop over local trees
   for (jt = first_local_tree, quad_count = 0; jt <= last_local_tree; ++jt)
@@ -187,13 +192,17 @@ static void fill_coordinates_p6est(int Nrp, int Nrpv, real *r, real *rz,
     p6est_tree_get_vertices(connectivity, jt, v);
 
     // loop over columns in each tree
-    for (zz = 0; zz < num_cols; ++zz)
+    for (p4est_locidx_t q_v = 0; q_v < (p4est_locidx_t)num_cols; ++q_v)
     {
-      col = p4est_quadrant_array_index(columns, zz);
+      col = p4est_quadrant_array_index(columns, q_v);
       P6EST_COLUMN_GET_RANGE(col, &first, &last);
 
-      column_size = (int)(last - first);
-      // printf("%s %d\n","-------> col_size",column_size);
+      if (column_size == 0)
+        column_size = (int)(last - first);
+      else
+        // Only allow AMR in the horizontal
+        P4EST_ASSERT(column_size == (int)(last - first));
+      P4EST_ASSERT(column_size > 0);
 
       // loop over elements (layers) in each column
       for (zy = first; zy < last; zy++, quad_count++)
@@ -274,11 +283,20 @@ static void fill_coordinates_p6est(int Nrp, int Nrpv, real *r, real *rz,
                 p2n->coord_cg[3 * cg_index + i] = temp;
               }
 
-              /* intma(1:nglx,1:ngly,1:nglz,1:nelem): gives point number
-                 (1...npoin) for
-                 each point in each element (ngl*=nop*+1, nop: polynomial
-                 degree)*/
-              p2n->intma[intma_index] = cg_index + 1;
+              /* intma_table(1:nglx,1:ngly,1:nglz,1:nelem): gives point number
+                 (1...npoin) for each point in each element
+                 (ngl*=nop*+1, nop: polynomial degree)*/
+              p2n->intma_table[intma_index] = cg_index + 1;
+              p2n->intma_table[intma_index] = cg_index + 1;
+
+              /* If this is index is local, add it to the CG to DG map */
+              if (cg_index < lnodes->owned_count && C2D_found[cg_index] == 0)
+              {
+                p2n->D2C_mask[intma_index] = 1;
+                C2D_found[cg_index] = 1;
+              }
+              else
+                p2n->D2C_mask[intma_index] = 0;
             }
           }
         } // loop over element dof
@@ -289,71 +307,151 @@ static void fill_coordinates_p6est(int Nrp, int Nrpv, real *r, real *rz,
 
   } // loop over local trees
 
-  // FIXME: This assumes that all column_size are same size!
-  // FIXME: Won't work for AMR
-  P4EST_ASSERT(column_size > 0);
   p2n->nelz = column_size;
-  p2n->nelxy = Ntotal / column_size;
+  // Works since we only allow horizontal AMR
+  p2n->nelxy = column_size > 0 ? nelem_p6est / column_size : 0;
+  P4EST_ASSERT(p2n->nelxy * column_size == nelem_p6est);
+
+#ifdef P4EST_ENABLE_DEBUG
+  /* If in debug mode check the mapping is complete */
+  for (p4est_locidx_t n = 0; n < lnodes->owned_count; ++n)
+    P4EST_ASSERT(C2D_found[n] > 0);
+#endif
+  free(C2D_found);
 }
 
 /* Function added by MAK from p6est/test/test_all.c */
-
-char test_data = 'x';
-char *TEST_USER_POINTER = &test_data;
-
 void init_fn_p6est(p6est_t *p6est, p4est_topidx_t which_tree,
                    p4est_quadrant_t *col, p2est_quadrant_t *layer)
 {
-  SC_CHECK_ABORT(p6est->user_pointer == TEST_USER_POINTER,
-                 "user_pointer corruption\n");
+  user_data_t *data = (user_data_t *)layer->p.user_data;
+  data->col_iref = 0;
+  data->col_oref = 0;
 }
 
-/* To define a p6est_refine_column_t, all we have to do is take a p4est refine
- * function for uniform refinement... */
-static int p4est_refine_fn(p4est_t *p4est, p4est_topidx_t which_tree,
-                           p4est_quadrant_t *quadrant)
+void column_replace_fn(p6est_t *p6est, p4est_topidx_t which_tree,
+                       int num_outcolumns, int num_outlayers,
+                       p4est_quadrant_t *outcolumns[],
+                       p2est_quadrant_t *outlayers[], int num_incolumns,
+                       int num_inlayers, p4est_quadrant_t *incolumns[],
+                       p2est_quadrant_t *inlayers[])
+{
+  if (num_outcolumns == 1)
+  {
+    SC_ASSERT(num_outcolumns == 1);
+    SC_ASSERT(num_outlayers == 1);
+
+    SC_ASSERT(num_incolumns == P4EST_CHILDREN);
+    SC_ASSERT(num_inlayers == P4EST_CHILDREN);
+
+    p2est_quadrant_t *out_layer = outlayers[0];
+    user_data_t *out_data = (user_data_t *)out_layer->p.user_data;
+
+    for (int i = 0; i < num_inlayers; ++i)
+    {
+      p2est_quadrant_t *in_layer = inlayers[i];
+      user_data_t *in_data = (user_data_t *)in_layer->p.user_data;
+      in_data->col_iref = out_data->col_iref;
+    }
+  }
+  else
+  {
+    SC_ASSERT(num_outcolumns == P4EST_CHILDREN);
+    SC_ASSERT(num_outlayers == 1);
+
+    SC_ASSERT(num_incolumns == 1);
+    SC_ASSERT(num_inlayers == 1);
+
+    p2est_quadrant_t *out_layer = outlayers[0];
+    user_data_t *out_data = (user_data_t *)out_layer->p.user_data;
+
+    p2est_quadrant_t *in_layer = inlayers[0];
+    user_data_t *in_data = (user_data_t *)in_layer->p.user_data;
+    in_data->col_iref = out_data->col_iref;
+#ifdef P4EST_ENABLE_DEBUG
+    num_outlayers = 4; // do to bug in p4est noted above
+    // In debug mode make sure we are uniform in horizontal
+    for (int i = 0; i < num_outlayers; ++i)
+    {
+      p2est_quadrant_t *out_layer2 = outlayers[i];
+      user_data_t *out_data2 = (user_data_t *)out_layer2->p.user_data;
+      SC_ASSERT(out_data->col_iref = out_data2->col_iref);
+    }
+#endif
+  }
+}
+
+/* If refine is column is marked for refinment */
+static int coarsen_column_fn(p6est_t *p6est, p4est_topidx_t which_tree,
+                             p4est_quadrant_t *columns[])
 {
 
-  /* printf("%s %d","---> refine_level",refine_level); */
-
-  /* if (quadrant->level >= refine_level) { */
-  /*   return 0; */
-  /* } */
-
+  for (p4est_locidx_t i = 0; i < P4EST_CHILDREN; i++)
+  {
+    p4est_quadrant_t *column = columns[i];
+    size_t first, last;
+    P6EST_COLUMN_GET_RANGE(column, &first, &last);
+    p2est_quadrant_t *layer = p2est_quadrant_array_index(p6est->layers, first);
+    user_data_t *data = (user_data_t *)layer->p.user_data;
+#ifdef P4EST_ENABLE_DEBUG
+    for (size_t q_v = first; q_v < last; ++q_v)
+    {
+      p2est_quadrant_t *layer2 = p2est_quadrant_array_index(p6est->layers, q_v);
+      user_data_t *data2 = (user_data_t *)layer2->p.user_data;
+      SC_ASSERT(data->col_iref == data2->col_iref);
+      SC_ASSERT(data->col_oref == data2->col_oref);
+    }
+#endif
+    if (data->col_iref >= 0)
+      return 0;
+  }
   return 1;
 }
 
-/* and wrap it.*/
+/* If refine is column is marked for refinment below current level */
+static int refine_init_column_fn(p6est_t *p6est, p4est_topidx_t which_tree,
+                                 p4est_quadrant_t *column)
+{
+  size_t first, last;
+  P6EST_COLUMN_GET_RANGE(column, &first, &last);
+  p2est_quadrant_t *layer = p2est_quadrant_array_index(p6est->layers, first);
+  user_data_t *data = (user_data_t *)layer->p.user_data;
+  int r = data->col_iref > column->level;
+#ifdef P4EST_ENABLE_DEBUG
+  // In debug mode make sure we are uniform in horizontal
+  for (size_t q_v = first; q_v < last; ++q_v)
+  {
+    p2est_quadrant_t *layer2 = p2est_quadrant_array_index(p6est->layers, q_v);
+    user_data_t *data2 = (user_data_t *)layer2->p.user_data;
+    SC_ASSERT(data->col_iref == data2->col_iref);
+  }
+#endif
+  return r;
+}
+
 static int refine_column_fn(p6est_t *p6est, p4est_topidx_t which_tree,
                             p4est_quadrant_t *column)
 {
-  return p4est_refine_fn(p6est->columns, which_tree, column);
-}
-
-static int refine_layer_fn(p6est_t *p6est, p4est_topidx_t which_tree,
-                           p4est_quadrant_t *column, p2est_quadrant_t *layer)
-{
-  /* p4est_topidx_t      tohash[4]; */
-  /* unsigned            hash; */
-
-  /* tohash[0] = (p4est_topidx_t) column->x; */
-  /* tohash[1] = (p4est_topidx_t) column->y; */
-  /* tohash[2] = (p4est_topidx_t) layer->z; */
-  /* tohash[3] = (((p4est_topidx_t) column->level) << 16) | */
-  /*   ((p4est_topidx_t) layer->level); */
-
-  /* hash = p4est_topidx_hash4 (tohash); */
-
-  //  return (layer->level < refine_zlevel);// && !((int) hash % 3));
-  return 1;
+  size_t first, last;
+  P6EST_COLUMN_GET_RANGE(column, &first, &last);
+  p2est_quadrant_t *layer = p2est_quadrant_array_index(p6est->layers, first);
+  user_data_t *data = (user_data_t *)layer->p.user_data;
+  int r = data->col_iref > 0;
+#ifdef P4EST_ENABLE_DEBUG
+  // In debug mode make sure we are uniform in horizontal
+  for (size_t q_v = first; q_v < last; ++q_v)
+  {
+    p2est_quadrant_t *layer2 = p2est_quadrant_array_index(p6est->layers, q_v);
+    user_data_t *data2 = (user_data_t *)layer2->p.user_data;
+    SC_ASSERT(data->col_iref == data2->col_iref);
+  }
+#endif
+  return r;
 }
 
 /* Keep state of p4est */
 static p6est_t *stored_p6est = NULL;
 extern mpi_context_t mpi_context;
-
-static int FACE_LEN;
-static int ORIENT;
 
 /* End of p6est section */
 
@@ -362,671 +460,872 @@ void p6esttonuma_init
 #else
 void p6esttonuma_init_
 #endif
-    (int *nref_levs, int *nref_zlevs, int *num_hroot, int *num_zroot, int *nnop,
-     int *nnopz, real *xgl, real *xglz, int *is_cube, int *nnx, int *nny,
-     int *nnz, int *nis_dg, int *xperiodic_flg, int *yperiodic_flg,
-     int *mFACE_LEN, int *mORIENT, int* iboundary, p4esttonuma_t **p2n)
+    (int *nref_levs, int *nref_zlevs, int *is_non_conforming_flg,
+     int *refine_columns, int *num_hroot, int *num_zroot, int *min_zlevel,
+     int *is_cube, int *nnx, int *nny, int *nnz, int *xperiodic_flg,
+     int *yperiodic_flg, int *iboundary, p6esttonuma_t **p2n)
 {
 
   /* Here goes the p6est stuff */
 
-  p4est_connectivity_t *conn4, *conn_init;
-  p6est_connectivity_t *conn;
   p6est_t *p6est;
-  p6est_ghost_t *ghost_p6est;
-  p6est_lnodes_t *lnodes_p6est;
-  sc_array_t *columns;
-  p4est_tree_t *tree;
-  p4est_topidx_t jt;
 
   /* And here goes the p4est stuff */
-
   mpi_context_t *mpi = &mpi_context;
-  p4est_t *p4est;
-  p4est_ghost_t *ghost_p4est;
-  p4est_mesh_t *mesh_p4est;
 
-  int nref_levels, nref_zlevels;
-  int nop, nopz, num_cols;
-  int zz, i;
-  int nx, ny, nz;
-  int num_send_recv_total, num_send_recv_offset, num_nbh;
-  p4est_locidx_t q, nq, sk, skb;
-  int f, nf;
-  int is_dg;
-  p4est_locidx_t num_physical_boundary_faces;
-  p4est_locidx_t num_processor_boundary_faces;
-
-  nref_levels = *nref_levs;
-  nref_zlevels = *nref_zlevs;
-  int num_hroots = *num_hroot;
-  int num_zroots = *num_zroot;
-  nop = *nnop;
-  nopz = *nnopz;
-  nx = *nnx;
-  ny = *nny;
-  nz = *nnz;
-  is_dg = *nis_dg;
-  int xperiodic = *xperiodic_flg;
-  int yperiodic = *yperiodic_flg;
-  int is_geometry_cube = *is_cube;
-  FACE_LEN = *mFACE_LEN;
-  ORIENT = *mORIENT;
-
-  *p2n = malloc(sizeof(p4esttonuma_t));
+  p4est_locidx_t num_zroots = *num_zroot;
 
   /* Select p8est connectivity based on space_method*/
-  p4est_connect_type_t connect_type;
-  connect_type = P4EST_CONNECT_FULL;
+  p4est_connectivity_t *conn4 = NULL;
 
   /*
    * Here goes the p6est stuff
    */
+  if (!stored_p6est)
   {
-    if (!stored_p6est)
+    double *topVertices = NULL;
+    double height[3] = {0, 0, 1};
+    int is_geometry_cube = *is_cube;
+    p6est_connectivity_t *conn = NULL;
+    if (!is_geometry_cube)
     {
-      if (!is_geometry_cube)
+      // create connectivity and forest structures
+      p4est_connectivity_t *conn_init = p4est_connectivity_new_cubed_sphere();
+
+      // conn4 = p4est_connectivity_new_cubed();
+      conn4 = p4est_connectivity_refine(conn_init, *num_hroot);
+      p4est_connectivity_destroy(conn_init);
+
+      // create top vertices by scaling original vertices
+      topVertices = malloc(sizeof(double) * conn4->num_vertices * 3);
+      for (p4est_locidx_t i = 0; i < conn4->num_vertices * 3; ++i)
       {
-        // create connectivity and forest structures
-        conn_init = p4est_connectivity_new_cubed_sphere();
-
-        // conn4 = p4est_connectivity_new_cubed();
-        conn4 = p4est_connectivity_refine(conn_init, num_hroots);
-        // printf("%s","conn4 created\n");
-
-        // create top vertices by scaling original vertices
-        double *topVertices = malloc(sizeof(double) * conn4->num_vertices * 3);
-        for (i = 0; i < conn4->num_vertices * 3; ++i)
-        {
-          topVertices[i] = 2 * conn4->vertices[i];
-        }
-        // printf("%s","vertices created\n");
-
-        // create p6est connectivity
-        conn = p6est_connectivity_new(conn4, topVertices, NULL);
-        // printf("%s","connectivity created\n");
-
-        p4est_connectivity_destroy(conn4);
-        p4est_connectivity_destroy(conn_init);
+        topVertices[i] = 2 * conn4->vertices[i];
       }
-      else
-      {
-        // here create flow-in-the-box mesh
-        conn4 = p4est_connectivity_new_brick(nx, ny, xperiodic, yperiodic);
-        double height[3] = {0., 0., 1.};
-        conn = p6est_connectivity_new(conn4, NULL, height);
-        p4est_connectivity_destroy(conn4);
-        num_zroots = nz; // redundant information in the input!!
-      }
-
-      /* FXG modification suggested by Alex */
-      int log_zroot;
-      if (num_zroots > 1)
-        log_zroot = (int)floor(log2(num_zroots - 1)) + 1;
-      else
-        log_zroot = 0;
-      (*p2n)->log_zroots = log_zroot;
-
-      p6est = p6est_new_ext(mpi->mpicomm, conn, 0, 0, log_zroot, num_zroots, 1,
-                            3, init_fn_p6est, TEST_USER_POINTER);
-      // printf("%s","p6est created\n");
+      // printf("%s","vertices created\n");
     }
     else
     {
-      p6est = stored_p6est;
-      conn = p6est->connectivity;
+      // here create flow-in-the-box mesh
+      int nx = *nnx;
+      int ny = *nny;
+      int nz = *nnz;
+      conn4 =
+          p4est_connectivity_new_brick(nx, ny, *xperiodic_flg, *yperiodic_flg);
+      num_zroots = nz; // redundant information in the input!!
     }
 
-    // refinement levels
-    refine_level = nref_levels;
-    refine_zlevel = nref_zlevels;
+    conn = p6est_connectivity_new(conn4, topVertices, height);
+    p4est_connectivity_destroy(conn4);
+    p6est = p6est_new_ext(mpi->mpicomm, conn, 0, *nref_levs,
+                          *min_zlevel + *nref_zlevs, num_zroots, 1,
+                          sizeof(user_data_t), init_fn_p6est, NULL);
+    if (topVertices)
+    {
+      free(topVertices);
+      topVertices = NULL;
+    }
+  }
+  else
+    p6est = stored_p6est;
 
-    /*
-     * Here goes the refinement after initial mesh creation
-     */
+  /*
+   * Here goes the refinement after initial mesh creation
+   */
+  if (*is_non_conforming_flg)
+  {
+    /* initial refinement data into the quadrant data */
+    p4est_t *p4est = p6est->columns;
+    p4est_ghost_t *ghost = p4est_ghost_new(p4est, CONNECT_TYPE);
+    p4est_mesh_t *mesh = p4est_mesh_new_ext(p4est, ghost, 1, 0, CONNECT_TYPE);
 
-    // printf("[p6estnuma] %s %d %d\n","------> refine horizontal, vertical",
-    // 	nref_levels,nref_zlevels);
+    /* Mark the columns for refinement */
+    for (p4est_locidx_t q_h = 0; q_h < p4est->local_num_quadrants; ++q_h)
+    {
+      /*  find which quadrant */
+      p4est_quadrant_t *col = p4est_mesh_get_quadrant(p4est, mesh, q_h);
+      size_t first, last;
+      P6EST_COLUMN_GET_RANGE(col, &first, &last);
+      for (size_t q_v = first; q_v < last; ++q_v)
+      {
+        p2est_quadrant_t *layer =
+            p2est_quadrant_array_index(p6est->layers, q_v);
+        user_data_t *data = (user_data_t *)layer->p.user_data;
+        data->col_iref = refine_columns[q_h];
+      }
+    }
 
-    // refine in horizontal
-    for (i = 0; i < nref_levels; ++i)
-      p6est_refine_columns(p6est, 0, refine_column_fn, init_fn_p6est);
+    p6est_refine_columns_ext(p6est, 1, -1, refine_init_column_fn, NULL,
+                             column_replace_fn);
 
-    // refine in vertical
-    for (i = 0; i < nref_zlevels; ++i)
-      p6est_refine_layers(p6est, 0, refine_layer_fn, init_fn_p6est);
+    p4est_mesh_destroy(mesh);
+    mesh = NULL;
+    p4est_ghost_destroy(ghost);
+    ghost = NULL;
+  }
 
-    // partition grid
-    p6est_partition(p6est, NULL);
+  // balance after refinement
+  p6est_balance(p6est, p8est_connect_type, NULL);
+
+  // partition grid
+  p6est_partition_ext(p6est, 1, NULL);
 
 // Write vtk file
-//#ifdef VTK_OUTPUT
-    p6est_vtk_write_file(p6est, "p6est_test_initial"); /* Commented by FXG */
-    //#endif
+#ifdef VTK_OUTPUT
+  char output[1024];
+  sprintf(output, "p6est_mesh_%05d", p4est_output_count);
+  p6est_vtk_write_file(p6est, output); /* Commented by FXG */
+  ++p4est_output_count;
+#endif
 
-    /* Create the ghost layer to learn about parallel neighbors. */
-    ghost_p6est = p6est_ghost_new(p6est, connect_type);
+  stored_p6est = p6est;
+}
 
-    /* Create a node numbering for continuous linear finite elements. */
-    lnodes_p6est = p6est_lnodes_new(p6est, ghost_p6est, nop);
+#ifdef ibmcompiler
+void p6esttonuma_fill_data
+#else
+void p6esttonuma_fill_data_
+#endif
+    (int *nnop, int *nnopz, real *xgl, real *xglz, int *is_cube, int *nis_dg,
+     int *mFACE_LEN, int *iboundary, p6esttonuma_t **p2n)
+{
 
-    p4est = p6est->columns;
-    ghost_p4est = p4est_ghost_new(p4est, connect_type);
+  int is_geometry_cube = *is_cube;
 
-    mesh_p4est = p4est_mesh_new(p4est, ghost_p4est, connect_type);
-    /* Get polynomial order */
-    (*p2n)->nop = nop;
-    (*p2n)->nopz = nopz;
+  /* Here goes the p6est stuff */
 
-    /* Get local (on rank) number of grid points */
-    int npoin_p6est = lnodes_p6est->num_local_nodes;
-    (*p2n)->npoin = npoin_p6est;
+  p6est_t *p6est = stored_p6est;
+  SC_ASSERT(p6est);
 
-    /* Get nelem: number of elements on the processor */
-    int nelem_p6est = (int)p6est->layers->elem_count;
-    (*p2n)->nelem = nelem_p6est;
-    (*p2n)->npoin_dg = (*p2n)->nelem * (nop + 1) * (nop + 1) * (nopz + 1);
+  /* And here goes the p4est stuff */
 
-    /* Get dg coordinates and intma */
-    fill_coordinates_p6est(nop + 1, nopz + 1, xgl, xglz, p6est, lnodes_p6est,
-                           *p2n);
+  mpi_context_t *mpi = &mpi_context;
 
-    // debug
-    /*printf("%s","coord_cg\n");
-      for(ll=0; ll<npoin_p6est; ++ll){
-      printf("%d %f %f %f\n",ll,
-      (*p2n)->coord[3*ll+0],(*p2n)->coord[3*ll+1],(*p2n)->coord[3*ll+2]);
-      }*/
+  int nop = *nnop;
+  int nopz = *nnopz;
+  int is_dg = *nis_dg;
+  *p2n = malloc(sizeof(p6esttonuma_t));
 
-    /*
-     *  Get column structure
-     */
+  int FACE_LEN = (*p2n)->FACE_LEN = *mFACE_LEN;
 
-    (*p2n)->nz = (*p2n)->nelz * (*p2n)->nopz + 1;
-    (*p2n)->ncol = (*p2n)->npoin / (*p2n)->nz;
+  /* Create the ghost layer to learn about parallel neighbors. */
+  p6est_ghost_t *ghost_p6est = p6est_ghost_new(p6est, CONNECT_TYPE);
 
-    (*p2n)->node_column = malloc(sizeof(int) * (*p2n)->ncol * (*p2n)->nz);
+  /* Create a node numbering for continuous linear finite elements. */
+  p6est_lnodes_t *lnodes = p6est_lnodes_new(p6est, ghost_p6est, nop);
 
-    // loop over columns to fill node_column
-    for (zz = 0; zz < (*p2n)->npoin; ++zz)
-      (*p2n)->node_column[zz] =
-          zz + 1; // simplification due to inherent p6est node numbering scheme
+  p4est_t *p4est = p6est->columns;
+  p4est_ghost_t *ghost_p4est = p4est_ghost_new(p4est, CONNECT_TYPE);
 
-    /*
-     * Count boundary faces
-     */
-    num_physical_boundary_faces = 0;
-    num_processor_boundary_faces = 0;
+  p4est_lnodes_t *lnodes_p4est = p4est_lnodes_new(p4est, ghost_p4est, nop);
+  p4est_lnodes_t *fnodes_p4est = p4est_lnodes_new(p4est, ghost_p4est, -1);
+  p4est_lnodes_t *cnodes_p4est = is_dg ? fnodes_p4est : lnodes_p4est;
 
-    if (nopz > 0)
+  p4est_mesh_t *mesh_p4est = p4est_mesh_new(p4est, ghost_p4est, CONNECT_TYPE);
+  p4est_locidx_t nquads_h = mesh_p4est->local_num_quadrants;
+
+  /* Get polynomial order */
+  (*p2n)->nop = nop;
+  (*p2n)->nopz = nopz;
+
+  /* Get local (on rank) number of grid points */
+  (*p2n)->npoin = lnodes->num_local_nodes;
+
+  /* Get nelem: number of elements on the processor */
+  int nelem_p6est = (*p2n)->nelem = (int)lnodes->num_local_elements;
+
+  (*p2n)->npoin_dg = (*p2n)->nelem * (nop + 1) * (nop + 1) * (nopz + 1);
+
+  fill_coordinates_intma_p6est(nop + 1, nopz + 1, xgl, xglz, p6est, lnodes,
+                               *p2n);
+
+  int *EToNC = (*p2n)->EToNC = malloc(sizeof(int) * nelem_p6est);
+
+  int nNC = 0;
+  for (int n = 0; n < nelem_p6est; ++n)
+    if (lnodes->face_code[n])
     {
-      const p4est_topidx_t first_local_tree = p6est->columns->first_local_tree;
-      const p4est_topidx_t last_local_tree = p6est->columns->last_local_tree;
-
-      for (jt = first_local_tree; jt <= last_local_tree; ++jt)
-      {
-        tree = p4est_tree_array_index(p6est->columns->trees, jt);
-        columns = &tree->quadrants;
-        num_cols = (int)columns->elem_count;
-        // each column has a boundary at the top and bottom only
-        num_physical_boundary_faces += 2 * num_cols;
-      }
-    }
-    /*
-     * nbsido: number of (physical) domain boundary faces on the processor
-     */
-
-    // Count processor boundary faces
-    for (q = 0; q < mesh_p4est->local_num_quadrants; ++q)
-    {
-      for (f = 0; f < P4EST_FACES; ++f)
-      {
-        nq = mesh_p4est->quad_to_quad[P4EST_FACES * q + f];
-        nf = mesh_p4est->quad_to_face[P4EST_FACES * q + f];
-
-        if (nq == q && nf == f && is_geometry_cube)
-        {
-          num_physical_boundary_faces += (*p2n)->nelz;
-        }
-        else if (nq >= mesh_p4est->local_num_quadrants)
-        {
-          num_processor_boundary_faces += (*p2n)->nelz;
-        }
-      }
-    }
-
-    (*p2n)->nbsido = num_physical_boundary_faces;
-
-    /*
-     * nface: number of unique faces on the processor (interior faces +
-     * processor
-     * boundary faces + domain boundary faces, see domain_decomp_metis.f90, line
-     * 1438)
-     */
-    (*p2n)->nface = (P8EST_FACES * nelem_p6est - num_physical_boundary_faces -
-                     num_processor_boundary_faces) /
-                        2 +
-                    num_physical_boundary_faces + num_processor_boundary_faces;
-
-    /*
-     * nboun: number of domain and processor boundary faces on the processor
-     * (processor boundary faces + domain boundary faces, see
-     * domain_decomp_metis.f90, line 1440)
-     */
-    (*p2n)->nboun =
-        /*num_physical_boundary_faces +*/ num_processor_boundary_faces;
-
-    /*/
-      printf("%s\n","-----------------");
-      printf("%s\n","-----------------");
-      printf("%d %d\n",P8EST_FACES , nelem_p6est);
-      printf("%s %d\n","proc_faces",num_processor_boundary_faces);
-      printf("%s %d\n","phys_faces",num_physical_boundary_faces);
-      printf("%s %d\n","nface",(*p2n)->nface);
-      printf("%s %d\n","nboun",(*p2n)->nboun);
-      printf("%s\n","-----------------");
-      printf("%s\n","-----------------");
-    */
-
-    my_rank = mpi->mpirank;
-
-    /**********************
-     * create faces
-     ***********************/
-    p4est_locidx_t ncolz = (*p2n)->nelz;
-    p4est_locidx_t nquads = mesh_p4est->local_num_quadrants;
-    p4est_locidx_t nghosts = mesh_p4est->ghost_num_quadrants;
-    p4est_locidx_t *intma_face =
-        malloc(sizeof(p4est_locidx_t) * P8EST_FACES * ncolz * nquads);
-    face_sort_t *mghost = malloc(sizeof(face_sort_t) * 8 * ncolz * nghosts);
-
-    memset(intma_face, 0,
-           sizeof(p4est_locidx_t) * P8EST_FACES * ncolz * nquads);
-
-    /*face orientation transformation array p4est->numa*/
-    static const int transform[6] = {4, 5, 2, 3, 0, 1};
-
-    /*fill up intma_face*/
-    int total_ghosts = 0, qq;
-    for (q = 0, sk = 0; q < nquads; ++q)
-    {
-      for (f = 0; f < P4EST_FACES; ++f)
-      {
-        nq = mesh_p4est->quad_to_quad[P4EST_FACES * q + f];
-        nf = mesh_p4est->quad_to_face[P4EST_FACES * q + f];
-
-        if (nq == q && nf == f)
-        {
-          // should not be here if not a cube geometry
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            intma_face[P8EST_FACES * qq + f] = sk;
-            sk++;
-          }
-        }
-        else if (nq >= nquads)
-        {
-          p4est_locidx_t ghostid = nq - nquads;
-          p4est_locidx_t ghostp = mesh_p4est->ghost_to_proc[ghostid];
-          p4est_quadrant_t *ghostquad =
-              p4est_quadrant_array_index(&ghost_p4est->ghosts, (size_t)ghostid);
-          p4est_locidx_t ghostk = ghostquad->p.piggy3.local_num;
-
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            intma_face[P8EST_FACES * qq + f] = sk;
-
-            mghost[total_ghosts].proc = ghostp;
-            if (my_rank > ghostp)
-            { // sort by neighbor's
-              int nqq = ghostk * ncolz + zz;
-              mghost[total_ghosts].ghostk = nqq;
-              mghost[total_ghosts].nf = nf;
-            }
-            else
-            { // sort by ours
-              mghost[total_ghosts].ghostk = qq;
-              mghost[total_ghosts].nf = f;
-            }
-            mghost[total_ghosts].face = sk;
-            total_ghosts++;
-
-            sk++;
-          }
-        }
-        else if (q < nq)
-        {
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            intma_face[P8EST_FACES * qq + f] = sk;
-            qq = nq * ncolz + zz;
-            intma_face[P8EST_FACES * qq + nf] = sk;
-            sk++;
-          }
-        }
-      }
-
-      // top-bottom of cubes
-      if (nopz > 0)
-      {
-        for (zz = 0; zz < ncolz; zz++)
-        {
-          qq = q * ncolz + zz;
-          if (zz == 0)
-            intma_face[P8EST_FACES * qq + 4] = sk++;
-          if (zz < ncolz - 1)
-          {
-            intma_face[P8EST_FACES * qq + 5] = sk;
-            intma_face[P8EST_FACES * (qq + 1) + 4] = sk;
-            sk++;
-          }
-          if (zz == ncolz - 1)
-            intma_face[P8EST_FACES * qq + 5] = sk++;
-        }
-      }
-    }
-
-    /*
-     * bsido(1:6,1:nbsido): domain boundary data:
-     * bsido(1:4,i): point number (1...npoin) of the four corners of the face i
-     *               (counter-clock wise when seen from outside of the domain)
-     * bsido(5,i): element (1...nelem) to which face i belongs (only one because
-     *             boundary face!)
-     * bsido(6,i): boundary condition flag for face i (=4 for solid wall
-     * boundary)
-     */
-    (*p2n)->bsido = malloc(sizeof(p4est_locidx_t) * 6 * (*p2n)->nbsido);
-    memset((*p2n)->bsido, 0, sizeof(p4est_locidx_t) * 6 * (*p2n)->nbsido);
-    /*
-     * face(1:8, 1:nface): face data:
-     * face(1:4,i): point number (1...npoin) of the four corners of the face i
-     *               (counter-clock wise when seen from outside of the domain)
-     * face(5,i): local face relative to left element
-     * face(6,i): local face relative to right element
-     * face(7,i): element to left
-     * face(8,i): element to the right or boundary condition flag (-bsido(6,sk))
-     */
-    (*p2n)->face = malloc(sizeof(p4est_locidx_t) * FACE_LEN * (*p2n)->nface);
-    (*p2n)->face_type = malloc(sizeof(p4est_locidx_t) * (*p2n)->nface);
-
-    memset((*p2n)->face, 0, sizeof(p4est_locidx_t) * FACE_LEN * (*p2n)->nface);
-    memset((*p2n)->face_type, 0, sizeof(p4est_locidx_t) * (*p2n)->nface);
-
-    for (q = 0, skb = 0; q < nquads; ++q)
-    {
-      for (f = 0; f < P4EST_FACES; ++f)
-      {
-        nq = mesh_p4est->quad_to_quad[P4EST_FACES * q + f];
-        nf = mesh_p4est->quad_to_face[P4EST_FACES * q + f];
-
-        if (nq == q && nf == f)
-        {
-          // should not be here if not a cube geometry
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            sk = intma_face[P8EST_FACES * qq + f];
-            (*p2n)->face_type[sk] = 4;
-
-            (*p2n)->face[FACE_LEN * sk + 4] = transform[f] + 1;
-            (*p2n)->face[FACE_LEN * sk + 5] = 0;
-            (*p2n)->face[FACE_LEN * sk + 6] = qq + 1;
-            (*p2n)->face[FACE_LEN * sk + 7] = -iboundary[transform[f]];
-
-            (*p2n)->bsido[6 * skb + 4] = qq + 1;
-            (*p2n)->bsido[6 * skb + 5] = iboundary[transform[f]];
-            skb++;
-          }
-        }
-        else if (nq >= nquads)
-        {
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            sk = intma_face[P8EST_FACES * qq + f];
-            (*p2n)->face_type[sk] = 2;
-
-            (*p2n)->face[FACE_LEN * sk + 4] = transform[f] + 1;
-            (*p2n)->face[FACE_LEN * sk + 5] = 0;
-            (*p2n)->face[FACE_LEN * sk + 6] = qq + 1;
-            (*p2n)->face[FACE_LEN * sk + 7] = 0;
-          }
-        }
-        else if (q < nq || (q == nq && f < nf))
-        {
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            sk = intma_face[P8EST_FACES * qq + f];
-            (*p2n)->face_type[sk] = 1;
-
-            (*p2n)->face[FACE_LEN * sk + 4] = transform[f] + 1;
-            (*p2n)->face[FACE_LEN * sk + 6] = qq + 1;
-          }
-        }
-        else
-        {
-          for (zz = 0; zz < ncolz; zz++)
-          {
-            qq = q * ncolz + zz;
-            sk = intma_face[P8EST_FACES * qq + f];
-            (*p2n)->face_type[sk] = 1;
-
-            (*p2n)->face[FACE_LEN * sk + 5] = transform[f] + 1;
-            (*p2n)->face[FACE_LEN * sk + 7] = qq + 1;
-          }
-        }
-      }
-
-      // top-bottom of cubes
-      if (nopz > 0)
-      {
-        for (zz = 0; zz < ncolz; zz++)
-        {
-          qq = q * ncolz + zz;
-          if (zz == 0)
-          {
-            sk = intma_face[P8EST_FACES * qq + 4];
-            (*p2n)->face_type[sk] = 4;
-
-            (*p2n)->face[FACE_LEN * sk + 4] = transform[4] + 1;
-            (*p2n)->face[FACE_LEN * sk + 6] = qq + 1;
-            (*p2n)->face[FACE_LEN * sk + 5] = 0;
-            (*p2n)->face[FACE_LEN * sk + 7] = -iboundary[transform[4]];
-
-            (*p2n)->bsido[6 * skb + 4] = qq + 1;
-            (*p2n)->bsido[6 * skb + 5] = iboundary[transform[4]];
-            skb++;
-          }
-          if (zz < ncolz - 1)
-          {
-            sk = intma_face[P8EST_FACES * qq + 5];
-            (*p2n)->face_type[sk] = 1;
-
-            (*p2n)->face[FACE_LEN * sk + 4] = transform[5] + 1;
-            (*p2n)->face[FACE_LEN * sk + 6] = qq + 1;
-            (*p2n)->face[FACE_LEN * sk + 5] = transform[4] + 1;
-            (*p2n)->face[FACE_LEN * sk + 7] = (qq + 1) + 1;
-          }
-          if (zz == ncolz - 1)
-          {
-            sk = intma_face[P8EST_FACES * qq + 5];
-            (*p2n)->face_type[sk] = 4;
-
-            (*p2n)->face[FACE_LEN * sk + 4] = transform[5] + 1;
-            (*p2n)->face[FACE_LEN * sk + 6] = qq + 1;
-            (*p2n)->face[FACE_LEN * sk + 5] = 0;
-            (*p2n)->face[FACE_LEN * sk + 7] = -iboundary[transform[5]];
-
-            (*p2n)->bsido[6 * skb + 4] = qq + 1;
-            (*p2n)->bsido[6 * skb + 5] = iboundary[transform[5]];
-            skb++;
-          }
-        }
-      }
-    }
-    /*/
-    //faces
-    for(sk = 0; sk < (*p2n)->nface; ++sk)
-    {
-    printf("%4d. ", sk+1);
-    for(f = 0;f < 8;f++)
-    printf("%7d ",(*p2n)->face[sk*FACE_LEN+f]);
-    printf("%7d ", (*p2n)->face_type[sk]);
-    printf("\n");
-    }
-    //bsido
-    for(sk = 0; sk < (*p2n)->nbsido; ++sk)
-    {
-    printf("%4d. ", sk+1);
-    for(f = 0;f < 6;f++)
-    printf("%7d ",(*p2n)->bsido[sk*6+f]);
-    printf("\n");
-    }
-    */
-    /**************************************
-     * Parallel processing stuff goes here
-     **************************************/
-    num_nbh = (int)lnodes_p6est->sharers->elem_count;
-    (*p2n)->num_send_recv = malloc(sizeof(int) * num_nbh);
-    (*p2n)->nbh_proc = malloc(sizeof(int) * num_nbh);
-    /*
-     * Fill the sharing information for CG
-     */
-    if (!is_dg)
-    {
-      for (zz = 0, num_send_recv_total = 0, num_nbh = 0;
-           zz < (int)lnodes_p6est->sharers->elem_count; ++zz)
-      {
-        p6est_lnodes_rank_t *lrank =
-            p6est_lnodes_rank_array_index(lnodes_p6est->sharers, zz);
-
-        if (lrank->rank != mpi->mpirank)
-        {
-          (*p2n)->nbh_proc[num_nbh] = lrank->rank + 1;
-          (*p2n)->num_send_recv[num_nbh] = (int)lrank->shared_nodes.elem_count;
-
-          num_send_recv_total += (int)lrank->shared_nodes.elem_count;
-          num_nbh += 1;
-        }
-      }
-
-      /* num_send_recv_total: total number of points to be communicated with all
-       * neighboring processors
-       */
-      (*p2n)->num_send_recv_total = num_send_recv_total;
-
-      /* num_nbh: number of neighboring processors */
-      (*p2n)->num_nbh = num_nbh;
-
-      /* nbh_send_recv(1:num_send_recv_total): lcoal number of the point that
-       * must
-       * be sent/received sorted in a global ordering (e.g.:
-       * nbh_send_recv(1:num_send_recv(1)) are the points to be communicated
-       * with
-       * processor nbh_proc(1).
-       * nbh_send_recv(num_send_recv(1)+1:num_send_recv(1)+num_send_recv(2)) are
-       * the points to be communicated with processor nbh_proc(2)...)
-       */
-
-      (*p2n)->nbh_send_recv =
-          malloc(sizeof(p4est_locidx_t) * num_send_recv_total);
-      for (zz = 0, num_send_recv_offset = 0;
-           zz < (int)lnodes_p6est->sharers->elem_count; ++zz)
-      {
-        p6est_lnodes_rank_t *lrank =
-            p6est_lnodes_rank_array_index(lnodes_p6est->sharers, zz);
-        const int nshared = (int)lrank->shared_nodes.elem_count;
-        int jn;
-
-        if (lrank->rank != mpi->mpirank)
-        {
-          for (jn = 0; jn < nshared; ++jn)
-          {
-            int gl = (int)*(p4est_locidx_t *)sc_array_index_int(
-                &lrank->shared_nodes, jn);
-            (*p2n)->nbh_send_recv[num_send_recv_offset + jn] = gl + 1;
-          }
-          num_send_recv_offset += nshared;
-        }
-      }
+      EToNC[n] = nNC;
+      ++nNC;
     }
     else
+      EToNC[n] = -1;
+  (*p2n)->nNC = nNC;
+
+  /* For NC elements, determine how the faces/edges are hanging */
+  int *NC_face = (*p2n)->NC_face = malloc(sizeof(int) * nNC * P8EST_FACES);
+  int *NC_edge = (*p2n)->NC_edge = malloc(sizeof(int) * nNC * P8EST_EDGES);
+
+  int faces_p6est[P8EST_FACES];
+  int edges_p6est[P8EST_EDGES];
+
+  int m = 0;
+  for (int n = 0; n < nelem_p6est; ++n)
+    if (lnodes->face_code[n])
     {
-      /*
-       * Fill the sharing information for DG
-       */
-      (*p2n)->nbh_send_recv = malloc(sizeof(p4est_locidx_t) * total_ghosts);
+      p6est_lnodes_decode(lnodes->face_code[n], faces_p6est, edges_p6est);
 
-      qsort(mghost, total_ghosts, sizeof(face_sort_t), cmpfunc);
+      // Reorder faces and edges from p6est -> numa / p8est ordering
+      NC_face[m * P8EST_FACES + 0] = faces_p6est[2];
+      NC_face[m * P8EST_FACES + 1] = faces_p6est[3];
+      NC_face[m * P8EST_FACES + 2] = faces_p6est[4];
+      NC_face[m * P8EST_FACES + 3] = faces_p6est[5];
+      NC_face[m * P8EST_FACES + 4] = faces_p6est[0];
+      NC_face[m * P8EST_FACES + 5] = faces_p6est[1];
 
-      int p = -1;
-      for (zz = 0, num_nbh = 0; zz < total_ghosts; zz++)
+      NC_edge[m * P8EST_EDGES + 0] = edges_p6est[4];
+      NC_edge[m * P8EST_EDGES + 1] = edges_p6est[6];
+      NC_edge[m * P8EST_EDGES + 2] = edges_p6est[5];
+      NC_edge[m * P8EST_EDGES + 3] = edges_p6est[7];
+
+      NC_edge[m * P8EST_EDGES + 4] = edges_p6est[8];
+      NC_edge[m * P8EST_EDGES + 5] = edges_p6est[10];
+      NC_edge[m * P8EST_EDGES + 6] = edges_p6est[9];
+      NC_edge[m * P8EST_EDGES + 7] = edges_p6est[11];
+
+      NC_edge[m * P8EST_EDGES + 8] = edges_p6est[0];
+      NC_edge[m * P8EST_EDGES + 9] = edges_p6est[1];
+      NC_edge[m * P8EST_EDGES + 10] = edges_p6est[2];
+      NC_edge[m * P8EST_EDGES + 11] = edges_p6est[3];
+
+      // int h;
+      // printf("\n");
+      // for (h = 0; h < P8EST_FACES; ++h)
+      //   printf("%d ", NC_face[m * P8EST_FACES + h]);
+      // printf("\n");
+      // for (h = 0; h < P8EST_EDGES; ++h)
+      //   printf("%d ", NC_edge[m * P8EST_EDGES + h]);
+      // printf("\n");
+
+      ++m;
+    }
+
+  if (m != nNC)
+    SC_ABORT("problem with counting face_code");
+
+  // debug
+  /*printf("%s","coord_cg\n");
+    for(ll=0; ll<npoin_p6est; ++ll){
+    printf("%d %f %f %f\n",ll,
+    (*p2n)->coord[3*ll+0],(*p2n)->coord[3*ll+1],(*p2n)->coord[3*ll+2]);
+    }*/
+
+  /*
+   *  Get column structure
+   */
+
+  (*p2n)->nz = (*p2n)->nelz * (*p2n)->nopz + 1;
+  (*p2n)->ncol = (*p2n)->npoin / (*p2n)->nz;
+  // Assumes AMR only in horizontal, e.g., all columns same size
+  P4EST_ASSERT((*p2n)->ncol * (*p2n)->nz == (*p2n)->npoin);
+
+  (*p2n)->node_column = malloc(sizeof(int) * (*p2n)->ncol * (*p2n)->nz);
+
+  // loop over columns to fill node_column
+  for (p4est_locidx_t zz = 0; zz < (*p2n)->npoin; ++zz)
+    (*p2n)->node_column[zz] =
+        zz + 1; // simplification due to inherent p6est node numbering scheme
+
+  /*
+   * Count boundary faces
+   */
+  p4est_locidx_t num_physical_boundary_faces = 0;
+  p4est_locidx_t num_processor_boundary_faces = 0;
+
+  /*
+   * Each column has a top and bottom physical boundary
+   */
+  if (nopz > 0)
+    num_physical_boundary_faces += 2 * (*p2n)->nelxy;
+
+  /*
+   * nbsido: number of (physical) domain boundary faces on the processor
+   */
+
+  // Count processor boundary faces
+  for (p4est_locidx_t q_h = 0; q_h < nquads_h; ++q_h)
+  {
+    for (p4est_locidx_t f = 0; f < P4EST_FACES; ++f)
+    {
+      p4est_locidx_t nq_h = mesh_p4est->quad_to_quad[P4EST_FACES * q_h + f];
+      p4est_locidx_t nv_h = mesh_p4est->quad_to_face[P4EST_FACES * q_h + f];
+      p4est_locidx_t nf_h = nv_h % P4EST_FACES;
+
+      if (nq_h == q_h && nf_h == f)
       {
-        int proc = mghost[zz].proc;
-        int face = mghost[zz].face;
-        if (proc != p)
+        // Only the cube should have physical boundaries
+        SC_ASSERT(is_geometry_cube);
+        num_physical_boundary_faces += (*p2n)->nelz;
+      }
+      // If my neighbors face is negative I'm hanging
+      else if (nv_h < 0)
+      {
+        p4est_locidx_t *nqs_h;
+        int h;
+        // Get neighbor half faces
+        nqs_h = sc_array_index(mesh_p4est->quad_to_half, nq_h);
+        // Check whether neighbor children are local or not
+        for (h = 0; h < P4EST_HALF; ++h)
         {
-          num_nbh++;
-          (*p2n)->nbh_proc[num_nbh - 1] = proc + 1;
-          (*p2n)->num_send_recv[num_nbh - 1] = 1;
-          p = proc;
+          if (nqs_h[h] >= nquads_h)
+            num_processor_boundary_faces += (*p2n)->nelz;
         }
+      }
+      // I'm conforming or a little guy, so see if my neighbor is local or not
+      else if (nq_h >= nquads_h)
+      {
+        num_processor_boundary_faces += (*p2n)->nelz;
+      }
+    }
+  }
+
+  /*
+   * nbsido: number of (physical) domain boundary faces on the processor
+   */
+  (*p2n)->nbsido = num_physical_boundary_faces;
+
+  /*
+   * nboun: processor boundary faces
+   */
+  (*p2n)->nboun = num_processor_boundary_faces;
+
+  /*
+   * nface: number of unique faces on the processor
+   * (interior faces + processor boundary faces + domain boundary faces)
+   *
+   * Which since we only allow non-conforming in the horizontal is:
+   */
+
+  // horizontal faces
+  (*p2n)->nface = (*p2n)->nelz * fnodes_p4est->num_local_nodes;
+
+  // vertical faces
+  if (nopz > 0)
+    (*p2n)->nface += fnodes_p4est->num_local_elements * ((*p2n)->nelz + 1);
+
+  my_rank = mpi->mpirank;
+
+  /**********************
+   * create faces
+   ***********************/
+  p4est_locidx_t ncolz = (*p2n)->nelz;
+
+#define INTMA_H_FACE(q_h, q_v, f)                                              \
+  ((fnodes_p4est->element_nodes[(q_h)*P4EST_FACES + (f)]) * ncolz + (q_v))
+
+#define INTMA_V_FACE(q_h, q_v, f)                                              \
+  (ncolz * fnodes_p4est->num_local_nodes + (ncolz + 1) * (q_h) + (q_v) +       \
+   ((f)-P4EST_FACES))
+
+#define INTMA_FACE(q_h, q_v, f)                                                \
+  ((f < P4EST_FACES) ? INTMA_H_FACE(q_h, q_v, f) : INTMA_V_FACE(q_h, q_v, f))
+
+  /*
+   * bsido(1:6,1:nbsido): domain boundary data:
+   * bsido(1:4,i): unused
+   * bsido(5,i): element (1...nelem) to which face i belongs (only one because
+   *             boundary face!)
+   * bsido(6,i): boundary condition flag for face i (=4 for solid wall
+   * boundary)
+   */
+#define BSIDO_LEN 6
+#define BID_ELEM 4
+#define BID_TYPE 5
+  (*p2n)->bsido = malloc(sizeof(p4est_locidx_t) * BSIDO_LEN * (*p2n)->nbsido);
+  memset((*p2n)->bsido, 0, sizeof(p4est_locidx_t) * BSIDO_LEN * (*p2n)->nbsido);
+
+  /*
+   * face(1:11, 1:nface): face data:
+   * face(1:4,i): unused
+   * face(5,i): local face relative to left element
+   * face(6,i): local face relative to right element
+   * face(7,i): element to left
+   * face(8,i): element to the right or boundary condition flag (-bsido(6,sk))
+   *
+   * for non-conforming faces entries 8-11 store child numbers
+   */
+#define FID_LE_F 4
+#define FID_RE_F 5
+#define FID_LE_Q 6
+#define FID_RE_Q 7
+  (*p2n)->face = malloc(sizeof(p4est_locidx_t) * FACE_LEN * (*p2n)->nface);
+  memset((*p2n)->face, 0, sizeof(p4est_locidx_t) * FACE_LEN * (*p2n)->nface);
+
+  /*
+   * face_type(i):
+   * 1:  conforming internal face
+   * 2:  parallel face
+   * 4:  boundary face
+   * 12: parllel NC face (parent is local)
+   * 21: parllel NC face (parent is ghost)
+   */
+#define FT_LOCAL 1
+#define FT_GHOST 2
+#define FT_BOUND 4
+#define FT_NC_LOCAL_PARENT 12
+#define FT_NC_GHOST_PARENT 21
+  (*p2n)->face_type = malloc(sizeof(p4est_locidx_t) * (*p2n)->nface);
+  memset((*p2n)->face_type, 0, sizeof(p4est_locidx_t) * (*p2n)->nface);
+
+  /*face orientation transformation array p4est->numa*/
+  static const int numa_face[P8EST_FACES] = {4, 5, 2, 3, 0, 1};
+
+#define HORZ_CONFORMING_LIMIT 8
+
+  /*
+   * parallel connectivity
+   * nbh_proc: which ranks do I send to
+   * num_send_recv: how many elements go to a rank
+   */
+
+  // Number of points in a column
+  // for CG is number of element * polynomial order + 1
+  // for DG is number of element
+  p4est_locidx_t ncolpnts = is_dg ? ncolz : (ncolz * nopz + 1);
+
+  p4est_locidx_t num_nbh;
+  (*p2n)->num_nbh = num_nbh =
+      MAX(0, (int)cnodes_p4est->sharers->elem_count - 1);
+  (*p2n)->nbh_proc = malloc(sizeof(int) * num_nbh);
+  (*p2n)->num_send_recv = malloc(sizeof(int) * num_nbh);
+  (*p2n)->num_nbh = num_nbh;
+
+  /*
+   * Fill the sharing information for CG and DG
+   */
+  // Loop over neighbors
+  p4est_locidx_t num_send_recv_total = 0;
+  for (p4est_locidx_t iter = 0, num_nbh = 0;
+       iter < (p4est_locidx_t)cnodes_p4est->sharers->elem_count; ++iter)
+  {
+    p4est_lnodes_rank_t *lrank =
+        p4est_lnodes_rank_array_index(cnodes_p4est->sharers, iter);
+
+    // If not myself: add the neighboring mpirank and count elements to comm
+    if (lrank->rank != mpi->mpirank)
+    {
+      (*p2n)->nbh_proc[num_nbh] = lrank->rank + 1;
+      (*p2n)->num_send_recv[num_nbh] =
+          (int)lrank->shared_nodes.elem_count * ncolpnts;
+
+      num_send_recv_total += (*p2n)->num_send_recv[num_nbh];
+
+      num_nbh += 1;
+    }
+  }
+
+  SC_ASSERT(num_nbh == (*p2n)->num_nbh);
+  (*p2n)->num_send_recv_total = num_send_recv_total;
+
+  /*
+   * nbh_send_recv
+   * for CG this is the the nodes to be sent / recv in global order
+   * for DG this is the array of faces to send / recv in global order
+   * first num_send_recv[0] elements go to rank nbh_proc[0]
+   * next num_send_recv[1] elements go to rank nbh_proc[1]
+   * etc.
+   */
+  (*p2n)->nbh_send_recv = malloc(sizeof(p4est_locidx_t) * num_send_recv_total);
+
+  // Loop over the neighbors add elements / nodes to communication array
+  p4est_locidx_t num_send_recv_offset = 0;
+  for (p4est_locidx_t iter = 0;
+       iter < (p4est_locidx_t)cnodes_p4est->sharers->elem_count; ++iter)
+  {
+    p4est_lnodes_rank_t *lrank =
+        p4est_lnodes_rank_array_index(cnodes_p4est->sharers, iter);
+
+    // if not myself, then add the nodes / elements to the list
+    if (lrank->rank != mpi->mpirank)
+    {
+
+      // If DG loop over the horizontal points / faces
+      p4est_locidx_t h_ter;
+      for (h_ter = 0; h_ter < (p4est_locidx_t)lrank->shared_nodes.elem_count;
+           ++h_ter)
+      {
+        // horizontal point ID
+        p4est_locidx_t id_h =
+            *(p4est_locidx_t *)sc_array_index(&lrank->shared_nodes, h_ter);
+        // Loop up the elements and add the vertical elements
+        // This works for CG since the columns are continuous storage
+        for (p4est_locidx_t q_v = 0; q_v < ncolpnts; ++q_v)
+        {
+          // combine point ID
+          p4est_locidx_t id_g = id_h * ncolpnts + q_v;
+          (*p2n)->nbh_send_recv[num_send_recv_offset] = id_g + 1;
+          ++num_send_recv_offset;
+        }
+      }
+    }
+  }
+
+  /*
+   * nbh_send_recv_multi
+   * For each face / point count its multiplicity (used for non-conforming DG
+   * to handle hanging faces)
+   */
+  (*p2n)->nbh_send_recv_multi =
+      malloc(sizeof(p4est_locidx_t) * num_send_recv_total);
+  memset((*p2n)->nbh_send_recv_multi, 0,
+         sizeof(p4est_locidx_t) * num_send_recv_total);
+
+  /*
+   * nbh_send_recv_half
+   * For each face I receive mark whether it is a child face (1) or not (0)
+   */
+  (*p2n)->nbh_send_recv_half =
+      malloc(sizeof(p4est_locidx_t) * num_send_recv_total * P4EST_HALF);
+  memset((*p2n)->nbh_send_recv_half, 0,
+         sizeof(p4est_locidx_t) * num_send_recv_total * P4EST_HALF);
+
+  /*
+   * Build boundary and face maps
+   */
+  for (p4est_locidx_t q_h = 0, bc_iter = 0; q_h < nquads_h; ++q_h)
+  {
+    for (p4est_locidx_t f = 0; f < P4EST_FACES; ++f)
+    {
+      p4est_locidx_t f_numa = numa_face[f];
+
+      p4est_locidx_t nq_h = mesh_p4est->quad_to_quad[P4EST_FACES * q_h + f];
+      p4est_locidx_t nv_h = mesh_p4est->quad_to_face[P4EST_FACES * q_h + f];
+      p4est_locidx_t nf_h = nv_h % P4EST_FACES;
+
+      /*
+       * Set the horizontal face maps
+       */
+      // Physical boundary for p4est -> horizontal boundary
+      if (nq_h == q_h && nf_h == f)
+      {
+        // Only the cube should have physical boundaries
+        SC_ASSERT(is_geometry_cube);
+        for (p4est_locidx_t q_v = 0; q_v < ncolz; ++q_v)
+        {
+          // Global element number
+          p4est_locidx_t q_g = q_h * ncolz + q_v;
+
+          p4est_locidx_t fid = INTMA_H_FACE(q_h, q_v, f);
+          (*p2n)->face_type[fid] = FT_BOUND;
+
+          (*p2n)->face[FACE_LEN * fid + FID_LE_F] = f_numa + 1;
+          (*p2n)->face[FACE_LEN * fid + FID_RE_F] = 0;
+          (*p2n)->face[FACE_LEN * fid + FID_LE_Q] = q_g + 1;
+          (*p2n)->face[FACE_LEN * fid + FID_RE_Q] = -iboundary[f_numa];
+
+          (*p2n)->bsido[BSIDO_LEN * bc_iter + BID_ELEM] = q_g + 1;
+          (*p2n)->bsido[BSIDO_LEN * bc_iter + BID_TYPE] = iboundary[f_numa];
+          ++bc_iter;
+        }
+      }
+      // Conforming face
+      else if ((nv_h >= 0) && (nv_h < HORZ_CONFORMING_LIMIT))
+      {
+        // Neighbor is ghost
+        if (nq_h >= nquads_h)
+        {
+          for (p4est_locidx_t q_v = 0; q_v < ncolz; ++q_v)
+          {
+            p4est_locidx_t q_g = q_h * ncolz + q_v;
+            p4est_locidx_t sk = INTMA_H_FACE(q_h, q_v, f);
+            (*p2n)->face_type[sk] = FT_GHOST;
+
+            (*p2n)->face[FACE_LEN * sk + FID_LE_F] = f_numa + 1;
+            (*p2n)->face[FACE_LEN * sk + FID_RE_F] = 0;
+            (*p2n)->face[FACE_LEN * sk + FID_LE_Q] = q_g + 1;
+            (*p2n)->face[FACE_LEN * sk + FID_RE_Q] = 0;
+
+            // If this is DG, we need to fill the face parallel comm data
+            if (is_dg)
+            {
+              // Get neighboring quad mpirank
+              int nbh = mesh_p4est->ghost_to_proc[nq_h - nquads_h];
+
+              // Should not be self
+              SC_ASSERT(nbh != mpi->mpirank);
+
+              // To check that we have found the neighbor
+              int neighbor_found = 0;
+
+              // start of the mpirank we are considering
+              p4est_locidx_t rank_start = 0;
+              // go over all neighbor procs
+              for (p4est_locidx_t i = 0; i < num_nbh && !neighbor_found; ++i)
+              {
+                if ((*p2n)->nbh_proc[i] == nbh + 1)
+                {
+
+                  p4est_locidx_t h_ter;
+                  for (h_ter = 0; h_ter < (*p2n)->num_send_recv[i]; ++h_ter)
+                  {
+                    // Check if we have found the face
+                    if ((*p2n)->nbh_send_recv[h_ter + rank_start] == sk + 1)
+                    {
+                      ++(*p2n)->nbh_send_recv_multi[h_ter + rank_start];
+                      ++neighbor_found;
+                      break;
+                    }
+                  }
+                }
+
+                // Add on offset to get to next neighbor
+                rank_start += (*p2n)->num_send_recv[i];
+              }
+
+              // Make sure we actually found the element!
+              SC_ASSERT(neighbor_found);
+            }
+          }
+        }
+        // I am the left side of the face
+        else if (q_h < nq_h || (q_h == nq_h && f < nf_h))
+        {
+          for (p4est_locidx_t q_v = 0; q_v < ncolz; ++q_v)
+          {
+            p4est_locidx_t q_g = q_h * ncolz + q_v;
+            p4est_locidx_t sk = INTMA_H_FACE(q_h, q_v, f);
+            (*p2n)->face_type[sk] = FT_LOCAL;
+
+            (*p2n)->face[FACE_LEN * sk + FID_LE_F] = f_numa + 1;
+            (*p2n)->face[FACE_LEN * sk + FID_LE_Q] = q_g + 1;
+          }
+        }
+        // I am the right side of the face
         else
         {
-          (*p2n)->num_send_recv[num_nbh - 1]++;
+          for (p4est_locidx_t q_v = 0; q_v < ncolz; ++q_v)
+          {
+            p4est_locidx_t q_g = q_h * ncolz + q_v;
+            p4est_locidx_t sk = INTMA_H_FACE(q_h, q_v, f);
+            (*p2n)->face_type[sk] = FT_LOCAL;
+
+            (*p2n)->face[FACE_LEN * sk + FID_RE_F] = f_numa + 1;
+            (*p2n)->face[FACE_LEN * sk + FID_RE_Q] = q_g + 1;
+          }
         }
-        (*p2n)->nbh_send_recv[zz] = face + 1;
       }
-      (*p2n)->num_send_recv_total = total_ghosts;
-      (*p2n)->num_nbh = num_nbh;
+      // non-conforming: I am the parent
+      else if (nv_h < 0)
+      {
+        // Get child quadrant ids
+        p4est_locidx_t *nqs_h = sc_array_index(mesh_p4est->quad_to_half, nq_h);
+
+        // determine if we are a ghost or local face
+        p4est_locidx_t nc_face_type = FT_LOCAL;
+        p4est_locidx_t h;
+        for (h = 0; h < P4EST_HALF; ++h)
+          if (nqs_h[h] >= nquads_h)
+            nc_face_type = FT_NC_LOCAL_PARENT;
+
+        for (p4est_locidx_t q_v = 0; q_v < ncolz; ++q_v)
+        {
+          p4est_locidx_t q_g = q_h * ncolz + q_v;
+
+          p4est_locidx_t sk = INTMA_H_FACE(q_h, q_v, f);
+
+          // Parent (me) goes on the left
+          (*p2n)->face[FACE_LEN * sk + FID_LE_F] = f_numa + 1;
+          (*p2n)->face[FACE_LEN * sk + FID_LE_Q] = q_g + 1;
+
+          (*p2n)->face_type[sk] = nc_face_type;
+
+          // If this is DG, we need to fill the face parallel comm data
+          if (is_dg)
+          {
+
+            // Loop through children and see if any are remote
+            for (h = 0; h < P4EST_HALF; ++h)
+            {
+              if (nqs_h[h] >= mesh_p4est->local_num_quadrants)
+              {
+                // Get neighboring quad mpirank
+                int nbh = mesh_p4est->ghost_to_proc[nqs_h[h] - nquads_h];
+
+                // Should not be self
+                SC_ASSERT(nbh != mpi->mpirank);
+
+                // To check that we have found the neighbor
+                int neighbor_found = 0;
+
+                // start of the mpirank we are considering
+                p4est_locidx_t rank_start = 0;
+
+                // go over all neighbor procs
+                for (p4est_locidx_t i = 0; i < num_nbh && !neighbor_found; ++i)
+                {
+                  if ((*p2n)->nbh_proc[i] == nbh + 1)
+                  {
+                    p4est_locidx_t h_ter;
+                    for (h_ter = 0; h_ter < (*p2n)->num_send_recv[i]; ++h_ter)
+                    {
+                      p4est_locidx_t j = h_ter + rank_start;
+                      // Check if we have found the face
+                      if ((*p2n)->nbh_send_recv[j] == sk + 1)
+                      {
+                        ++(*p2n)->nbh_send_recv_multi[j];
+                        ++neighbor_found;
+                        (*p2n)->nbh_send_recv_half[j * P4EST_HALF + h] = 1;
+                        break;
+                      }
+                    }
+                  }
+
+                  // Add on offset to get to next neighbor
+                  rank_start += (*p2n)->num_send_recv[i];
+                }
+
+                // Make sure we actually found the element!
+                SC_ASSERT(neighbor_found);
+              }
+            }
+          }
+        }
+      }
+      // non-conforming: I am the child
+      else
+      {
+        // find my child id
+        p4est_locidx_t h = nv_h / HORZ_CONFORMING_LIMIT - 1;
+
+        for (p4est_locidx_t q_v = 0; q_v < ncolz; ++q_v)
+        {
+          p4est_locidx_t q_g = q_h * ncolz + q_v;
+
+          p4est_locidx_t sk = INTMA_H_FACE(q_h, q_v, f);
+
+          // Children go in the right element with shift for child id
+          (*p2n)->face[FACE_LEN * sk + FID_RE_F] = f_numa + 1;
+          (*p2n)->face[FACE_LEN * sk + FID_RE_Q + h] = q_g + 1;
+
+          // If our neighbor is ghost, parent is ghost, thus mark
+          // else parent is local, and they can mark the face correctly
+          if (nq_h >= nquads_h)
+          {
+            (*p2n)->face_type[sk] = FT_NC_GHOST_PARENT;
+            // If this is DG, we need to fill the face parallel comm data
+            if (is_dg)
+            {
+              // Get neighboring quad mpirank
+              int nbh = mesh_p4est->ghost_to_proc[nq_h - nquads_h];
+
+              // Should not be self
+              SC_ASSERT(nbh != mpi->mpirank);
+
+              // To check that we have found the neighbor
+              int neighbor_found = 0;
+
+              // start of the mpirank we are considering
+              p4est_locidx_t rank_start = 0;
+              // go over all neighbor procs
+              for (p4est_locidx_t i = 0; i < num_nbh && !neighbor_found; ++i)
+              {
+                if ((*p2n)->nbh_proc[i] == nbh + 1)
+                {
+
+                  p4est_locidx_t h_ter;
+                  for (h_ter = 0; h_ter < (*p2n)->num_send_recv[i]; ++h_ter)
+                  {
+                    // Check if we have found the face
+                    if ((*p2n)->nbh_send_recv[h_ter + rank_start] == sk + 1)
+                    {
+                      ++(*p2n)->nbh_send_recv_multi[h_ter + rank_start];
+                      ++neighbor_found;
+                      break;
+                    }
+                  }
+                }
+
+                // Add on offset to get to next neighbor
+                rank_start += (*p2n)->num_send_recv[i];
+              }
+
+              // Make sure we actually found the element!
+              SC_ASSERT(neighbor_found);
+            }
+          }
+        }
+      }
     }
-    /*
-       printf("NumSend %d\n",(*p2n)->num_send_recv_total);
-       for(i = 0; i < (*p2n)->num_send_recv_total; ++i)
-       printf("%d ",(*p2n)->nbh_send_recv[i]);
-       printf("\n");
-     *
-     printf("===========================\n");
-     printf(" Processor %d\n",my_rank);
-     printf("===========================\n");
-     for(sk = 0; sk < total_ghosts; ++sk)
-     {
-     printf("%4d. ", sk+1);
-     printf("%7d %7d %7d %7d\n",mghost[sk].proc,mghost[sk].ghostk,
-     mghost[sk].nf,mghost[sk].face);
-     }
-    */
 
-    /*free local vars*/
-    free(intma_face);
-    free(mghost);
+    // top-bottom of cubes
+    if (nopz > 0)
+    {
+      p4est_locidx_t f_bot = P4EST_FACES;
+      p4est_locidx_t f_top = P4EST_FACES + 1;
 
-    /*
-       printf("%s\n","--------------");
-       printf("%s %d\n","nop",nop);
-       printf("%s %d\n","npoin",npoin_p6est);
-       printf("%s %d\n","nelem",nelem_p6est);
-       printf("%s %d %d\n","ll",ll,nelem_p6est*(nop+1)*(nop+1)*(nop+1));
-       printf("%s %d\n","num_nbh",num_nbh);
-       printf("%s %d\n","num_send_recv_total",num_send_recv_total);
-       printf("%s
-       %d\n","num_physical_boundary_faces",num_physical_boundary_faces);
-       printf("%s
-       %d\n","num_processor_boundary_faces",num_processor_boundary_faces);
-       printf("%s %d\n","nface",(*p2n)->nface);
-       printf("%s\n","--------------");
-     */
-    p4est_mesh_destroy(mesh_p4est);
-    p4est_ghost_destroy(ghost_p4est);
-    p6est_lnodes_destroy(lnodes_p6est);
-    p6est_ghost_destroy(ghost_p6est);
+      // bottom column face is boundary
+      {
+        p4est_locidx_t q_v = 0;
+        p4est_locidx_t q_g = q_h * ncolz + q_v;
+        p4est_locidx_t sk = INTMA_V_FACE(q_h, q_v, f_bot);
+        (*p2n)->face_type[sk] = FT_BOUND;
 
-    stored_p6est = p6est;
+        (*p2n)->face[FACE_LEN * sk + FID_LE_F] = numa_face[f_bot] + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_LE_Q] = q_g + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_RE_F] = 0;
+        (*p2n)->face[FACE_LEN * sk + FID_RE_Q] = -iboundary[numa_face[f_bot]];
+
+        (*p2n)->bsido[BSIDO_LEN * bc_iter + BID_ELEM] = q_g + 1;
+        (*p2n)->bsido[BSIDO_LEN * bc_iter + BID_TYPE] =
+            iboundary[numa_face[f_bot]];
+        ++bc_iter;
+      }
+
+      // interior column faces
+      for (p4est_locidx_t q_v = 0; q_v < ncolz - 1; ++q_v)
+      {
+        p4est_locidx_t q_g = q_h * ncolz + q_v;
+        p4est_locidx_t sk = INTMA_V_FACE(q_h, q_v, f_top);
+        (*p2n)->face_type[sk] = FT_LOCAL;
+
+        (*p2n)->face[FACE_LEN * sk + FID_LE_F] = numa_face[f_top] + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_LE_Q] = q_g + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_RE_F] = numa_face[4] + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_RE_Q] = (q_g + 1) + 1;
+      }
+
+      // top column face is boundary
+      {
+        p4est_locidx_t q_v = ncolz - 1;
+        p4est_locidx_t q_g = q_h * ncolz + q_v;
+        p4est_locidx_t sk = INTMA_V_FACE(q_h, q_v, f_top);
+        (*p2n)->face_type[sk] = FT_BOUND;
+
+        (*p2n)->face[FACE_LEN * sk + FID_LE_F] = numa_face[f_top] + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_LE_Q] = q_g + 1;
+        (*p2n)->face[FACE_LEN * sk + FID_RE_F] = 0;
+        (*p2n)->face[FACE_LEN * sk + FID_RE_Q] = -iboundary[numa_face[f_top]];
+
+        (*p2n)->bsido[BSIDO_LEN * bc_iter + BID_ELEM] = q_g + 1;
+        (*p2n)->bsido[BSIDO_LEN * bc_iter + BID_TYPE] =
+            iboundary[numa_face[f_top]];
+        ++bc_iter;
+      }
+    }
   }
+
+  /*
+     printf("%s\n","--------------");
+     printf("%s %d\n","nop",nop);
+     printf("%s %d\n","npoin",npoin_p6est);
+     printf("%s %d\n","nelem",nelem_p6est);
+     printf("%s %d %d\n","ll",ll,nelem_p6est*(nop+1)*(nop+1)*(nop+1));
+     printf("%s %d\n","num_nbh",num_nbh);
+     printf("%s %d\n","num_send_recv_total",num_send_recv_total);
+     printf("%s
+     %d\n","num_physical_boundary_faces",num_physical_boundary_faces);
+     printf("%s
+     %d\n","num_processor_boundary_faces",num_processor_boundary_faces);
+     printf("%s %d\n","nface",(*p2n)->nface);
+     printf("%s\n","--------------");
+   */
+  p4est_mesh_destroy(mesh_p4est);
+  p4est_ghost_destroy(ghost_p4est);
+  p6est_lnodes_destroy(lnodes);
+  p4est_lnodes_destroy(lnodes_p4est);
+  p4est_lnodes_destroy(fnodes_p4est);
+  p6est_ghost_destroy(ghost_p6est);
+
   /* End of p6est section */
 }
 
@@ -1035,21 +1334,23 @@ void p6esttonuma_get_mesh_scalars
 #else
 void p6esttonuma_get_mesh_scalars_
 #endif
-    (p4esttonuma_t **p2n, int *npoin, int *nelem, int *log_zroots, int *num_nbh,
-     int *num_send_recv_total, int *nbsido, int *nface, int *nboun, int *ncol,
-     int *nz, int *nelz)
+    (p6esttonuma_t **p2n, int *npoin, int *nelem, int *num_nbh,
+     int *num_send_recv_total, int *nbsido, int *nface, int *nboun, int *nNC,
+     int *ncol, int *nz, int *nelz)
 {
   *npoin = (*p2n)->npoin;
   *nelem = (*p2n)->nelem;
   *num_nbh = (*p2n)->num_nbh;
+  // num_send_recv_total: unique faces
   *num_send_recv_total = (*p2n)->num_send_recv_total;
   *nbsido = (*p2n)->nbsido;
   *nface = (*p2n)->nface;
+  // nboun: duplicated parent faces
   *nboun = (*p2n)->nboun;
+  *nNC = (*p2n)->nNC;
   *ncol = (*p2n)->ncol;
   *nz = (*p2n)->nz;
   *nelz = (*p2n)->nelz;
-  *log_zroots = (*p2n)->log_zroots;
 }
 
 #ifdef ibmcompiler
@@ -1057,9 +1358,11 @@ void p6esttonuma_get_mesh_arrays
 #else
 void p6esttonuma_get_mesh_arrays_
 #endif
-    (p4esttonuma_t **p2n, real *coord, int *intma, int *face, int *face_type,
-     int *num_send_recv, int *nbh_proc, int *nbh_send_recv, int *bsido,
-     int *node_column, int *nis_cgc)
+    (p6esttonuma_t **p2n, real *coord, int *intma_table, int *NC_face,
+     int *NC_edge, int *EToNC, int *face, int *face_type, int *num_send_recv,
+     int *nbh_proc, int *nbh_send_recv, int *nbh_send_recv_multi,
+     int *nbh_send_recv_half, int *bsido, int *node_column, int *nis_cgc,
+     int *D2C_mask)
 {
   int i;
   int is_cgc = *nis_cgc;
@@ -1076,7 +1379,10 @@ void p6esttonuma_get_mesh_arrays_
   }
 
   for (i = 0; i < (*p2n)->npoin_dg; ++i)
-    intma[i] = (*p2n)->intma[i];
+    intma_table[i] = (*p2n)->intma_table[i];
+
+  for (i = 0; i < (*p2n)->npoin_dg; ++i)
+    D2C_mask[i] = (*p2n)->D2C_mask[i];
 
   for (i = 0; i < (*p2n)->num_nbh; ++i)
     num_send_recv[i] = (*p2n)->num_send_recv[i];
@@ -1087,14 +1393,29 @@ void p6esttonuma_get_mesh_arrays_
   for (i = 0; i < (*p2n)->num_send_recv_total; ++i)
     nbh_send_recv[i] = (*p2n)->nbh_send_recv[i];
 
+  for (i = 0; i < (*p2n)->num_send_recv_total; ++i)
+    nbh_send_recv_multi[i] = (*p2n)->nbh_send_recv_multi[i];
+
+  for (i = 0; i < (*p2n)->num_send_recv_total * P4EST_HALF; ++i)
+    nbh_send_recv_half[i] = (*p2n)->nbh_send_recv_half[i];
+
   for (i = 0; i < 6 * (*p2n)->nbsido; ++i)
     bsido[i] = (*p2n)->bsido[i];
 
-  for (i = 0; i < FACE_LEN * (*p2n)->nface; ++i)
+  for (i = 0; i < (*p2n)->FACE_LEN * (*p2n)->nface; ++i)
     face[i] = (*p2n)->face[i];
 
   for (i = 0; i < (*p2n)->nface; ++i)
     face_type[i] = (*p2n)->face_type[i];
+
+  for (i = 0; i < (*p2n)->nelem; ++i)
+    EToNC[i] = (*p2n)->EToNC[i] + 1;
+
+  for (i = 0; i < (*p2n)->nNC * P8EST_FACES; ++i)
+    NC_face[i] = (*p2n)->NC_face[i];
+
+  for (i = 0; i < (*p2n)->nNC * P8EST_EDGES; ++i)
+    NC_edge[i] = (*p2n)->NC_edge[i];
 
   for (i = 0; i < ((*p2n)->nz) * ((*p2n)->ncol); ++i)
     node_column[i] = (*p2n)->node_column[i];
@@ -1105,17 +1426,324 @@ void p6esttonuma_free
 #else
 void p6esttonuma_free_
 #endif
-    (p4esttonuma_t **p2n)
+    (p6esttonuma_t **p2n)
 {
   free((*p2n)->coord_dg);
   free((*p2n)->coord_cg);
-  free((*p2n)->intma);
+  free((*p2n)->intma_table);
+  free((*p2n)->D2C_mask);
   free((*p2n)->num_send_recv);
   free((*p2n)->nbh_proc);
   free((*p2n)->nbh_send_recv);
+  free((*p2n)->nbh_send_recv_multi);
+  free((*p2n)->nbh_send_recv_half);
   free((*p2n)->bsido);
   free((*p2n)->face);
   free((*p2n)->face_type);
   free((*p2n)->node_column);
+  free((*p2n)->EToNC);
+  free((*p2n)->NC_face);
+  free((*p2n)->NC_edge);
   free(*p2n);
 }
+
+/* START OF BFAM CODE */
+/*
+ * The following code is extracted from/based on the bfam project:
+ *
+ *    https://github.com/bfam/bfam
+ *
+ * Authors:
+ *   Lucas C Wilcox
+ *   Jeremy E Kozdon
+ */
+
+#ifdef ibmcompiler
+void p6esttonuma_get_element_horiztonal_lvl
+#else
+void p6esttonuma_get_element_horiztonal_lvl_
+#endif
+    (int8_t *lvl, int32_t *N)
+{
+  p6est_t *p6est = stored_p6est;
+  p4est_t *p4est = p6est->columns;
+
+  p4est_ghost_t *ghost = p4est_ghost_new(p4est, CONNECT_TYPE);
+  p4est_mesh_t *mesh = p4est_mesh_new_ext(p4est, ghost, 1, 0, CONNECT_TYPE);
+
+  p4est_locidx_t nelem_v =
+      (p4est_mesh_get_quadrant(p4est, mesh, 0))->p.piggy3.which_tree;
+
+  p4est_locidx_t nelem_h = p4est->local_num_quadrants;
+
+  SC_ASSERT(*N == nelem_v * nelem_h);
+
+  /* Get the column mesh levels */
+  for (p4est_locidx_t q_h = 0; q_h < nelem_h; ++q_h)
+  {
+    /*  find which quadrant */
+    p4est_quadrant_t *col = p4est_mesh_get_quadrant(p4est, mesh, q_h);
+    size_t first, last;
+    P6EST_COLUMN_GET_RANGE(col, &first, &last);
+    SC_ASSERT(last - first == (size_t)nelem_v);
+    for (p4est_locidx_t q_v = 0; q_v < nelem_v; ++q_v)
+      lvl[q_v + q_h * nelem_v] = col->level;
+  }
+  p4est_mesh_destroy(mesh);
+  mesh = NULL;
+  p4est_ghost_destroy(ghost);
+  ghost = NULL;
+}
+
+#ifdef ibmcompiler
+void p6esttonuma_mark_elements
+#else
+void p6esttonuma_mark_elements_
+#endif
+    (int *hadapt)
+{
+  p6est_t *p6est = stored_p6est;
+  p4est_t *p4est = p6est->columns;
+
+  p4est_ghost_t *ghost = p4est_ghost_new(p4est, CONNECT_TYPE);
+  p4est_mesh_t *mesh = p4est_mesh_new_ext(p4est, ghost, 1, 0, CONNECT_TYPE);
+
+  p4est_locidx_t nelem_v =
+      (p4est_mesh_get_quadrant(p4est, mesh, 0))->p.piggy3.which_tree;
+
+  p4est_locidx_t nelem_h = p4est->local_num_quadrants;
+
+  /* Get the column mesh levels */
+  for (p4est_locidx_t q_h = 0; q_h < nelem_h; ++q_h)
+  {
+    int col_flag = -1;
+    for (p4est_locidx_t q_v = 0; q_v < nelem_v; ++q_v)
+      col_flag = MAX(col_flag, hadapt[q_v + nelem_v * q_h]);
+
+    /*  find which quadrant */
+    p4est_quadrant_t *col = p4est_mesh_get_quadrant(p4est, mesh, q_h);
+    size_t first, last;
+    P6EST_COLUMN_GET_RANGE(col, &first, &last);
+    SC_ASSERT(last - first == (size_t)nelem_v);
+    for (size_t q_v = first; q_v < last; ++q_v)
+    {
+      p2est_quadrant_t *layer = p2est_quadrant_array_index(p6est->layers, q_v);
+      user_data_t *data = (user_data_t *)layer->p.user_data;
+      data->col_iref = col_flag;
+    }
+  }
+  p4est_mesh_destroy(mesh);
+  mesh = NULL;
+  p4est_ghost_destroy(ghost);
+  ghost = NULL;
+}
+
+static void mark_neighbors_volume_fun(p4est_iter_volume_info_t *info,
+                                      void *user_data)
+{
+  p6est_t *p6est = stored_p6est;
+  p4est_quadrant_t *column = info->quad;
+  size_t first, last;
+  P6EST_COLUMN_GET_RANGE(column, &first, &last);
+  p2est_quadrant_t *layer = p2est_quadrant_array_index(p6est->layers, first);
+  user_data_t *data = (user_data_t *)layer->p.user_data;
+  data->col_oref = data->col_iref;
+#ifdef P4EST_ENABLE_DEBUG
+  // In debug mode make sure we are uniform in column
+  for (size_t q_v = first; q_v < last; ++q_v)
+  {
+    p2est_quadrant_t *layer2 = p2est_quadrant_array_index(p6est->layers, q_v);
+    user_data_t *data2 = (user_data_t *)layer2->p.user_data;
+    data2->col_oref = data2->col_iref;
+    SC_ASSERT(data->col_iref == data2->col_iref);
+    SC_ASSERT(data->col_oref == data2->col_oref);
+  }
+#endif
+}
+
+static void mark_neighbors_corner_fun(p4est_iter_corner_info_t *info,
+                                      void *user_data)
+{
+  p6est_t *p6est = stored_p6est;
+  user_data_t *ghost_data = (user_data_t *)user_data;
+  sc_array_t *sides = &(info->sides);
+  int col_iref = 0;
+  int col_oref = 0;
+  int8_t lvl = 0;
+
+  // loop over corner connections to determine whether to refine the corners
+  for (p4est_locidx_t k = 0; k < (p4est_locidx_t)sides->elem_count; ++k)
+  {
+    p4est_iter_corner_side_t *side = p4est_iter_cside_array_index_int(sides, k);
+    // If ghost in the forest used the ghost_data
+    // otherwise read from the first quadrant layer
+    if (side->is_ghost)
+      col_oref = ghost_data[side->quadid].col_iref;
+    else
+    {
+      p4est_quadrant_t *column = side->quad;
+      size_t first, last;
+      P6EST_COLUMN_GET_RANGE(column, &first, &last);
+      p2est_quadrant_t *layer =
+          p2est_quadrant_array_index(p6est->layers, first);
+      user_data_t *data = (user_data_t *)layer->p.user_data;
+      col_oref = data->col_oref;
+    }
+
+    if (col_oref > 0)
+    {
+      col_iref = 1;
+      lvl = side->quad->level > lvl ? side->quad->level : lvl;
+    }
+  }
+
+  // If one of the these elements should be refined, refine them all
+  if (col_iref > 0)
+    for (p4est_locidx_t k = 0; k < (p4est_locidx_t)sides->elem_count; ++k)
+    {
+      p4est_iter_corner_side_t *side =
+          p4est_iter_cside_array_index_int(sides, k);
+      if (side->is_ghost)
+        continue;
+      if (lvl >= side->quad->level)
+      {
+        p4est_quadrant_t *column = side->quad;
+        size_t first, last;
+        P6EST_COLUMN_GET_RANGE(column, &first, &last);
+        p2est_quadrant_t *layer =
+            p2est_quadrant_array_index(p6est->layers, first);
+        user_data_t *data = (user_data_t *)layer->p.user_data;
+        data->col_iref = 1;
+#ifdef P4EST_ENABLE_DEBUG
+        // In debug mode mark all elements in the column
+        for (size_t q_v = first; q_v < last; ++q_v)
+        {
+          p2est_quadrant_t *layer2 =
+              p2est_quadrant_array_index(p6est->layers, q_v);
+          user_data_t *data2 = (user_data_t *)layer2->p.user_data;
+          data2->col_iref = 1;
+        }
+#endif
+      }
+    }
+}
+
+#ifdef ibmcompiler
+void p6esttonuma_mark_neighbors_p4est
+#else
+void p6esttonuma_mark_neighbors_p4est_
+#endif
+    (int32_t *num_iterations)
+{
+  p6est_t *p6est = stored_p6est;
+  p4est_t *p4est = p6est->columns;
+
+  p4est_ghost_t *ghost_p4est = p4est_ghost_new(p4est, CONNECT_TYPE);
+  p4est_mesh_t *mesh_p4est =
+      p4est_mesh_new_ext(p4est, ghost_p4est, 1, 0, CONNECT_TYPE);
+
+  sc_array_t mirrors = ghost_p4est->mirrors;
+  user_data_t *ghost_data = (user_data_t *)malloc(
+      sizeof(user_data_t) * ghost_p4est->ghosts.elem_count);
+  void **mirror_data =
+      (void **)malloc(sizeof(user_data_t *) * mirrors.elem_count);
+
+  // Fill mirror data
+  for (p4est_locidx_t m = 0;
+       m < (p4est_locidx_t)ghost_p4est->mirrors.elem_count; ++m)
+  {
+    // Get the mirror quadrant
+    p4est_quadrant_t *mirror = p4est_quadrant_array_index(&mirrors, m);
+    // Get the real quadrant from the p4est
+    p4est_quadrant_t *column =
+        p4est_mesh_get_quadrant(p4est, mesh_p4est, mirror->p.piggy3.local_num);
+
+    size_t first, last;
+    P6EST_COLUMN_GET_RANGE(column, &first, &last);
+    p2est_quadrant_t *layer = p2est_quadrant_array_index(p6est->layers, first);
+    mirror_data[m] = layer->p.user_data;
+#ifdef P4EST_ENABLE_DEBUG
+    // In debug mode make sure we are uniform in column
+    user_data_t *data = (user_data_t *)layer->p.user_data;
+    for (size_t q_v = first; q_v < last; ++q_v)
+    {
+      p2est_quadrant_t *layer2 = p2est_quadrant_array_index(p6est->layers, q_v);
+      user_data_t *data2 = (user_data_t *)layer2->p.user_data;
+      SC_ASSERT(data->col_iref == data2->col_iref);
+      SC_ASSERT(data->col_oref == data2->col_oref);
+    }
+#endif
+  }
+
+  for (p4est_locidx_t k = 0; k < *num_iterations; ++k)
+  {
+    // exchange the ghost data
+    p4est_ghost_exchange_custom(p4est, ghost_p4est, sizeof(user_data_t),
+                                mirror_data, ghost_data);
+
+    p4est_iterate(p4est, ghost_p4est, (void *)ghost_data,
+                  mark_neighbors_volume_fun, NULL, mark_neighbors_corner_fun);
+  }
+
+  free(ghost_data);
+  ghost_data = NULL;
+  free(mirror_data);
+  mirror_data = NULL;
+  p4est_mesh_destroy(mesh_p4est);
+  mesh_p4est = NULL;
+  p4est_ghost_destroy(ghost_p4est);
+  ghost_p4est = NULL;
+}
+
+#ifdef ibmcompiler
+void p6esttonuma_coarsen_refine_p4est
+#else
+void p6esttonuma_coarsen_refine_p4est_
+#endif
+    (int32_t *num_dst)
+{
+  p6est_t *p6est = stored_p6est;
+
+  p6est_coarsen_columns_ext(p6est, 0, 0, coarsen_column_fn, NULL,
+                            column_replace_fn);
+  p6est_refine_columns_ext(p6est, 0, -1, refine_column_fn, NULL,
+                           column_replace_fn);
+
+  p6est_balance_ext(p6est, p8est_connect_type, 0, 1, NULL, column_replace_fn);
+
+#ifdef VTK_OUTPUT
+  char output[1024];
+  sprintf(output, "p6est_mesh_%05d", p4est_output_count);
+  p6est_vtk_write_file(p6est, output); /* Commented by FXG */
+  ++p4est_output_count;
+#endif
+
+  *num_dst = p6est->columns->local_num_quadrants;
+}
+
+#ifdef ibmcompiler
+void p6esttonuma_repartition
+#else
+void p6esttonuma_repartition_
+#endif
+    (int64_t *qid_src, int64_t *qid_dst)
+{
+  p6est_t *p6est = stored_p6est;
+  p4est_t *p4est = p6est->columns;
+
+  for (int k = 0; k < p4est->mpisize + 1; ++k)
+    qid_src[k] = p4est->global_first_quadrant[k];
+
+  p6est_partition_ext(p6est, 1, NULL);
+
+  for (int k = 0; k < p4est->mpisize + 1; ++k)
+    qid_dst[k] = p4est->global_first_quadrant[k];
+
+#ifdef VTK_OUTPUT
+  char output[1024];
+  sprintf(output, "p6est_mesh_%05d", p4est_output_count);
+  p6est_vtk_write_file(p6est, output); /* Commented by FXG */
+  ++p4est_output_count;
+#endif
+}
+/* END OF BFAM CODE */

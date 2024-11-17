@@ -23,7 +23,7 @@ subroutine print_header(flag,numproc)
         filter_muz, ifilter, filter_weight_type, filter_basis_type, &
         geometry_type, fname_root, out_type, visc_mlswe, &
         lprint_diagnostics, lp4est, lp6est, time_scale, &
-        refinement_levels_h, nel_root_h, refinement_levels_v, nel_root_v, flux_type
+        refinement_levels_h, nel_root_h, refinement_levels_v, nel_root_v
 
     implicit none
 
@@ -65,7 +65,6 @@ subroutine print_header(flag,numproc)
     write(*,'("ztop = ",1(e12.4,1x))')ztop
     write(*,'("icase  = ",1(i6,1x))')icase
     write(*,'("space_method = ",a)')space_method
-    write(*,'("bcl_flux_type = ",a)')flux_type
     write(*,'("ti_method = ",a)')ti_method
     write(*,'("si_dimension = ",a)')si_dimension
     write(*,'("kstages = ",1(i6,1x))')kstages
