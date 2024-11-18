@@ -1,4 +1,4 @@
-NUMOLIBS=-L$(NUMO_DIR)/lib
+ANUMOLIBS=-L$(NUMO_DIR)/lib
 
 #-------------------
 # Single precision
@@ -48,7 +48,7 @@ hnumo-prof:
 # user must install gcc openmpi using Homebrew
 #------------------------------------------------------------------------------
 #OMPI_COMPILE_BREW := /usr/local/bin
-OMPI_COMPILE_BREW := /usr/local/Cellar/open-mpi/5.0.3_1/bin
+OMPI_COMPILE_BREW := /opt/homebrew/bin
 #OMPI_COMPILE_BREW := /opt/local/bin
 P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
 
@@ -57,6 +57,37 @@ hnumo-brew:
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas -lz" \
+	"AR=ar rv"
+
+hnumo-brew-dbg:	
+	$(MAKE) $(TARGET) \
+	"FC=${OMPI_COMPILE_BREW}/mpif90" \
+	"LD=${OMPI_COMPILE_BREW}/mpif90" \
+	"CC=${OMPI_COMPILE_BREW}/mpicc" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas" \
+	"AR=ar rv"
+
+#------------------------------------------------------------------------------
+# Flags for building NUMO on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
+# user must install gcc openmpi using Homebrew
+#------------------------------------------------------------------------------
+#OMPI_COMPILE_BREW := /usr/local/bin
+OMPI_COMPILE_BREW_M1 := /opt/homebrew/bin
+#OMPI_COMPILE_BREW := /opt/local/bin
+P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
+
+hnumo-brew-M1:	
+	$(MAKE) $(TARGET) \
+	"FC=${OMPI_COMPILE_BREW_M1}/mpif90" \
+	"LD=${OMPI_COMPILE_BREW_M1}/mpif90" \
+	"CC=${OMPI_COMPILE_BREW_M1}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
 	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
