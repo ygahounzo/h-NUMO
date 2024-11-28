@@ -2,13 +2,13 @@
 ###
 ###
 #SBATCH --time=01:00:00
-#SBATCH -n 1
-#SBATCH --partition=bsudfq
+#SBATCH -n 40
+#SBATCH --partition=coaps_q
 #SBATCH --job-name=bump
-#SBATCH --output=output.o%j
+#SBATCH --output=output_log.o%j
 #SBATCH -N 1
 #SBATCH --exclusive
 
-cp ~/h-NUMO/bin/numo3d .
+cp $(pwd)/../../bin/numo3d .
 
-mpirun -np 1 ./numo3d
+mpirun -np 36 ./numo3d

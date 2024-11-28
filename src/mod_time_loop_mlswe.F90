@@ -65,11 +65,11 @@ contains
         integer m, itime
         integer irestart, ntime, inorm
         integer iloop, i, j, icol, ivar, npoin_bound, ifnp, idone, ii
-        character fnp1*4, fnp4*4, fnp2*9, fnp*100, fnpm*72, fnpg*72
+        character fnp1*4, fnp4*4, fnp2*9, fnp*100, fnpm*72, fnpg*72, s_layers*3, fnp11*18, fnps*100
         integer ierr, irank, ilevel
 
         real x, y, z, phi, lambda, r, time
-        integer ip, ik, ipr, ikr, l
+        integer ip, ik, ipr, ikr, l, unit0
         real, dimension(npoin,nlayers+1) :: mslwe_elevation
 
         real(kind=r8) :: time1, time2, tick
@@ -166,7 +166,7 @@ contains
                 fnp4(j:j)='0'
                 end do
 
-                fnp=trim('outbora') // trim(fnp4)
+                fnp=trim('mlswe') // trim(fnp4)
 
                 call read_mlswe(q_df_read,qb_df_read,fnp)
 
@@ -194,12 +194,28 @@ contains
                 mass_conserv0_g(l) = mass_conserv_g
             end do 
 
+            fnps = trim('mass_mlswe.cons')
+
+            unit0 = 111
+
+            open(unit=unit0, file = fnps)
+            
+            write(s_layers,'(i3)')nlayers
+
+            !fnp4 = trim("(") // trim(nlayers) // trim("e24.12)")
+            fnp11 = '(i8,' // trim(adjustl(s_layers)) // '(e16.8,1x))'
+
+            !write(unit0,fnp11) mass_conserv0_g
+            !write(111,"(2e24.12)") mass_conserv0_g
+
+            !close(111)
+
         endif 
 
         idone = 0
         if (lprint_diagnostics) then
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            mass_conserv0_g,cfl,cflu,ntime)
+            mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
         end if
 
         if (irank == irank0) then
@@ -273,19 +289,21 @@ contains
 
                 if (lprint_diagnostics) then 
                     call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-                    mass_conserv0_g,cfl,cflu,ntime)
+                    mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
                 end if
             end if !mod
         end do !time
 
         time2 = wtime()
 
+        close(unit0)
+
         idone = 1
 
         !if (lprint_diagnostics) then 
             if (.not. dump_data) call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            mass_conserv0_g,cfl,cflu,ntime)
+            mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
         !end if
 
         if(allocated(q0_mlswe)) deallocate(q0_mlswe)
@@ -302,10 +320,10 @@ contains
     end subroutine time_loop
 
     subroutine write_time()
-       open(unit=111,file='time.csv')
+       open(unit=222,file='time.csv')
        
-       write(111,*) rhs_time
-       close(111)
+       write(222,*) rhs_time
+       close(222)
 
     end subroutine write_time
 

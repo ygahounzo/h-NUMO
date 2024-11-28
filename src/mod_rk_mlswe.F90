@@ -57,18 +57,22 @@ module mod_rk_mlswe
         uvb_ave_df  = 0.0
         ope_ave = 0.0
         btp_mass_flux_ave = 0.0
-        !H_ave = 0.0
-        !Qu_ave = 0.0
-        !Qv_ave = 0.0
-        !Quv_ave = 0.0
+
+        H_ave = 0.0
+        Qu_ave = 0.0
+        Qv_ave = 0.0
+        Quv_ave = 0.0
+
         ope_ave_df = 0.0
         uvb_face_ave  = 0.0
         ope_face_ave = 0.0
         btp_mass_flux_face_ave = 0.0
-        !H_face_ave = 0.0
-        !Qu_face_ave = 0.0
-        !Qv_face_ave = 0.0
-        !Quv_face_ave = 0.0
+
+        H_face_ave = 0.0
+        Qu_face_ave = 0.0
+        Qv_face_ave = 0.0
+        Quv_face_ave = 0.0
+
         tau_wind_ave = 0.0
         tau_bot_ave = 0.0
         ope2_ave = 0.0
@@ -134,17 +138,21 @@ module mod_rk_mlswe
         uvb_ave_df = N_inv*uvb_ave_df
 
         ope_ave = N_inv*ope_ave
-        !H_ave = N_inv*H_ave 
-        !Qu_ave = N_inv*Qu_ave
-        !Qv_ave = N_inv*Qv_ave 
-        !Quv_ave = N_inv*Quv_ave 
+
+        H_ave = N_inv*H_ave 
+        Qu_ave = N_inv*Qu_ave
+        Qv_ave = N_inv*Qv_ave 
+        Quv_ave = N_inv*Quv_ave 
+
         btp_mass_flux_ave = N_inv*btp_mass_flux_ave
 
         ope_face_ave = N_inv*ope_face_ave 
-        !H_face_ave = N_inv*H_face_ave 
-        !Qu_face_ave = N_inv*Qu_face_ave 
-        !Qv_face_ave = N_inv*Qv_face_ave 
-        !Quv_face_ave = N_inv*Quv_face_ave 
+
+        H_face_ave = N_inv*H_face_ave 
+        Qu_face_ave = N_inv*Qu_face_ave 
+        Qv_face_ave = N_inv*Qv_face_ave 
+        Quv_face_ave = N_inv*Quv_face_ave 
+
         btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
 
         one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 

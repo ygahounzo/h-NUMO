@@ -582,7 +582,7 @@ module mod_layer_terms
           
     end subroutine layer_momentum_advec_terms_upwind
 
-    subroutine layer_pressure_terms_v1(qprime, qprime_face, qprime_df)
+    subroutine layer_pressure_terms(qprime, qprime_face, qprime_df)
 
         ! This routine computes the layer momentum pressure terms
 
@@ -923,9 +923,9 @@ module mod_layer_terms
             end do 
         end if
 
-    end subroutine layer_pressure_terms_v1
+    end subroutine layer_pressure_terms
 
-    subroutine layer_pressure_terms(qprime, qprime_face, qprime_df)
+    subroutine layer_pressure_terms_v1(qprime, qprime_face, qprime_df)
 
         ! This routine computes the layer momentum pressure terms
 
@@ -1119,7 +1119,7 @@ module mod_layer_terms
             !end if
         end do ! iface 
 
-    end subroutine layer_pressure_terms
+    end subroutine layer_pressure_terms_v1
 
     subroutine velocity_df(q_df, qb_df)
 

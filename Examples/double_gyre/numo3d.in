@@ -61,8 +61,8 @@ visc_mlswe = 50.0,
 dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,
 matlab_viz = T,
-adjust_H_vertical_sum = 0,
-adjust_bcl_mom_flux = 0,
+adjust_H_vertical_sum = 2,
+adjust_bcl_mom_flux = 1,
 mlswe_bc_strong = T,
 dg_integ_exact = F,
 dump_data = T,
@@ -101,7 +101,9 @@ out_type='vtk',
 	       	  !vtk=Visual ToolKit (Paraview) output
 	       	  !none=No Output
 
-lprint_diagnostics=F, 
+lprint_diagnostics=T, 
 			   !T=true=print diagnostics
 			   !F=false=do NOT print diagnostics
+lcheck_conserved=T
+
 /

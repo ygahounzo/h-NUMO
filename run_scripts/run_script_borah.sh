@@ -13,6 +13,9 @@ source /etc/profile
 source ~/.bashrc
 source ~/.bash_profile
 
+module load gcc
+module load openmpi
+
 cp ~/h-NUMO/bin/numo3d .
 
 mpirun -np 48 ./numo3d

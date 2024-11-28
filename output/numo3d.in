@@ -47,9 +47,9 @@ geometry_type='cube',
 
 &input
 dt= 100,
-dt_btp = 1.6,
+dt_btp = 1.8,
 time_initial = 0.0,
-time_final   = 100, !10800,
+time_final   = 10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 lrestart_file = .false.,
@@ -59,14 +59,14 @@ ad_mlswe = 0.0,
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
 method_visc = 0,  !0=no viscosity
-visc_mlswe = 1.0,
+visc_mlswe = 0.0,
 dpprime_visc_min = 0.0,
 max_shear_dz = 20.0,
 matlab_viz = T,
-adjust_H_vertical_sum = 0,
-adjust_bcl_mom_flux = 0,
+adjust_H_vertical_sum = 2,
+adjust_bcl_mom_flux = 1,
 mlswe_bc_strong = T,
-dg_integ_exact = F,
+dg_integ_exact = T,
 dump_data = T,
 
 !----case
@@ -80,7 +80,7 @@ ti_method = 'btp_bcl',
 	      !rk35; (Optimized RK35)
 
 ti_method_btp = 'rk35', ! Default = 'explicit' (two step method)
-kstages=4,
+kstages=5,
 
 space_method = 'dg', !dg=discontinuous Galerkin
 	    	

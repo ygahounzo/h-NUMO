@@ -35,7 +35,8 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
 		mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + q(1,:,k)
 	end do
 
-	q(5,:,1) = qb(2,:)*one_over_pbprime_df(:) !mslwe_elevation(:,1)
+	!q(5,:,1) = qb(2,:)*one_over_pbprime_df(:) 
+	q(5,:,1) = qb(1,:)*one_over_pbprime_df(:) - 1.0 
 	!q(5,:,1) = mslwe_elevation(:,1)
 	q(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 

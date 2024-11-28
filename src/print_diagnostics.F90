@@ -12,7 +12,7 @@
 !----------------------------------------------------------------------!
 
 subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
-   mass_conserv0_g,cfl,cflu,ntime)
+   mass_conserv0_g,cfl,cflu,ntime,fnp11, unit0)
 
    use mpi
 
@@ -34,7 +34,8 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
    !global arrays
    real, intent(in)  :: q_mlswe(5,npoin,nlayers), qb(4,npoin)
    real, intent(in)  :: time, dt, mass_conserv0_g(nlayers)
-   integer, intent(in) :: itime, idone, ntime
+   integer, intent(in) :: itime, idone, ntime, unit0
+   character, intent(in) :: fnp11*18
 
    !local arrays
    real, dimension(:,:), allocatable :: q
@@ -94,12 +95,17 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
       qmin_layers(:,ll) = qmin_g
 
    end do
+   
 
    if (irank == 0 .and. lcheck_conserved) then 
       
       do ll = 1,nlayers
          xm1(ll) = abs(mass_conserv(ll) - mass_conserv0_g(ll))/mass_conserv0_g(ll)
       end do 
+
+      ! Save mass conservation to a file
+      if (idone == 0) write(unit0, fnp11) itime, mass_conserv
+
    end if
 
    do i = 1,4
