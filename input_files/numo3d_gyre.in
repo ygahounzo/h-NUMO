@@ -18,7 +18,7 @@ nlayers = 2,
 !P4est Input
 refinement_levels_h = 0, !refinement levels in horizontal
 
-lio_grid_ascii=F,
+lread_external_grid=F,
 
 !Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
