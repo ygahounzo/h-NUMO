@@ -23,9 +23,9 @@
 module mod_p4est
 
   use mod_input, only: nelx, nely, nelz, nproc_z, nopx, nopy, nopz, xdims,     &
-    ydims, ztop, zbottom, x_boundary, y_boundary, z_boundary, lsommerfeld,     &
-    x_periodic, y_periodic, z_periodic, lp4est, lp6est, nel_root_h,            &
-    refinement_levels_h, nel_root_v, refinement_levels_v, geometry_type,       &
+    ydims, ztop, zbottom, x_boundary, y_boundary, z_boundary,     &
+    x_periodic, y_periodic, z_periodic, nel_root_h,            &
+    refinement_levels_h, &
     space_method, read_external_grid_flg, is_non_conforming_flg, xlim_min,     &
     xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, space_method,            &
     luse_hybrid_cpu_gpu, platformWeight, platformWeight2, cpus_per_node,       &
@@ -232,7 +232,7 @@ contains
 
     type (p4esttonuma) :: p2n
 
-    integer :: is_cube=0
+    integer :: is_cube=1
     integer :: is_dg=0
     integer :: is_cgc=0
 
@@ -257,71 +257,40 @@ contains
     !------------------------------------------
     if(space_method == 'dg') is_dg = 1
     if(space_method == 'cgc') is_cgc = 1
-    if(geometry_type == 'cube') is_cube = 1
-        
-    !--- p6est
-    if (lp6est) then
+    
+    !--- p4est initialization
 
-      if(is_cube==1) nel_root_v = nelz
+    if(nglx == 1) then
+      lnx = nely; lny = nelz
+      orient = 0
+    else if(ngly == 1) then
+      lnx = nelx; lny = nelz
+      orient = 1
+    else
+      orient = 2
+      lnx = nelx; lny = nely
+    endif
+    lnz = 1
 
-      call p6esttonuma_init(refinement_levels_h, refinement_levels_v, nel_root_h, &
-        nel_root_v, nop, nopz, xglx, xglz, is_cube, nelx, nely, nelz, is_dg, &
-        x_periodic, y_periodic, FACE_LEN, orient, iboundary, p2n)
-      call p6esttonuma_get_mesh_scalars(p2n, npoin_cg, nelem, log_root_v, num_nbh, &
-        num_send_recv_total, nbsido, nface, nboun, ncol_cg, nz_cg, nelz)
+    if(init_p4est) &
+      call p4esttonuma_init(is_cube, lnx, lny, lnz, &
+      refinement_levels_h, read_external_grid_flg, &
+      is_non_conforming_flg, refine_coarsen_elements, &
+      x_periodic, y_periodic, z_periodic, FACE_LEN, orient, lrestoring_sponge)
 
-      height_correction = (2**log_root_v)*1.0/nel_root_v
-      !--- p4est
-    else if (lp4est) then
-      !2d p4est
-      if(is_2d) then
-        if(nglx == 1) then
-          lnx = nely; lny = nelz
-          orient = 0
-        else if(ngly == 1) then
-          lnx = nelx; lny = nelz
-          orient = 1
-        else
-          orient = 2
-          lnx = nelx; lny = nely
-        endif
-        lnz = 1
+    ! TODO: fix to use xglx, xgly, xglz
+    call p4esttonuma_fill_data(nop, xgl, is_dg, iboundary, read_external_grid_flg, p2n, lrestoring_sponge)
 
-        if(init_p4est) &
-          call p4esttonuma_init(is_cube, lnx, lny, lnz, &
-          refinement_levels_h, read_external_grid_flg, &
-          is_non_conforming_flg, refine_coarsen_elements, &
-          x_periodic, y_periodic, z_periodic, FACE_LEN, orient, lrestoring_sponge)
+    call p4esttonuma_get_mesh_scalars(p2n, npoin_cg, nelem, num_nbh, &
+      num_send_recv_total, nbsido, nface, nboun, nNC)
 
-        ! TODO: fix to use xglx, xgly, xglz
-        call p4esttonuma_fill_data(nop, xgl, is_dg, iboundary, read_external_grid_flg, p2n, lrestoring_sponge)
-
-        call p4esttonuma_get_mesh_scalars(p2n, npoin_cg, nelem, num_nbh, &
-          num_send_recv_total, nbsido, nface, nboun, nNC)
-        !3d p4est
-      else
-        if(init_p4est) &
-
-          call p8esttonuma_init(is_cube, nelx, nely, nelz, &
-          refinement_levels_h, read_external_grid_flg, &
-          is_non_conforming_flg, refine_coarsen_elements, &
-          x_periodic, y_periodic, z_periodic, FACE_LEN, orient, lrestoring_sponge)
-
-        ! TODO: fix to use xglx, xgly, xglz
-        call p8esttonuma_fill_data(nop, xgl, is_dg, iboundary, read_external_grid_flg, p2n, lrestoring_sponge)
-
-        call p8esttonuma_get_mesh_scalars(p2n, npoin_cg, nelem, num_nbh, &
-          num_send_recv_total, nbsido, nface, nboun, nNC)
-      endif
-
-      if(is_non_conforming_flg == 0) then
-        nelemx = nelx *2**refinement_levels_h
-        nelemy = nely *2**refinement_levels_h
-        nelemz = nelz *2**refinement_levels_h
-      end if
-
-      height_correction = 1
+    if(is_non_conforming_flg == 0) then
+      nelemx = nelx *2**refinement_levels_h
+      nelemy = nely *2**refinement_levels_h
+      nelemz = nelz *2**refinement_levels_h
     end if
+
+    height_correction = 1
 
     call mod_grid_init_unified()
 
@@ -358,126 +327,46 @@ contains
     !-----------------------------------------
     ! Get grid data from p4est
     !------------------------------------------
-    if (lp6est) then
-       if(allocated(node_column_table)) deallocate(node_column_table)
-       allocate(node_column_table(nz_cg, ncol_cg), stat=AllocateStatus )
-       if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_p6est **"
 
-       if (irank == irank0) print*, '------------------Entering P6est_Mesh_Arrays-------------------------'
-       ! FIXME: Handle non-conforming
-       call p6esttonuma_get_mesh_arrays(p2n, coord, intma_table, NC_face, NC_edge, EToNC, face, &
-              face_type, num_send_recv, &
-              nbh_proc, nbh_send_recv, &
-              nbh_send_recv_multi, &
-              nbh_send_recv_half, &
-              bsido, node_column_table, is_cgc, &
-              D2C_mask)
-       call p6esttonuma_free(p2n)
-       plist = 0
-       if (irank == irank0) print*, '------------------Exiting P6est_Mesh_Arrays-------------------------'
 
-       !this is a HACK that needs to be removed after p6est can handle non-conforming faces
-       nbh_send_recv_multi=1
-       !end HACK
+    if (irank == irank0) print*, '------------------Entering P4est_Mesh_Arrays-------------------------'
+      ! FIXME: Kill the NC_face and NC_edge arrays?
+      call p4esttonuma_get_mesh_arrays(p2n, coord, intma_table,           &
+          NC_face, NC_edge, EToNC, face, face_type,                      &
+          num_send_recv, nbh_proc, nbh_send_recv, nbh_send_recv_multi,   &
+          nbh_send_recv_half, bsido, lev_list, plist, is_cgc, vc_el_type, &
+          lrestoring_sponge, D2C_mask)
+      call p4esttonuma_free(p2n,lrestoring_sponge)
 
-       if(is_cube == 1) then
-          !adjust cube dimensions
-          do i=1, npoin
-             x=coord(1, i)/nelx; y=coord(2, i)/nely; z=coord(3, i)*height_correction
-             coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
-             coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
-             coord(3, i)=z*(ztop-zbottom)+zbottom
-          end do
-       else
-          !project coord_cg to sphere
-          do i=1, npoin
-             x=coord(1, i); y=coord(2, i); z=coord(3, i)
-             call cube2sphere(x, y, z, height_correction, csp_face(i))
-             coord(1, i)=x
-             coord(2, i)=y
-             coord(3, i)=z
-          end do
+    if (irank == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------------'
 
-          do e=1,nelem
-            i=intma(2,2,2,e)
-            cs_face(e) = csp_face(i)
-          end do
-       end if
-
-    else
-       if (irank == irank0) print*, '------------------Entering P4est_Mesh_Arrays-------------------------'
-       ! FIXME: Kill the NC_face and NC_edge arrays?
-       if(is_2d) then
-           call p4esttonuma_get_mesh_arrays(p2n, coord, intma_table,           &
-                NC_face, NC_edge, EToNC, face, face_type,                      &
-                num_send_recv, nbh_proc, nbh_send_recv, nbh_send_recv_multi,   &
-                nbh_send_recv_half, bsido, lev_list, plist, is_cgc, vc_el_type, &
-                lrestoring_sponge, D2C_mask)
-           call p4esttonuma_free(p2n,lrestoring_sponge)
-       else
-           call p8esttonuma_get_mesh_arrays(p2n, coord, intma_table,           &
-                NC_face, NC_edge, EToNC, face, face_type,                      &
-                num_send_recv, nbh_proc, nbh_send_recv, nbh_send_recv_multi,   &
-                nbh_send_recv_half, bsido, lev_list, plist, is_cgc, vc_el_type, &
-                lrestoring_sponge, D2C_mask)
-           ! call p8esttonuma_dump_forest()
-           call p8esttonuma_free(p2n,lrestoring_sponge)
-           ! print*, "K = ", nelem, ";"
-           ! print*, "Np = ", nglx * ngly * nglz, ";"
-           ! print*, "N = ", nglx-1, ";"
-           ! print*, "intma_table = reshape([", intma_table, "], Np, K);"
-           ! print*, "coord = reshape([", coord, "], 3, Np, K);"
-           ! print*, "EToNC = [", EToNC, "];"
-           ! print*, "NC_face = reshape([", NC_face, "], 6, max(EToNC));"
-           ! print*, "NC_edge = reshape([", NC_edge, "], 12, max(EToNC));"
-           ! print*, "interp = reshape([", interp_x, "], N+1, N+1, 2);"
-       endif
-       if (irank == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------------'
-
-       if(is_cube == 1) then
-          !adjust cube dimensions
-          if(is_2d.and.read_external_grid_flg==0) then
-              do i=1, npoin
+    !adjust cube dimensions
+    if(is_2d.and.read_external_grid_flg==0) then
+        do i=1, npoin
 !                if(read_external_grid_flg==0) then !don't adjust if mesh read from file
-                    if(nglx == 1) then
-                       x=0; y=coord(1, i)/nely; z=coord(2, i)/nelz
-                    else if(ngly == 1) then
-                       x=coord(1, i)/nelx; y=0; z=coord(2, i)/nelz
-                    else
-                       x=coord(1, i)/nelx; y=coord(2, i)/nely; z=0
-                    endif
-                    coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
-                    coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
-                    coord(3, i)=z*(ztop-zbottom)+zbottom
+              if(nglx == 1) then
+                  x=0; y=coord(1, i)/nely; z=coord(2, i)/nelz
+              else if(ngly == 1) then
+                  x=coord(1, i)/nelx; y=0; z=coord(2, i)/nelz
+              else
+                  x=coord(1, i)/nelx; y=coord(2, i)/nely; z=0
+              endif
+              coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
+              coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
+              coord(3, i)=z*(ztop-zbottom)+zbottom
 !                 end if
-              end do
-          else
-             if(read_external_grid_flg==0) then !don't adjust if mesh read from file
-                do i=1, npoin
-                   x=coord(1, i)/nelx; y=coord(2, i)/nely; z=coord(3, i)/nelz
-                   coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
-                   coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
-                   coord(3, i)=z*(ztop-zbottom)+zbottom
-                end do
-             end if
-             
-          endif
-       else
-          !project coord_cg to sphere
+        end do
+    else
+        if(read_external_grid_flg==0) then !don't adjust if mesh read from file
           do i=1, npoin
-             x=coord(1, i); y=coord(2, i); z=coord(3, i)
-             call cube2sphere(x, y, z, 1.0, csp_face(i))
-             coord(1, i)=x
-             coord(2, i)=y
-             coord(3, i)=z
+              x=coord(1, i)/nelx; y=coord(2, i)/nely; z=coord(3, i)/nelz
+              coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
+              coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
+              coord(3, i)=z*(ztop-zbottom)+zbottom
           end do
-          do e=1,nelem
-            i=intma(2,2,2,e)
-            cs_face(e) = csp_face(i)
-          end do
-       end if
-
-    end if
+        end if
+        
+    endif
 
     !multirate stuff
     npartition = sum(plist)
@@ -522,78 +411,7 @@ contains
 
     deallocate(csp_face)
 
-
-
-!-------------------------------------------------------------------------------------
-!    write(fname, "(A10, I1, A4)")'p4est_dbg_', irank, '.dat'
-!    open(111, file=fname)
-!    write(111, *)"npoin, nelem, num_nbh, num_send_recv_total, nbsido, nface, nboun"
-!    write(111, *)npoin, nelem, num_nbh, num_send_recv_total, nbsido, nface, nboun
-
-
-!    write(111, *)"coord"
-!    do i=1, npoin
-!        write(111, '(I7, XXX, 3F16.8)')i, coord(:, i)
-!    end do
-!    write(111, *)"intma_table"
-!    do e=1, nelem
-!        do k=1, ngl
-!           do j=1, ngl
-!              do i=1, ngl
-!                 write(111, '(5I5)')e, i, j, k, intma(i, j, k, e)
-!              end do
-!           end do
-!        end do
-!    end do
-!    write(111, *)"face", irank
-!    do i=1, nface
-!       if(face(8,i)<0) then
-!          write(111, '(12I5)')face(:, i), face_type(i)
-!          do k=1,nglz
-!             do j=1,ngly
-!                do e=1,nglx
-!                   ip=intma(e,j,k,face(7,i))
-!                   write(111,'(3F16.8)')coord(:,ip)
-!                end do
-!             end do
-!          end do
-!       end if
-!    end do
-!    write(111, *)"face_type"
-!    write(111, *)face_type
-!    write(111, *)"num_send_recv"
-!    write(111, *)num_send_recv
-!    write(111, *)"nbh_proc"
-!    write(111, *)nbh_proc
-!    write(111, *)"nbh_send_recv"
-!    write(111, *)nbh_send_recv
-!    write(111, *)"bsido"
-!    write(111, *)bsido
-!    close(111)
-
-
-!    do i=1, nface
-!    if(face_type(i)==12.or.face_type(i)==21) then
-!       write(*, '(2I7, XXXX, 11I7, XXXX, I7)') irank, i, face(:, i), face_type(i)
-!    end if
-!    end do
-
-!    call mpi_barrier(mpi_comm_world, ierr)
-
-!    print*, irank, "ibn, tot, nbh:", nboun, num_send_recv_total, num_nbh
-!    print*, irank, "num_send_recv:", num_send_recv
-!    print*, irank, "nbh_send_recv:", nbh_send_recv
-!    print*, irank, "nbh_send_recv_multi:", nbh_send_recv_multi
-!    print*, irank, "nbh_send_recv_half:", nbh_send_recv_half
-!----------------------------------------------------------------------------------------
-
   end subroutine mod_p4est_create_grid
-
-  !subroutine mod_p4est_dump_mesh(fnp)
-  !  implicit none
-  !  character :: fnp*100
-  !  call p8esttonuma_dump_forest(trim(fnp) // CHAR(0))
-  !end subroutine mod_p4est_dump_mesh
 
 !--------------------------------------------------------------------!
 !>@brief Initialization of some data after extracting p4est grid
@@ -650,10 +468,6 @@ contains
     call mpi_allgather(npoin, 1, mpi_integer, npoin_l, 1, mpi_integer, mpi_comm_world, ierr)
     call mpi_allgather(ncol, 1, mpi_integer, ncol_l, 1, mpi_integer, mpi_comm_world, ierr)
     call mpi_allgather(nelem, 1, mpi_integer, nelem_l, 1, mpi_integer, mpi_comm_world, ierr)
-
-    !call mpi_gather(npoin, 1, mpi_integer, npoin_l, 1, mpi_integer, 0, mpi_comm_world, ierr)
-    !call mpi_gather(ncol, 1, mpi_integer, ncol_l, 1, mpi_integer, 0, mpi_comm_world, ierr)
-    !call mpi_gather(nelem, 1, mpi_integer, nelem_l, 1, mpi_integer, 0, mpi_comm_world, ierr)
 
     ncol_g=sum(ncol_l)
     npoin_g=sum(npoin_l)

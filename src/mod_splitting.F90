@@ -41,7 +41,7 @@ module mod_splitting
         use mod_initial, only: N_btp, coriolis_quad, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, ifilter, nlayers
+        use mod_input, only: nlayers, dt_btp, nlayers
         use mod_rhs_btp, only: create_rhs_btp_momentum, btp_mass_advection_rhs, create_rhs_btp_mom_mass
         use mod_barotropic_terms, only: btp_evaluate_mom, btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, &
                                         btp_mass_advection_terms, btp_bcl_coeffs_quad, btp_evaluate_mom_dp, btp_evaluate_mom_dp_face, &
@@ -337,7 +337,7 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ===========================================================================================================================
 
-        use mod_input, only: nlayers, dt, icase, ifilter
+        use mod_input, only: nlayers, dt
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df, pbprime
@@ -412,7 +412,7 @@ module mod_splitting
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe, ifilter
+        use mod_input, only: nlayers, dt, ad_mlswe
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
         use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, &
@@ -518,7 +518,7 @@ module mod_splitting
 
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe, ifilter
+        use mod_input, only: nlayers, dt, ad_mlswe
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
         use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, &

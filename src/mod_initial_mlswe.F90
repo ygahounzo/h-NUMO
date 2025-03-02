@@ -31,7 +31,7 @@ module mod_initial_mlswe
 
         use mod_grid, only : npoin, npoin_q, nface, intma_dg_quad, face, mod_grid_get_face_nq, coord, nelem, intma
         use mod_basis, only : nq, nglx, ngly, nqx, nqy
-        use mod_input, only : nlayers, icase, xdims, ydims
+        use mod_input, only : nlayers, test_case, xdims, ydims
         use mod_face, only : imapl_q, imapr_q
 
 
@@ -289,14 +289,14 @@ module mod_initial_mlswe
 
     end subroutine interpolate_pbprime_init
 
-    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,coord,icase, a_bclp, b_bclp, tau_wind_df)
+    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, tau_wind_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, coord
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
         use mod_input, only: gravity_in, &
             nelx, nelz, &
-            xdims, ydims, nlayers, dt, dt_btp
+            xdims, ydims, nlayers, dt, dt_btp, test_case
 
         !use mod_initial, only: psih, indexq
     
@@ -306,8 +306,6 @@ module mod_initial_mlswe
         real, dimension(npoin), intent(out) :: coriolis_df
         real, dimension(npoin_q), intent(out) :: coriolis_quad
         real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
-        real, dimension(3,npoin), intent(in) :: coord
-        integer, intent(in) :: icase
 
         real, dimension(2,npoin), intent(out) :: tau_wind_df
 
@@ -327,52 +325,24 @@ module mod_initial_mlswe
         tau0 = 0.1
 
 
-        select case (icase)
-        case (2023)
+        select case (trim(test_case))
+        case ("bump")
             beta = 0.0
             do I = 1, npoin
                 y = coord(2,I)
-                !print*, 'y = ', y
 
                 coriolis_df(I) = 0.0
                 tau_wind_df(1,I) = 0.0
             end do
-        case (2024)
+        case ('lakeAtrest')
             beta = 0.0
             do I = 1, npoin
                 y = coord(2,I)
-                !print*, 'y = ', y
 
                 coriolis_df(I) = 0.0
                 tau_wind_df(1,I) = 0.0
             end do
-
-        case (2022)
-            beta = 0.0
-            do I = 1, npoin
-                y = coord(2,I)
-                sig = 0.0015
-                rho_air = 1.2
-                w = 20
-                lat = 45.0*pi/180.0
-
-                coriolis_df(I) = 0.0
-                tau_wind_df(1,I) = sig*rho_air*w**2*cos(lat)
-                tau_wind_df(2,I) = sig*rho_air*w**2*sin(lat)
-            end do
-
-        case (1000)
-            ! tau0 = 0.1027
-            beta = 2.0e-11
-            f0 = 0.93e-4
-            do I = 1, npoin
-                y = coord(2,I)
-
-                coriolis_df(I) = f0 + beta*(y - ym)
-
-                tau_wind_df(1,I) = -tau0*cos(2.0*pi*y/Ly)
-            end do
-        case (1100)
+        case ('double-gyre')
             ! tau0 = 0.1027
             beta = 2.0e-11
             f0 = 0.93e-4
@@ -384,7 +354,7 @@ module mod_initial_mlswe
                 tau_wind_df(1,I) = -tau0*cos(2.0*pi*y/Ly)
             end do
         case default
-            print*, "Unknown case number in cube initialization ", icase
+            print*, "Unknown case number in cube initialization ", test_case
             stop
         end select
 

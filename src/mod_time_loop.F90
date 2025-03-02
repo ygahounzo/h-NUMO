@@ -5,10 +5,10 @@
 !       Boise State University
 !       Date: July 02, 2023
 !----------------------------------------------------------------------!
-module mod_time_loop_mlswe
+module mod_time_loop
 
     use mod_mpi_communicator, only: ierr, ireq, nreq, status
-    use mod_input, only: ti_method, dt, lprint_diagnostics, irestart_file_number, out_type
+    use mod_input, only: dt, lprint_diagnostics, irestart_file_number, out_type
     use mod_mpi_utilities, only : irank, irank0, MPI_PRECISION, wtime, numproc
     use mod_types, only: r8
     use mod_global_grid, only: npoin_g, nelem_g
@@ -39,8 +39,8 @@ contains
             qb_face_mlswe_init, qb_df_mlswe_init, dpprime_df_init, layer_dz_eq, qprime_df_init, alpha_mlswe, zbot_df
 
         use mod_input, only: dt,time_initial, time_final, time_restart, &
-            icase, ifilter, fname_root, lprint_diagnostics, &
-            ti_method, nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
+            fname_root, lprint_diagnostics, &
+            nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
 
         use mod_layer_terms, only: filter_mlswe
         use mod_barotropic_terms, only: restart_mlswe
@@ -327,4 +327,4 @@ contains
 
     end subroutine write_time
 
-end module mod_time_loop_mlswe
+end module mod_time_loop

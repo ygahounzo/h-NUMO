@@ -19,10 +19,10 @@ module mod_global_grid
 
     use mod_constants, only: earth_radius, tol, gravity
 
-    use mod_input, only : icase, nelx, nely, nelz, &
+    use mod_input, only : nelx, nely, nelz, &
         xdims, ydims, &
         x_boundary, y_boundary, z_boundary, &
-        ztop_in => ztop, zbot_in => zbottom, geometry_type, space_method
+        ztop_in => ztop, zbot_in => zbottom, space_method
 
     use mod_types, only : r8
 
@@ -100,12 +100,8 @@ contains
 
         implicit none
 
-        if (geometry_type == 'cube') then
-            call mod_global_grid_cube_create()
-        else
-            print *, "Invalid Geometry Type"
-            stop
-        end if
+        ! Construct Grid
+        call mod_global_grid_cube_create()
 
         !Initialize coord.
         call mod_global_grid_init_coord()

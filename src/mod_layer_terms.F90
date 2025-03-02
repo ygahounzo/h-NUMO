@@ -1125,7 +1125,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, icase, ifilter
+        use mod_input, only: nlayers
         use mod_face, only: imapl
 
         implicit none
@@ -1184,7 +1184,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, icase, ifilter
+        use mod_input, only: nlayers
         use mod_initial, only: pbprime_df
 
         implicit none
@@ -1224,7 +1224,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, icase, ifilter
+        use mod_input, only: nlayers
         use mod_initial, only: pbprime_df
 
         implicit none
@@ -1256,7 +1256,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers, icase, ifilter
+        use mod_input, only: nlayers
         use mod_face, only: imapl
 
         implicit none

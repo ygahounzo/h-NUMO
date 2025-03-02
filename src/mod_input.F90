@@ -5,13 +5,6 @@
 !> Naval Postgraduate School
 !> Monterey, CA 93943-5216
 !>
-!> @date November 10 2014, S. Marras added sponge_lateralx_coe_east and sponge_lateralx_coe_west
-!> @date November 10 2014, S. Marras added lforce_spongex, lforce_spongey, lforce_spongez
-!>                         If not selected in input by the user, everything will behave as before, 
-!>                         otherwise, the flag lsponge will become true even if the boundary
-!>                         codes iboundary(1:6) are different from 6 in input. These are used in mod_bc.f90
-!
-!>
 !>@ modified by Yao Gahounzo 
 !>      Computing PhD 
 !       Boise State University
@@ -33,7 +26,7 @@ module mod_input
         restoring_time, &
         lrestoring_sponge, &
         time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,  &
-        icase, ti_method, si_method, si_dimension, &
+        test_case, &
         ti_method_btp, & ! Added by YaoG
         filter_mux, filter_muy, filter_muz, &
         ifilter, kstages, &
@@ -55,14 +48,14 @@ module mod_input
         nlayers, & !shallow water layers
         x_boundary, y_boundary, z_boundary, &
         x_periodic, y_periodic, z_periodic, &
-        geometry_type, nproc_z, &
+        nproc_z, &
         bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
         sponge_type, sponge_top_coe, sponge_lateralx_coe, sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
         lsommerfeld, &
         lgrid_only, &
-        lp4est, lp6est, lserial_grid_creation, lparallel_grid_creation, lio_grid_ascii, lwrite_grid_ascii, fname_initial, &
+        lserial_grid_creation, lparallel_grid_creation, lwrite_grid_ascii, fname_initial, &
         restart_path, & ! Added by Yao G.
-        nel_root_h, refinement_levels_h, nel_root_v, refinement_levels_v, &
+        nel_root_h, refinement_levels_h, &
         xstretch_coe, ystretch_coe, zstretch_coe, &
         lxstretch, lystretch, lzstretch, &
         xstretch_type, ystretch_type, zstretch_type, &
@@ -108,14 +101,13 @@ module mod_input
    real(kind=r8) :: time_dynamic_amr=0.0
    real(kind=r8) :: interval_end=0.0
    real(kind=r8) :: filter_mux, filter_muy, filter_muz
-   integer       :: icase, kstages, ifilter
+   integer       :: kstages, ifilter
    integer       :: irestart_file_number = 0
    character     :: filter_basis_type*8, filter_weight_type*4
    character     :: fname_root*150, out_type*5, fname_initial*100
    character     :: restart_path*100
    logical       :: write_mesh=.false.
-   character     :: ti_method*14, si_method*8, si_dimension*2
-   character     :: ti_method_btp*14
+   character     :: ti_method_btp*14, test_case*20
    logical       :: lprint_diagnostics
    integer       :: iprint_diagnostics = 1 !every how many iterations to print diagnostics
  
@@ -147,7 +139,6 @@ module mod_input
    integer           :: nlayers = 1 !number of shallow water layers
    integer           :: nproc_z
    integer           :: zlevel_out = 1 !This integer is given by the user to decide what spherical level to write to a netcdf file. Value 1 is by default
-   character(len=13) :: geometry_type
    character(len=24) :: sponge_type = 'no_sponge'
    character(len=8)  :: format_vtk  = 'BINARY' !can be ascii, binary
    character(len=8)  :: vtk_cell_type  = 'standard' !can be standard, lagrange
@@ -197,7 +188,6 @@ module mod_input
    real(kind=r8)          :: robin_bc_alpha = 1.0 ! sets value for alpha in n \cdot \nabla q - \alpha q = \beta Robin BC
    logical                :: lfree_slip_exact = .false.
    integer                :: refinement_levels_h = 0
-   integer                :: refinement_levels_v = 0
    integer                :: read_external_grid_flg = 0
    integer                :: full_stress_flg = 0
    integer                :: is_non_conforming_flg = 0
@@ -225,7 +215,6 @@ module mod_input
    logical                :: amr_mark_set2nc = .false.
  
    integer               :: nel_root_h = 0
-   integer               :: nel_root_v = 0
    integer               :: filter_tracers_flg = 0 !This flag activates the filter computation for the tracers equations (INactive by default)
    
    integer               :: platformID = 0
@@ -255,13 +244,10 @@ module mod_input
    logical :: lystretch      = .false.
    logical :: lzstretch      = .false.
    logical :: lgrid_only     = .false.
-   logical :: lp4est         = .false.
-   logical :: lp6est         = .false.
    logical :: lread_external_grid = .false.
    logical :: lread_bc       = .false.
    logical :: lserial_grid_creation = .true.
    logical :: lparallel_grid_creation = .false.
-   logical :: lio_grid_ascii = .false.
    logical :: lwrite_grid_ascii = .false.
    logical :: lout_ascii     = .false.
    logical :: lout_asciimaya = .false.
@@ -274,8 +260,6 @@ module mod_input
    !Input parameters to write a spherical shell (1 level) to a netcdf file:
    logical :: lgpu = .false.
    logical :: luse_hybrid_cpu_gpu = .false.
-
-   logical :: is_sphere = .false. 
    
    logical :: is_mlswe = .false.  !added by Yao Gahounzo
    logical :: matlab_viz = .false. !added by Yao Gahounzo
@@ -335,8 +319,7 @@ module mod_input
          restoring_time, &
          lrestoring_sponge, &
          time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,&
-         lrestart_file, icase, &
-         ti_method, si_method, si_dimension, &
+         lrestart_file, test_case, &
          ti_method_btp, & ! Added by Yao G.
          kstages, &
          filter_mux, filter_muy, filter_muz, ifilter, &
@@ -364,14 +347,13 @@ module mod_input
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &
-          geometry_type, nproc_z, &
+          nproc_z, &
           x_boundary, y_boundary, z_boundary, &
           x_periodic, y_periodic, z_periodic, &
           bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
           sponge_type, sponge_top_coe, sponge_lateralx_coe,sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
           lsommerfeld, &
           lgrid_only, &
-          lp4est, lp6est, lio_grid_ascii, &
           lread_external_grid, &
           is_non_conforming_flg, &
           p4est_log_level, &
@@ -389,8 +371,8 @@ module mod_input
           amr_num_neigh_iter, &
           amr_mark_set2nc, &
           lread_bc, &
-          lserial_grid_creation, lparallel_grid_creation, lio_grid_ascii, lwrite_grid_ascii,&
-          refinement_levels_h, refinement_levels_v, nel_root_v, nel_root_h,&
+          lserial_grid_creation, lparallel_grid_creation, lwrite_grid_ascii,&
+          refinement_levels_h, nel_root_h,&
           xstretch_coe, ystretch_coe, zstretch_coe, &
           lxstretch, lystretch, lzstretch
  
@@ -415,11 +397,7 @@ module mod_input
      read(funit,gridnl)
      close(funit)
  
-     geometry_type = lowercase(geometry_type)
-     ti_method = lowercase(ti_method)
      ti_method_btp = lowercase(ti_method_btp) !added by YaoG
-     si_method = lowercase(si_method)
-     si_dimension = lowercase(si_dimension)
      filter_weight_type = lowercase(filter_weight_type)
      filter_basis_type = lowercase(filter_basis_type)
      out_type = lowercase(out_type)
@@ -454,24 +432,12 @@ module mod_input
       if (ti_method_btp /= 'rk35' .and. ti_method_btp /= 'rk34' .and. ti_method_btp /= 'lsrk') then
          ti_method_btp = 'explicit'
       endif
-      fname_root=trim(fname_root) // '_' // trim(ti_method) // '_' // trim(ti_method_btp)
+      fname_root=trim(fname_root) // '_' // trim(ti_method_btp)
  
      !Grid Generation and Graph Partitioning
-     if (lp4est .or. lp6est) then
-        lserial_grid_creation=.false.
-        fname_root=trim(fname_root) // '_P4est'
-     else
-        lp4est=.false.
-        lp6est=.false.
-     end if
- 
-     if(lp6est) then
-        if (geometry_type/='cube') then
-           nelx=nel_root_h
-           nely=nel_root_h
-           nelz=nel_root_v
-        endif
-     end if
+
+      lserial_grid_creation=.false.
+      ! fname_root=trim(fname_root) // '_P4est'
 
  
      read_external_grid_flg = 0
@@ -495,18 +461,18 @@ module mod_input
         z_boundary(2) = 3
      endif
  
-     if (space_method == 'cgc' .and. (x_periodic+y_periodic+z_periodic > 0)) then
-        if (irank == 0) then
-           print*, '---------------------------------------------------'
-           print*,' INPUT WARNING:'
-           print*,' Space_Method and Periodic BCs conflict!'
-           print*,' space_method = ',space_method
-           print*,' x_periodic y_periodic z_periodic = ',x_periodic,y_periodic,z_periodic
-           print*,' Please, correct your input and rerun'
-           print*, '---------------------------------------------------'
-        end if
-        stop
-     end if
+   !   if (space_method == 'cgc' .and. (x_periodic+y_periodic+z_periodic > 0)) then
+   !      if (irank == 0) then
+   !         print*, '---------------------------------------------------'
+   !         print*,' INPUT WARNING:'
+   !         print*,' Space_Method and Periodic BCs conflict!'
+   !         print*,' space_method = ',space_method
+   !         print*,' x_periodic y_periodic z_periodic = ',x_periodic,y_periodic,z_periodic
+   !         print*,' Please, correct your input and rerun'
+   !         print*, '---------------------------------------------------'
+   !      end if
+   !      stop
+   !   end if
  
    end subroutine mod_input_create
  

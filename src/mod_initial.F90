@@ -18,7 +18,7 @@ module mod_initial
     use mod_basis, only: nq, npts, ngl
 
     use mod_input, only: time_initial, time_final, time_restart, time_scale, &
-        geometry_type, icase, nlayers, dt, dt_btp, is_mlswe, kstages
+        nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
         wind_stress_coriolis, compute_reference_edge_variables, Tensor_product, ssprk_coefficients
@@ -40,7 +40,7 @@ module mod_initial
         nrhs_mxm, &
         height, &
         pi_values,&
-        mod_initial_create_height, &
+        ! mod_initial_create_height, &
         q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, qprime_face_mlswe_init, pbprime_face, one_over_pbprime, &  ! added by Yao Gahounzo
         one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df_init, one_over_pbprime_df, &  ! added by Yao Gahounzo
         qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, alpha_mlswe, layer_dz_eq, tau_wind, coriolis_quad, coriolis_df, & ! added by Yao Gahounzo
@@ -157,10 +157,10 @@ module mod_initial
 
             call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
 
-            call initial_conditions_mlswe(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
+            call initial_conditions(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
                 qprime_face_mlswe_init, pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
                 dpprime_df_init, one_over_pbprime_df, layer_dz_eq, qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, qprime_df_init, &
-                alpha_mlswe, one_over_pbprime_df_face,zbot_df, coord)
+                alpha_mlswe, one_over_pbprime_df_face,zbot_df)
 
             call compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
                 coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha_mlswe)
@@ -172,7 +172,7 @@ module mod_initial
             N_btp = ceiling(dt/dt_btp)
             dt_btp = dt/real(N_btp)
 
-            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,coord,icase, b_bclp, a_bclp, tau_wind_df)
+            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, b_bclp, a_bclp, tau_wind_df)
 
             call ssprk_coefficients(ssprk_a,ssprk_beta)
         endif
@@ -213,28 +213,24 @@ module mod_initial
     !----------------------------------------------------------------------!
     !>@brief This subroutine constructs height
     !----------------------------------------------------------------------!
-    subroutine mod_initial_create_height(height,kvector,coord,npoin)
+    ! subroutine mod_initial_create_height(height,kvector,coord,npoin)
 
-        implicit none
+    !     implicit none
 
-        !global arrays
-        real height(npoin), kvector(3,npoin), coord(3,npoin)
-        integer npoin
+    !     !global arrays
+    !     real height(npoin), kvector(3,npoin), coord(3,npoin)
+    !     integer npoin
 
-        !local
-        integer ip
-        real x, y, z, xf, yf, zf
+    !     !local
+    !     integer ip
+    !     real x, y, z, xf, yf, zf
 
-        do ip = 1,npoin
-            x=coord(1,ip); y=coord(2,ip); z=coord(3,ip)
-            xf=kvector(1,ip); yf=kvector(2,ip); zf=kvector(3,ip);
-            height(ip) = x*xf + y*yf + z*zf
-        end do
+    !     do ip = 1,npoin
+    !         x=coord(1,ip); y=coord(2,ip); z=coord(3,ip)
+    !         xf=kvector(1,ip); yf=kvector(2,ip); zf=kvector(3,ip);
+    !         height(ip) = x*xf + y*yf + z*zf
+    !     end do
 
-        if (geometry_type(1:6) == 'sphere') then
-            height(:) = height(:) - earth_radius
-        end if
-
-    end subroutine mod_initial_create_height
+    ! end subroutine mod_initial_create_height
 
 end module mod_initial

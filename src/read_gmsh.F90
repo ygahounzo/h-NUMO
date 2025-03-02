@@ -943,7 +943,7 @@ subroutine side_gmsh(iside,jeside,intma,bsido,npoin,nelem,nboun,nside,ngl)
        real :: Ox, Oy, Oz !origin coordinates
        real    :: Dx, Dy, Dz !increments
        integer :: nx, ny, nz !number of points in each direction
-       integer :: icase, i,j,k
+       integer :: i,j,k
 
        real :: x,y,z,hb
        real, dimension(nx,ny) :: hb_struct

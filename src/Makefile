@@ -14,7 +14,6 @@ SOURCEF += create_boundary.F90
 SOURCEF += create_face.F90
 SOURCEF += create_global_rhs.F90
 SOURCEF += create_grid_cube.F90
-SOURCEF += create_grid_sphere_hex.F90
 SOURCEF += create_mass.F90
 SOURCEF += create_normals.F90
 SOURCEF += create_rhs_communicator.F90
@@ -22,7 +21,6 @@ SOURCEF += create_rhs_dynamics_flux.F90
 SOURCEF += filter.F90
 SOURCEF += filter_init.F90
 SOURCEF += gather_data.F90
-SOURCEF += ico_quad.F90
 SOURCEF += metrics.F90
 SOURCEF += mod_basis.F90
 SOURCEF += mod_bc.F90
@@ -40,13 +38,12 @@ SOURCEF += mod_mpi_communicator.F90
 SOURCEF += mod_parallel.F90
 SOURCEF += mod_p4est.F90
 SOURCEF += mod_ref.F90
-SOURCEF += mod_time_loop_mlswe.F90
+SOURCEF += mod_time_loop.F90
 SOURCEF += mod_types.F90
 SOURCEF += mod_utilities.F90
 SOURCEF += mod_mpi_utilities.F90
 SOURCEF += mod_vtk_binary.F90
 SOURCEF += mxm.F90
-SOURCEF += outmesh_2d_g.F90
 SOURCEF += outvtk_g_binary.F90
 SOURCEF += read_out_data.F90
 SOURCEF += print_diagnostics.F90
@@ -63,7 +60,6 @@ SOURCEC += p6est.c
 SOURCEC += p4est.c
 
 SOURCEH :=
-#INCLUDE FILES FOR p8est.c
 SOURCEH += p4est.c
 
 #INCLUDE FILES FOR MLSWE
@@ -73,7 +69,7 @@ SOURCEF += mod_layer_terms.F90
 SOURCEF += mod_barotropic_terms.F90
 SOURCEF += metrics_quad.F90
 SOURCEF += create_normals_quad.F90
-SOURCEF += initial_conditions_mlswe.F90
+SOURCEF += initial_conditions.F90
 SOURCEF += diagnostics.F90
 SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90

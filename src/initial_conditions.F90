@@ -5,12 +5,12 @@
 !
 !-----------------------------------------------------------------!
 
-subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q_face, qprime_face, pbprime_face, &
+subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face, qprime_face, pbprime_face, &
    one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df, one_over_pbprime_df, &
-   layer_dz_eq, qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df, coord)
+   layer_dz_eq, qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df)
     
 
-   use mod_grid, only: nelem, nface, npoin_q, npoin
+   use mod_grid, only: nelem, nface, npoin_q, npoin, coord
 
    use mod_constants, only: gravity, pi, tol, omega, earth_radius
 
@@ -24,7 +24,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
    use mod_input, only: gravity_in, &
       nelx, nelz, eqn_set, &
-      xdims, ydims,nlayers, icase
+      xdims, ydims,nlayers, test_case
 
    use mod_types, only : r8
    
@@ -55,7 +55,6 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
    real, dimension(4,2,nq,nface) :: qb_face
    real, dimension(4,npoin) :: qb_df
    real, dimension(nlayers) :: alpha
-   real, dimension(3,npoin) :: coord
 
    real, dimension(npoin, nlayers) :: u_df, v_df(npoin, nlayers)
    real, dimension(npoin) :: one_plus_eta_temp
@@ -107,9 +106,9 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
    ! hump centered in the interval, and u = v = 0.
    ! The motion is mostly internal.
 
-   select case (icase)
+   select case (trim(test_case))
       
-   case (2023) ! bump test (wave propagation)
+   case ("bump") ! bump test (wave propagation)
 
       gravity = 9.806
        
@@ -145,7 +144,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
 
       end do
 
-   case(2024) ! lake at rest (well-balanced) test 
+   case("lakeAtrest") ! lake at rest (well-balanced) test 
 
       gravity = 9.806
 
@@ -183,61 +182,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
          end if
 
       end do  
-
-   case(2022) ! 
-
-      gravity = 9.806
-
-      rho_0 = 1025.0
-      alpha(1) = 1.0/rho_0
-
-      layer_dz_eq(:) = 2.0/real(nlayers)
-
-      do k = 2,nlayers
-         !alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
-         alpha(k) = 1.0/(rho_0 + 0*k*1.0e-2/real(nlayers))
-      end do
-
-      xm=0.5*(xdims(1)+xdims(2))
-      yl=0.5*(ydims(1)+ydims(2))
-
-      L = 250.0
-
-      do I1 = 1,npoin 
-
-         x = coord(1,I1)
-         y = coord(2,I1)
-
-         r = sqrt((x-xm)**2 + (y-yl)**2)
-
-         ! Bottom topography (non-flat)
-         zbot_df(I1) = - sum(layer_dz_eq)
-
-      end do  
-
-   case (1000) ! double-gyre 
-
-      gravity = 9.806
-
-      rho_0 = 1027.01037
-      alpha(1) = 1.0/rho_0
-
-      do k = 2,nlayers
-         alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
-      end do
-       
-      !layer_dz_eq(1) = 1000.0
-      !layer_dz_eq(2) = 900.0
-
-      layer_dz_eq(:) = 10.0e3/real(nlayers)
-
-      alpha(1) = 0.976e-3
-      alpha(2) = 0.972e-3
-
-      ! Bottom topography (flat)
-      zbot_df(:) = - sum(layer_dz_eq)
-
-   case (1100) ! double-gyre 
+   case ("double-gyre") ! double-gyre 
 
       gravity = 9.806
        
@@ -251,7 +196,7 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
       zbot_df(:) = - sum(layer_dz_eq)
 
    case default
-      print*, "Unknown case number in cube initialization ", icase
+      print*, "Unknown test case in cube initialization ", test_case
       stop
       
    end select 
@@ -415,17 +360,16 @@ subroutine initial_conditions_mlswe(q, qprime, q_df, pbprime_init, pbprime_df, q
       end do
    end do
 
-end subroutine initial_conditions_mlswe
+end subroutine initial_conditions
 
 
 
 !--------------------------------------------------
 !>brief Initial grid dimensions and BCs for cubes
 !--------------------------------------------------
-subroutine initial_grid_cube_shallow()
+subroutine initial_grid_coord()
 
-    use mod_input, only: xdims, ydims, icase, &
-                         x_boundary, y_boundary, z_boundary
+    use mod_input, only: xdims, ydims, x_boundary, y_boundary, z_boundary
 
     implicit none
     
@@ -438,4 +382,4 @@ subroutine initial_grid_cube_shallow()
     xmin=xdims(1) ;  xmax=xdims(2)
     ymin=ydims(1) ;  ymax=ydims(2)
 
-end subroutine initial_grid_cube_shallow
+end subroutine initial_grid_coord

@@ -4,10 +4,11 @@
 !> Department of Applied Mathematics
 !> Naval Postgraduate School
 !> Monterey, CA 93943-5216
+!
+!>@modified by Yao Gahounzo, Computing PhD, Boise State University
+!> Date: April 03, 2024
 !----------------------------------------------------------------------!
 module mod_constants
-  
-    use mod_input, only : icase
 
     use mod_types, only : r8
 
@@ -15,7 +16,7 @@ module mod_constants
 
     public
 
-    private icase, r8
+    private r8
 
     !-----------------------------------------------------------------------
     real(kind=r8), parameter :: tol       = 1e-10
@@ -52,8 +53,6 @@ contains
   
     !-----------------------------------------------------------------------
     subroutine mod_constants_create()
-
-        use mod_input, only: icase
     
         implicit none
 

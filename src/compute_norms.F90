@@ -21,8 +21,6 @@ subroutine compute_norms(l1_norm,l2_norm,l8_norm,time_norm,q0,inorm,time)
   
     use mod_initial, only : q_exact, q_ref, nvar
 
-    use mod_input, only : icase
-
     use mod_metrics, only: jac
   
     use mod_parallel, only :ipoin_proc
@@ -64,16 +62,6 @@ subroutine compute_norms(l1_norm,l2_norm,l8_norm,time_norm,q0,inorm,time)
     !Compute Total Primitive Variables
     call mod_convert_variables_eqnset_to_set2nc(qn,q0,q_ref)
     call mod_convert_variables_eqnset_to_set2nc(qe,q_exact,q_ref)
-
-    !Compute Solution Conservation Variables
-    if (icase == 7) then
-       qn=q0      + q_ref
-       qe=q_exact + q_ref
-        do i=1,npoin
-            qn(2:5,i)=qn(1,i)*qn(2:5,i)
-            qe(2:5,i)=qe(1,i)*qe(2:5,i)
-        end do
-    end if
 
     !loop thru the elements
     do e=1,nelem
@@ -149,8 +137,6 @@ subroutine compute_norms_vector(l1_norm,l2_norm,l8_norm,q0,qe)
   use mod_constants, only: nnorm, tol
   
   use mod_grid, only: intma, npoin, nelem
-
-  use mod_input, only : icase 
 
   use mod_metrics, only: jac
   

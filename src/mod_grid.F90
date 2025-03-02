@@ -21,8 +21,7 @@ module mod_grid
       P4EST_FACES, P8EST_EDGES, &
       nqx, nqy, nqz, nq
 
-    use mod_input, only: ti_method, si_dimension, geometry_type, &
-        space_method, nelz,         &
+    use mod_input, only: space_method, nelz,         &
         is_non_conforming_flg
 
       use iso_c_binding, only: C_INT
