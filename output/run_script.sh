@@ -12,4 +12,4 @@
 
 cp $(pwd)/../bin/numo3d .
 
-mpirun -np 1 ./numo3d
+mpirun -np 25 ./numo3d

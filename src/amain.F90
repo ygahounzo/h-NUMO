@@ -88,8 +88,6 @@ subroutine initialize_fields()
 
   use mod_face, only: mod_face_create, mod_face_create_boundary, face_send
 
-  use mod_filter, only: mod_filter_create_rhs
-
   use mod_grid, only: nboun
 
   use mod_initial, only: mod_initial_create, q_init, nvar
@@ -152,10 +150,6 @@ subroutine initialize_fields()
   ! Create Reference Fields
   call mod_ref_create()
   if (irank == irank0) print *, "Reference Fields Created"
-
-   !Create RHS Vectors for the Filter
-   call mod_filter_create_rhs()
-   if (irank == irank0) print *, "Filter RHS Created"
 
    !Create DG Communicator arrays
    if (space_method == 'dg') then

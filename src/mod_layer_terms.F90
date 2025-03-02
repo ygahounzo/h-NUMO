@@ -1678,8 +1678,6 @@ module mod_layer_terms
 
         use mod_basis, only: nglx, ngly, nglz, npts, ngl, f, fx, fy, fz
 
-        use mod_filter, only: b, b_data
-
         use mod_grid, only: intma, npoin, nelem
 
         use mod_initial, only: nvar, nvart
@@ -1702,6 +1700,7 @@ module mod_layer_terms
         integer :: i, j, k, l, m, e, ip, ip1, ii, ie
         integer :: ndim, ndim2
         real r_k, u_k, v_k, w_k, t_k
+        real :: b(nvarb,npoin)
     
         !Store dimensions of MxM object
         ndim  = nvarb
