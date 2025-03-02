@@ -40,7 +40,8 @@ module mod_input
         imass, &
         ad_mlswe, cd_mlswe, &
         dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
-        adjust_H_vertical_sum, botfr, mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux
+        adjust_H_vertical_sum, botfr, mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
+        f0, beta
  
    public :: eqn_set, is_mlswe
  
@@ -125,6 +126,8 @@ module mod_input
    real(kind=r8) :: visc_mlswe = 0.0
    real(kind=r8) :: dpprime_visc_min = 0.0
    real(kind=r8) :: max_shear_dz = 0.0
+   real(kind=r8) :: f0 = 0.0
+   real(kind=r8) :: beta = 0.0
  
    !-----------------------------------------------------------------------
    ! Namelist Variables
@@ -343,7 +346,8 @@ module mod_input
          imass, &
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, botfr, &
-         mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux
+         mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
+         f0, beta
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
           nlayers, &

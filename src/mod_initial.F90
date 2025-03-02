@@ -160,7 +160,7 @@ module mod_initial
             call initial_conditions(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
                 qprime_face_mlswe_init, pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
                 dpprime_df_init, one_over_pbprime_df, layer_dz_eq, qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, qprime_df_init, &
-                alpha_mlswe, one_over_pbprime_df_face,zbot_df)
+                alpha_mlswe, one_over_pbprime_df_face,zbot_df,tau_wind_df)
 
             call compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
                 coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha_mlswe)

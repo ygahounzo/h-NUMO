@@ -4,21 +4,21 @@ is_mlswe = T,
 /
 
 &gridnl
-nelx  = 25,
-nely  = 25,
+nelx  = 10,
+nely  = 10,
 nelz  = 1,
 nopx  = 4,
 nopy  = 4,
 nopz  = 0,
-xdims = 0.0,2e6,
-ydims = 0.0,2e6,
+xdims = 0.0,2e3,
+ydims = 0.0,2e3,
 ztop  =  0.0,
 nlayers = 2,
 
 !P4est Input
 refinement_levels_h = 0, !refinement levels in horizontal
 
-lio_grid_ascii=F,
+lread_external_grid=F,
 
 !Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
@@ -34,33 +34,31 @@ y_periodic = 0,
 /
 
 &input
-dt= 500,
-dt_btp = 25,
+dt= 100,
+dt_btp = 1.8,
 time_initial = 0.0,
-time_final   = 7200,
+time_final   = 10800,
 time_restart = 10.0,
-time_scale = 86400, !1=seconds, 3600=hours, 86400=days
+time_scale = 1, !1=seconds, 3600=hours, 86400=days
 lrestart_file = .false.,
 
 ! mlswe parameter
 ad_mlswe = 0.0, 
-botfr = 1, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
-cd_mlswe = 1.0e-7, !(cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction)
-method_visc = 3,  !0=no viscosity
-visc_mlswe = 50.0,
-dpprime_visc_min = 1.5e7,
+botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
+cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
+method_visc = 0,  !0=no viscosity
+visc_mlswe = 0.0,
+dpprime_visc_min = 0.0,
 max_shear_dz = 20.0,
 matlab_viz = T,
 adjust_H_vertical_sum = 2,
 adjust_bcl_mom_flux = 1,
-mlswe_bc_strong = T,
-dg_integ_exact = F,
+mlswe_bc_strong = T
+dg_integ_exact = T,
 dump_data = T,
-beta = 2.0e-11,  ! beta-plane Coriolis parameter (default = 0.0)
-f0 = 0.93e-4,    ! Coriolis parameter (default = 0.0)
 
 !---- Test Cases ------------------------------------
-test_case='double-gyre',
+test_case='bump',
            !
            ! 'bump' = 2 layers cosine test;
            ! 'lakeAtrest' = 2, ..., 20 layers lake at rest test;
@@ -83,6 +81,4 @@ out_type='vtk',
 lprint_diagnostics=T, 
 			   !T=true=print diagnostics
 			   !F=false=do NOT print diagnostics
-lcheck_conserved=T
-
 /

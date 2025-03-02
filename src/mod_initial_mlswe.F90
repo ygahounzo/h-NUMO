@@ -296,7 +296,7 @@ module mod_initial_mlswe
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
         use mod_input, only: gravity_in, &
             nelx, nelz, &
-            xdims, ydims, nlayers, dt, dt_btp, test_case
+            xdims, ydims, nlayers, dt, dt_btp, test_case, f0, beta
 
         !use mod_initial, only: psih, indexq
     
@@ -307,56 +307,26 @@ module mod_initial_mlswe
         real, dimension(npoin_q), intent(out) :: coriolis_quad
         real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
 
-        real, dimension(2,npoin), intent(out) :: tau_wind_df
+        real, dimension(2,npoin), intent(in) :: tau_wind_df
 
         integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, ip
-        real :: f0, ym, Ly, y, hi, tau0, beta, lat, omega1, sig, rho_air, w
+        real :: ym, Ly, y, hi, tau0, lat, omega1, sig, rho_air, w
 
         tau_wind = 0.0
         coriolis_df = 0.0
         coriolis_quad = 0.0
-        tau_wind_df = 0.0
 
         gravity = 9.806
         
         Ly = ydims(2)
         ym = 0.5*Ly
+        
+        do I = 1, npoin
+            y = coord(2,I)
 
-        tau0 = 0.1
+            coriolis_df(I) = f0 + beta*(y - ym)
+        end do
 
-
-        select case (trim(test_case))
-        case ("bump")
-            beta = 0.0
-            do I = 1, npoin
-                y = coord(2,I)
-
-                coriolis_df(I) = 0.0
-                tau_wind_df(1,I) = 0.0
-            end do
-        case ('lakeAtrest')
-            beta = 0.0
-            do I = 1, npoin
-                y = coord(2,I)
-
-                coriolis_df(I) = 0.0
-                tau_wind_df(1,I) = 0.0
-            end do
-        case ('double-gyre')
-            ! tau0 = 0.1027
-            beta = 2.0e-11
-            f0 = 0.93e-4
-            do I = 1, npoin
-                y = coord(2,I)
-
-                coriolis_df(I) = f0 + beta*(y - ym)
-
-                tau_wind_df(1,I) = -tau0*cos(2.0*pi*y/Ly)
-            end do
-        case default
-            print*, "Unknown case number in cube initialization ", test_case
-            stop
-        end select
 
         do e = 1, nelem
             do kquad = 1, nqz

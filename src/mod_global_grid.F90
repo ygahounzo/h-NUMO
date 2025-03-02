@@ -157,8 +157,6 @@ contains
         real :: xc, yc, zc, ac, hc
         real :: x, y, z, ztop
         real, dimension(:), allocatable :: zsurf
-        
-        real f0, beta, gg, rho, tau
 
         !choose either CG or DG sotrage
         nx=nelx*nopx + 1

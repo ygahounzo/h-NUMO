@@ -7,7 +7,7 @@
 
 subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face, qprime_face, pbprime_face, &
    one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df, one_over_pbprime_df, &
-   layer_dz_eq, qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df)
+   layer_dz_eq, qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df, tau_wind_df)
     
 
    use mod_grid, only: nelem, nface, npoin_q, npoin, coord
@@ -55,6 +55,7 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    real, dimension(4,2,nq,nface) :: qb_face
    real, dimension(4,npoin) :: qb_df
    real, dimension(nlayers) :: alpha
+   real, dimension(2,npoin) :: tau_wind_df
 
    real, dimension(npoin, nlayers) :: u_df, v_df(npoin, nlayers)
    real, dimension(npoin) :: one_plus_eta_temp
@@ -96,6 +97,7 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    one_over_pbprime_df = 0.0
    u_df = 0.0
    v_df = 0.0
+   tau_wind_df = 0.0
 
    kvector(1,:)=0.0
    kvector(2,:)=0.0
@@ -194,6 +196,14 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
 
       ! Bottom topography (flat)
       zbot_df(:) = - sum(layer_dz_eq)
+
+      ! wind stress
+      do I1 = 1, npoin
+         y = coord(2,I1)
+         Ly = ydims(2)-ydims(1)
+
+         tau_wind_df(1,I1) = -0.1*cos(2.0*pi*y/Ly)
+      end do
 
    case default
       print*, "Unknown test case in cube initialization ", test_case
