@@ -645,7 +645,7 @@ module mod_splitting
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs
-        use mod_layer_terms, only: layer_pressure_terms, layer_momentum_advec_terms_upwind
+        use mod_layer_terms, only: layer_pressure_terms, layer_momentum_advec_terms_upwind, compute_momentum_edge_values
         use mod_laplacian_quad, only: bcl_create_laplacian
 
         use mod_variables, only: H_r,u_udp_temp, v_vdp_temp, p, z_elev, udp_left, &
@@ -669,6 +669,8 @@ module mod_splitting
         ! Compute the pressure terms
 
         call layer_pressure_terms(qprime, qprime_face, qprime_df)
+
+        call compute_momentum_edge_values(qprime_face3)
 
         call layer_momentum_advec_terms_upwind(q_df, qprime)
 

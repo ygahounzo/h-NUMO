@@ -361,6 +361,21 @@ module mod_layer_terms
         real, dimension(npoin_q) :: temp_u, temp_v, temp_dp
         real, dimension(npoin_q,nlayers) :: temp_uu, temp_vv
 
+        do k = 1, nlayers
+
+            temp_dp = qprime(1,:,k) * ope_ave(:)
+
+            temp_u = qprime(2,:,k) + uvb_ave(1,:)
+            u_udp_temp(:, k) = temp_dp * temp_u**2
+
+            temp_v = qprime(3,:,k) + uvb_ave(2,:)
+            v_vdp_temp(:, k) = temp_dp * temp_v**2
+
+            u_vdp_temp(1,:,k) = temp_u * temp_v * temp_dp
+            u_vdp_temp(2,:,k) = temp_v * temp_u * temp_dp
+
+        end do
+
         ! In the following computation of momentum fluxes at cell edges, 
         ! udp_flux_edge  iface a numerical approximation to the flux of udp
         ! at cells edge in layer k, and vdp_flux_edge  iface a numerical approximation to the flux of vdp.
