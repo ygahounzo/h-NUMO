@@ -36,16 +36,15 @@ contains
         use mod_basis, only: nq
 
         use mod_initial, only: q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, q_mlswe_face_init, qprime_face_mlswe_init, qb_mlswe_init, &
-            qb_face_mlswe_init, qb_df_mlswe_init, dpprime_df_init, layer_dz_eq, qprime_df_init, alpha_mlswe, zbot_df
+            qb_face_mlswe_init, qb_df_mlswe_init, dpprime_df_init, qprime_df_init, alpha_mlswe, zbot_df
 
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             fname_root, lprint_diagnostics, &
-            nlayers, is_mlswe, matlab_viz, ti_method_btp, dump_data, lcheck_conserved
+            nlayers, is_mlswe, ti_method_btp, dump_data, lcheck_conserved
 
         use mod_layer_terms, only: filter_mlswe
-        use mod_barotropic_terms, only: restart_mlswe
         use mod_constants, only: gravity
-
+        use mod_restart, only: restart_mlswe
         use mpi
 
         implicit none
@@ -85,11 +84,12 @@ contains
 
         ! Allocate Memory
 
-        allocate(q0_mlswe(3,npoin_q,nlayers), qprime0_mlswe(3,npoin_q,nlayers), q0_df_mlswe(3,npoin,nlayers), q0_mlswe_face(3,2,nq,nface,nlayers), &
+        allocate(q0_mlswe(3,npoin_q,nlayers), qprime0_mlswe(3,npoin_q,nlayers), &
+            q0_df_mlswe(3,npoin,nlayers), q0_mlswe_face(3,2,nq,nface,nlayers), &
             qprime0_face_mlswe(3,2,nq,nface,nlayers), qb0_mlswe(4,npoin_q), qb0_face_mlswe(4,2,nq,nface), &
-            qb0_df_mlswe(4,npoin), dpprime0_df(npoin,nlayers), qout_mlswe(5,npoin, nlayers), qprime0_df(3,npoin,nlayers), stat=AllocateStatus)
-            if (AllocateStatus /= 0) stop "** Not Enough Memory - MOD_TIME_LOOP:Time_Loop:q0_mlswe **"
-
+            qb0_df_mlswe(4,npoin), dpprime0_df(npoin,nlayers), qout_mlswe(5,npoin, nlayers), &
+            qprime0_df(3,npoin,nlayers), stat=AllocateStatus)
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - MOD_TIME_LOOP:Time_Loop:q0_mlswe **"
 
         !initialize all layers here
 
@@ -126,9 +126,11 @@ contains
 
            !write layers output
            if(dump_data) then 
-                if(matlab_viz) then
+                if(trim(out_type) == 'txt') then
                     call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
-                else
+                elseif(trim(out_type) == 'nc') then
+                    call diagnostics_nc(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
+                elseif(trim(out_type) == 'vtk') then
                     do l=1,nlayers
                         !Write Snapshot File
                         ifnp= l
@@ -155,7 +157,7 @@ contains
            
             !Read Snapshot File
 
-            if(matlab_viz) then 
+            if(trim(out_type) == 'txt' .or. trim(out_type) == 'nc') then 
 
                 ifnp = irestart_file_number
 
@@ -167,10 +169,12 @@ contains
                 end do
 
                 fnp=trim('mlswe') // trim(fnp4)
+                if(trim(out_type) == 'nc') fnp = trim('mlswe') // trim(fnp4)//trim('.nc')
 
-                call read_mlswe(q_df_read,qb_df_read,fnp)
+                !call read_mlswe(q_df_read,qb_df_read,fnp)
 
-                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,q0_mlswe,qb0_mlswe,qprime0_mlswe,qprime0_df,q0_mlswe_face,qprime0_face_mlswe,qb0_face_mlswe, qout_mlswe, q_df_read, qb_df_read)
+                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,q0_mlswe,qb0_mlswe,qprime0_mlswe, &
+                     qprime0_df,q0_mlswe_face,qprime0_face_mlswe,qb0_face_mlswe, qout_mlswe, fnp)!q_df_read, qb_df_read)
 
                 dpprime0_df = qprime0_df(1,:,:)
                 qb0_df_mlswe = qb0_df_mlswe
@@ -268,9 +272,11 @@ contains
                     fnp1(j:j)='0'
                 end do
 
-                if(matlab_viz) then
+                if(trim(out_type)=='txt') then
                     call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
-                else
+                elseif(trim(out_type)=='nc') then
+                    call diagnostics_nc(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+                elseif(trim(out_type)=='vtk') then
                     do l=1,nlayers
                         !Write Snapshot File
                         ifnp= l

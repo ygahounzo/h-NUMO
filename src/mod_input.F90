@@ -39,7 +39,7 @@ module mod_input
         space_method, &
         imass, &
         ad_mlswe, cd_mlswe, &
-        dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, matlab_viz, &
+        dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, &
         adjust_H_vertical_sum, botfr, mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
         f0, beta
  
@@ -264,12 +264,11 @@ module mod_input
    logical :: lgpu = .false.
    logical :: luse_hybrid_cpu_gpu = .false.
    
-   logical :: is_mlswe = .false.  !added by Yao Gahounzo
-   logical :: matlab_viz = .false. !added by Yao Gahounzo
-   logical :: mlswe_bc_strong = .false. !added by Yao Gahounzo
-   logical :: dg_integ_exact = .true. ! added by Yao Gahounzo
-   logical :: dump_data = .true. ! added by Yao Gahounzo
-   logical :: lcheck_conserved = .false. ! added by Yao Gahounzo
+   logical :: is_mlswe = .false.  
+   logical :: mlswe_bc_strong = .false. 
+   logical :: dg_integ_exact = .true. 
+   logical :: dump_data = .true. 
+   logical :: lcheck_conserved = .false. 
 
  
    !-----------------------------------------------------------------------
@@ -323,13 +322,13 @@ module mod_input
          lrestoring_sponge, &
          time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,&
          lrestart_file, test_case, &
-         ti_method_btp, & ! Added by Yao G.
+         ti_method_btp, &
          kstages, &
          filter_mux, filter_muy, filter_muz, ifilter, &
          filter_weight_type, filter_basis_type, fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
          write_mesh, &
          fname_initial, &
-         restart_path, & ! Added by Yao G.
+         restart_path, & 
          filter_tracers_flg, &
          ladapt_timestep,lprint_diagnostics,iprint_diagnostics, &
          bcast_type, &
@@ -345,7 +344,7 @@ module mod_input
          limit_threshold, &
          imass, &
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
-         visc_mlswe, dpprime_visc_min, max_shear_dz, matlab_viz, adjust_H_vertical_sum, botfr, &
+         visc_mlswe, dpprime_visc_min, max_shear_dz, adjust_H_vertical_sum, botfr, &
          mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta
  

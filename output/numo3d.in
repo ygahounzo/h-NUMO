@@ -26,8 +26,7 @@ y_boundary = 4, 4 !Left and Right (y=-1 and y=+1)
 z_boundary = 0, 0 !Bottom and Top (z=-1 and z=+1)
 	   !These denote constant x,y, or z. 
 	   !E.g. z_boundary(1) is the bottom and z_boundary(2) is the top
-	   !BCs are: 0=do nothing; 10=Dirichlet
-	   !(see MOD_GLOBAL_GRID for more info)
+	   !BCs are: 0=do nothing, 4=freeslip, 5=noslip
 x_periodic = 0,
 y_periodic = 0,
 
@@ -40,7 +39,8 @@ time_initial = 0.0,
 time_final   = 10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
-lrestart_file = .false.,
+!lrestart_file = .true.,
+!irestart_file_number = 2
 
 ! mlswe parameter
 ad_mlswe = 0.0, 
@@ -49,13 +49,14 @@ cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic botto
 method_visc = 0,  !0=no viscosity
 visc_mlswe = 0.0, ! horizontal viscosity
 dpprime_visc_min = 0.0,
-max_shear_dz = 20.0,
-matlab_viz = T,
+max_shear_dz = 0.0,
 adjust_H_vertical_sum = 2,
 adjust_bcl_mom_flux = 1,
 mlswe_bc_strong = T,
 dg_integ_exact = T,
 dump_data = T,
+!beta = 0.0e-11,  ! beta-plane Coriolis parameter (default = 0.0)
+!f0 = 0.0,    ! Coriolis parameter (default = 0.0)
 
 !---- Test Cases ------------------------------------
 test_case='bump',
@@ -71,9 +72,8 @@ space_method = 'dg', !dg=discontinuous Galerkin
 	    	
 fname_root='mlswe',
 format_vtk='ascii',
-out_type='vtk',
-		  !gks2d=ascii 2d slice; 
-	       	  !gks3d=ascii 3d output; 
+out_type='nc',
+                  !txt=binary output
 	       	  !nc=netcdf 3d output; 
 	       	  !vtk=Visual ToolKit (Paraview) output
 	       	  !none=No Output

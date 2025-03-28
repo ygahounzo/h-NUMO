@@ -19,7 +19,7 @@ module mod_barotropic_terms
                 btp_evaluate_mom_face, btp_evaluate_pb, btp_evaluate_pb_face, btp_mass_advection_terms, &
                 btp_bcl_coeffs_quad, btp_mom_boundary_df, &
                 compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, &
-                restart_mlswe_variales, restart_mlswe, &
+                restart_mlswe_variales, restart_mlswe2, &
                 compute_gradient_uv, compute_btp_mom_terms, btp_bcl_grad_coeffs, &
                 btp_interpolate_avg, btp_extract_df, btp_extract_face, btp_bcl_coeffs_qdf
 
@@ -1608,7 +1608,7 @@ module mod_barotropic_terms
     
     end subroutine restart_mlswe_variales
 
-    subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_face, qp_df_out, q_df_read, qb_df_read)
+    subroutine restart_mlswe2(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_face, qp_df_out, q_df_read, qb_df_read)
 
         use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma,nface,face
         use mod_basis, only: npts
@@ -1713,7 +1713,7 @@ module mod_barotropic_terms
         qp_df_out(5,:,1) = mslwe_elevation(:,1)
         qp_df_out(5,:,2) = mslwe_elevation(:,2)
     
-    end subroutine restart_mlswe
+    end subroutine restart_mlswe2
 
     subroutine compute_gradient_uv(grad_uv,uv)
 

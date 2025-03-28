@@ -91,6 +91,113 @@ subroutine read_mlswe(q_df,qb_df,fname)
 
 end subroutine read_mlswe
 
+subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_face, qp_df_out, q_df_read, qb_df_read)
+
+        use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma,nface,face
+        use mod_basis, only: npts
+        use mod_input, only: nlayers
+        use mod_initial, only: psih, indexq, pbprime_df, alpha_mlswe, pbprime, zbot_df
+        use mod_face, only: imapl_q, imapr_q
+        use mod_constants, only: gravity
+        use mod_layer_terms, only: evaluate_mom, evaluate_mom_face, evaluate_dp, evaluate_dp_face
+
+        real, dimension(3,npoin), intent(in) :: qb_df_read
+        real, dimension(3,npoin,nlayers), intent(in) :: q_df_read
+
+        real, dimension(4,npoin), intent(out) :: qb_df
+        real, dimension(3,npoin,nlayers), intent(out) :: q_df
+        real, dimension(4,npoin_q), intent(out) :: qb
+        real, dimension(3,npoin_q,nlayers), intent(out) :: q
+
+        real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
+        real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
+        real, dimension(3,2,nq,nface,nlayers), intent(out) :: q_face
+        real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
+        real, dimension(4,2,nq,nface), intent(out) :: qb_face
+        real, dimension(5,npoin,nlayers) :: qp_df_out
+
+        real, dimension(npoin,nlayers+1) :: mslwe_elevation
+
+        integer :: I, Iq, ip, iface, el, er, iquad, ir, jr, kr, il, jl, kl, n,k, ilocl, ilocr
+        real :: hi
+        real, dimension(npoin) :: one_plus_eta_temp
+
+        q = 0.0
+        qb = 0.0
+        qprime = 0.0
+        q_face = 0.0
+        qprime_face = 0.0
+        qb_face = 0.0
+
+        ! Barotropic variables at the dofs (nodal points)
+
+        qb_df(1,:) = qb_df_read(1,:)
+        qb_df(3:4,:) = qb_df_read(2:3,:)
+        qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
+
+        ! Interpolate to the quadrature points
+
+        call btp_evaluate_mom_dp(qb,qb_df)
+        call btp_evaluate_mom_dp_face(qb_face, qb)
+
+        ! Baroclinic variables at the dofs (nodal points)
+
+        !q_df(:,:,:) = q_df_read(:,:,:)
+
+        do k = 1,nlayers
+
+            q_df(1,:,k) = (gravity/alpha_mlswe(k))*q_df_read(1,:,k)
+            q_df(2,:,k) = q_df_read(2,:,k)*q_df(1,:,k)
+            q_df(3,:,k) = q_df_read(3,:,k)*q_df(1,:,k)
+
+        end do
+
+        ! Interpolate to the quadrature points
+
+        call evaluate_dp(q,qprime,q_df, pbprime)
+        call evaluate_dp_face(q_face, qprime_face,q, qprime)
+
+        call evaluate_mom(q,q_df)
+        call evaluate_mom_face(q_face, q)
+
+        ! Prime variables at the dofs (nodal points) and quadrature points
+        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+
+        do k = 1,nlayers
+
+            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+
+            qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
+            qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
+            qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
+            qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
+
+            qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
+            qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
+        end do
+
+        ! Prepare output variables
+
+        do k = 1,nlayers
+            qp_df_out(1,:,k) = (alpha_mlswe(k)/gravity)*q_df(1,:,k)
+            qp_df_out(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+            qp_df_out(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+        end do
+
+        mslwe_elevation(:,nlayers+1) = zbot_df
+
+        do k = nlayers,1,-1
+            mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + qp_df_out(1,:,k)
+        end do
+
+        qp_df_out(4,:,1) = qb_df(3,:)
+        qp_df_out(4,:,2) = qb_df(3,:)
+
+        qp_df_out(5,:,1) = mslwe_elevation(:,1)
+        qp_df_out(5,:,2) = mslwe_elevation(:,2)
+
+end subroutine restart_mlswe
+
 subroutine load_data_mlswe(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
 
     character(len=*), intent(in) :: name_data_file

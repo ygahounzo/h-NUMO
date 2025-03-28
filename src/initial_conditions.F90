@@ -7,7 +7,7 @@
 
 subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face, qprime_face, pbprime_face, &
    one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df, one_over_pbprime_df, &
-   layer_dz_eq, qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df, tau_wind_df)
+   qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df, tau_wind_df)
     
 
    use mod_grid, only: nelem, nface, npoin_q, npoin, coord
@@ -50,7 +50,6 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    real, dimension(nq, nface) :: one_over_pbprime_edge
    real, dimension(npoin,nlayers) :: dpprime_df
    real, dimension(npoin) :: one_over_pbprime_df, zbot_df
-   real, dimension(nlayers) :: layer_dz_eq
    real, dimension(4,npoin_q) :: qb
    real, dimension(4,2,nq,nface) :: qb_face
    real, dimension(4,npoin) :: qb_df
@@ -62,10 +61,11 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    real, dimension(npoin_q) :: pb_temp, one_plus_eta_temp1
 
    real, dimension(npoin, nlayers+1) :: z_init, z_interface
-   real :: c_jump
+   real, dimension(npoin,nlayers) :: height_layer
+   real :: c_jump, indep(nlayers+1)
 
    integer :: e, m, n, I1, iquad, Iq
-   real :: x, y, xmid, ymid, L, amp, r, rho_0
+   real :: x, y, xmid, ymid, L, amp, r, rho_0, H_bot
    integer :: ierr, iface, ilr, k,ip
 
    real xmax, xmin, ymax, ymin, zmin, zmax, yl, xm
@@ -103,6 +103,8 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    kvector(2,:)=0.0
    kvector(3,:)=1.0
 
+   Ly = ydims(2)-ydims(1)
+
    ! The following is for a two-layer configuration.
    ! The free surface is level, the interface is one cosine (MAK test)
    ! hump centered in the interval, and u = v = 0.
@@ -113,17 +115,22 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    case ("bump") ! bump test (wave propagation)
 
       gravity = 9.806
-       
-      layer_dz_eq(1) = 20.0
-      layer_dz_eq(2) = 20.0
 
-      alpha(1) = 0.9737e-3
-      alpha(2) = 0.9735e-3
+      H_bot = 40.0   ! total depth
+
+      ! Bottom topography (flat)
+
+      zbot_df(:) = - H_bot
+
+      ! Layer interface
+      do k = 1, nlayers+1
+         z_interface(:,k) = -(k-1)*H_bot/real(nlayers)
+      end do
+
+      ! Bump centered at (xm,yl) with radius L and amplitude amp at the second layer interface
 
       xm=0.5*(xmax+xmin)
       yl=0.5*(ymax+ymin)
-
-      Ly = ymax - ymin
 
       L = 250.0
       amp = 1.0
@@ -136,33 +143,24 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
          r = sqrt((x-xm)**2 + (y-yl)**2)
 
          if (r < L) then
-            z_init(I1,2) = 0.5*amp*(1.0 + cos(pi*r/L))
-            ! z_init(I1,2) = -10.0*cos(2*pi*x/xmax)
+            z_interface(I1,2) = z_interface(I1,2) + 0.5*amp*(1.0 + cos(pi*r/L))
          end if
 
-         ! Bottom topography (flat)
-
-         zbot_df(I1) = - sum(layer_dz_eq)
-
       end do
+
+      ! Layer densities reciprocal (1/rho)
+      alpha(1) = 0.9737e-3
+      alpha(2) = 0.9735e-3
 
    case("lakeAtrest") ! lake at rest (well-balanced) test 
 
       gravity = 9.806
 
-      rho_0 = 1027.01037
-      alpha(1) = 1.0/rho_0
+      H_bot = 40.0   ! total depth
 
-      if(nlayers < 5) then 
-         layer_dz_eq(:) = 40.0/real(nlayers)
-      else
-         layer_dz_eq(:) = 32.0/real(nlayers-1)
-         layer_dz_eq(nlayers) = 8.0
-      endif
+      ! Bottom topography (non-flat)
 
-      do k = 2,nlayers
-         alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
-      end do
+      zbot_df(:) = - H_bot
 
       xm=0.5*(xdims(1)+xdims(2))
       yl=0.5*(ydims(1)+ydims(2))
@@ -176,33 +174,130 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
 
          r = sqrt((x-xm)**2 + (y-yl)**2)
 
-         ! Bottom topography (non-flat)
-         zbot_df(I1) = - sum(layer_dz_eq)
-
          if (r < L) then
             zbot_df(I1) = zbot_df(I1) + 3.0*(1.0 + cos(pi*r/L))
          end if
 
       end do  
+
+      ! Layer interface
+
+      do k = 1, nlayers+1
+         if(nlayers < 5) then
+            z_interface(:,k) = -(k-1)*H_bot/real(nlayers)
+         else
+            z_interface(:,k) = -(k-1)*32/real(nlayers-1)
+            z_interface(:,nlayers+1) = -H_bot
+         endif
+      end do
+
+      ! Layer densities reciprocal (1/rho)
+      rho_0 = 1027.01037
+      alpha(1) = 1.0/rho_0
+
+      do k = 2,nlayers
+         alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
+      end do
+
    case ("double-gyre") ! double-gyre 
 
       gravity = 9.806
-       
-      layer_dz_eq(1) = 1489.5
-      layer_dz_eq(2) = 8438.5
+
+      H_bot = 9928.0  ! total depth
+
+      ! Bottom topography (flat)
+      zbot_df(:) = - H_bot
+
+      ! Layer interface
+      z_interface(:,2) = -1489.5
+      z_interface(:,3) = - H_bot
+
+      ! Layer densities reciprocal (1/rho)
 
       alpha(1) = 9.7370e-04
       alpha(2) = 9.7350e-04
 
-      ! Bottom topography (flat)
-      zbot_df(:) = - sum(layer_dz_eq)
-
       ! wind stress
       do I1 = 1, npoin
          y = coord(2,I1)
-         Ly = ydims(2)-ydims(1)
-
          tau_wind_df(1,I1) = -0.1*cos(2.0*pi*y/Ly)
+      end do
+
+   case ("dam") ! dam-break test
+
+      gravity = 9.806
+
+      H_bot = 3600.0 ! total depth
+
+      ! Bottom topography
+      do I1 = 1, npoin
+        
+         x = coord(1,I1)/1.0e3
+         y = coord(2,I1)/1.0e3
+
+         if(y <= 600.0) then
+
+            if(y <= 300.0) then
+               zbot_df(I1) = H_bot
+            else
+               zbot_df(I1) = H_bot - 9.5*(y - 300.0)
+            end if
+
+         else
+            if(400.0 <= x .and. x <= 500.0) then
+               zbot_df(I1) = 600.0
+            end if
+         end if
+
+         zbot_df(I1) = - zbot_df(I1)
+      end do
+        
+      do k = 2, nlayers
+        indep(k) = H_bot*(real(k-1)-0.5)/real(nlayers-1)
+        !print*, 'k = ', k, indep(k)
+      enddo
+
+      ! Layer interface
+      do k = 1, nlayers
+        z_interface(:,k) = -indep(k)
+      enddo
+      z_interface(:,nlayers+1) = zbot_df(:)
+
+      !do k = 2, nlayers
+      !   z_interface(:,k) = -(real(k-1)-0.5)*H_bot/real(nlayers-1)
+         !print*, 'k = ', k, -(k-1)*H_bot/real(nlayers)
+      !end do
+      !z_interface(:,nlayers+1) = zbot_df(I1)
+
+      do k = 1, nlayers
+        do I1 = 1,npoin
+             !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
+             !   z_interface(I1,k) = zbot_df(I1)
+             !endif
+             z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
+        end do
+      end do
+
+      do k = 2, nlayers
+         do I1 = 1,npoin
+
+            x = coord(1,I1)/1.0e3
+            y = coord(2,I1)/1.0e3
+
+            if((650.0 <= y .and. y <= Ly) .and. (400.0 <= x .and. x <= 500.0)) then
+               z_interface(I1,k) = max(-100.0, z_interface(I1,k))
+            end if
+
+         end do
+      end do 
+
+      ! Layer densities reciprocal (1/rho)
+       
+      rho_0 = 1027.01037
+      alpha(1) = 1.0/rho_0
+
+      do k = 2,nlayers
+         alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
       end do
 
    case default
@@ -211,14 +306,21 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
       
    end select 
 
-   ! call interpolate_from_dof_to_quad_uv_init(q, q_df)
+   ! Making sure the layer interface is not beyond the bottom depth
 
    do I1 = 1,npoin
-      z_interface(I1,1) = 0.0
       do k = 1, nlayers
-         z_interface(I1,k+1) = max(zbot_df(I1), z_interface(I1,k) - layer_dz_eq(k))
+         !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
+         !    z_interface(I1,k) = zbot_df(I1)
+         !endif 
+         z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
       end do
    end do 
+
+   print*, minval(zbot_df(:)), maxval(zbot_df(:))
+   do k = 1, nlayers+1
+        print*, minval(z_interface(:,k)), maxval(z_interface(:,k))
+   enddo
 
    ! Compute the degrees of freedom for  p'_b  in each cell.
    ! In each cell, the computation of degrees of freedom uses
@@ -268,14 +370,6 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
       if(pbprime_init(Iq) > 0.0) then
          one_over_pbprime(Iq) = 1.0/pbprime_init(Iq)
       end if
-   end do
-
-   ! Use the initial perturbations in array  z_init  
-   ! to modify the elevations in array  z_interface  so that 
-   ! array  z_interface  then refers to the specified initial state.  
-
-   do k = 1, nlayers+1
-      z_interface(:,k) = z_interface(:,k) + z_init(:,k)
    end do
 
    ! Compute pointwise values of  Delta p  at the quadrature points
@@ -393,3 +487,4 @@ subroutine initial_grid_coord()
     ymin=ydims(1) ;  ymax=ydims(2)
 
 end subroutine initial_grid_coord
+

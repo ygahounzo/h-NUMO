@@ -10,6 +10,8 @@ R8=-r8
 NUMO_P4EST_DIR := $(NUMO_DIR)/p4est/local
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/lib"
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/local"
+NETCDF_DIR = /opt/rcc/gnu/openmpi
+
 hnumo:
 	$(MAKE) $(TARGET) \
 	"FC=mpif90" \
@@ -17,8 +19,8 @@ hnumo:
 	"CC=mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
-	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
-	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${NETCDF_DIR}/include -I${NUMO_P4EST_DIR}/include -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lnetcdff -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 hnumo-debug:
@@ -28,8 +30,8 @@ hnumo-debug:
 	"CC=mpicc" \
 	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
 	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
-	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE= -I${NETCDF_DIR}/include -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lnetcdff -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
 hnumo-prof:
