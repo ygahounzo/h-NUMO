@@ -74,7 +74,7 @@ fname_root='mlswe',
 format_vtk='ascii',
 out_type='nc',
                   !txt=binary output
-	       	  !nc=netcdf 3d output; 
+	       	  !nc=netcdf output; 
 	       	  !vtk=Visual ToolKit (Paraview) output
 	       	  !none=No Output
 

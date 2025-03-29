@@ -27,7 +27,6 @@ z_boundary = 0, 0 !Bottom and Top (z=-1 and z=+1)
 	   !These denote constant x,y, or z. 
 	   !E.g. z_boundary(1) is the bottom and z_boundary(2) is the top
 	   !BCs are: 0=do nothing; 10=Dirichlet
-	   !(see MOD_GLOBAL_GRID for more info)
 x_periodic = 0,
 y_periodic = 0,
 
@@ -50,7 +49,6 @@ method_visc = 0,  !0=no viscosity
 visc_mlswe = 0.0, ! horizontal viscosity
 dpprime_visc_min = 0.0,
 max_shear_dz = 20.0,
-matlab_viz = T,
 adjust_H_vertical_sum = 2,
 adjust_bcl_mom_flux = 1,
 mlswe_bc_strong = T,
@@ -71,10 +69,9 @@ space_method = 'dg', !dg=discontinuous Galerkin
 	    	
 fname_root='mlswe',
 format_vtk='ascii',
-out_type='vtk',
-		  !gks2d=ascii 2d slice; 
-	       	  !gks3d=ascii 3d output; 
-	       	  !nc=netcdf 3d output; 
+out_type='txt',
+	       	  !txt=binary output; 
+	       	  !nc=netcdf output; 
 	       	  !vtk=Visual ToolKit (Paraview) output
 	       	  !none=No Output
 
