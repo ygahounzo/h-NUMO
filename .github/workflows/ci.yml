@@ -26,7 +26,7 @@ jobs:
           sudo apt-get install -y libnetcdf-dev libnetcdff-dev netcdf-bin
 
     - name: Compile Fortran code
-      run: make hnumo
+      run: make hnumo-CI
 
     - name: Print home directory
       run: echo ls $GITHUB_WORKSPACE
