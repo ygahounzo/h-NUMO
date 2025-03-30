@@ -46,7 +46,7 @@ hnumo-prof:
 	"AR=ar rv"
 
 hnumo-CI:
-        $(MAKE) $(TARGET) \
+	$(MAKE) $(TARGET) \
         "FC=mpif90" \
         "LD=mpif90" \
         "CC=mpicc" \
