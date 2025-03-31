@@ -14,7 +14,7 @@ Once you have successfully compiled h-NUMO, we recommend the following steps to 
 	3.  Inside of bump copy one of the ``run_numo3d`` from ``run_scripts``. Make sure that the other batch submission commands make sense.
 
 Input file: numo3d.in
--------------------
+----------------------
 
 .. literalinclude:: numo3d.in
 	:encoding: latin-1

@@ -57,7 +57,7 @@ This test case consists of a two-layer system. To test whether our model capture
 
 
 test_case = 'double-gyre' Double-gyre test
-------------------------------------
+--------------------------------------------
 
 This test case consists of an idealized double-gyre benchmark test :cite:p:`bleck1986wind` to validate h-NUMO ability to simulate the mesoscale and submesoscale processes and compare the results with HYCOM. The domain is a closed rectangular ocean basin with a flat bottom. The forcing is spatially varying wind stress with intense western boundary currents, which, together with Coriolis force, results in a counter-clockwise circulation in the northern part and a clockwise circulation in the southern part of the domain. 
 
