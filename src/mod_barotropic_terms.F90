@@ -230,13 +230,13 @@ module mod_barotropic_terms
         
         uvb_ave  = 0.0
         uvb_face_ave = 0.0
-        btp_mass_flux_ave = 0.0
-        H_ave = 0.0
-        Qu_ave = 0.0
-        Qv_ave = 0.0
-        Quv_ave = 0.0
-        ope_ave = 0.0
-        tau_bot_ave = 0.0
+        !btp_mass_flux_ave = 0.0
+        !H_ave = 0.0
+        !Qu_ave = 0.0
+        !Qv_ave = 0.0
+        !Quv_ave = 0.0
+        !ope_ave = 0.0
+        !tau_bot_ave = 0.0
 
         do Iq = 1,npoin_q
             do ip = 1,npts
@@ -247,15 +247,15 @@ module mod_barotropic_terms
                 uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
                 uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
 
-                btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + hn*btp_mass_flux_ave_df(1,I)
-                btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + hn*btp_mass_flux_ave_df(2,I)
-                H_ave(Iq) = H_ave(Iq) + hn*H_ave_df(I)
-                Qu_ave(Iq) = Qu_ave(Iq) + hn*Qu_ave_df(I)
-                Qv_ave(Iq) = Qv_ave(Iq) + hn*Qv_ave_df(I)
-                Quv_ave(Iq) = Quv_ave(Iq) + hn*Quv_ave_df(I)
-                ope_ave(Iq) = ope_ave(Iq) + hn*ope_ave_df(I)
-                tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + hn*tau_bot_ave_df(1,I)
-                tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + hn*tau_bot_ave_df(2,I)
+                !btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + hn*btp_mass_flux_ave_df(1,I)
+                !btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + hn*btp_mass_flux_ave_df(2,I)
+                !H_ave(Iq) = H_ave(Iq) + hn*H_ave_df(I)
+                !Qu_ave(Iq) = Qu_ave(Iq) + hn*Qu_ave_df(I)
+                !Qv_ave(Iq) = Qv_ave(Iq) + hn*Qv_ave_df(I)
+                !Quv_ave(Iq) = Quv_ave(Iq) + hn*Quv_ave_df(I)
+                !ope_ave(Iq) = ope_ave(Iq) + hn*ope_ave_df(I)
+                !tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + hn*tau_bot_ave_df(1,I)
+                !tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + hn*tau_bot_ave_df(2,I)
 
             end do
 
@@ -1210,6 +1210,7 @@ module mod_barotropic_terms
         real, dimension(nq) :: right_uvdp, right_vvdp, left_vvdp
         real, dimension(ngl) :: left_uudp1, right_uudp1, left_uvdp1
         real, dimension(ngl) :: right_uvdp1, right_vvdp1, left_vvdp1
+        real, dimension(ngl) :: left_dp1, right_dp1
         real, dimension(ngl,nlayers+1) :: pprime_l2, pprime_r2
 
         real, dimension(nq,nlayers+1) :: pprime_l, pprime_r

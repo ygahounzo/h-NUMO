@@ -72,7 +72,7 @@ space_method = 'dg', !dg=discontinuous Galerkin
 	    	
 fname_root='mlswe',
 format_vtk='ascii',
-out_type='nc',
+out_type='txt',
                   !txt=binary output
 	       	  !nc=netcdf output; 
 	       	  !vtk=Visual ToolKit (Paraview) output

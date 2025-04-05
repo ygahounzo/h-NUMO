@@ -15,7 +15,7 @@ module mod_rk_mlswe
     
     contains
 
-    subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime)
+    subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime, qprime_df)
 
         ! ===========================================================================================================================
         ! This subroutine predicts and corrects the barotropic quantities for the splitting system using SSPRK35 time integration
@@ -31,13 +31,14 @@ module mod_rk_mlswe
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
-        use mod_rhs_btp, only: create_rhs_btp
+        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2
         use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
                                 Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
                                 btp_mass_flux_ave, uvb_ave, uvb_ave_df
 
+        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, btp_mass_flux_ave_df
         use mod_variables, only: graduvb_face_ave, graduvb_ave
 
 
@@ -45,6 +46,7 @@ module mod_rk_mlswe
 
         real, dimension(4,npoin), intent(inout) :: qb_df
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(3,npoin) :: rhs
         real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
@@ -108,6 +110,7 @@ module mod_rk_mlswe
                 ! Compute RHS for the barotropic
 
                 call create_rhs_btp(rhs,qb1_df,qprime)
+                !call create_rhs_btp2(rhs,qb1_df,qprime_df)
 
                 ! Update barotropic variables
 

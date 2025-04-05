@@ -28,7 +28,7 @@ module mod_rhs_btp
         zetaq_x, zetaq_y, zetaq_z, &
         jacq, massinv
 
-    public :: create_rhs_btp, &
+    public :: create_rhs_btp, create_rhs_btp2, &
                 create_rhs_btp_momentum, create_rhs_btp_mom_mass, btp_mass_advection_rhs
              
 
@@ -63,6 +63,36 @@ contains
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
 
     end subroutine create_rhs_btp
+
+    subroutine create_rhs_btp2(rhs,qb_df,qprime_df)
+
+        implicit none
+
+        real, dimension(3, npoin), intent(out) :: rhs
+        real, dimension(4,npoin), intent(in) :: qb_df
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+
+        real, dimension(4, 2, ngl, nface) :: qb_df_face
+        real, dimension(2,npoin) :: rhs_visc_btp
+
+        call btp_extract_df(qb_df_face, qb_df)
+
+        call btp_create_precommunicator(qb_df_face,4)
+
+        call create_rhs_btp_volume_qdf2(rhs, qb_df, qprime_df)
+
+        call btp_create_postcommunicator(qb_df_face,4)
+
+        call creat_btp_fluxes_qdf(rhs,qb_df_face)
+
+        ! Compute RHS viscosity terms
+
+        if(method_visc > 0) call btp_create_laplacian(rhs_visc_btp,qb_df)
+
+        rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
+        rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
+
+    end subroutine create_rhs_btp2
 
     subroutine create_rhs_btp_momentum(rhs_mom,qb,qb_face)
 
@@ -209,7 +239,7 @@ contains
 
         real :: source_x, source_y, Hq, quux, quvxy, qvvy
         real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, speed
 
         integer :: I, Iq, ip
 
@@ -318,7 +348,7 @@ contains
 
         real :: source_x, source_y, Hq, quux, quvxy, qvvy
         real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, speed
 
         integer :: I, Iq, ip
 
@@ -342,16 +372,16 @@ contains
 
             if (botfr == 1) then
                 
-                ubot = qprime(2,Iq,nlayers) + ub
-                vbot = qprime(3,Iq,nlayers) + vb
+                ubot = qprime_df(2,Iq,nlayers) + ub
+                vbot = qprime_df(3,Iq,nlayers) + vb
 
                 tau_bot_u = (cd_mlswe/alpha_mlswe(nlayers))*ubot
                 tau_bot_v = (cd_mlswe/alpha_mlswe(nlayers))*vbot
                 
             elseif (botfr == 2) then
 
-                ubot = qprime(2,Iq,nlayers) + ub
-                vbot = qprime(3,Iq,nlayers) + vb
+                ubot = qprime_df(2,Iq,nlayers) + ub
+                vbot = qprime_df(3,Iq,nlayers) + vb
                 speed = (cd_mlswe/gravity)*sqrt(ubot**2 + vbot**2)
 
                 tau_bot_u = speed*ubot

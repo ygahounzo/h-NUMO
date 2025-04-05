@@ -18,7 +18,7 @@ module mod_variables
                 dpp_uvp,dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face, graduvb_face_ave, graduvb_ave, dpprime_visc_q, &
                 Q_uu_dp_df, Q_uv_dp_df, Q_vv_dp_df, H_bcl_df, H_bcl_edge_df, &
                 Q_uu_dp_edge_df, Q_uv_dp_edge_df, Q_vv_dp_edge_df, &
-                tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, ope_ave_df, btp_mass_flux_ave_df
+                tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, btp_mass_flux_ave_df
 
     public :: Quu_temp, Qvv_temp, Quv_temp, Q_uu_dp_temp, Q_uv_dp_temp, Q_vv_dp_temp, &
             Qu_ave_temp, Qv_ave_temp, Quv_ave_temp, tau_bot_ave_temp, &
@@ -33,7 +33,7 @@ module mod_variables
     real, dimension(:,:,:), allocatable :: Qu_face, Qv_face, one_plus_eta_face, flux_edge
     real, dimension(:,:), allocatable :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
     real, dimension(:), allocatable :: Q_uu_dp_df, Q_uv_dp_df, Q_vv_dp_df, H_bcl_df
-    real, dimension(:,:,:), allocatable :: Q_uu_dp_edge_df, Q_uv_dp_edge_df, Q_vv_dp_edge_df, H_bcl_edge_df
+    real, dimension(:,:), allocatable :: Q_uu_dp_edge_df, Q_uv_dp_edge_df, Q_vv_dp_edge_df, H_bcl_edge_df
     real, dimension(:), allocatable :: Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope_ave_df, one_plus_eta_out, pbprime_visc
     real, dimension(:), allocatable :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave
     real, dimension(:,:), allocatable :: tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2, btp_mass_flux_ave, uvb_ave, uvb_ave_df, dpprime_visc, dpprime_visc_q

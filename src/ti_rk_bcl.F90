@@ -21,7 +21,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	use mod_grid, only: npoin, npoin_q, nface
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df
-	use mod_basis, only: nq
+	use mod_basis, only: nq, ngl
 	use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
 
 	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
@@ -53,7 +53,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	dpprime_visc(:,:) = qprime_df(1,:,:)
 
 	call btp_bcl_coeffs_qdf(qprime,qprime_face,qprime_df_face, qprime_df)
-	call ti_barotropic_ssprk_mlswe(qbp_df,qprime)
+	call ti_barotropic_ssprk_mlswe(qbp_df,qprime, qprime_df)
 
 	qprime2 = qprime
 	qprime_face2 = qprime_face
@@ -75,7 +75,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	dpprime_visc(:,:) = qprime_df2(1,:,:)
 
 	call btp_bcl_coeffs_qdf(qprime2,qprime_face2,qprime_df_face, qprime_df2)
-	call ti_barotropic_ssprk_mlswe(qb_df,qprime2)
+	call ti_barotropic_ssprk_mlswe(qb_df,qprime2, qprime_df2)
 
 	call thickness(qprime2, q_df, qprime_face2, dpprime_df2, qb_df)
 

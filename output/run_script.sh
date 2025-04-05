@@ -12,4 +12,4 @@
 
 cp ../bin/numo3d .
 
-srun -n 25 ./numo3d
+srun -n 1 ./numo3d
