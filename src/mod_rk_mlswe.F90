@@ -80,6 +80,13 @@ module mod_rk_mlswe
         graduvb_face_ave = 0.0
         graduvb_ave = 0.0
 
+        btp_mass_flux_ave_df = 0.0
+        H_ave_df = 0.0
+        Qu_ave_df = 0.0
+        Qv_ave_df = 0.0
+        Quv_ave_df = 0.0
+        tau_bot_ave_df = 0.0
+
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
@@ -137,7 +144,7 @@ module mod_rk_mlswe
 
         uvb_ave_df = N_inv*uvb_ave_df
 
-        ope_ave = N_inv*ope_ave
+        !ope_ave = N_inv*ope_ave
 
         H_ave = N_inv*H_ave 
         Qu_ave = N_inv*Qu_ave
@@ -165,6 +172,13 @@ module mod_rk_mlswe
 
         graduvb_face_ave = N_inv*graduvb_face_ave 
         graduvb_ave = N_inv*graduvb_ave
+
+        H_ave_df = N_inv*H_ave_df
+        Qu_ave_df = N_inv*Qu_ave_df
+        Qv_ave_df = N_inv*Qv_ave_df
+        Quv_ave_df = N_inv*Quv_ave_df
+        btp_mass_flux_ave_df = N_inv*btp_mass_flux_ave_df
+        tau_bot_ave_df = N_inv*tau_bot_ave_df
 
         call btp_interpolate_avg()
 

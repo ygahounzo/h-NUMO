@@ -210,6 +210,8 @@ module mod_barotropic_terms
     subroutine btp_interpolate_avg()
 
         use mod_variables, only: uvb_face_ave, uvb_ave, uvb_ave_df
+        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, ope_ave_df, btp_mass_flux_ave_df
+        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, btp_mass_flux_ave
 
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
 
@@ -228,6 +230,13 @@ module mod_barotropic_terms
         
         uvb_ave  = 0.0
         uvb_face_ave = 0.0
+        btp_mass_flux_ave = 0.0
+        H_ave = 0.0
+        Qu_ave = 0.0
+        Qv_ave = 0.0
+        Quv_ave = 0.0
+        ope_ave = 0.0
+        tau_bot_ave = 0.0
 
         do Iq = 1,npoin_q
             do ip = 1,npts
@@ -237,6 +246,16 @@ module mod_barotropic_terms
 
                 uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
                 uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
+
+                btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + hn*btp_mass_flux_ave_df(1,I)
+                btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + hn*btp_mass_flux_ave_df(2,I)
+                H_ave(Iq) = H_ave(Iq) + hn*H_ave_df(I)
+                Qu_ave(Iq) = Qu_ave(Iq) + hn*Qu_ave_df(I)
+                Qv_ave(Iq) = Qv_ave(Iq) + hn*Qv_ave_df(I)
+                Quv_ave(Iq) = Quv_ave(Iq) + hn*Quv_ave_df(I)
+                ope_ave(Iq) = ope_ave(Iq) + hn*ope_ave_df(I)
+                tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + hn*tau_bot_ave_df(1,I)
+                tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + hn*tau_bot_ave_df(2,I)
 
             end do
 
@@ -1163,7 +1182,7 @@ module mod_barotropic_terms
 
     end subroutine btp_bcl_coeffs_quad
 
-    subroutine btp_bcl_coeffs_qdf(qprime,qprime_face, qprime_df)
+    subroutine btp_bcl_coeffs_qdf(qprime,qprime_face, qprime_df_face, qprime_df)
         
         ! Compute baroclinic coefficients in the advective barotropic momentum fluxes and in the barotropic pressure forcing. 
 
@@ -1176,20 +1195,26 @@ module mod_barotropic_terms
         use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, H_bcl_edge, &
                                     Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
                                     dpprime_visc,pbprime_visc,btp_dpp_graduv, btp_dpp_uvp, &
-                                    dpp_uvp, dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face
+                                    dpp_uvp, dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face, &
+                                    Q_uu_dp_df, Q_uv_dp_df, Q_vv_dp_df, H_bcl_df, H_bcl_edge_df, &
+                                    Q_uu_dp_edge_df, Q_uv_dp_edge_df, Q_vv_dp_edge_df
 
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, imapl, imapr, normal_vector
         
         implicit none
 
-        real, intent(in)  :: qprime(3,npoin_q,nlayers), qprime_face(3,2,nq,nface,nlayers)
+        real, intent(in)  :: qprime(3,npoin_q,nlayers), qprime_face(3,2,nq,nface,nlayers), qprime_df_face(3,2,ngl,nface,nlayers)
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         
         real, dimension(nq) :: left_uudp, right_uudp, left_uvdp
         real, dimension(nq) :: right_uvdp, right_vvdp, left_vvdp
+        real, dimension(ngl) :: left_uudp1, right_uudp1, left_uvdp1
+        real, dimension(ngl) :: right_uvdp1, right_vvdp1, left_vvdp1
+        real, dimension(ngl,nlayers+1) :: pprime_l2, pprime_r2
 
         real, dimension(nq,nlayers+1) :: pprime_l, pprime_r
         real, dimension(npoin_q,nlayers+1) :: pprime
+        real, dimension(npoin,nlayers+1) :: pprime_df
         real, dimension(nq) :: left_dp, right_dp
         real, dimension(4, npoin) :: graduv
 
@@ -1214,11 +1239,17 @@ module mod_barotropic_terms
             Q_uv_dp(:) = Q_uv_dp(:) + qprime(3,:,k)*(qprime(2,:,k) * qprime(1,:,k))
             Q_vv_dp(:) = Q_vv_dp(:) + qprime(3,:,k)*(qprime(3,:,k) * qprime(1,:,k))
 
+            Q_uu_dp_df(:) = Q_uu_dp_df(:) + qprime_df(2,:,k)*(qprime_df(2,:,k) * qprime_df(1,:,k))
+            Q_uv_dp_df(:) = Q_uv_dp_df(:) + qprime_df(3,:,k)*(qprime_df(2,:,k) * qprime_df(1,:,k))
+            Q_vv_dp_df(:) = Q_vv_dp_df(:) + qprime_df(3,:,k)*(qprime_df(3,:,k) * qprime_df(1,:,k))
+
             ! Pressure term in barotropic momentum equation
 
             pprime(:,k+1) = pprime(:,k) + qprime(1,:,k)
             H_bcl(:) = H_bcl(:) + 0.5*alpha_mlswe(k)*(pprime(:,k+1)**2 - pprime(:,k)**2)
 
+            pprime_df(:,k+1) = pprime_df(:,k) + qprime_df(1,:,k)
+            H_bcl_df(:) = H_bcl_df(:) + 0.5*alpha_mlswe(k)*(pprime_df(:,k+1)**2 - pprime_df(:,k)**2)
 
             ! For viscosity terms 
 
@@ -1277,6 +1308,37 @@ module mod_barotropic_terms
             Q_uv_dp_edge(:,iface) = 0.5*(left_uvdp + right_uvdp)
             Q_vv_dp_edge(:,iface) = 0.5*(left_vvdp + right_vvdp)
             H_bcl_edge(:,iface) = 0.5*(left_dp + right_dp)
+
+            left_uudp1 = 0.0
+            right_uudp1 = 0.0
+            left_uvdp1 = 0.0
+            right_uvdp1 = 0.0
+            right_vvdp1 = 0.0
+            left_vvdp1 = 0.0
+            left_dp1 = 0.0
+            right_dp1 = 0.0
+            pprime_l2(:,1) = 0.0
+            pprime_r2(:,1) = 0.0
+            do k = 1, nlayers
+
+                left_uudp1 = left_uudp1 + qprime_df_face(2,1,:,iface,k)*qprime_df_face(2,1,:,iface,k)*qprime_df_face(1,1,:,iface,k)
+                left_uvdp1 = left_uvdp1 + qprime_df_face(3,1,:,iface,k)*qprime_df_face(2,1,:,iface,k)*qprime_df_face(1,1,:,iface,k)
+                left_vvdp1 = left_vvdp1 + qprime_df_face(3,1,:,iface,k)*qprime_df_face(3,1,:,iface,k)*qprime_df_face(1,1,:,iface,k)
+                right_uudp1 = right_uudp1 + qprime_df_face(2,2,:,iface,k)*qprime_df_face(2,2,:,iface,k)*qprime_df_face(1,2,:,iface,k)
+                right_uvdp1 = right_uvdp1 + qprime_df_face(3,2,:,iface,k)*qprime_df_face(2,2,:,iface,k)*qprime_df_face(1,2,:,iface,k)
+                right_vvdp1 = right_vvdp1 + qprime_df_face(3,2,:,iface,k)*qprime_df_face(3,2,:,iface,k)*qprime_df_face(1,2,:,iface,k)
+
+                pprime_l2(:,k+1) = pprime_l2(:,k) + qprime_df_face(1,1,:,iface,k)
+                left_dp1 = left_dp1 + 0.5*alpha_mlswe(k) *(pprime_l2(:,k+1)**2 - pprime_l2(:,k)**2)
+
+                pprime_r2(:,k+1) = pprime_r2(:,k) + qprime_df_face(1,2,:,iface,k)
+                right_dp1 = right_dp1 + 0.5*alpha_mlswe(k) *(pprime_r2(:,k+1)**2 - pprime_r2(:,k)**2)
+
+            end do
+            Q_uu_dp_edge_df(:,iface) = 0.5*(left_uudp1 + right_uudp1)
+            Q_uv_dp_edge_df(:,iface) = 0.5*(left_uvdp1 + right_uvdp1)
+            Q_vv_dp_edge_df(:,iface) = 0.5*(left_vvdp1 + right_vvdp1)
+            H_bcl_edge_df(:,iface) = 0.5*(left_dp1 + right_dp1)
 
             do iquad = 1,ngl
                 !Get Pointers

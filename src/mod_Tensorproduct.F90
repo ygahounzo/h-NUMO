@@ -12,7 +12,7 @@ module mod_Tensorproduct
     use mod_basis, only: nq, psiq, psiqx, psiqy, psiqz, dpsiq, dpsiqx, dpsiqy, dpsiqz
     use mod_metrics, only: ksiq_x,ksiq_y,ksiq_z, etaq_x,etaq_y,etaq_z, zetaq_x,zetaq_y,zetaq_z
 
-    public :: compute_gradient_quad,interpolate_layer_from_quad_to_node_1d
+    public :: compute_gradient_quad,interpolate_layer_from_quad_to_node_1d, compute_gradient_df
 
     private
 
@@ -110,6 +110,58 @@ module mod_Tensorproduct
         end do !e
         
     end subroutine compute_gradient_quad
+
+    subroutine compute_gradient_df(grad_q_df,q)
+
+        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
+        use mod_basis, only: nq, psi, psix, psiy, psiz, dpsi, dpsix, dpsiy, dpsiz
+        use mod_metrics, only: ksi_x,ksi_y,ksi_z, eta_x,eta_y,eta_z, zeta_x,zeta_y,zeta_z
+
+        implicit none
+
+  
+        real, dimension(npoin), intent(in) :: q
+        real, dimension(2,npoin), intent(out) :: grad_q_df
+        integer :: e, iquad, jquad, kquad, l, m, n, Iq, I
+        real :: e_x, e_y, n_x, n_y, h_e, h_n,h_c, c_x, c_y, c_z, e_z, n_z
+        
+        grad_q_df = 0.0
+        
+        !Construct Volume Integral Contribution
+        do e = 1, nelem
+            
+            !Loop Integration Points
+            do jquad = 1, ngly
+                do iquad = 1, nglx
+    
+                    e_x = ksi_x(iquad,jquad,1,e); e_y = ksi_y(iquad,jquad,1,e)
+                    n_x = eta_x(iquad,jquad,1,e); n_y = eta_y(iquad,jquad,1,e)
+                    
+                    Iq = intma(iquad,jquad,1,e)
+    
+                    !Interpolate at Integration Points
+                    do m = 1, ngly
+                        do n = 1, nglx
+                            
+                            I = intma(n,m,1,e)
+        
+                            !Xi derivatives
+                            h_e = dpsix(n,iquad)*psiy(m,jquad)
+                            !Eta derivatives
+                            h_n = psix(n,iquad)*dpsiy(m,jquad)
+        
+                            grad_q_df(1,Iq) = grad_q_df(1,Iq) + (h_e*e_x + h_n*n_x)*q(I)
+                            grad_q_df(2,Iq) = grad_q_df(2,Iq) + (h_e*e_y + h_n*n_y)*q(I)
+
+                        end do
+                    end do
+
+                end do !iquad
+            end do !jquad
+        end do !e
+        
+    end subroutine compute_gradient_df
 
     subroutine interpolate_layer_from_quad_to_node_1d(q_df,q)
 

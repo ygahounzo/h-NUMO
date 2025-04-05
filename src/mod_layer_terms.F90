@@ -1195,7 +1195,7 @@ module mod_layer_terms
 
     end subroutine velocity_df
 
-    subroutine evaluate_bcl(qprime, qprime_face, q_df, qprime_df, qb_df)
+    subroutine evaluate_bcl(qprime, qprime_face, qprime_df_face, q_df, qprime_df, qb_df)
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
@@ -1207,6 +1207,7 @@ module mod_layer_terms
         real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
         real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
         real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
+        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
 
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
@@ -1231,7 +1232,7 @@ module mod_layer_terms
             qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
         end do 
 
-        call interpolate_qprime(qprime,qprime_face,qprime_df)
+        call interpolate_qprime(qprime,qprime_face,qprime_df_face,qprime_df)
 
     end subroutine evaluate_bcl
 
@@ -1350,14 +1351,14 @@ module mod_layer_terms
 
     end subroutine evaluate_mom
 
-    subroutine interpolate_qprime(qprime,qprime_face,qprime_df)
+    subroutine interpolate_qprime(qprime,qprime_face,qprime_df_face,qprime_df)
 
         ! Interpolate from dofs to quadrature points 
 
-        use mod_basis, only: nq, npts
+        use mod_basis, only: nq, npts, ngl
         use mod_grid, only:  npoin, npoin_q, intma, intma_dg_quad, face
         use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q, normal_vector, imapl, imapr
 
         use mod_initial, only: psih, indexq
 
@@ -1365,9 +1366,10 @@ module mod_layer_terms
 
         real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
         real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
+        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
-        integer :: k, Iq, I, ip, iface, iquad, el, er, il, jl, ir, jr, kl, kr
+        integer :: k, Iq, I, ip, iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
         real :: hi, nx, ny, un(nlayers)
 
         qprime = 0.0
@@ -1430,6 +1432,34 @@ module mod_layer_terms
                         !qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
                         
                     !end if
+                end if
+
+            end do
+
+            do n = 1, ngl
+
+                il = imapl(1,n,1,iface)
+                jl = imapl(2,n,1,iface)
+                kl = imapl(3,n,1,iface)
+
+                I = intma(il,jl,kl,el)
+
+                qprime_df_face(1:3,1,n,iface,:) = qprime_df(1:3,I,:)
+
+                if(er > 0) then
+
+                    ir = imapr(1,n,1,iface)
+                    jr = imapr(2,n,1,iface)
+                    kr = imapr(3,n,1,iface)
+
+                    I = intma(ir,jr,kr,er)
+
+                    qprime_df_face(1:3,2,n,iface,:) = qprime_df(1:3,I,:)
+
+                else 
+
+                    qprime_df_face(1:3,2,n,iface,:) = qprime_face(1:3,1,n,iface,:)
+
                 end if
 
             end do

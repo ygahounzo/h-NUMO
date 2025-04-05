@@ -23,7 +23,7 @@ module mod_initial
     use mod_initial_mlswe, only: bot_topo_derivatives, &
         wind_stress_coriolis, compute_reference_edge_variables, Tensor_product, ssprk_coefficients
     
-    use mod_Tensorproduct, only: compute_gradient_quad
+    use mod_Tensorproduct, only: compute_gradient_quad, compute_gradient_df
 
     public :: &
         mod_initial_create, &
@@ -47,7 +47,7 @@ module mod_initial
         coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
         coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, grad_zbot_quad, &
         psih, dpsidx,dpsidy, indexq, wjac, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
-        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df
+        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, grad_zbot_df
 
     private
 
@@ -69,7 +69,7 @@ module mod_initial
     real, dimension(:,:), allocatable :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
     real, dimension(:), allocatable :: zbot, zbot_df, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
     real, dimension(:,:,:), allocatable :: zbot_face
-    real, dimension(:,:), allocatable :: grad_zbot_quad
+    real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df
 
     real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psih_df,dpsidx_df,dpsidy_df
     integer, dimension(:,:), allocatable :: indexq, index_df
@@ -122,7 +122,7 @@ module mod_initial
             one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df_init, one_over_pbprime_df, & 
             qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, coeff_pbpert_L, coeff_pbpert_R, coeff_pbub_LR, &
             coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR, zbot, zbot_df, zbot_face, grad_zbot_quad, qprime_df_init, one_over_pbprime_df_face, tau_wind_df,&
-            ssprk_a,ssprk_beta)
+            ssprk_a,ssprk_beta, grad_zbot_df)
             allocate(q_mlswe_init(3,npoin_q,nlayers), qprime_mlswe_init(3,npoin_q,nlayers), q_df_mlswe_init(3,npoin,nlayers), pbprime(npoin_q), pbprime_df(npoin), &
             q_mlswe_face_init(3,2,nq,nface,nlayers), qprime_face_mlswe_init(3,2,nq,nface,nlayers), pbprime_face(2,nq,nface), one_over_pbprime(npoin_q), &
             one_over_pbprime_face(2,nq,nface), pbprime_edge(nq,nface), one_over_pbprime_edge(nq,nface), dpprime_df_init(npoin,nlayers), &
@@ -130,7 +130,7 @@ module mod_initial
             alpha_mlswe(nlayers), tau_wind(2,npoin_q), coriolis_quad(npoin_q), coriolis_df(npoin), &
             coeff_mass_pbpert_LR(nq,nface), coeff_pbpert_L(nq,nface),coeff_pbpert_R(nq,nface),coeff_pbub_LR(nq,nface), &
             coeff_mass_pbub_L(nq,nface),coeff_mass_pbub_R(nq,nface), &
-            zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), &
+            zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), grad_zbot_df(2,npoin)&
             psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), indexq(npts,npoin_q), wjac(npoin_q), &
             fdt_btp(npoin), fdt2_btp(npoin), a_btp(npoin), b_btp(npoin), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
             b_bcl(npoin), a_bclp(npoin), b_bclp(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
@@ -168,6 +168,7 @@ module mod_initial
             call bot_topo_derivatives(zbot,zbot_face,zbot_df)
 
             call compute_gradient_quad(grad_zbot_quad,zbot_df)
+            call compute_gradient_df(grad_zbot_df,zbot_df)
 
             N_btp = ceiling(dt/dt_btp)
             dt_btp = dt/real(N_btp)

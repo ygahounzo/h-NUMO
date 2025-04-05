@@ -507,7 +507,7 @@ module mod_splitting
     end subroutine momentum
 
 
-    subroutine momentum_mass(qprime,q_df,qprime_face,qprime_df,qb_df,qprime_face3)
+    subroutine momentum_mass(qprime,q_df,qprime_face,qprime_df_face,qprime_df,qb_df,qprime_face3)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict the layer mass and momentum for the splitting system using two-level time integration
@@ -530,6 +530,7 @@ module mod_splitting
         real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face
+        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face3
         
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
@@ -630,7 +631,7 @@ module mod_splitting
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
 
-        call evaluate_bcl(qprime, qprime_face, q_df, qprime_df, qb_df)
+        call evaluate_bcl(qprime, qprime_face, qprime_df_face, q_df, qprime_df, qb_df)
 
     end subroutine momentum_mass
 
