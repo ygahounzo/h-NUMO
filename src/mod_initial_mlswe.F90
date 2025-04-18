@@ -17,7 +17,8 @@ module mod_initial_mlswe
         compute_gradient_quad, &
         interpolate_from_dof_to_quad_uv_init, &
         interpolate_pbprime_init, wind_stress_coriolis, compute_reference_edge_variables, &
-        map_deriv,Tensor_product, interpolate_layer_from_quad_to_node_1d, ssprk_coefficients
+        map_deriv,Tensor_product, interpolate_layer_from_quad_to_node_1d, ssprk_coefficients, &
+        compute_reference_edge_variables_df
 
     private
 
@@ -389,8 +390,6 @@ module mod_initial_mlswe
             integer :: iface, iquad
             real :: c_minus, c_plus
         
-            
-        
             coeff_pbpert_L = 0.0
             coeff_pbpert_R = 0.0
             coeff_pbub_LR = 0.0
@@ -416,11 +415,84 @@ module mod_initial_mlswe
                         coeff_mass_pbub_R(iquad,iface) = c_minus / (c_minus + c_plus)
                         coeff_mass_pbpert_LR(iquad,iface) = c_minus * c_plus / (c_minus + c_plus)
                     end if
-        
+
                 end do
             end do
         
     end subroutine compute_reference_edge_variables
+
+    subroutine compute_reference_edge_variables_df(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
+        coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df,alpha)
+
+        use mod_input, only: nlayers
+        use mod_basis, only: ngl
+        use mod_grid, only: nface, intma, face, npoin
+        use mod_face, only: imapl, imapr
+
+        implicit none
+
+        real, dimension(npoin), intent(in) :: pbprime_df
+        real, dimension(nlayers), intent(in) :: alpha
+        real, dimension(ngl,nface), intent(out) :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
+            coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR
+
+        integer :: iface, n, il, jl, kl, ir, jr, kr, el, er, I1, I2
+        real :: c_minus, c_plus, pl, pr
+
+        coeff_pbpert_L = 0.0
+        coeff_pbpert_R = 0.0
+        coeff_pbub_LR = 0.0
+        coeff_mass_pbub_L = 0.0
+        coeff_mass_pbub_R = 0.0
+        coeff_mass_pbpert_LR = 0.0
+
+        do iface = 1,nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do n = 1,ngl
+
+                il = imapl(1,n,1,iface)
+                jl = imapl(2,n,1,iface)
+                kl = imapl(3,n,1,iface)
+                I1 = intma(il,jl,kl,el)
+
+                pl = pbprime_df(I1)
+
+                if(er > 0) then
+
+                    ir = imapr(1,n,1,iface)
+                    jr = imapr(2,n,1,iface)
+                    kr = imapr(3,n,1,iface)
+                    I2 = intma(ir,jr,kr,er)
+
+                    pr = pbprime_df(I2)
+                else
+                    pr = pl
+                end if
+
+                c_minus = sqrt(alpha(nlayers) * pr)
+                c_plus  = sqrt(alpha(nlayers) * pl)
+                if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
+                    coeff_pbpert_L(n,iface) = c_minus / (c_minus + c_plus)
+                    coeff_pbpert_R(n,iface) = c_plus / (c_minus + c_plus)
+                    coeff_pbub_LR(n,iface)  = 1.0 / (c_minus + c_plus)
+                end if
+
+                c_minus = sqrt(alpha(nlayers) * pr)
+                c_plus  = sqrt(alpha(nlayers) * pl)
+                if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
+                    coeff_mass_pbub_L(n,iface) = c_plus / (c_minus + c_plus)
+                    coeff_mass_pbub_R(n,iface) = c_minus / (c_minus + c_plus)
+                    coeff_mass_pbpert_LR(n,iface) = (c_minus * c_plus) / (c_minus + c_plus)
+                end if
+
+            end do
+        end do
+
+    end subroutine compute_reference_edge_variables_df
 
 
     subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)

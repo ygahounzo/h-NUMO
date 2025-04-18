@@ -21,7 +21,8 @@ module mod_barotropic_terms
                 compute_btp_terms, btp_evaluate_mom_dp_face, btp_evaluate_mom_dp, &
                 restart_mlswe_variales, restart_mlswe2, &
                 compute_gradient_uv, compute_btp_mom_terms, btp_bcl_grad_coeffs, &
-                btp_interpolate_avg, btp_extract_df, btp_extract_face, btp_bcl_coeffs_qdf
+                btp_interpolate_avg, btp_extract_df, btp_extract_face, btp_bcl_coeffs_qdf, &
+                btp_interpolate_avg2
 
     contains
 
@@ -210,8 +211,6 @@ module mod_barotropic_terms
     subroutine btp_interpolate_avg()
 
         use mod_variables, only: uvb_face_ave, uvb_ave, uvb_ave_df
-        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, ope_ave_df, btp_mass_flux_ave_df
-        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, btp_mass_flux_ave
 
         use mod_face, only: imapl_q, imapr_q, normal_vector_q
 
@@ -226,17 +225,10 @@ module mod_barotropic_terms
 
         integer :: e, iquad, jquad, I, Iq, m, n, l, kquad, ip
         integer :: iface, il, jl, ir, jr, el, er, ilocl, ilocr,kl,kr
-        real :: un, nx, ny, hn
+        real :: un, nx, ny, hn, hi
         
         uvb_ave  = 0.0
         uvb_face_ave = 0.0
-        !btp_mass_flux_ave = 0.0
-        !H_ave = 0.0
-        !Qu_ave = 0.0
-        !Qv_ave = 0.0
-        !Quv_ave = 0.0
-        !ope_ave = 0.0
-        !tau_bot_ave = 0.0
 
         do Iq = 1,npoin_q
             do ip = 1,npts
@@ -247,18 +239,7 @@ module mod_barotropic_terms
                 uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
                 uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
 
-                !btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + hn*btp_mass_flux_ave_df(1,I)
-                !btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + hn*btp_mass_flux_ave_df(2,I)
-                !H_ave(Iq) = H_ave(Iq) + hn*H_ave_df(I)
-                !Qu_ave(Iq) = Qu_ave(Iq) + hn*Qu_ave_df(I)
-                !Qv_ave(Iq) = Qv_ave(Iq) + hn*Qv_ave_df(I)
-                !Quv_ave(Iq) = Quv_ave(Iq) + hn*Quv_ave_df(I)
-                !ope_ave(Iq) = ope_ave(Iq) + hn*ope_ave_df(I)
-                !tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + hn*tau_bot_ave_df(1,I)
-                !tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + hn*tau_bot_ave_df(2,I)
-
             end do
-
         end do
 
         do iface = 1, nface                  !i specifies the grid cell
@@ -309,6 +290,130 @@ module mod_barotropic_terms
         call create_communicator_quad(uvb_face_ave,2)
         
     end subroutine btp_interpolate_avg
+
+    subroutine btp_interpolate_avg2()
+
+        use mod_variables, only: uvb_face_ave, uvb_ave, uvb_ave_df
+        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, ope_ave_df, btp_mass_flux_ave_df
+        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, btp_mass_flux_ave
+
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        ! Interpolate btp mass pb from nodal to quad points
+
+        use mod_basis, only: ngl, nq, psiq, npts
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, face, nface
+
+        use mod_initial, only: psih, indexq
+        use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
+                                one_plus_eta_edge_2_ave_df
+        use mod_variables, only: one_plus_eta_edge_2_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, Qu_face_ave, Qv_face_ave
+
+        implicit none
+
+        integer :: e, iquad, jquad, I, Iq, m, n, l, kquad, ip
+        integer :: iface, il, jl, ir, jr, el, er, ilocl, ilocr,kl,kr
+        real :: un, nx, ny, hn, hi
+
+        uvb_ave  = 0.0
+        uvb_face_ave = 0.0
+        btp_mass_flux_ave = 0.0
+        H_ave = 0.0
+        Qu_ave = 0.0
+        Qv_ave = 0.0
+        Quv_ave = 0.0
+        ope_ave = 0.0
+        tau_bot_ave = 0.0
+
+        H_face_ave = 0.0
+        Qu_face_ave = 0.0
+        Qv_face_ave = 0.0
+        ope_face_ave = 0.0
+        btp_mass_flux_face_ave = 0.0
+        one_plus_eta_edge_2_ave = 0.0
+
+        do Iq = 1,npoin_q
+            do ip = 1,npts
+
+                I = indexq(ip,Iq)
+                hn = psih(ip,Iq)
+
+                uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
+                uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
+
+                btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + hn*btp_mass_flux_ave_df(1,I)
+                btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + hn*btp_mass_flux_ave_df(2,I)
+                H_ave(Iq) = H_ave(Iq) + hn*H_ave_df(I)
+                Qu_ave(Iq) = Qu_ave(Iq) + hn*Qu_ave_df(I)
+                Qv_ave(Iq) = Qv_ave(Iq) + hn*Qv_ave_df(I)
+                Quv_ave(Iq) = Quv_ave(Iq) + hn*Quv_ave_df(I)
+                ope_ave(Iq) = ope_ave(Iq) + hn*ope_ave_df(I)
+                tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + hn*tau_bot_ave_df(1,I)
+                tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + hn*tau_bot_ave_df(2,I)
+
+            end do
+        end do
+
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il=imapl_q(1,iquad,1,iface)
+                jl=imapl_q(2,iquad,1,iface)
+                kl=imapl_q(3,iquad,1,iface)
+                I=intma_dg_quad(il,jl,kl,el)
+
+                uvb_face_ave(:,1,iquad,iface) = uvb_ave(:,I)
+
+                if(er > 0) then
+                    ir=imapr_q(1,iquad,1,iface)
+                    jr=imapr_q(2,iquad,1,iface)
+                    kr=imapr_q(3,iquad,1,iface)
+                    I=intma_dg_quad(ir,jr,kr,er)
+
+                    uvb_face_ave(:,2,iquad,iface) = uvb_ave(:,I)
+                else
+                    uvb_face_ave(:,2,iquad,iface) = uvb_face_ave(:,1,iquad,iface)
+
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = nx*uvb_ave(1,I) + ny*uvb_ave(2,I)
+
+                        uvb_face_ave(1,2,iquad,iface) = uvb_ave(1,I) - 2.0*un*nx
+                        uvb_face_ave(2,2,iquad,iface) = uvb_ave(2,I) - 2.0*un*ny
+
+                    elseif(er == -2) then
+                        uvb_face_ave(:,2,iquad,iface) = -uvb_face_ave(:,1,iquad,iface)
+
+                    end if
+                end if
+
+                do n = 1, ngl
+                    hi = psiq(n,iquad)
+
+                    ope_face_ave(:,iquad,iface) = ope_face_ave(:,iquad,iface) + hi*ope_face_ave_df(:,n,iface)
+                    H_face_ave(iquad,iface) = H_face_ave(iquad,iface) + hi*H_face_ave_df(n,iface)
+                    Qu_face_ave(:,iquad,iface) = Qu_face_ave(:,iquad,iface) + hi*Qu_face_ave_df(:,n,iface)
+                    Qv_face_ave(:,iquad,iface) = Qv_face_ave(:,iquad,iface) + hi*Qv_face_ave_df(:,n,iface)
+                    btp_mass_flux_face_ave(:,iquad,iface) = btp_mass_flux_face_ave(:,iquad,iface) + hi*btp_mass_flux_face_ave_df(:,n,iface)
+                    one_plus_eta_edge_2_ave(iquad,iface) = one_plus_eta_edge_2_ave(iquad,iface) + hi*one_plus_eta_edge_2_ave_df(n,iface)
+
+                end do
+
+            end do
+
+        end do
+
+        call create_communicator_quad(uvb_face_ave,2)
+
+    end subroutine btp_interpolate_avg2
 
     subroutine compute_btp_mom_terms(qb,qb_face,qprime,qb_df)
 
@@ -1227,6 +1332,11 @@ module mod_barotropic_terms
         Q_uv_dp = 0.0
         Q_vv_dp = 0.0
         H_bcl = 0.0
+        
+        Q_uu_dp_df = 0.0
+        Q_uv_dp_df = 0.0
+        Q_vv_dp_df = 0.0
+        H_bcl_df = 0.0
 
         btp_dpp_graduv = 0.0
         pbprime_visc = 0.0
@@ -1234,6 +1344,7 @@ module mod_barotropic_terms
         ! Compute Q_up_up_quad and Q_up_vp_quad at quadrature points.
 
         pprime(:,1) = 0.0
+        pprime_df(:,1) = 0.0
 
         do k = 1, nlayers
             Q_uu_dp(:) = Q_uu_dp(:) + qprime(2,:,k)*(qprime(2,:,k) * qprime(1,:,k))

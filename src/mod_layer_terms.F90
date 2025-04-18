@@ -1458,7 +1458,7 @@ module mod_layer_terms
 
                 else 
 
-                    qprime_df_face(1:3,2,n,iface,:) = qprime_face(1:3,1,n,iface,:)
+                    qprime_df_face(1:3,2,n,iface,:) = qprime_df_face(1:3,1,n,iface,:)
 
                 end if
 

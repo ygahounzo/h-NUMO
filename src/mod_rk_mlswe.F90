@@ -31,8 +31,8 @@ module mod_rk_mlswe
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
-        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2
-        use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg
+        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2, create_rhs_btp3
+        use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg, btp_interpolate_avg2
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
                                 Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
@@ -40,6 +40,8 @@ module mod_rk_mlswe
 
         use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, btp_mass_flux_ave_df
         use mod_variables, only: graduvb_face_ave, graduvb_ave
+        use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
+                                one_plus_eta_edge_2_ave_df
 
 
         implicit none
@@ -89,6 +91,13 @@ module mod_rk_mlswe
         Quv_ave_df = 0.0
         tau_bot_ave_df = 0.0
 
+        H_face_ave_df = 0.0
+        Qu_face_ave_df = 0.0
+        Qv_face_ave_df = 0.0
+        one_plus_eta_edge_2_ave_df = 0.0
+        ope_face_ave_df = 0.0
+        btp_mass_flux_face_ave_df = 0.0
+
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
@@ -109,8 +118,9 @@ module mod_rk_mlswe
 
                 ! Compute RHS for the barotropic
 
-                call create_rhs_btp(rhs,qb1_df,qprime)
+                !call create_rhs_btp(rhs,qb1_df,qprime)
                 !call create_rhs_btp2(rhs,qb1_df,qprime_df)
+                call create_rhs_btp3(rhs,qb1_df,qprime_df)
 
                 ! Update barotropic variables
 
@@ -148,42 +158,55 @@ module mod_rk_mlswe
         uvb_ave_df = N_inv*uvb_ave_df
 
         !ope_ave = N_inv*ope_ave
+        !H_ave = N_inv*H_ave 
+        !Qu_ave = N_inv*Qu_ave
+        !Qv_ave = N_inv*Qv_ave 
+        !Quv_ave = N_inv*Quv_ave 
+        !btp_mass_flux_ave = N_inv*btp_mass_flux_ave
 
-        H_ave = N_inv*H_ave 
-        Qu_ave = N_inv*Qu_ave
-        Qv_ave = N_inv*Qv_ave 
-        Quv_ave = N_inv*Quv_ave 
+        !ope_face_ave = N_inv*ope_face_ave 
+        !H_face_ave = N_inv*H_face_ave 
+        !Qu_face_ave = N_inv*Qu_face_ave 
+        !Qv_face_ave = N_inv*Qv_face_ave 
+        !Quv_face_ave = N_inv*Quv_face_ave 
+        !btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
+        !one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 
 
-        btp_mass_flux_ave = N_inv*btp_mass_flux_ave
-
-        ope_face_ave = N_inv*ope_face_ave 
-
-        H_face_ave = N_inv*H_face_ave 
-        Qu_face_ave = N_inv*Qu_face_ave 
-        Qv_face_ave = N_inv*Qv_face_ave 
-        Quv_face_ave = N_inv*Quv_face_ave 
-
-        btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
-
-        one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 
         ope2_ave = N_inv*ope2_ave
 
-        ope_ave_df = N_inv*ope_ave_df
+        !ope_ave_df = N_inv*ope_ave_df
 
         tau_wind_ave = tau_wind_ave / real(N_btp)
-        tau_bot_ave = N_inv*tau_bot_ave
+        !tau_bot_ave = N_inv*tau_bot_ave
 
         graduvb_face_ave = N_inv*graduvb_face_ave 
         graduvb_ave = N_inv*graduvb_ave
 
-        H_ave_df = N_inv*H_ave_df
-        Qu_ave_df = N_inv*Qu_ave_df
-        Qv_ave_df = N_inv*Qv_ave_df
-        Quv_ave_df = N_inv*Quv_ave_df
-        btp_mass_flux_ave_df = N_inv*btp_mass_flux_ave_df
-        tau_bot_ave_df = N_inv*tau_bot_ave_df
+        !H_ave_df = N_inv*H_ave_df
+        !Qu_ave_df = N_inv*Qu_ave_df
+        !Qv_ave_df = N_inv*Qv_ave_df
+        !Quv_ave_df = N_inv*Quv_ave_df
+        !btp_mass_flux_ave_df = N_inv*btp_mass_flux_ave_df
+        !tau_bot_ave_df = N_inv*tau_bot_ave_df
 
-        call btp_interpolate_avg()
+        !call btp_interpolate_avg()
+        call btp_interpolate_avg2()
+
+        ope_ave = N_inv*ope_ave
+        H_ave = N_inv*H_ave
+        Qu_ave = N_inv*Qu_ave
+        Qv_ave = N_inv*Qv_ave
+        Quv_ave = N_inv*Quv_ave
+        btp_mass_flux_ave = N_inv*btp_mass_flux_ave
+        ope_ave_df = N_inv*ope_ave_df
+        tau_bot_ave = N_inv*tau_bot_ave
+
+        ope_face_ave = N_inv*ope_face_ave
+        H_face_ave = N_inv*H_face_ave
+        Qu_face_ave = N_inv*Qu_face_ave
+        Qv_face_ave = N_inv*Qv_face_ave
+        btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave
+        one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave
 
     end subroutine ti_barotropic_ssprk_mlswe
 

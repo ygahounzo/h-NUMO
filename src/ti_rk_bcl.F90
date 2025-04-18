@@ -60,17 +60,18 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	q_df2 = q_df
 	qprime_df2 = qprime_df
 
-	call momentum_mass(qprime2,q_df2,qprime_face2,qprime_df_face,qprime_df2,qbp_df, qprime_face)
+	call momentum_mass(qprime2,q_df2,qprime_face2,qprime_df_face2,qprime_df2,qbp_df, qprime_face)
 
 	! ==================== Correction step =================================
 
 	! Communication of qprime_face2 values within the inter-processor boundary
 	call bcl_create_communicator(qprime_face2,3,nlayers,nq)
-	call bcl_create_communicator(qprime_df_face,3,nlayers,ngl)
+	call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
 
 	qprime2 = 0.5*(qprime2 + qprime)
 	qprime_face2 = 0.5*(qprime_face2 + qprime_face)
 	qprime_df2 = 0.5*(qprime_df2 + qprime_df)
+        qprime_df_face = 0.5*(qprime_df_face + qprime_df_face2)
 
 	dpprime_visc(:,:) = qprime_df2(1,:,:)
 

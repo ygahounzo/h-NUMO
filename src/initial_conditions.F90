@@ -317,10 +317,10 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
       end do
    end do 
 
-   print*, minval(zbot_df(:)), maxval(zbot_df(:))
-   do k = 1, nlayers+1
-        print*, minval(z_interface(:,k)), maxval(z_interface(:,k))
-   enddo
+   !print*, minval(zbot_df(:)), maxval(zbot_df(:))
+   !do k = 1, nlayers+1
+   !     print*, minval(z_interface(:,k)), maxval(z_interface(:,k))
+   !enddo
 
    ! Compute the degrees of freedom for  p'_b  in each cell.
    ! In each cell, the computation of degrees of freedom uses

@@ -51,9 +51,9 @@ visc_mlswe = 0.0, ! horizontal viscosity
 dpprime_visc_min = 0.0,
 max_shear_dz = 0.0,
 adjust_H_vertical_sum = 2,
-adjust_bcl_mom_flux = 1,
+adjust_bcl_mom_flux = 0,
 mlswe_bc_strong = T,
-dg_integ_exact = T,
+dg_integ_exact = F,
 dump_data = T,
 !beta = 0.0e-11,  ! beta-plane Coriolis parameter (default = 0.0)
 !f0 = 0.0,    ! Coriolis parameter (default = 0.0)
@@ -84,3 +84,4 @@ lprint_diagnostics=T,
 
 lcheck_conserved=T
 /
+
