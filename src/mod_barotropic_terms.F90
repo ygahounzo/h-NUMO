@@ -22,7 +22,7 @@ module mod_barotropic_terms
                 restart_mlswe_variales, restart_mlswe2, &
                 compute_gradient_uv, compute_btp_mom_terms, btp_bcl_grad_coeffs, &
                 btp_interpolate_avg, btp_extract_df, btp_extract_face, btp_bcl_coeffs_qdf, &
-                btp_interpolate_avg2
+                btp_interpolate_avg2, btp_interpolate_avg3, btp_interpolate_avg4, btp_flux_ave
 
     contains
 
@@ -414,6 +414,386 @@ module mod_barotropic_terms
         call create_communicator_quad(uvb_face_ave,2)
 
     end subroutine btp_interpolate_avg2
+
+    subroutine btp_interpolate_avg3()
+
+        use mod_variables, only: uvb_face_ave, uvb_ave, uvb_ave_df
+        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, ope_ave_df, btp_mass_flux_ave_df
+        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, btp_mass_flux_ave
+
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        ! Interpolate btp mass pb from nodal to quad points
+
+        use mod_basis, only: ngl, nq, psiq, npts
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, face, nface
+
+        use mod_initial, only: psih, indexq
+        use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
+                                one_plus_eta_edge_2_ave_df
+        use mod_variables, only: one_plus_eta_edge_2_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, Qu_face_ave, Qv_face_ave
+
+        implicit none
+
+        integer :: e, iquad, jquad, I, Iq, m, n, l, kquad, ip
+        integer :: iface, il, jl, ir, jr, el, er, ilocl, ilocr,kl,kr
+        real :: un, nx, ny, hn, hi
+
+        uvb_ave  = 0.0
+        uvb_face_ave = 0.0
+        btp_mass_flux_ave = 0.0
+        H_ave = 0.0
+        Qu_ave = 0.0
+        Qv_ave = 0.0
+        Quv_ave = 0.0
+        ope_ave = 0.0
+        tau_bot_ave = 0.0
+
+        do Iq = 1,npoin_q
+            do ip = 1,npts
+
+                I = indexq(ip,Iq)
+                hn = psih(ip,Iq)
+
+                uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
+                uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
+
+                btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + hn*btp_mass_flux_ave_df(1,I)
+                btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + hn*btp_mass_flux_ave_df(2,I)
+                H_ave(Iq) = H_ave(Iq) + hn*H_ave_df(I)
+                Qu_ave(Iq) = Qu_ave(Iq) + hn*Qu_ave_df(I)
+                Qv_ave(Iq) = Qv_ave(Iq) + hn*Qv_ave_df(I)
+                Quv_ave(Iq) = Quv_ave(Iq) + hn*Quv_ave_df(I)
+                ope_ave(Iq) = ope_ave(Iq) + hn*ope_ave_df(I)
+                tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + hn*tau_bot_ave_df(1,I)
+                tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + hn*tau_bot_ave_df(2,I)
+
+            end do
+        end do
+
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il=imapl_q(1,iquad,1,iface)
+                jl=imapl_q(2,iquad,1,iface)
+                kl=imapl_q(3,iquad,1,iface)
+                I=intma_dg_quad(il,jl,kl,el)
+
+                uvb_face_ave(:,1,iquad,iface) = uvb_ave(:,I)
+
+                if(er > 0) then
+                    ir=imapr_q(1,iquad,1,iface)
+                    jr=imapr_q(2,iquad,1,iface)
+                    kr=imapr_q(3,iquad,1,iface)
+                    I=intma_dg_quad(ir,jr,kr,er)
+
+                    uvb_face_ave(:,2,iquad,iface) = uvb_ave(:,I)
+                else
+                    uvb_face_ave(:,2,iquad,iface) = uvb_face_ave(:,1,iquad,iface)
+
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = nx*uvb_ave(1,I) + ny*uvb_ave(2,I)
+
+                        uvb_face_ave(1,2,iquad,iface) = uvb_ave(1,I) - 2.0*un*nx
+                        uvb_face_ave(2,2,iquad,iface) = uvb_ave(2,I) - 2.0*un*ny
+
+                    elseif(er == -2) then
+                        uvb_face_ave(:,2,iquad,iface) = -uvb_face_ave(:,1,iquad,iface)
+
+                    end if
+                end if
+
+            end do
+
+        end do
+
+        call create_communicator_quad(uvb_face_ave,2)
+
+    end subroutine btp_interpolate_avg3
+
+    subroutine btp_interpolate_avg4()
+
+        use mod_variables, only: uvb_face_ave, uvb_ave, uvb_ave_df
+        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, ope_ave_df, btp_mass_flux_ave_df
+        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, btp_mass_flux_ave
+
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q
+
+        ! Interpolate btp mass pb from nodal to quad points
+
+        use mod_basis, only: ngl, nq, psiq, npts
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, face, nface
+
+        use mod_initial, only: psih, indexq
+        use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
+                                one_plus_eta_edge_2_ave_df
+        use mod_variables, only: one_plus_eta_edge_2_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, Qu_face_ave, Qv_face_ave
+
+        implicit none
+
+        integer :: e, iquad, jquad, I, Iq, m, n, l, kquad, ip
+        integer :: iface, il, jl, ir, jr, el, er, ilocl, ilocr,kl,kr
+        real :: un, nx, ny, hn, hi
+
+        uvb_ave  = 0.0
+        uvb_face_ave = 0.0
+
+        H_face_ave = 0.0
+        Qu_face_ave = 0.0
+        Qv_face_ave = 0.0
+        ope_face_ave = 0.0
+        btp_mass_flux_face_ave = 0.0
+        one_plus_eta_edge_2_ave = 0.0
+
+        do Iq = 1,npoin_q
+            do ip = 1,npts
+
+                I = indexq(ip,Iq)
+                hn = psih(ip,Iq)
+
+                uvb_ave(1,Iq) = uvb_ave(1,Iq) + hn*uvb_ave_df(1,I)
+                uvb_ave(2,Iq) = uvb_ave(2,Iq) + hn*uvb_ave_df(2,I)
+
+            end do
+        end do
+
+        do iface = 1, nface                  !i specifies the grid cell
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do iquad = 1, nq
+
+                il=imapl_q(1,iquad,1,iface)
+                jl=imapl_q(2,iquad,1,iface)
+                kl=imapl_q(3,iquad,1,iface)
+                I=intma_dg_quad(il,jl,kl,el)
+
+                uvb_face_ave(:,1,iquad,iface) = uvb_ave(:,I)
+
+                if(er > 0) then
+                    ir=imapr_q(1,iquad,1,iface)
+                    jr=imapr_q(2,iquad,1,iface)
+                    kr=imapr_q(3,iquad,1,iface)
+                    I=intma_dg_quad(ir,jr,kr,er)
+
+                    uvb_face_ave(:,2,iquad,iface) = uvb_ave(:,I)
+                else
+                    uvb_face_ave(:,2,iquad,iface) = uvb_face_ave(:,1,iquad,iface)
+
+                    if(er == -4) then
+
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+
+                        un = nx*uvb_ave(1,I) + ny*uvb_ave(2,I)
+
+                        uvb_face_ave(1,2,iquad,iface) = uvb_ave(1,I) - 2.0*un*nx
+                        uvb_face_ave(2,2,iquad,iface) = uvb_ave(2,I) - 2.0*un*ny
+
+                    elseif(er == -2) then
+                        uvb_face_ave(:,2,iquad,iface) = -uvb_face_ave(:,1,iquad,iface)
+
+                    end if
+                end if
+
+                do n = 1, ngl
+                    hi = psiq(n,iquad)
+
+                    ope_face_ave(:,iquad,iface) = ope_face_ave(:,iquad,iface) + hi*ope_face_ave_df(:,n,iface)
+                    H_face_ave(iquad,iface) = H_face_ave(iquad,iface) + hi*H_face_ave_df(n,iface)
+                    Qu_face_ave(:,iquad,iface) = Qu_face_ave(:,iquad,iface) + hi*Qu_face_ave_df(:,n,iface)
+                    Qv_face_ave(:,iquad,iface) = Qv_face_ave(:,iquad,iface) + hi*Qv_face_ave_df(:,n,iface)
+                    btp_mass_flux_face_ave(:,iquad,iface) = btp_mass_flux_face_ave(:,iquad,iface) + hi*btp_mass_flux_face_ave_df(:,n,iface)
+                    one_plus_eta_edge_2_ave(iquad,iface) = one_plus_eta_edge_2_ave(iquad,iface) + hi*one_plus_eta_edge_2_ave_df(n,iface)
+
+                end do
+
+            end do
+
+        end do
+
+        call create_communicator_quad(uvb_face_ave,2)
+
+    end subroutine btp_interpolate_avg4
+
+    subroutine btp_flux_ave(qb_df, qb_df_face, qprime)
+
+        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma, nface,face
+        use mod_basis, only: ngl, nq, psiq, npts
+        use mod_constants, only: gravity
+        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, &
+                                coriolis_quad, one_over_pbprime, alpha_mlswe
+        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, uvb_ave, btp_mass_flux_ave
+        use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
+        use mod_input, only: nlayers, cd_mlswe, botfr
+        use mod_initial, only: coeff_pbpert_L, coeff_pbub_LR, coeff_pbpert_R, &
+                                one_over_pbprime_face, one_over_pbprime_edge, &
+                                coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
+        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
+        use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave,Qu_face_ave, Qv_face_ave, &
+                                one_plus_eta_edge_2_ave, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge, uvb_face_ave
+
+        implicit none
+
+        real, dimension(4,npoin), intent(in) :: qb_df
+        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
+        real, dimension(4, 2, ngl, nface), intent(in) :: qb_df_face
+
+        real :: Hq, quux, quvxy, qvvy
+        real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
+                dp, dpp, udp, vdp, ub, vb, ubot, vbot, speed
+
+        integer :: I, Iq, ip
+        integer :: iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
+        real :: nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
+        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y, one_plus_eta_edge
+        real, dimension(nq) :: ul, ur, vl, vr
+        real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
+        real :: qbl(4,nq), qbr(4,nq)
+
+        tau_bot_u = 0.0 ; tau_bot_v = 0.0
+
+        do Iq = 1, npoin_q
+
+            dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
+
+            do ip = 1,npts
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
+
+                dp = dp + hi*qb_df(1,I)
+                dpp = dpp + hi*qb_df(2,I)
+                udp = udp + hi*qb_df(3,I)
+                vdp = vdp + hi*qb_df(4,I)
+            end do
+
+            ub = udp/dp; vb = vdp/dp
+
+            if (botfr == 1) then
+
+                ubot = qprime(2,Iq,nlayers) + ub
+                vbot = qprime(3,Iq,nlayers) + vb
+
+                tau_bot_u = (cd_mlswe/alpha_mlswe(nlayers))*ubot
+                tau_bot_v = (cd_mlswe/alpha_mlswe(nlayers))*vbot
+
+            elseif (botfr == 2) then
+
+                ubot = qprime(2,Iq,nlayers) + ub
+                vbot = qprime(3,Iq,nlayers) + vb
+                speed = (cd_mlswe/gravity)*sqrt(ubot**2 + vbot**2)
+
+                tau_bot_u = speed*ubot
+                tau_bot_v = speed*vbot
+            end if
+
+            ope = 1.0 + dpp * one_over_pbprime(Iq)
+            Hq = (ope**2) * H_bcl(Iq)
+
+            quux = ub * udp + ope * Q_uu_dp(Iq)
+            quvxy = ub * vdp + ope * Q_uv_dp(Iq)
+            qvvy = vb * vdp + ope * Q_vv_dp(Iq)
+
+            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + quux
+            Qv_ave(Iq) = Qv_ave(Iq) + qvvy;  Quv_ave(Iq) = Quv_ave(Iq) + quvxy
+
+            tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tau_bot_u
+            tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tau_bot_v
+
+            ope_ave(Iq) = ope_ave(Iq) + ope
+
+            btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + udp
+            btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
+
+        enddo
+
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            qbl = 0.0; qbr = 0.0
+
+            do iquad = 1,nq
+
+                nxl = normal_vector_q(1,iquad,1,iface)
+                nyl = normal_vector_q(2,iquad,1,iface)
+
+                nxr = -nxl
+                nyr = -nyl
+
+                do n = 1, ngl
+
+                    hi = psiq(n,iquad)
+                    qbl(1:4,iquad) = qbl(1:4,iquad) + hi*qb_df_face(1:4,1,n,iface)
+                    qbr(1:4,iquad) = qbr(1:4,iquad) + hi*qb_df_face(1:4,2,n,iface)
+
+                end do
+
+                pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
+                pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
+
+                pbpert_edge = coeff_pbpert_L(iquad, iface) * qbl(2,iquad) &
+                                            + coeff_pbpert_R(iquad, iface) * qbr(2,iquad) &
+                                            + coeff_pbub_LR(iquad, iface) * (pU_L + pU_R)
+
+                !one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_edge(iquad, iface)
+                one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_face(1,n,iface)
+
+                ! Compute mass fluxes at each element face.
+
+                flux_edge_x(iquad) = coeff_mass_pbub_L(iquad,iface) * qbl(3,iquad) &
+                                            + coeff_mass_pbub_R(iquad,iface) * qbr(3,iquad) &
+                                            + coeff_mass_pbpert_LR(iquad,iface) * (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
+
+                flux_edge_y(iquad) = coeff_mass_pbub_L(iquad,iface) * qbl(4,iquad) &
+                                            + coeff_mass_pbub_R(iquad,iface) * qbr(4,iquad) &
+                                            + coeff_mass_pbpert_LR(iquad,iface) * (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
+
+            end do
+
+            ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
+            vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
+
+            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:, iface)
+            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
+            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
+            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:, iface)
+
+            ! Compute pressure forcing H_face at each element face.
+
+            H_face_temp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
+
+            ! Accumulate sums for time averaging
+
+            btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
+            btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
+
+            H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_temp(:)
+            Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:); Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
+            Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:); Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
+
+            ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + qbl(2,:) * one_over_pbprime_face(1,:,iface)
+            ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + qbr(2,:) * one_over_pbprime_face(2,:,iface)
+
+            one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) + one_plus_eta_edge(:)
+
+        enddo
+
+    end subroutine btp_flux_ave
+
 
     subroutine compute_btp_mom_terms(qb,qb_face,qprime,qb_df)
 

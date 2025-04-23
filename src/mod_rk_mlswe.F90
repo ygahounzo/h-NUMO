@@ -31,8 +31,9 @@ module mod_rk_mlswe
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
-        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2, create_rhs_btp3
-        use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg, btp_interpolate_avg2
+        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2, create_rhs_btp3, create_rhs_btp4
+        use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg, btp_interpolate_avg2, &
+                                        btp_interpolate_avg3, btp_interpolate_avg4, btp_flux_ave
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
                                 Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
@@ -42,6 +43,7 @@ module mod_rk_mlswe
         use mod_variables, only: graduvb_face_ave, graduvb_ave
         use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
                                 one_plus_eta_edge_2_ave_df
+        use mod_variables, only: qbface_ave
 
 
         implicit none
@@ -110,6 +112,8 @@ module mod_rk_mlswe
             qb0_df = qb_df
             qb1_df = qb_df
 
+            qbface_ave = 0.0
+
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
@@ -120,7 +124,8 @@ module mod_rk_mlswe
 
                 !call create_rhs_btp(rhs,qb1_df,qprime)
                 !call create_rhs_btp2(rhs,qb1_df,qprime_df)
-                call create_rhs_btp3(rhs,qb1_df,qprime_df)
+                !call create_rhs_btp3(rhs,qb1_df,qprime_df,ik)
+                call create_rhs_btp4(rhs,qb1_df,qprime,ik)
 
                 ! Update barotropic variables
 
@@ -145,6 +150,7 @@ module mod_rk_mlswe
             end do 
 
             tau_wind_ave = tau_wind_ave + tau_wind
+            call btp_flux_ave(qb0_df, qbface_ave, qprime)
 
         end do
 
@@ -156,41 +162,17 @@ module mod_rk_mlswe
         N_inv = 1.0 / real(kstages*N_btp)
 
         uvb_ave_df = N_inv*uvb_ave_df
-
-        !ope_ave = N_inv*ope_ave
-        !H_ave = N_inv*H_ave 
-        !Qu_ave = N_inv*Qu_ave
-        !Qv_ave = N_inv*Qv_ave 
-        !Quv_ave = N_inv*Quv_ave 
-        !btp_mass_flux_ave = N_inv*btp_mass_flux_ave
-
-        !ope_face_ave = N_inv*ope_face_ave 
-        !H_face_ave = N_inv*H_face_ave 
-        !Qu_face_ave = N_inv*Qu_face_ave 
-        !Qv_face_ave = N_inv*Qv_face_ave 
-        !Quv_face_ave = N_inv*Quv_face_ave 
-        !btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave 
-        !one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave 
-
-        ope2_ave = N_inv*ope2_ave
-
-        !ope_ave_df = N_inv*ope_ave_df
-
-        tau_wind_ave = tau_wind_ave / real(N_btp)
-        !tau_bot_ave = N_inv*tau_bot_ave
-
         graduvb_face_ave = N_inv*graduvb_face_ave 
         graduvb_ave = N_inv*graduvb_ave
+        tau_wind_ave = tau_wind_ave / real(N_btp)
+        ope_ave_df = N_inv*ope_ave_df
 
-        !H_ave_df = N_inv*H_ave_df
-        !Qu_ave_df = N_inv*Qu_ave_df
-        !Qv_ave_df = N_inv*Qv_ave_df
-        !Quv_ave_df = N_inv*Quv_ave_df
-        !btp_mass_flux_ave_df = N_inv*btp_mass_flux_ave_df
-        !tau_bot_ave_df = N_inv*tau_bot_ave_df
 
-        !call btp_interpolate_avg()
-        call btp_interpolate_avg2()
+        N_inv = 1.0 / real(N_btp)
+        ope2_ave = N_inv*ope2_ave
+
+        call btp_interpolate_avg()
+        !call btp_interpolate_avg2()
 
         ope_ave = N_inv*ope_ave
         H_ave = N_inv*H_ave
@@ -198,7 +180,6 @@ module mod_rk_mlswe
         Qv_ave = N_inv*Qv_ave
         Quv_ave = N_inv*Quv_ave
         btp_mass_flux_ave = N_inv*btp_mass_flux_ave
-        ope_ave_df = N_inv*ope_ave_df
         tau_bot_ave = N_inv*tau_bot_ave
 
         ope_face_ave = N_inv*ope_face_ave

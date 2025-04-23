@@ -28,7 +28,8 @@ module mod_variables
         vdp_left, udp_right, vdp_right, u_vdp_temp, grad_z, flux_edge_bcl, u_edge, v_edge, udp_flux_edge, vdp_flux_edge, &
         H_r_face, flux_adjustment, flux_adjust_edge, tau_wind_int, tau_bot_int
         
-    public ::one_plus_eta_edge_2_ave_df, H_face_ave_df, btp_mass_flux_face_ave_df, ope_face_ave_df, Qu_face_ave_df, Qv_face_ave_df
+    public :: one_plus_eta_edge_2_ave_df, H_face_ave_df, btp_mass_flux_face_ave_df, ope_face_ave_df, Qu_face_ave_df, Qv_face_ave_df
+    public :: qbface_ave
 
     private 
     ! module variable and parameters 
@@ -61,6 +62,7 @@ module mod_variables
     real, dimension(:,:,:), allocatable :: uvdp_temp, sum_layer_mass_flux_face, udp_left, vdp_left, udp_right, vdp_right, &
                                             u_vdp_temp, grad_z, flux_adjustment, tau_wind_int, tau_bot_int
     real, dimension(:,:,:,:), allocatable :: flux_edge_bcl, u_edge, v_edge, udp_flux_edge, vdp_flux_edge, H_r_face, flux_adjust_edge
+    real, dimension(:,:,:,:), allocatable :: qbface_ave
 
     contains
 
@@ -81,7 +83,7 @@ module mod_variables
             Q_uu_dp_edge_df, Q_uv_dp_edge_df, Q_vv_dp_edge_df, &
             tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, btp_mass_flux_ave_df, &
             one_plus_eta_edge_2_ave_df, H_face_ave_df, btp_mass_flux_face_ave_df, &
-            ope_face_ave_df, Qu_face_ave_df, Qv_face_ave_df)
+            ope_face_ave_df, Qu_face_ave_df, Qv_face_ave_df, qbface_ave)
         endif 
 
         allocate(Q_uu_dp(npoin_q), Q_uv_dp(npoin_q), Q_vv_dp(npoin_q), H_bcl(npoin_q), &
@@ -100,7 +102,7 @@ module mod_variables
             tau_bot_ave_df(2,npoin), H_ave_df(npoin), Qu_ave_df(npoin), Quv_ave_df(npoin), Qv_ave_df(npoin), &
             btp_mass_flux_ave_df(2,npoin), &
             one_plus_eta_edge_2_ave_df(ngl,nface), H_face_ave_df(ngl,nface), btp_mass_flux_face_ave_df(2,ngl,nface), &
-            ope_face_ave_df(2,ngl,nface), Qu_face_ave_df(2,ngl,nface), Qv_face_ave_df(2,ngl,nface), &
+            ope_face_ave_df(2,ngl,nface), Qu_face_ave_df(2,ngl,nface), Qv_face_ave_df(2,ngl,nface), qbface_ave(4,2,ngl,nface), &
             stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables"
 

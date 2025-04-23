@@ -71,11 +71,11 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	qprime2 = 0.5*(qprime2 + qprime)
 	qprime_face2 = 0.5*(qprime_face2 + qprime_face)
 	qprime_df2 = 0.5*(qprime_df2 + qprime_df)
-        qprime_df_face = 0.5*(qprime_df_face + qprime_df_face2)
+        qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
 
 	dpprime_visc(:,:) = qprime_df2(1,:,:)
 
-	call btp_bcl_coeffs_qdf(qprime2,qprime_face2,qprime_df_face, qprime_df2)
+	call btp_bcl_coeffs_qdf(qprime2,qprime_face2,qprime_df_face2, qprime_df2)
 	call ti_barotropic_ssprk_mlswe(qb_df,qprime2, qprime_df2)
 
 	call thickness(qprime2, q_df, qprime_face2, dpprime_df2, qb_df)

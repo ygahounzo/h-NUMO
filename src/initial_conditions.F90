@@ -7,7 +7,7 @@
 
 subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face, qprime_face, pbprime_face, &
    one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df, one_over_pbprime_df, &
-   qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, zbot_df, tau_wind_df)
+   qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, pbprime_df_face, zbot_df, tau_wind_df)
     
 
    use mod_grid, only: nelem, nface, npoin_q, npoin, coord
@@ -46,6 +46,7 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    real, dimension(npoin_q) :: one_over_pbprime
    real, dimension(2,nq,nface) :: one_over_pbprime_face
    real, dimension(2,ngl,nface) :: one_over_pbprime_df_face
+   real, dimension(2,ngl,nface) :: pbprime_df_face
    real, dimension(nq, nface) :: pbprime_edge
    real, dimension(nq, nface) :: one_over_pbprime_edge
    real, dimension(npoin,nlayers) :: dpprime_df
@@ -98,6 +99,8 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    u_df = 0.0
    v_df = 0.0
    tau_wind_df = 0.0
+   one_over_pbprime_df_face = 0.0
+   pbprime_df_face = 0.0
 
    kvector(1,:)=0.0
    kvector(2,:)=0.0
@@ -335,7 +338,7 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
    ! pb = vertical sum of  Delta p  over all layers
    ! at the reference state.
 
-   call interpolate_pbprime_init(pbprime_init,pbprime_face,one_over_pbprime_df_face, pbprime_df)
+   call interpolate_pbprime_init(pbprime_init,pbprime_face,pbprime_df_face, pbprime_df)
 
    ! Compute  1/p'_b  at the faces and quadrature points
 
@@ -356,17 +359,23 @@ subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face,
          end do
          
       end do
+
+      do n = 1, ngl
+         do ilr = 1,2
+            if(pbprime_df_face(ilr,n,iface) > 0.0) then
+               one_over_pbprime_df_face(ilr,n,iface) = 1.0/pbprime_df_face(ilr,n,iface)
+            end if
+         end do
+      end do
    end do
 
    do I1 = 1, npoin
-
       if(pbprime_df(I1) > 0.0) then
          one_over_pbprime_df(I1) = 1.0/pbprime_df(I1)
       end if
    end do
 
    do Iq = 1, npoin_q
-
       if(pbprime_init(Iq) > 0.0) then
          one_over_pbprime(Iq) = 1.0/pbprime_init(Iq)
       end if

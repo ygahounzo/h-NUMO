@@ -166,10 +166,11 @@ module mod_initial_mlswe
     end subroutine interpolate_from_dof_to_quad_uv_init
 
 
-    subroutine interpolate_pbprime_init(pbprime,pbprime_face,one_over_pbprime_df_face,pbprime_df)
+    subroutine interpolate_pbprime_init(pbprime,pbprime_face,pbprime_df_face,pbprime_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, nface, face, mod_grid_get_face_nq
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, nface, face
+        use mod_grid, only:  mod_grid_get_face_nq, mod_grid_get_face_ngl
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers
         use mod_face, only: imapl_q, imapr_q, imapl, imapr
@@ -177,13 +178,16 @@ module mod_initial_mlswe
         implicit none
         real, dimension(npoin_q), intent(out) :: pbprime
         real, dimension(2,nq,nface), intent(out) :: pbprime_face
-        real, dimension(2,ngl,nface), intent(out) :: one_over_pbprime_df_face
+        real, dimension(2,ngl,nface), intent(out) :: pbprime_df_face
         real, dimension(npoin), intent(in) :: pbprime_df
-        integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, iface, I1, I2, nq_i, nq_j, plane_ij, ilocl, ilocr, el, er, il, jl, kl, ir, jr, kr
+        integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, iface, I1
+        integer :: I2, nq_i, nq_j, plane_ij, ilocl, ilocr, el, er, il, jl, kl, ir, jr, kr
+        integer :: ngl_i, ngl_j, ii, jj 
         real :: hi
 
         pbprime = 0.0
         pbprime_face = 0.0
+        pbprime_df_face = 0.0
         
         do e = 1, nelem
             do kquad = 1, nqz
@@ -199,9 +203,7 @@ module mod_initial_mlswe
                                     I = intma(n, m, l, e)
                                     
                                     hi = psiqx(n, iquad) * psiqy(m, jquad)!* psiqz(l, kquad)
-
                                     !print*, "hi = ", hi
-                                    
                                     pbprime(Iq) = pbprime(Iq) + pbprime_df(I) * hi
                                     
                                 end do
@@ -222,70 +224,53 @@ module mod_initial_mlswe
             er = face(8,iface)
 
             call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
+            call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
                 
             do jquad = 1,nq_j
-
                 do iquad = 1, nq_i
 
                     il = imapl_q(1,iquad,jquad,iface)
                     jl = imapl_q(2,iquad,jquad,iface)
                     kl = imapl_q(3,iquad,jquad,iface)
-
                     I1 = intma_dg_quad(il,jl,kl,el)
 
                     pbprime_face(1,iquad,iface) = pbprime(I1)
-
                     if(er > 0) then
 
                         ir = imapr_q(1,iquad,jquad,iface)
                         jr = imapr_q(2,iquad,jquad,iface)
                         kr = imapr_q(3,iquad,jquad,iface)
-
                         I2 = intma_dg_quad(ir,jr,kr,er)
 
                         pbprime_face(2,iquad,iface) = pbprime(I2)
-
                     else
-
                         pbprime_face(2,iquad,iface) = pbprime_face(1,iquad,iface)
-
                     end if
-
                 end do
             end do
 
-            do n = 1,ngl 
-                    
-                il = imapl(1,n,1,iface)
-                jl = imapl(2,n,1,iface)
-                kl = imapl(3,n,1,iface)
+            do jj = 1,ngl_j
+                do ii = 1, ngl_i
 
-                I1 = intma(il,jl,kl,el)
+                    il = imapl(1,ii,jj,iface)
+                    jl = imapl(2,ii,jj,iface)
+                    kl = imapl(3,ii,jj,iface)
+                    I1 = intma(il,jl,kl,el)
 
-                if(pbprime_df(I1) > 0.0) then 
-                    one_over_pbprime_df_face(1,n,iface) = 1.0/pbprime_df(I1)
-                end if
+                    pbprime_df_face(1,ii,iface) = pbprime_df(I1)
+                    if(er > 0) then
 
-                if(er > 0) then
+                        ir = imapr(1,ii,jj,iface)
+                        jr = imapr(2,ii,jj,iface)
+                        kr = imapr(3,ii,jj,iface)
+                        I2 = intma(ir,jr,kr,er)
 
-                    ir = imapr(1,n,1,iface)
-                    jr = imapr(2,n,1,iface)
-                    kr = imapr(3,n,1,iface)
-
-                    I2 = intma(ir,jr,kr,er)
-
-                    if(pbprime_df(I2) > 0.0) then 
-                        one_over_pbprime_df_face(2,n,iface) = 1.0/pbprime_df(I2)
-                    end if
-
-                else
-
-                    one_over_pbprime_df_face(2,n,iface) = one_over_pbprime_df_face(1,n,iface)
-
-                end if
-
-            end do
-
+                        pbprime_df_face(2,ii,iface) = pbprime_df(I2)
+                    else
+                        pbprime_df_face(2,ii,iface) = pbprime_df_face(1,ii,iface)
+                    endif
+                enddo
+            enddo
         end do
 
     end subroutine interpolate_pbprime_init
@@ -422,16 +407,15 @@ module mod_initial_mlswe
     end subroutine compute_reference_edge_variables
 
     subroutine compute_reference_edge_variables_df(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
-        coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df,alpha)
+        coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df_face,alpha)
 
         use mod_input, only: nlayers
         use mod_basis, only: ngl
-        use mod_grid, only: nface, intma, face, npoin
-        use mod_face, only: imapl, imapr
+        use mod_grid, only: nface
 
         implicit none
 
-        real, dimension(npoin), intent(in) :: pbprime_df
+        real, dimension(2,ngl,nface), intent(in) :: pbprime_df_face
         real, dimension(nlayers), intent(in) :: alpha
         real, dimension(ngl,nface), intent(out) :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
             coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR
@@ -447,42 +431,18 @@ module mod_initial_mlswe
         coeff_mass_pbpert_LR = 0.0
 
         do iface = 1,nface
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
             do n = 1,ngl
 
-                il = imapl(1,n,1,iface)
-                jl = imapl(2,n,1,iface)
-                kl = imapl(3,n,1,iface)
-                I1 = intma(il,jl,kl,el)
-
-                pl = pbprime_df(I1)
-
-                if(er > 0) then
-
-                    ir = imapr(1,n,1,iface)
-                    jr = imapr(2,n,1,iface)
-                    kr = imapr(3,n,1,iface)
-                    I2 = intma(ir,jr,kr,er)
-
-                    pr = pbprime_df(I2)
-                else
-                    pr = pl
-                end if
-
-                c_minus = sqrt(alpha(nlayers) * pr)
-                c_plus  = sqrt(alpha(nlayers) * pl)
+                c_minus = sqrt(alpha(nlayers) * pbprime_df_face(2,n,iface))
+                c_plus  = sqrt(alpha(nlayers) * pbprime_df_face(1,n,iface))
                 if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
                     coeff_pbpert_L(n,iface) = c_minus / (c_minus + c_plus)
                     coeff_pbpert_R(n,iface) = c_plus / (c_minus + c_plus)
                     coeff_pbub_LR(n,iface)  = 1.0 / (c_minus + c_plus)
                 end if
 
-                c_minus = sqrt(alpha(nlayers) * pr)
-                c_plus  = sqrt(alpha(nlayers) * pl)
+                c_minus = sqrt(alpha(nlayers) * pbprime_df_face(2,n,iface))
+                c_plus  = sqrt(alpha(nlayers) * pbprime_df_face(1,n,iface))
                 if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
                     coeff_mass_pbub_L(n,iface) = c_plus / (c_minus + c_plus)
                     coeff_mass_pbub_R(n,iface) = c_minus / (c_minus + c_plus)
