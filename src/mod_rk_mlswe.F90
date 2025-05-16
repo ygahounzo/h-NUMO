@@ -31,7 +31,7 @@ module mod_rk_mlswe
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
-        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2, create_rhs_btp3, create_rhs_btp4
+        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2, create_rhs_btp3
         use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg, btp_interpolate_avg2, &
                                         btp_interpolate_avg3, btp_interpolate_avg4, btp_flux_ave
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
@@ -53,7 +53,7 @@ module mod_rk_mlswe
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(3,npoin) :: rhs
-        real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
+        real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df, qbs_df
 
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
         real :: N_inv, a0,a1,a2, beta, dtt
@@ -113,19 +113,20 @@ module mod_rk_mlswe
             qb1_df = qb_df
 
             qbface_ave = 0.0
+            qbs_df = 0.0
 
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
 
                 ope_ave_df = ope_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))
+                qbs_df = qbs_df + qb1_df
 
                 ! Compute RHS for the barotropic
 
                 !call create_rhs_btp(rhs,qb1_df,qprime)
-                !call create_rhs_btp2(rhs,qb1_df,qprime_df)
+                call create_rhs_btp2(rhs,qb1_df,qprime,ik)
                 !call create_rhs_btp3(rhs,qb1_df,qprime_df,ik)
-                call create_rhs_btp4(rhs,qb1_df,qprime,ik)
 
                 ! Update barotropic variables
 
@@ -150,7 +151,11 @@ module mod_rk_mlswe
             end do 
 
             tau_wind_ave = tau_wind_ave + tau_wind
-            call btp_flux_ave(qb0_df, qbface_ave, qprime)
+
+            qbs_df = qbs_df / real(kstages)
+            qbface_ave = qbface_ave / real(kstages)
+
+            call btp_flux_ave(qbs_df, qbface_ave, qprime)
 
         end do
 
@@ -170,6 +175,10 @@ module mod_rk_mlswe
 
         N_inv = 1.0 / real(N_btp)
         ope2_ave = N_inv*ope2_ave
+        !ope_ave_df = N_inv*ope_ave_df
+        !uvb_ave_df = N_inv*uvb_ave_df
+        !graduvb_face_ave = N_inv*graduvb_face_ave 
+        !graduvb_ave = N_inv*graduvb_ave
 
         call btp_interpolate_avg()
         !call btp_interpolate_avg2()

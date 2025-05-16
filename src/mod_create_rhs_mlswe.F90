@@ -340,7 +340,7 @@ contains
         use mod_basis, only: npts, dpsiqx
         use mod_input, only: nlayers
         use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, tau_wind
+        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, tau_wind, pbprime
 
         use mod_variables, only: H_r, u_udp_temp, v_vdp_temp, p, u_vdp_temp, grad_z, &
                     tau_wind_int, tau_bot_int, tau_bot_ave, ope_ave, uvb_ave, H_ave
@@ -360,6 +360,7 @@ contains
 
         rhs_mom = 0.0
         bot_layer = 0.0
+        pprime_temp = 0.0
 
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
         Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth at which bottom stress is reduced to 0
@@ -391,12 +392,18 @@ contains
                 !   the current value of  H_r  by the layer-independent ratio
                 !   H_ave/(sum H_s),  which should be approximately equal to  1.
 
-                weight = 1.0
-                acceleration = sum(H_r(Iq,:))
-                if(acceleration > 0.0) then
-                    weight = H_ave(Iq) / acceleration
+                !weight = 1.0
+                !acceleration = sum(H_r(Iq,:))
+                !if(acceleration > 0.0) then
+                !    weight = H_ave(Iq) / acceleration
+                !end if
+                !Hq = Hq * weight
+
+                acceleration = 0.0
+                if (pbprime(Iq) > 0.0) then
+                    acceleration = (H_ave(Iq) - sum(H_r(Iq,:))) / pbprime(Iq)
                 end if
-                Hq = Hq * weight
+                Hq = Hq + qprime(1,Iq,k) * acceleration
 
                 var_uu = u_udp_temp(Iq,k)
                 var_uv = u_vdp_temp(1,Iq,k)
@@ -409,9 +416,13 @@ contains
 
                 Ptop_k = pprime_temp(Iq,k)
                 Pbot_k = pprime_temp(Iq,k+1)
-                tempbot = max(pprime_temp(Iq,nlayers+1)-Pbstress,Pbot_k)-max(pprime_temp(Iq,nlayers+1)-Pbstress,min(Ptop_k,Pbot_k))
+                !tempbot = max(pprime_temp(Iq,nlayers+1)-Pbstress,Pbot_k)-max(pprime_temp(Iq,nlayers+1)-Pbstress,min(Ptop_k,Pbot_k))
+                !tempbot = tempbot/pprime_temp(Iq,k+1)
 
-                tempbot = 1.0 !tempbot/qprime(1,Iq,k)
+                tempbot = min(Pbstress,pbprime(Iq)-pprime_temp(Iq,k+1)) - min(Pbstress, pbprime(Iq) - pprime_temp(Iq,k))
+                tempbot = tempbot / Pbstress
+
+                !tempbot = bot_layer !tempbot/qprime(1,Iq,k)
                 source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
                             p(Iq,k) * grad_z(1,Iq,k) - p(Iq,k+1) * grad_z(1,Iq,k+1))
                 source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
@@ -419,7 +430,6 @@ contains
                 do ip = 1, npts
 
                     I = indexq(ip,Iq)
-
                     hi = psih(ip,Iq)
 
                     !Xi derivatives
@@ -523,7 +533,7 @@ contains
 
     end subroutine create_rhs_dynamics_volume_layers_v2
 
-    subroutine Apply_layers_fluxes_v0(rhs_mom, qprime_face)
+    subroutine Apply_layers_fluxes(rhs_mom, qprime_face)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
         use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
@@ -613,133 +623,6 @@ contains
             end do
         end do
     
-    end subroutine Apply_layers_fluxes_v0
-
-    subroutine Apply_layers_fluxes(rhs_mom, qprime_face)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq, psiq, ngl
-        use mod_grid, only:  npoin, intma, mod_grid_get_face_nq, nface,face, mod_grid_get_face_ngl
-        use mod_input, only: nlayers, dt, dt_btp
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_constants, only: gravity
-        use mod_initial, only: alpha_mlswe, coeff_mass_pbpert_LR
-
-        use mod_variables, only: udp_flux_edge, vdp_flux_edge, H_r_face, &
-                                u_edge, v_edge, uvb_face_ave, ope_face_ave, H_face_ave
-
-        implicit none
-
-        real, dimension(2, npoin, nlayers), intent(inout) :: rhs_mom
-        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face
-
-        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, nq_i, nq_j
-        integer :: plane_ij, kl, kr, jquad, ngl_i, ngl_j, n, m
-        real :: wq, hi, nxl, nyl, uu, vv
-        real :: hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k
-        real, dimension(nq) :: h_l, h_r
-        real, dimension(2,nq) :: udp_flux, vdp_flux
-        real :: utemp, vtemp, dptemp, udp_left_temp, udp_right_temp, vdp_left_temp, vdp_right_temp
-        real :: weight, acceleration
-
-        do k = 1, nlayers
-
-            do iface = 1, nface
-
-                !Store Left Side Variables
-
-                el = face(7,iface)
-                er = face(8,iface)
-
-                h_l = H_r_face(1,:,iface,k)
-                h_r = H_r_face(2,:,iface,k)
-
-                udp_flux(1,:) = udp_flux_edge(1,:,iface,k)
-                udp_flux(2,:) = udp_flux_edge(2,:,iface,k)
-
-                vdp_flux(1,:) = vdp_flux_edge(1,:,iface,k)
-                vdp_flux(2,:) = vdp_flux_edge(2,:,iface,k)
-
-                do iquad = 1, nq
-
-                    wq = jac_faceq(iquad,1,iface)
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    ! Adjust the values of  H_r, at element faces, so that the vertical sum of
-                    ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic
-                    ! time interval.
-
-                    ! The difference between the time-averaged  H  and the vertical sum of
-                    ! H_r  must be distributed over the layers via some sort of
-                    ! weighting scheme.
-                    ! Weight according to the current value of H_r.
-                    !   That is, the weight for layer r is
-                    !   H_r / (sum of H_s over all layers s).
-                    !   The adjusted  H_r  is then
-                    !   (H_r)_adjusted  =   H_r + [ H_r/(sum H_s)] * [ H_ave - sum(H_s) ]
-                    !                       =   H_r +   H_r * H_ave/(sum H_s)  -  H_r
-                    !                       =   H_r * H_ave/(sum H_s)
-                    !   Therefore, at each quadrature point and cell edge, multiply
-                    !   the current value of  H_r  by the layer-independent ratio
-                    !   H_ave/(sum H_s),  which should be approximately equal to  1.
-
-                    ! Left side of face
-                    weight = 1.0
-                    acceleration = sum(H_r_face(1,iquad,iface,:))
-                    if(acceleration > 0.0) then
-                        weight = H_face_ave(iquad,iface) / acceleration
-                    end if
-                    h_l = h_l * weight
-                    ! Right side of face
-                    weight = 1.0
-                    acceleration = sum(H_r_face(2,iquad,iface,:))
-                    if(acceleration > 0.0) then
-                        weight = H_face_ave(iquad,iface) / acceleration
-                    end if
-                    h_r = h_r * weight
-
-                    hlx_k = nxl*h_l(iquad)
-                    hrx_k = nxl*h_r(iquad)
-
-                    hly_k = nyl*h_l(iquad)
-                    hry_k = nyl*h_r(iquad)
-
-                    flux_x = nxl*udp_flux(1,iquad) + nyl*udp_flux(2,iquad)
-                    flux_y = nxl*vdp_flux(1,iquad) + nyl*vdp_flux(2,iquad)
-
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-
-                        il = imapl(1,n,1,iface)
-                        jl = imapl(2,n,1,iface)
-                        kl = imapl(3,n,1,iface)
-
-                        I = intma(il,jl,kl,el)
-
-                        rhs_mom(1,I,k) = rhs_mom(1,I,k) - wq*hi*(hlx_k + flux_x)
-                        rhs_mom(2,I,k) = rhs_mom(2,I,k) - wq*hi*(hly_k + flux_y)
-
-                        if(er > 0) then
-
-                            ir = imapr(1,n,1,iface)
-                            jr = imapr(2,n,1,iface)
-                            kr = imapr(3,n,1,iface)
-
-                            I = intma(ir,jr,kr,er)
-
-                            rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*hi*(hrx_k + flux_x)
-                            rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*hi*(hry_k + flux_y)
-
-                        end if
-
-                    end do
-                end do
-
-            end do
-        end do
-
     end subroutine Apply_layers_fluxes
 
     subroutine Apply_layers_fluxes_v2(rhs_mom, qprime_face)

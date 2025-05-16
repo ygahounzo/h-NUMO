@@ -684,15 +684,15 @@ module mod_barotropic_terms
 
                 ubot = qprime(2,Iq,nlayers) + ub
                 vbot = qprime(3,Iq,nlayers) + vb
+                speed = (cd_mlswe/gravity)*qprime(1,Iq,nlayers)
 
-                tau_bot_u = (cd_mlswe/alpha_mlswe(nlayers))*ubot
-                tau_bot_v = (cd_mlswe/alpha_mlswe(nlayers))*vbot
-
+                tau_bot_u = speed*ubot
+                tau_bot_v = speed*vbot
             elseif (botfr == 2) then
 
                 ubot = qprime(2,Iq,nlayers) + ub
                 vbot = qprime(3,Iq,nlayers) + vb
-                speed = (cd_mlswe/gravity)*sqrt(ubot**2 + vbot**2)
+                speed = (cd_mlswe/alpha_mlswe(nlayers))*sqrt(ubot**2 + vbot**2)
 
                 tau_bot_u = speed*ubot
                 tau_bot_v = speed*vbot
@@ -730,16 +730,12 @@ module mod_barotropic_terms
 
                 nxl = normal_vector_q(1,iquad,1,iface)
                 nyl = normal_vector_q(2,iquad,1,iface)
-
-                nxr = -nxl
-                nyr = -nyl
+                nxr = -nxl ; nyr = -nyl
 
                 do n = 1, ngl
-
                     hi = psiq(n,iquad)
                     qbl(1:4,iquad) = qbl(1:4,iquad) + hi*qb_df_face(1:4,1,n,iface)
                     qbr(1:4,iquad) = qbr(1:4,iquad) + hi*qb_df_face(1:4,2,n,iface)
-
                 end do
 
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
@@ -749,8 +745,8 @@ module mod_barotropic_terms
                                             + coeff_pbpert_R(iquad, iface) * qbr(2,iquad) &
                                             + coeff_pbub_LR(iquad, iface) * (pU_L + pU_R)
 
-                !one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_edge(iquad, iface)
-                one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_face(1,n,iface)
+                one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_edge(iquad, iface)
+                !one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_face(1,iquad,iface)
 
                 ! Compute mass fluxes at each element face.
 
@@ -767,10 +763,10 @@ module mod_barotropic_terms
             ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
             vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
-            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:, iface)
-            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
-            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
-            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:, iface)
+            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:,iface)
+            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:,iface)
+            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:,iface)
+            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:,iface)
 
             ! Compute pressure forcing H_face at each element face.
 

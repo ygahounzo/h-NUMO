@@ -21,8 +21,8 @@ module mod_initial
         nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
-        wind_stress_coriolis, compute_reference_edge_variables, Tensor_product, ssprk_coefficients, &
-        compute_reference_edge_variables_df
+        wind_stress_coriolis, compute_reference_edge_variables, ssprk_coefficients, &
+        compute_reference_edge_variables_df !, Tensor_product
     
     use mod_Tensorproduct, only: compute_gradient_quad, compute_gradient_df
 

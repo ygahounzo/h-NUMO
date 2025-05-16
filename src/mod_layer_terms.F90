@@ -19,7 +19,8 @@ module mod_layer_terms
             shear_stress_system, layer_mom_boundary_df,  &
             filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, &
             layer_momentum_advec_terms_upwind, evaluate_bcl, evaluate_bcl_v1, &
-            evaluate_dpp, evaluate_dpp_face, interpolate_qprime, evaluate_consistency_face, layer_pressure_terms_v1
+            evaluate_dpp, evaluate_dpp_face, interpolate_qprime, evaluate_consistency_face, layer_pressure_terms_v1, &
+            extract_qprime_df_face
 
     contains
 
@@ -962,9 +963,9 @@ module mod_layer_terms
 
         ! local variables
         real, dimension(nlayers) :: alpha_over_g, g_over_alpha
-        real, dimension(nq,nface,nlayers+1) :: z_edge_plus, z_edge_minus
-        real, dimension(2,nq,nface,nlayers+1) :: p_face, z_face
-        real, dimension(nq,nface,nlayers+1) :: p_edge_plus, p_edge_minus
+        real, dimension(nq,nlayers+1) :: z_edge_plus, z_edge_minus
+        real, dimension(2,nq,nlayers+1) :: p_face, z_face
+        real, dimension(nq,nlayers+1) :: p_edge_plus, p_edge_minus
         real, dimension(nq,nlayers) :: dp_plus, dp_minus, dp_temp
         real, dimension(npoin_q,nlayers) :: dpprime_H
         real, dimension(2,nq,nface,nlayers) :: dpprime_H_face
@@ -1015,29 +1016,29 @@ module mod_layer_terms
 
             !Store Left Side Variables
             one_plus_eta_cell_face = ope_face_ave(1,:,iface)
-            p_face(1,:,iface,1) = 0.0
+            p_face(1,:,1) = 0.0
 
             do k=1,nlayers
                 dp_temp(:,k) = one_plus_eta_cell_face * dpprime_H_face(1,:,iface,k)
-                p_face(1,:,iface,k+1) = p_face(1,:,iface,k) + dp_temp(:,k)
+                p_face(1,:,k+1) = p_face(1,:,k) + dp_temp(:,k)
             end do
 
-            z_face(1,:,iface,nlayers+1) = zbot_face(1,:,iface)
+            z_face(1,:,nlayers+1) = zbot_face(1,:,iface)
             do k=nlayers,1,-1
-                z_face(1,:,iface,k) = z_face(1,:,iface,k+1) + alpha_over_g(k) * dp_temp(:,k)
+                z_face(1,:,k) = z_face(1,:,k+1) + alpha_over_g(k) * dp_temp(:,k)
             end do
 
             !Store Right Side Variables
             one_plus_eta_cell_face = ope_face_ave(2,:,iface)
-            p_face(2,:,iface,1) = 0.0
+            p_face(2,:,1) = 0.0
             do k=1,nlayers
                 dp_temp(:,k) = one_plus_eta_cell_face * dpprime_H_face(2,:,iface,k)
-                p_face(2,:,iface,k+1) = p_face(2,:,iface,k) + dp_temp(:,k)
+                p_face(2,:,k+1) = p_face(2,:,k) + dp_temp(:,k)
             end do
 
-            z_face(2,:,iface,nlayers+1) = zbot_face(2,:,iface)
+            z_face(2,:,nlayers+1) = zbot_face(2,:,iface)
             do k=nlayers,1,-1
-                z_face(2,:,iface,k) = z_face(2,:,iface,k+1) + alpha_over_g(k) * dp_temp(:,k)
+                z_face(2,:,k) = z_face(2,:,k+1) + alpha_over_g(k) * dp_temp(:,k)
             end do
 
             ! one_plus_eta_edge = sqrt(one_plus_eta_edge_2_ave(:,iface))
@@ -1047,20 +1048,20 @@ module mod_layer_terms
                 dp_minus(:,k) = one_plus_eta_edge * dpprime_H_face(2,:,iface,k)
             end do
 
-            z_edge_plus(:,iface,nlayers+1) = zbot_face(1,:,iface)
-            z_edge_minus(:,iface,nlayers+1) = zbot_face(2,:,iface)
+            z_edge_plus(:,nlayers+1) = zbot_face(1,:,iface)
+            z_edge_minus(:,nlayers+1) = zbot_face(2,:,iface)
             do k = nlayers,1,-1
-                z_edge_plus(:,iface,k) = z_edge_plus(:,iface,k+1) + alpha_over_g(k) * dp_plus(:,k)
-                z_edge_minus(:,iface,k) = z_edge_minus(:,iface,k+1) + alpha_over_g(k) * dp_minus(:,k)
+                z_edge_plus(:,k) = z_edge_plus(:,k+1) + alpha_over_g(k) * dp_plus(:,k)
+                z_edge_minus(:,k) = z_edge_minus(:,k+1) + alpha_over_g(k) * dp_minus(:,k)
             end do
 
-            p_edge_plus(:,iface,2) = dp_plus(:,1)
-            p_edge_minus(:,iface,2) = dp_minus(:,1)
+            p_edge_plus(:,2) = dp_plus(:,1)
+            p_edge_minus(:,2) = dp_minus(:,1)
             do k = 2,nlayers
-                p_edge_plus(:,iface,k+1) = p_edge_plus(:,iface,k) + dp_plus(:,k)
-                p_edge_minus(:,iface,k+1) = p_edge_minus(:,iface,k) + dp_minus(:,k)
+                p_edge_plus(:,k+1) = p_edge_plus(:,k) + dp_plus(:,k)
+                p_edge_minus(:,k+1) = p_edge_minus(:,k) + dp_minus(:,k)
             end do
-
+        
             ! Store Left Side Variables
             el = face(7,iface)
             er = face(8,iface)
@@ -1069,38 +1070,38 @@ module mod_layer_terms
                 do k = 1, nlayers
 
                     ! Computation from + side for layer k
-                    H_r_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(iquad, iface, k+1)**2 - p_edge_plus(iquad, iface, k)**2)
+                    H_r_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(iquad,k+1)**2 - p_edge_plus(iquad,k)**2)
 
                     ! Computation from - side for layer k
                     H_r_minus = 0.0
                     do ktemp = 1, nlayers
 
-                        z_intersect_top = min(z_edge_minus(iquad, iface, ktemp), z_edge_plus(iquad, iface, k))
-                        z_intersect_bot = max(z_edge_minus(iquad, iface, ktemp+1), z_edge_plus(iquad, iface, k+1))
+                        z_intersect_top = min(z_edge_minus(iquad,ktemp), z_edge_plus(iquad,k))
+                        z_intersect_bot = max(z_edge_minus(iquad,ktemp+1), z_edge_plus(iquad,k+1))
                         dz_intersect = z_intersect_top - z_intersect_bot
 
                         if (dz_intersect > 0.0) then
-                            p_intersect_bot = p_edge_minus(iquad,iface,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(iquad,iface,ktemp+1))
-                            p_intersect_top = p_edge_minus(iquad,iface,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(iquad,iface,ktemp+1))
+                            p_intersect_bot = p_edge_minus(iquad,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(iquad,ktemp+1))
+                            p_intersect_top = p_edge_minus(iquad,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(iquad,ktemp+1))
                             H_r_minus = H_r_minus + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
 
                         end if
                     end do
                     H_r_face(1, iquad, iface, k) = 0.5*(H_r_plus + H_r_minus) !computation of H_r for the left side
                     ! Computation from - side for layer k
-                    H_r_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(iquad, iface, k+1)**2 - p_edge_minus(iquad, iface, k)**2)
+                    H_r_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(iquad,k+1)**2 - p_edge_minus(iquad,k)**2)
 
                     ! Computation from + side for layer k
                     H_r_plus = 0.0
                     do ktemp = 1, nlayers
 
-                        z_intersect_top = min(z_edge_plus(iquad, iface, ktemp), z_edge_minus(iquad, iface, k))
-                        z_intersect_bot = max(z_edge_plus(iquad, iface, ktemp+1), z_edge_minus(iquad, iface, k+1))
+                        z_intersect_top = min(z_edge_plus(iquad,ktemp), z_edge_minus(iquad,k))
+                        z_intersect_bot = max(z_edge_plus(iquad,ktemp+1), z_edge_minus(iquad,k+1))
                         dz_intersect = z_intersect_top - z_intersect_bot
 
                         if (dz_intersect > 0.0) then
-                            p_intersect_bot = p_edge_plus(iquad, iface, ktemp+1) - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(iquad, iface, ktemp+1))
-                            p_intersect_top = p_edge_plus(iquad, iface, ktemp+1) - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(iquad, iface, ktemp+1))
+                            p_intersect_bot = p_edge_plus(iquad,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(iquad,ktemp+1))
+                            p_intersect_top = p_edge_plus(iquad,ktemp+1) - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(iquad,ktemp+1))
                             H_r_plus = H_r_plus + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
                         end if
                     end do
@@ -1111,9 +1112,9 @@ module mod_layer_terms
                 if(er == -4) then
                     p2l = 0.0 ; p2r = 0.0
                     do k = 1,nlayers
-                        p2l(k+1) = p_face(1,iquad,iface,k+1)
+                        p2l(k+1) = p_face(1,iquad,k+1)
                         H_r_face(1,iquad,iface,k) = 0.5*alpha_mlswe(k)*(p2l(k+1)**2 - p2l(k)**2)
-                        p2r(k+1) = p_face(2,iquad,iface,k+1)
+                        p2r(k+1) = p_face(2,iquad,k+1)
                         H_r_face(2,iquad,iface,k) = 0.5*alpha_mlswe(k)*(p2r(k+1)**2 - p2r(k)**2)
 
                     end do
@@ -1122,19 +1123,68 @@ module mod_layer_terms
                 if(er /= -4) then
                     do k = 1, nlayers-1          ! interface at the bottom of layer k
                         ! Corrections at the left side of a face.
-                        p_inc1 = g_over_alpha(k)*(z_face(1, iquad, iface, k+1) - z_edge_plus(iquad, iface, k+1))
-                        H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1, iquad, iface, k+1) + p_inc1)**2 - p_face(1, iquad, iface, k+1)**2)
+                        p_inc1 = g_over_alpha(k)*(z_face(1,iquad,k+1) - z_edge_plus(iquad,k+1))
+                        H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,iquad,k+1) + p_inc1)**2 - p_face(1,iquad,k+1)**2)
                         H_r_face(1, iquad, iface, k) = H_r_face(1, iquad, iface, k) - H_corr1
                         H_r_face(1, iquad, iface, k+1) = H_r_face(1, iquad, iface, k+1) + H_corr1
 
                         ! Corrections at the right side of a face.
-                        p_inc2 = g_over_alpha(k)*(z_face(2, iquad, iface, k+1) - z_edge_minus(iquad, iface, k+1))
-                        H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2, iquad, iface, k+1) + p_inc2)**2 - p_face(2, iquad, iface, k+1)**2)
+                        p_inc2 = g_over_alpha(k)*(z_face(2,iquad,k+1) - z_edge_minus(iquad,k+1))
+                        H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2,iquad,k+1) + p_inc2)**2 - p_face(2,iquad,k+1)**2)
                         H_r_face(2, iquad, iface, k) = H_r_face(2, iquad, iface, k) - H_corr2
                         H_r_face(2, iquad, iface, k+1) = H_r_face(2, iquad, iface, k+1) + H_corr2
 
                     end do
                 end if
+
+                ! Adjust the values of  H_r, at element faces, so that the vertical sum of
+                ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic
+                ! time interval.
+
+                ! The difference between the time-averaged  H  and the vertical sum of
+                ! H_r  must be distributed over the layers via some sort of
+                ! weighting scheme.
+                ! Weight according to the current value of H_r.
+                !   That is, the weight for layer r is
+                !   H_r / (sum of H_s over all layers s).
+                !   The adjusted  H_r  is then
+                !   (H_r)_adjusted  =   H_r + [ H_r/(sum H_s)] * [ H_ave - sum(H_s) ]
+                !                       =   H_r +   H_r * H_ave/(sum H_s)  -  H_r
+                !                       =   H_r * H_ave/(sum H_s)
+                !   Therefore, at each quadrature point and cell edge, multiply
+                !   the current value of  H_r  by the layer-independent ratio
+                !   H_ave/(sum H_s),  which should be approximately equal to  1.
+
+                ! Left side of face
+                !weight = 1.0
+                !acceleration = sum(H_r_face(1,iquad,iface,:))
+                !if(acceleration > 0.0) then
+                !    weight = H_face_ave(iquad,iface) / acceleration
+                !end if
+                !H_r_face(1,iquad,iface,:) = H_r_face(1,iquad,iface,:) * weight
+
+                ! Right side of face
+                !weight = 1.0
+                !acceleration = sum(H_r_face(2,iquad,iface,:))
+                !if(acceleration > 0.0) then
+                !    weight = H_face_ave(iquad,iface) / acceleration
+                !end if
+                !H_r_face(2,iquad,iface,:) = H_r_face(2,iquad,iface,:) * weight
+
+                ! Left side of face
+                acceleration = 0.0
+                if (pbprime_face(1,iquad,iface) > 0.0) then
+                    acceleration = (H_face_ave(iquad,iface) - sum(H_r_face(1,iquad,iface,:))) / pbprime_face(1,iquad,iface)
+                end if
+                H_r_face(1,iquad,iface,:) = H_r_face(1,iquad,iface,:) + dpprime_H_face(1,iquad,iface,:)*acceleration
+
+                ! Right side of face
+                acceleration = 0.0
+                if (pbprime_face(2,iquad,iface) > 0.0) then
+                    acceleration = (H_face_ave(iquad,iface) - sum(H_r_face(2,iquad,iface,:))) / pbprime_face(2,iquad,iface)
+                end if
+                H_r_face(2,iquad,iface,:) = H_r_face(2,iquad,iface,:) + dpprime_H_face(2,iquad,iface,:)*acceleration
+
             end do ! iquad
         end do ! iface
 
@@ -1617,21 +1667,15 @@ module mod_layer_terms
 
                     qprime_face(1:3,2,iquad,iface,:) = qprime_face(1:3,1,iquad,iface,:)
 
-                    !if(er == -4) then
-
-                    !    nx = normal_vector_q(1,iquad,1,iface)
-                    !    ny = normal_vector_q(2,iquad,1,iface)
-
-                    !    un = qprime(2,I,:)*nx + qprime(3,I,:)*ny
-
-                        !qprime_face(2,2,iquad,iface,:) = qprime(2,I,:) - 2.0*un*nx
-                        !qprime_face(3,2,iquad,iface,:) = qprime(3,I,:) - 2.0*un*ny
-
-                    !elseif(er == -2) then 
-
-                        !qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
-                        
-                    !end if
+                    if(er == -4) then
+                        nx = normal_vector_q(1,iquad,1,iface)
+                        ny = normal_vector_q(2,iquad,1,iface)
+                        un = qprime(2,I,:)*nx + qprime(3,I,:)*ny
+                        qprime_face(2,2,iquad,iface,:) = qprime(2,I,:) - 2.0*un*nx
+                        qprime_face(3,2,iquad,iface,:) = qprime(3,I,:) - 2.0*un*ny
+                    elseif(er == -2) then 
+                        qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
+                    end if
                 end if
 
             end do
@@ -1660,12 +1704,90 @@ module mod_layer_terms
 
                     qprime_df_face(1:3,2,n,iface,:) = qprime_df_face(1:3,1,n,iface,:)
 
+                    if(er == -4) then
+                        nx = normal_vector(1,n,1,iface)
+                        ny = normal_vector(2,n,1,iface)
+                        un = qprime_df(2,I,:)*nx + qprime_df(3,I,:)*ny
+                        qprime_df_face(2,2,n,iface,:) = qprime_df(2,I,:) - 2.0*un*nx
+                        qprime_df_face(3,2,n,iface,:) = qprime_df(3,I,:) - 2.0*un*ny
+                    elseif(er == -2) then
+                        qprime_df_face(2:3,2,n,iface,:) = -qprime_df_face(2:3,1,n,iface,:)
+                    end if
+
                 end if
 
             end do
         end do
 
     end subroutine interpolate_qprime
+
+    subroutine extract_qprime_df_face(qprime_df_face,qprime_df)
+
+        ! Interpolate from dofs to quadrature points
+
+        use mod_basis, only: nq, npts, ngl
+        use mod_grid, only:  npoin, npoin_q, intma, intma_dg_quad, face
+        use mod_input, only: nlayers
+        use mod_face, only: imapl_q, imapr_q, normal_vector_q, normal_vector, imapl, imapr
+
+        use mod_initial, only: psih, indexq
+
+        implicit none
+
+        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+
+        integer :: k, Iq, I, ip, iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
+        real :: hi, nx, ny, un(nlayers)
+
+        qprime_df_face = 0.0
+
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            do n = 1, ngl
+
+                il = imapl(1,n,1,iface)
+                jl = imapl(2,n,1,iface)
+                kl = imapl(3,n,1,iface)
+
+                I = intma(il,jl,kl,el)
+
+                qprime_df_face(1:3,1,n,iface,:) = qprime_df(1:3,I,:)
+
+                if(er > 0) then
+
+                    ir = imapr(1,n,1,iface)
+                    jr = imapr(2,n,1,iface)
+                    kr = imapr(3,n,1,iface)
+
+                    I = intma(ir,jr,kr,er)
+
+                    qprime_df_face(1:3,2,n,iface,:) = qprime_df(1:3,I,:)
+
+                else
+
+                    qprime_df_face(1:3,2,n,iface,:) = qprime_df_face(1:3,1,n,iface,:)
+
+                    if(er == -4) then
+                        nx = normal_vector(1,n,1,iface)
+                        ny = normal_vector(2,n,1,iface)
+                        un = qprime_df(2,I,:)*nx + qprime_df(3,I,:)*ny
+                        qprime_df_face(2,2,n,iface,:) = qprime_df(2,I,:) - 2.0*un*nx
+                        qprime_df_face(3,2,n,iface,:) = qprime_df(3,I,:) - 2.0*un*ny
+                    elseif(er == -2) then
+                        qprime_df_face(2:3,2,n,iface,:) = -qprime_df_face(2:3,1,n,iface,:)
+                    end if
+
+                end if
+
+            end do
+        end do
+
+    end subroutine extract_qprime_df_face
 
     subroutine evaluate_mom_face(q_face, q)
 

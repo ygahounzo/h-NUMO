@@ -26,7 +26,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
 	use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
 	use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
-    use mod_layer_terms, only: interpolate_qprime
+    use mod_layer_terms, only: interpolate_qprime, extract_qprime_df_face
 
 	implicit none
 
@@ -47,6 +47,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
 	call interpolate_qprime(qprime,qprime_face,qprime_df_face,qprime_df)
 	call bcl_create_communicator(qprime_face,3,nlayers,nq)
+        call extract_qprime_df_face(qprime_df_face,qprime_df)
 	call bcl_create_communicator(qprime_df_face,3,nlayers,ngl)
 
 	qbp_df = qb_df
@@ -66,12 +67,13 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
 	! Communication of qprime_face2 values within the inter-processor boundary
 	call bcl_create_communicator(qprime_face2,3,nlayers,nq)
-	call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
 
 	qprime2 = 0.5*(qprime2 + qprime)
 	qprime_face2 = 0.5*(qprime_face2 + qprime_face)
 	qprime_df2 = 0.5*(qprime_df2 + qprime_df)
-        qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
+        call extract_qprime_df_face(qprime_df_face2,qprime_df2)
+	call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
+        !qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
 
 	dpprime_visc(:,:) = qprime_df2(1,:,:)
 

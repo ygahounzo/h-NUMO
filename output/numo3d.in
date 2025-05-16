@@ -50,8 +50,8 @@ method_visc = 0,  !0=no viscosity
 visc_mlswe = 0.0, ! horizontal viscosity
 dpprime_visc_min = 0.0,
 max_shear_dz = 0.0,
-adjust_H_vertical_sum = 2,
-adjust_bcl_mom_flux = 0,
+adjust_H_vertical_sum = 0,
+adjust_bcl_mom_flux = 1,
 mlswe_bc_strong = T,
 dg_integ_exact = F,
 dump_data = T,

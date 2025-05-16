@@ -61,6 +61,7 @@ SOURCEH :=
 SOURCEH += p4est.c
 
 #INCLUDE FILES FOR MLSWE
+SOURCEF += Tensor_product.F90
 SOURCEF += mod_Tensorproduct.F90
 SOURCEF += mod_initial_mlswe.F90
 SOURCEF += mod_layer_terms.F90

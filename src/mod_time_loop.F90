@@ -107,6 +107,7 @@ contains
         !Initialize/Restart
         inorm=0
         itime=0
+        idone = 0
     
         irestart=nint(time_restart/dt)
         if(irestart == 0) then
@@ -216,7 +217,6 @@ contains
 
         endif 
 
-        idone = 0
         if (lprint_diagnostics) then
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
             mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
