@@ -15,7 +15,7 @@ module mod_rk_mlswe
     
     contains
 
-    subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime, qprime_df)
+    subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime_df)
 
         ! ===========================================================================================================================
         ! This subroutine predicts and corrects the barotropic quantities for the splitting system using SSPRK35 time integration
@@ -49,7 +49,6 @@ module mod_rk_mlswe
         implicit none
 
         real, dimension(4,npoin), intent(inout) :: qb_df
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(3,npoin) :: rhs
@@ -112,21 +111,14 @@ module mod_rk_mlswe
             qb0_df = qb_df
             qb1_df = qb_df
 
-            qbface_ave = 0.0
-            qbs_df = 0.0
-
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
-
                 ope_ave_df = ope_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))
-                qbs_df = qbs_df + qb1_df
 
                 ! Compute RHS for the barotropic
 
-                !call create_rhs_btp(rhs,qb1_df,qprime)
-                call create_rhs_btp2(rhs,qb1_df,qprime,ik)
-                !call create_rhs_btp3(rhs,qb1_df,qprime_df,ik)
+                call create_rhs_btp(rhs,qb1_df,qprime_df)
 
                 ! Update barotropic variables
 
@@ -152,11 +144,6 @@ module mod_rk_mlswe
 
             tau_wind_ave = tau_wind_ave + tau_wind
 
-            qbs_df = qbs_df / real(kstages)
-            qbface_ave = qbface_ave / real(kstages)
-
-            call btp_flux_ave(qbs_df, qbface_ave, qprime)
-
         end do
 
         ! Compute time averages of the various quantities listed earlier,
@@ -173,7 +160,7 @@ module mod_rk_mlswe
         ope_ave_df = N_inv*ope_ave_df
 
 
-        N_inv = 1.0 / real(N_btp)
+        !N_inv = 1.0 / real(N_btp)
         ope2_ave = N_inv*ope2_ave
         !ope_ave_df = N_inv*ope_ave_df
         !uvb_ave_df = N_inv*uvb_ave_df
