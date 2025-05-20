@@ -61,6 +61,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	qprime_face2 = qprime_face
 	q_df2 = q_df
 	qprime_df2 = qprime_df
+        qprime_df_face2 = qprime_df_face
 
 	call momentum_mass(qprime2,q_df2,qprime_face2,qprime_df_face2,qprime_df2,qbp_df, qprime_face)
 
@@ -82,7 +83,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	call btp_bcl_coeffs_qdf(qprime_df_face2, qprime_df2)
 	call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)
 
-	call thickness(qprime2, q_df, qprime_face2, dpprime_df2, qb_df, qprime_df_face2)
+	call thickness(qprime_df2, q_df, qprime_face2, dpprime_df2, qb_df, qprime_df_face2)
 
 	! Communication of qprime_face_avg values within the processor boundary
 	call bcl_create_communicator(qprime_face2(1,:,:,:,:),1,nlayers,nq)

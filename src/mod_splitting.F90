@@ -23,7 +23,7 @@ module mod_splitting
     
     contains
 
-    subroutine thickness(qprime, q_df, qprime_face, dpprime_df, qb_df, qprime_df_face)
+    subroutine thickness(qprime_df, q_df, qprime_face, dpprime_df, qb_df, qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -46,7 +46,7 @@ module mod_splitting
         implicit none
     
         ! Input variables
-        real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
+        real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face
         real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
@@ -63,7 +63,7 @@ module mod_splitting
     
         ! Compute the mass advection term and RHS for mass equation, return the result in array  dp_advec. 
 
-        call layer_mass_rhs(dp_advec, qprime, qprime_face)
+        call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
 
         ! Compute the tentative values of the predicted or corrected 
         ! degrees of freedom for  dp (q_df(1,:,:)).  These would be the values at
@@ -94,9 +94,11 @@ module mod_splitting
             dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
         end do
 
+        qprime_df(1,:,:) = dpprime_df(:,:)
+
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of dp' at cell edges and quadrature points.
-        call evaluate_dpp(qprime,dpprime_df)
-        call evaluate_dpp_face(qprime_face,qprime)
+        !call evaluate_dpp(qprime,dpprime_df)
+        !call evaluate_dpp_face(qprime_face,qprime)
 
         call extract_dprime_df_face(qprime_df_face(1,:,:,:,:),dpprime_df(:,:))
         
@@ -258,7 +260,7 @@ module mod_splitting
 
         ! =========================================== layer mass ===============================================================
 
-        call layer_mass_rhs(dp_advec, qprime, qprime_face)
+        call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
 
         do k = 1, nlayers
 
@@ -383,7 +385,7 @@ module mod_splitting
 
         ! Compute the RHS of the layer momentum equation
 
-        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime, qprime_face, qprime_df, q_df, qprime_df_face)
+        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)
 
     end subroutine rhs_momentum
 
