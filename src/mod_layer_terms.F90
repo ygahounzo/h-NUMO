@@ -1159,7 +1159,8 @@ module mod_layer_terms
 
     end subroutine velocity_df
 
-    subroutine evaluate_bcl(qprime, qprime_face, qprime_df_face, q_df, qprime_df, qb_df)
+    !subroutine evaluate_bcl(qprime, qprime_face, qprime_df_face, q_df, qprime_df, qb_df)
+    subroutine evaluate_bcl(qprime_df_face, q_df, qprime_df, qb_df)
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
@@ -1169,8 +1170,8 @@ module mod_layer_terms
         implicit none
         
         real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
-        real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
-        real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
+        !real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
+        !real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
         real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
 
         real, dimension(4,npoin), intent(in) :: qb_df
@@ -1196,7 +1197,8 @@ module mod_layer_terms
             qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
         end do 
 
-        call interpolate_qprime(qprime,qprime_face,qprime_df_face,qprime_df)
+        !call interpolate_qprime(qprime,qprime_face,qprime_df_face,qprime_df)
+        call extract_qprime_df_face(qprime_df_face,qprime_df)
 
     end subroutine evaluate_bcl
 

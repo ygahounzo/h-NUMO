@@ -53,7 +53,6 @@ module mod_rk_mlswe
 
         real, dimension(3,npoin) :: rhs
         real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df, qbs_df
-
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
         real :: N_inv, a0,a1,a2, beta, dtt
 
@@ -85,20 +84,6 @@ module mod_rk_mlswe
         graduvb_face_ave = 0.0
         graduvb_ave = 0.0
 
-        btp_mass_flux_ave_df = 0.0
-        H_ave_df = 0.0
-        Qu_ave_df = 0.0
-        Qv_ave_df = 0.0
-        Quv_ave_df = 0.0
-        tau_bot_ave_df = 0.0
-
-        H_face_ave_df = 0.0
-        Qu_face_ave_df = 0.0
-        Qv_face_ave_df = 0.0
-        one_plus_eta_edge_2_ave_df = 0.0
-        ope_face_ave_df = 0.0
-        btp_mass_flux_face_ave_df = 0.0
-
         ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
@@ -115,9 +100,10 @@ module mod_rk_mlswe
 
                 dtt = dt_btp*ssprk_beta(ik)
                 ope_ave_df = ope_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))
+                uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb1_df(3,:)/qb1_df(1,:)
+                uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb1_df(4,:)/qb1_df(1,:)
 
                 ! Compute RHS for the barotropic
-
                 call create_rhs_btp(rhs,qb1_df,qprime_df)
 
                 ! Update barotropic variables
@@ -134,22 +120,18 @@ module mod_rk_mlswe
                 qb1_df = qb_df
         
                 !Store the 2nd stage for SSP(5,3)
-
                 if (kstages == 5 .and. ik == 2) qb2_df = qb_df
 
-                uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
-                uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
+                !uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
+                !uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
 
             end do 
-
             tau_wind_ave = tau_wind_ave + tau_wind
 
         end do
 
         ! Compute time averages of the various quantities listed earlier,
         ! over all barotropic substeps of the baroclinic time interval.   
-
-        !one_plus_eta_out = one_plus_eta_df
 
         N_inv = 1.0 / real(kstages*N_btp)
 
@@ -158,17 +140,9 @@ module mod_rk_mlswe
         graduvb_ave = N_inv*graduvb_ave
         tau_wind_ave = tau_wind_ave / real(N_btp)
         ope_ave_df = N_inv*ope_ave_df
-
-
-        !N_inv = 1.0 / real(N_btp)
         ope2_ave = N_inv*ope2_ave
-        !ope_ave_df = N_inv*ope_ave_df
-        !uvb_ave_df = N_inv*uvb_ave_df
-        !graduvb_face_ave = N_inv*graduvb_face_ave 
-        !graduvb_ave = N_inv*graduvb_ave
 
         call btp_interpolate_avg()
-        !call btp_interpolate_avg2()
 
         ope_ave = N_inv*ope_ave
         H_ave = N_inv*H_ave

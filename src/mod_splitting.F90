@@ -23,7 +23,7 @@ module mod_splitting
     
     contains
 
-    subroutine thickness(qprime_df, q_df, qprime_face, dpprime_df, qb_df, qprime_df_face)
+    subroutine thickness(qprime_df, q_df, qb_df, qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -47,13 +47,9 @@ module mod_splitting
     
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-        real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face
         real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, intent(in)    :: qb_df(4,npoin)
-    
-        ! Output variables
-        real, intent(out) :: dpprime_df(npoin,nlayers)
     
         ! Other variables
         real :: one_plus_eta_temp(npoin), dp_advec(npoin,nlayers)
@@ -89,23 +85,16 @@ module mod_splitting
         ! Store the degree of freedom (nodal points) values of dpprime_df ( or q_df(1,:,:)) in the array dpprime_df for use in layer_pressure_terms.
 
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
         do k = 1,nlayers
-            dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
         end do
 
-        qprime_df(1,:,:) = dpprime_df(:,:)
-
-        ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of dp' at cell edges and quadrature points.
-        !call evaluate_dpp(qprime,dpprime_df)
-        !call evaluate_dpp_face(qprime_face,qprime)
-
-        call extract_dprime_df_face(qprime_df_face(1,:,:,:,:),dpprime_df(:,:))
+        call extract_dprime_df_face(qprime_df_face(1,:,:,:,:), qprime_df(1,:,:))
         
     end subroutine thickness
 
 
-    subroutine momentum(qprime,q_df,qprime_face,qprime_df,qb_df, qprime_face3, qprime_df_face)
+    subroutine momentum(q_df,qprime_df,qb_df,qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine is used to correct the layer momentum for the splitting system using two-level time integration
@@ -125,16 +114,12 @@ module mod_splitting
         implicit none
 
         ! Input variables
-        
-        real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face, qprime_face3
         real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
         ! Local variables
-
         real, dimension(2,npoin_q,nlayers)     :: uv
         real, dimension(2,npoin,nlayers)       :: q_df_temp
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
@@ -147,8 +132,7 @@ module mod_splitting
         q_df_temp = 0.0
 
         ! ==== layer momentum ====
-
-        call rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df,qprime_face3, q_df, qprime_df_face)
+        call rhs_momentum(rhs_mom, qprime_df,q_df, qprime_df_face)
 
         ! Compute the momentum equation variables for the next time step
 
@@ -159,7 +143,6 @@ module mod_splitting
 
         ! Compute the shear stress terms
         if(ad_mlswe > 0.0) then 
-      
             do k = 1,nlayers
                 do I = 1,npoin
                     tempu(I) = q_df_temp(1,I,k) + fdt2_bcl(I)*q_df(3,I,k)
@@ -172,7 +155,6 @@ module mod_splitting
             end do
 
             !call layer_mom_boundary_df(q_df3(2:3,:,:))
-
             !Extract velocity from the momentum at nodal pts
             call velocity_df(q_df3, qb_df)
 
@@ -180,25 +162,20 @@ module mod_splitting
             call evaluate_mom(q,q_df3)
 
             ! Compute the vertical stress terms
-
             call shear_stress_system(uv,q)
-
             call rhs_layer_shear_stress(rhs_stress,uv)
 
             do k = 1,nlayers
                 q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
                 q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
             end do
-
         end if ! ad_mlswe > 0.0
         
         ! Add the Coriolis term
-
         do k = 1,nlayers
 
             tempu(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
             tempv(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-
             q_df(2,:,k) = a_bcl(:)*tempu(:) + b_bcl(:)*tempv(:)
             q_df(3,:,k) = - b_bcl(:)*tempu(:) + a_bcl(:)*tempv(:)
         end do
@@ -206,13 +183,12 @@ module mod_splitting
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
-
         call evaluate_bcl_v1(q_df, qprime_df, qb_df)
 
     end subroutine momentum
 
 
-    subroutine momentum_mass(qprime,q_df,qprime_face,qprime_df_face,qprime_df,qb_df,qprime_face3)
+    subroutine momentum_mass(q_df,qprime_df_face,qprime_df,qb_df)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict the layer mass and momentum for the splitting system using two-level time integration
@@ -232,27 +208,20 @@ module mod_splitting
         implicit none
 
         ! Input variables
-        real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face
         real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
-        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face3
-        
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
         ! Local variables
-
         real, dimension(npoin,nlayers) :: dp_advec, dpprime_df
         real, dimension(2,npoin,nlayers) :: q_df_temp
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
         real, dimension(npoin) :: one_plus_eta_temp
-
         real, dimension(3,npoin_q,nlayers) :: qprime_temp, q
         real, dimension(3,2,nq,nface,nlayers) :: qprime_face_temp 
         real, dimension(3,npoin,nlayers) :: q_df3
         real, dimension(2,npoin_q,nlayers) :: uv
-        
         integer :: k, I
         real, dimension(npoin) :: tempu, tempv
 
@@ -263,7 +232,6 @@ module mod_splitting
         call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
 
         do k = 1, nlayers
-
             q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
 
             ! Check for negative layer thicknesses.  If any are found, stop the program.
@@ -279,10 +247,9 @@ module mod_splitting
 
         ! ==================================== layer momentum ==========================
 
-        call rhs_momentum(rhs_mom, qprime, qprime_face, qprime_df,qprime_face, q_df, qprime_df_face)
+        call rhs_momentum(rhs_mom, qprime_df, q_df, qprime_df_face)
 
         ! Compute the momentum equation variables for the next time step
-
         do k = 1,nlayers
             q_df_temp(1,:,k) = q_df(2,:,k) + dt*rhs_mom(1,:,k)
             q_df_temp(2,:,k) = q_df(3,:,k) + dt*rhs_mom(2,:,k)
@@ -290,12 +257,10 @@ module mod_splitting
 
         ! Compute the shear stress terms
         if(ad_mlswe > 0.0) then 
-            
             do k = 1,nlayers
                 do I = 1,npoin
                     tempu(I) = q_df_temp(1,I,k) + fdt2_bcl(I)*q_df(3,I,k)
                     tempv(I) = q_df_temp(2,I,k) - fdt2_bcl(I)*q_df(2,I,k)
-
                     q_df3(2,I,k) = a_bcl(I)*tempu(I) + b_bcl(I)*tempv(I)
                     q_df3(3,I,k) = - b_bcl(I)*tempu(I) + a_bcl(I)*tempv(I)
                 end do
@@ -309,25 +274,20 @@ module mod_splitting
             call evaluate_mom(q,q_df3)
 
             ! Compute the vertical stress terms
-
             call shear_stress_system(uv,q)
-
             call rhs_layer_shear_stress(rhs_stress,uv)
 
             do k = 1,nlayers
                 q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
                 q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
             end do
-
         end if ! ad_mlswe > 0
         
         ! Add the Coriolis term
-
         do k = 1,nlayers
 
             tempu(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
             tempv(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-
             q_df(2,:,k) = a_bcl(:)*tempu(:) + b_bcl(:)*tempv(:)
             q_df(3,:,k) = - b_bcl(:)*tempu(:) + a_bcl(:)*tempv(:)
         end do
@@ -335,12 +295,11 @@ module mod_splitting
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
-
-        call evaluate_bcl(qprime, qprime_face, qprime_df_face, q_df, qprime_df, qb_df)
+        call evaluate_bcl(qprime_df_face, q_df, qprime_df, qb_df)
 
     end subroutine momentum_mass
 
-    subroutine rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df, qprime_face3, q_df, qprime_df_face)
+    subroutine rhs_momentum(rhs_mom, qprime_df, q_df, qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine computes the RHS of the layer momentum equation and viscosity terms and stores them in 
@@ -361,34 +320,20 @@ module mod_splitting
         implicit none
 
         ! Input variables
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
-        real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face, qprime_face3
         real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
-        
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
-
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
 
         real, dimension(2,npoin,nlayers) :: rhs_visc_bcl
 
         rhs_visc_bcl = 0.0
 
-        ! Compute the pressure terms
-
-        !call layer_pressure_terms(qprime_face)
-
-        !call compute_momentum_edge_values(qprime_face3)
-
-        !call layer_momentum_advec_terms_upwind(q_df, qprime, qprime_face)
-
         if(method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
 
         ! Compute the RHS of the layer momentum equation
-
         call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)
 
     end subroutine rhs_momentum
-
 
     subroutine apply_consistency(q_df)
 
@@ -408,11 +353,9 @@ module mod_splitting
         implicit none
     
         ! Input variables
-        
         real, intent(inout)    :: q_df(3,npoin,nlayers)
     
-        ! Other variables
-
+        ! Local variables
         real :: qprime(3,npoin_q,nlayers)
         integer :: k
         real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
@@ -427,15 +370,12 @@ module mod_splitting
         call evaluate_dpp(qprime,dpprime_df)
 
         ! Consistency flux terms 
-
         call evaluate_consistency_face(mass_deficit_mass_face,qprime)
 
         ! RHS of the consistency terms
-
         call consistency_mass_rhs(dp_advec, qprime, mass_deficit_mass_face)
 
         ! Apply consistency to the thickness
-
         do k = 1,nlayers
             q_df(1,:,k) = q_df(1,:,k) + dt*massinv(:)*dp_advec(:,k)
         end do
