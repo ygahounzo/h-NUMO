@@ -72,9 +72,9 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	qprime2 = 0.5*(qprime2 + qprime)
 	qprime_face2 = 0.5*(qprime_face2 + qprime_face)
 	qprime_df2 = 0.5*(qprime_df2 + qprime_df)
-        call extract_qprime_df_face(qprime_df_face2,qprime_df2)
+        !call extract_qprime_df_face(qprime_df_face2,qprime_df2)
 	call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
-        !qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
+        qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
 
 	dpprime_visc(:,:) = qprime_df2(1,:,:)
 
@@ -82,18 +82,20 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 	call btp_bcl_coeffs_qdf(qprime_df_face2, qprime_df2)
 	call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)
 
-	call thickness(qprime2, q_df, qprime_face2, dpprime_df2, qb_df)
+	call thickness(qprime2, q_df, qprime_face2, dpprime_df2, qb_df, qprime_df_face2)
 
 	! Communication of qprime_face_avg values within the processor boundary
 	call bcl_create_communicator(qprime_face2(1,:,:,:,:),1,nlayers,nq)
+        call bcl_create_communicator(qprime_df_face2(1,:,:,:,:),1,nlayers,ngl)
 
-    qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
-    qprime2(1,:,:) = 0.5*(qprime(1,:,:) + qprime2(1,:,:))
-	qprime_face2(1,:,:,:,:) = 0.5*(qprime_face(1,:,:,:,:) + qprime_face2(1,:,:,:,:))
+        qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
+        qprime2(1,:,:) = 0.5*(qprime(1,:,:) + qprime2(1,:,:))
+        qprime_face2(1,:,:,:,:) = 0.5*(qprime_face(1,:,:,:,:) + qprime_face2(1,:,:,:,:))
+        qprime_df_face2(1,:,:,:,:) = 0.5*(qprime_df_face(1,:,:,:,:) + qprime_df_face2(1,:,:,:,:))
+        
+        call momentum(qprime2,q_df,qprime_face2,qprime_df2,qb_df,qprime_face, qprime_df_face2)
 
-	call momentum(qprime2,q_df,qprime_face2,qprime_df2,qb_df,qprime_face)
-	
-	qprime_df(1,:,:) = dpprime_df2
-	qprime_df(2:3,:,:) = qprime_df2(2:3,:,:) 
+        qprime_df(1,:,:) = dpprime_df2
+        qprime_df(2:3,:,:) = qprime_df2(2:3,:,:) 
 
 end subroutine ti_rk_bcl

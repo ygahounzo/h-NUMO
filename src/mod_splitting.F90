@@ -23,7 +23,7 @@ module mod_splitting
     
     contains
 
-    subroutine thickness(qprime, q_df, qprime_face, dpprime_df, qb_df)
+    subroutine thickness(qprime, q_df, qprime_face, dpprime_df, qb_df, qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting system using two-level time integration
@@ -38,9 +38,9 @@ module mod_splitting
 
         use mod_input, only: nlayers, dt
         use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
+        use mod_basis, only: nq, ngl
         use mod_initial, only: pbprime_df, pbprime
-        use mod_layer_terms, only: evaluate_dpp, evaluate_dpp_face
+        use mod_layer_terms, only: evaluate_dpp, evaluate_dpp_face, extract_dprime_df_face
         use mod_create_rhs_mlswe, only: layer_mass_rhs
 
         implicit none
@@ -48,6 +48,7 @@ module mod_splitting
         ! Input variables
         real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face
+        real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, intent(in)    :: qb_df(4,npoin)
     
@@ -96,11 +97,13 @@ module mod_splitting
         ! Use the adjusted degrees of freedom q_df(1,:,:) to compute revised values of dp' at cell edges and quadrature points.
         call evaluate_dpp(qprime,dpprime_df)
         call evaluate_dpp_face(qprime_face,qprime)
+
+        call extract_dprime_df_face(qprime_df_face(1,:,:,:,:),dpprime_df(:,:))
         
     end subroutine thickness
 
 
-    subroutine momentum(qprime,q_df,qprime_face,qprime_df,qb_df, qprime_face3)
+    subroutine momentum(qprime,q_df,qprime_face,qprime_df,qb_df, qprime_face3, qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine is used to correct the layer momentum for the splitting system using two-level time integration
@@ -124,6 +127,7 @@ module mod_splitting
         real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face, qprime_face3
+        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
@@ -142,7 +146,7 @@ module mod_splitting
 
         ! ==== layer momentum ====
 
-        call rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df,qprime_face3, q_df)
+        call rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df,qprime_face3, q_df, qprime_df_face)
 
         ! Compute the momentum equation variables for the next time step
 
@@ -229,7 +233,7 @@ module mod_splitting
         real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, dimension(3,2,nq,nface,nlayers), intent(inout) :: qprime_face
-        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
+        real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face3
         
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
@@ -273,7 +277,7 @@ module mod_splitting
 
         ! ==================================== layer momentum ==========================
 
-        call rhs_momentum(rhs_mom, qprime, qprime_face, qprime_df,qprime_face, q_df)
+        call rhs_momentum(rhs_mom, qprime, qprime_face, qprime_df,qprime_face, q_df, qprime_df_face)
 
         ! Compute the momentum equation variables for the next time step
 
@@ -334,7 +338,7 @@ module mod_splitting
 
     end subroutine momentum_mass
 
-    subroutine rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df, qprime_face3, q_df)
+    subroutine rhs_momentum(rhs_mom, qprime,qprime_face,qprime_df, qprime_face3, q_df, qprime_df_face)
 
         ! ===========================================================================================================================
         ! This subroutine computes the RHS of the layer momentum equation and viscosity terms and stores them in 
@@ -357,6 +361,7 @@ module mod_splitting
         ! Input variables
         real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real, dimension(3,2,nq,nface,nlayers), intent(in) :: qprime_face, qprime_face3
+        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
 
@@ -368,17 +373,17 @@ module mod_splitting
 
         ! Compute the pressure terms
 
-        call layer_pressure_terms(qprime, qprime_face, qprime_df)
+        !call layer_pressure_terms(qprime_face)
 
-        call compute_momentum_edge_values(qprime_face3)
+        !call compute_momentum_edge_values(qprime_face3)
 
-        call layer_momentum_advec_terms_upwind(q_df, qprime)
+        !call layer_momentum_advec_terms_upwind(q_df, qprime, qprime_face)
 
         if(method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
 
         ! Compute the RHS of the layer momentum equation
 
-        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime, qprime_face3)
+        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime, qprime_face, qprime_df, q_df, qprime_df_face)
 
     end subroutine rhs_momentum
 
