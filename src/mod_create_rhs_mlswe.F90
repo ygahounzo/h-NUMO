@@ -507,7 +507,7 @@ module mod_create_rhs_mlswe
                         udp_flux(1,iquad,k) = uu * (ur*dpr)
                         vdp_flux(1,iquad,k) = uu * (vr*dpr)
                     endif
-                    if(vv*nxl > 0.0) then
+                    if(vv*nyl > 0.0) then
                         udp_flux(2,iquad,k) = vv * (ul*dpl)
                         vdp_flux(2,iquad,k) = vv * (vl*dpl)
                     else
@@ -556,7 +556,7 @@ module mod_create_rhs_mlswe
                 one_over_sum_l = 1.0 / sum(abs(vdpl(iquad,:))+eps1)
                 one_over_sum_r = 1.0 / sum(abs(vdpr(iquad,:))+eps1)
                 !x-direction
-                if(uu_dp_flux_deficit*nxl > 0.0) then
+                if(vu_dp_flux_deficit*nxl > 0.0) then
                     do k = 1,nlayers
                         weight = abs(vdpl(iquad,k)) * one_over_sum_l
                         vdp_flux(1,iquad,k) = vdp_flux(1,iquad,k) + weight * vu_dp_flux_deficit
@@ -568,7 +568,7 @@ module mod_create_rhs_mlswe
                     end do
                 end if
                 !y-direction
-                if(uv_dp_flux_deficit*nyl > 0.0) then
+                if(vv_dp_flux_deficit*nyl > 0.0) then
                     do k = 1,nlayers
                         weight = abs(vdpl(iquad,k)) * one_over_sum_l
                         vdp_flux(2,iquad,k) = vdp_flux(2,iquad,k) + weight * vv_dp_flux_deficit

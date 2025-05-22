@@ -122,9 +122,6 @@ module mod_rk_mlswe
                 !Store the 2nd stage for SSP(5,3)
                 if (kstages == 5 .and. ik == 2) qb2_df = qb_df
 
-                !uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb_df(3,:)/qb_df(1,:)
-                !uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb_df(4,:)/qb_df(1,:)
-
             end do 
             tau_wind_ave = tau_wind_ave + tau_wind
 
