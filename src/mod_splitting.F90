@@ -83,7 +83,6 @@ module mod_splitting
         call apply_consistency(q_df) 
 
         ! Store the degree of freedom (nodal points) values of dpprime_df ( or q_df(1,:,:)) in the array dpprime_df for use in layer_pressure_terms.
-
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
         do k = 1,nlayers
             qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
@@ -135,7 +134,6 @@ module mod_splitting
         call rhs_momentum(rhs_mom, qprime_df,q_df, qprime_df_face)
 
         ! Compute the momentum equation variables for the next time step
-
         do k = 1,nlayers
             q_df_temp(1,:,k) = q_df(2,:,k) + dt*rhs_mom(1,:,k)
             q_df_temp(2,:,k) = q_df(3,:,k) + dt*rhs_mom(2,:,k)
@@ -219,7 +217,6 @@ module mod_splitting
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
         real, dimension(npoin) :: one_plus_eta_temp
         real, dimension(3,npoin_q,nlayers) :: qprime_temp, q
-        real, dimension(3,2,nq,nface,nlayers) :: qprime_face_temp 
         real, dimension(3,npoin,nlayers) :: q_df3
         real, dimension(2,npoin_q,nlayers) :: uv
         integer :: k, I
@@ -239,7 +236,6 @@ module mod_splitting
                 write(*,*) 'Negative mass in thickness at some points'
                 stop
             endif
-
         end do
 
         ! consistency through flux adjustment 
@@ -356,24 +352,20 @@ module mod_splitting
         real, intent(inout)    :: q_df(3,npoin,nlayers)
     
         ! Local variables
-        real :: qprime(3,npoin_q,nlayers)
         integer :: k
         real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
         real :: mass_deficit_mass_face(2,2,nq,nface,nlayers)
 
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
         do k = 1,nlayers
             dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
         end do
 
-        call evaluate_dpp(qprime,dpprime_df)
-
         ! Consistency flux terms 
-        call evaluate_consistency_face(mass_deficit_mass_face,qprime)
+        call evaluate_consistency_face(mass_deficit_mass_face,dpprime_df)
 
         ! RHS of the consistency terms
-        call consistency_mass_rhs(dp_advec, qprime, mass_deficit_mass_face)
+        call consistency_mass_rhs(dp_advec, dpprime_df, mass_deficit_mass_face)
 
         ! Apply consistency to the thickness
         do k = 1,nlayers

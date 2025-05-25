@@ -226,23 +226,24 @@ module mod_layer_terms
     
     end subroutine evaluate_dpp_face
 
-    subroutine evaluate_consistency_face(mass_deficit_mass_face,qprime)
+    subroutine evaluate_consistency_face(mass_deficit_mass_face,dprime_df)
 
         ! This routines extracts the layer mass face values 
 
-        use mod_grid, only:  npoin_q, intma_dg_quad, nface, face
+        use mod_grid, only:  npoin_q, npoin, intma, nface, face
         use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q
+        use mod_face, only: imapl, imapr
         use mod_variables, only: sum_layer_mass_flux_face, btp_mass_flux_face_ave
         use mod_initial, only: pbprime_face
+        use mod_basis, only: ngl, psiq
 
         implicit none
         real, intent(out) :: mass_deficit_mass_face(2,2,nq,nface,nlayers)
-        real, intent(in) :: qprime(3,npoin_q,nlayers)
+        real, intent(in) :: dprime_df(npoin,nlayers)
     
         ! Local variables
-        integer :: iface, iquad, jquad, k, il, jl, kl, el, er, ir, jr, kr, I
-        real :: qprime_l, qprime_r, weights_face_l, weights_face_r
+        integer :: iface, iquad, k, il, jl, kl, el, er, ir, jr, kr, I, n
+        real :: qprime_l, qprime_r, weights_face_l, weights_face_r, hi
 
         mass_deficit_mass_face = 0.0
 
@@ -256,27 +257,53 @@ module mod_layer_terms
                 er = face(8,iface)
 
                 do iquad = 1, nq
+                    
+                    qprime_l = 0.0; qprime_r = 0.0
 
-                    il = imapl_q(1,iquad,1,iface)
-                    jl = imapl_q(2,iquad,1,iface)
-                    kl = imapl_q(3,iquad,1,iface)
+                    do n = 1,ngl
+                        hi = psiq(n,iquad)
 
-                    I = intma_dg_quad(il,jl,kl,el)
-                    qprime_l = qprime(1,I,k)
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
+
+                        I = intma(il,jl,kl,el)
+                        qprime_l = qprime_l + hi*dprime_df(I,k)
+                    enddo
 
                     if(er > 0) then
-
-                        ir = imapr_q(1,iquad,1,iface)
-                        jr = imapr_q(2,iquad,1,iface)
-                        kr = imapr_q(3,iquad,1,iface)
-
-                        I = intma_dg_quad(ir,jr,kr,er)
-                        qprime_r = qprime(1,I,k)
-
+                        do n = 1,ngl
+                            hi = psiq(n,iquad)
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
+                            I = intma(ir,jr,kr,er)
+                           qprime_r = qprime_r + hi*dprime_df(I,k)
+                        enddo
                     else
                         qprime_r = qprime_l
+                    endif
 
-                    end if
+                    !il = imapl_q(1,iquad,1,iface)
+                    !jl = imapl_q(2,iquad,1,iface)
+                    !kl = imapl_q(3,iquad,1,iface)
+
+                    !I = intma_dg_quad(il,jl,kl,el)
+                    !qprime_l = qprime(1,I,k)
+
+                    !if(er > 0) then
+
+                    !    ir = imapr_q(1,iquad,1,iface)
+                    !    jr = imapr_q(2,iquad,1,iface)
+                    !    kr = imapr_q(3,iquad,1,iface)
+
+                    !    I = intma_dg_quad(ir,jr,kr,er)
+                    !    qprime_r = qprime(1,I,k)
+
+                    !else
+                    !    qprime_r = qprime_l
+
+                    !end if
   
                     weights_face_l = qprime_l / pbprime_face(1,iquad,iface)
                     weights_face_r = qprime_r / pbprime_face(2,iquad,iface)

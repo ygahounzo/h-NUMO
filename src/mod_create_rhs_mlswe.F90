@@ -824,7 +824,7 @@ module mod_create_rhs_mlswe
 
     end subroutine create_layers_volume_mass
 
-    subroutine create_consistency_volume_mass(dp_advec, qprime)
+    subroutine create_consistency_volume_mass(dp_advec, dprime_df)
 
         use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma
         use mod_basis, only: npts
@@ -835,37 +835,35 @@ module mod_create_rhs_mlswe
 
         implicit none 
 
-        real, dimension(3, npoin_q, nlayers), intent(in) :: qprime
+        real, dimension(npoin,nlayers), intent(in) :: dprime_df
         real, dimension(npoin,nlayers), intent(out) :: dp_advec
 
-
-        real :: wq, hi, dhde, dhdn
-
         integer :: k, I, Iq, ip
-        real :: weight, udp, vdp
+        real :: weight, udp, vdp, wq, hi, dp
 
         dp_advec = 0.0
 
         do k=1,nlayers
 
             do Iq = 1, npoin_q
-
-                weight = qprime(1,Iq,k) / pbprime(Iq)
+                dp = 0.0
+                do ip = 1,npts
+                    I = indexq(ip,Iq)
+                    hi = psih(ip,Iq)
+                    dp = dp + hi*dprime_df(I,k)
+                enddo
+                weight = dp/pbprime(Iq)
+                !weight = qprime(1,Iq,k) / pbprime(Iq)
 
                 udp = weight * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
                 vdp = weight * (btp_mass_flux_ave(2,Iq) - sum_layer_mass_flux(2,Iq)) 
-                    
                 wq = wjac(Iq)
 
                 do ip = 1, npts
-
                     I = indexq(ip,Iq)
-
                     dp_advec(I,k) = dp_advec(I,k) + wq*(dpsidx(ip,Iq)*udp + dpsidy(ip,Iq)*vdp)
-
                 end do
             end do
-
         end do !k
 
     end subroutine create_consistency_volume_mass
