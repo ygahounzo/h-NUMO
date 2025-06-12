@@ -17,7 +17,7 @@ module mod_rhs_btp
 
     use mod_grid, only: intma, npoin_q, npoin, nface
 
-    use mod_laplacian_quad, only: btp_create_laplacian
+    use mod_laplacian_quad, only: btp_create_laplacian, btp_create_laplacian_v2
     use mod_barotropic_terms, only: btp_extract_df
 
     use mod_input, only: nlayers, method_visc
@@ -57,12 +57,54 @@ contains
 
         ! Compute RHS viscosity terms
 
-        if(method_visc > 0) call btp_create_laplacian(rhs_visc_btp,qb_df)
+        if(method_visc == 1) then
+            call btp_create_laplacian_v2(rhs_visc_btp, qprime_df, qb_df)
+        else
+            call btp_create_laplacian(rhs_visc_btp,qb_df)
+        endif 
 
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
 
     end subroutine create_rhs_btp
+
+    subroutine create_rhs_btp2(rhs,qb_df,qprime_df)
+
+        use mod_variables, only: qbface_ave
+
+        implicit none
+
+        real, dimension(3, npoin), intent(out) :: rhs
+        real, dimension(4,npoin), intent(in) :: qb_df
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+
+        real, dimension(4, 2, ngl, nface) :: qb_df_face
+        real, dimension(2,npoin) :: rhs_visc_btp
+
+        call btp_extract_df(qb_df_face, qb_df)
+
+        call btp_create_precommunicator(qb_df_face,4)
+
+        call create_rhs_btp_volume_qdf2(rhs, qb_df, qprime_df)
+
+        call btp_create_postcommunicator(qb_df_face,4)
+
+        call creat_btp_fluxes_qdf2(rhs,qb_df_face)
+
+        ! Compute RHS viscosity terms
+
+        if(method_visc == 1) then
+            call btp_create_laplacian_v2(rhs_visc_btp, qprime_df, qb_df)
+        else
+            call btp_create_laplacian(rhs_visc_btp,qb_df)
+        endif
+
+        qbface_ave = qbface_ave + qb_df_face
+
+        rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
+        rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
+
+    end subroutine create_rhs_btp2
 
     subroutine create_rhs_btp_momentum(rhs_mom,qb,qb_face)
 
@@ -211,7 +253,92 @@ contains
 
     end subroutine create_rhs_btp_volume_qdf
 
-     subroutine creat_btp_fluxes_qdf(rhs,qb_df_face)
+    subroutine create_rhs_btp_volume_qdf2(rhs, qb_df, qprime_df)
+
+        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
+        use mod_basis, only: npts
+        use mod_constants, only: gravity
+        use mod_initial, only: grad_zbot_df, tau_wind_df, coriolis_df, one_over_pbprime_df, alpha_mlswe
+        use mod_initial, only: psih_df, dpsidx_df,dpsidy_df, index_df, wjac_df
+        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, &
+                                 ope_ave_df, uvb_ave_df, btp_mass_flux_ave_df
+        use mod_variables, only: Q_uu_dp_df, Q_uv_dp_df, Q_vv_dp_df, H_bcl_df
+        use mod_input, only: nlayers, cd_mlswe, botfr
+
+        implicit none
+
+        real, dimension(4,npoin), intent(in) :: qb_df
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+        real, dimension(3,npoin), intent(out) :: rhs
+
+        real :: source_x, source_y, Hq, quux, quvxy, qvvy
+        real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, speed, tmp
+
+        integer :: I, Iq, ip
+
+        rhs = 0.0
+        tau_bot_u = 0.0 ; tau_bot_v = 0.0
+        Pstress = (gravity/alpha_mlswe(1)) * 50.0        ! pressure corresponding to 50m depth
+                                                         ! at which wind stress is reduced to 0
+        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth
+                                                         ! at which bottom stress is reduced to 0
+
+        do Iq = 1, npoin
+
+            dp = qb_df(1,Iq)
+            dpp = qb_df(2,Iq)
+            udp = qb_df(3,Iq)
+            vdp = qb_df(4,Iq)
+
+            ub = udp/dp; vb = vdp/dp
+            wq = wjac_df(Iq)
+
+            if (botfr == 1) then
+                ubot = qprime_df(2,Iq,nlayers) + ub
+                vbot = qprime_df(3,Iq,nlayers) + vb
+                speed = (cd_mlswe/gravity)*qprime_df(1,Iq,nlayers)
+                tau_bot_u = speed*ubot
+                tau_bot_v = speed*vbot
+            elseif (botfr == 2) then
+                ubot = qprime_df(2,Iq,nlayers) + ub
+                vbot = qprime_df(3,Iq,nlayers) + vb
+                speed = (cd_mlswe/alpha_mlswe(nlayers))*sqrt(ubot**2 + vbot**2)
+                tau_bot_u = speed*ubot
+                tau_bot_v = speed*vbot
+            end if
+
+            source_x = coriolis_df(Iq)*vdp + gravity*(tau_wind_df(1,Iq) - tau_bot_u) - &
+                        gravity*dp*grad_zbot_df(1,Iq)
+
+            source_y = -coriolis_df(Iq)*udp + gravity*(tau_wind_df(2,Iq) - tau_bot_v) - &
+                        gravity*dp*grad_zbot_df(2,Iq)
+
+            ope = 1.0 + dpp * one_over_pbprime_df(Iq)
+            Hq = (ope**2) * H_bcl_df(Iq)
+            quux = ub * udp + ope * Q_uu_dp_df(Iq)
+            quvxy = ub * vdp + ope * Q_uv_dp_df(Iq)
+            qvvy = vb * vdp + ope * Q_vv_dp_df(Iq)
+
+            do ip = 1,npts
+
+                I = index_df(ip,Iq)
+                hi = psih_df(ip,Iq)
+                !Xi derivatives
+                dhdx = dpsidx_df(ip,Iq)
+                !Eta derivatives
+                dhdy = dpsidy_df(ip,Iq)
+
+                rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
+                rhs(2,I) = rhs(2,I) + wq*(hi*source_x + dhdx*(Hq + quux) + quvxy*dhdy)
+                rhs(3,I) = rhs(3,I) + wq*(hi*source_y + dhdx*quvxy + dhdy*(Hq + qvvy))
+
+            end do
+        end do
+
+    end subroutine create_rhs_btp_volume_qdf2
+
+    subroutine creat_btp_fluxes_qdf(rhs,qb_df_face)
 
         use mod_basis, only: psiq, ngl
         use mod_grid, only:  npoin, intma, nface,face
@@ -232,7 +359,7 @@ contains
         integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
         real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
         real, dimension(nq) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y, one_plus_eta_edge
-        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr
+        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq
         real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
         real :: qbl(4,nq), qbr(4,nq), lam1, lam2, dispp
 
@@ -263,12 +390,37 @@ contains
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
                 pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
 
-                pbpert_edge = 0.5*(qbl(2,iquad) + qbr(2,iquad))
-                one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
+                !ul(iquad) = qbl(3,iquad)/qbl(1,iquad); ur(iquad) = qbr(3,iquad)/qbr(1,iquad)
+                !vl(iquad) = qbl(4,iquad)/qbl(1,iquad); vr(iquad) = qbr(4,iquad)/qbr(1,iquad)
+
+                !lam1 = abs(nxl*ul(iquad) + nyl*vl(iquad)) + sqrt(alpha_mlswe(nlayers) * pbl(iquad))
+                !lam2 = abs(nxr*ur(iquad) + nyr*vr(iquad)) + sqrt(alpha_mlswe(nlayers) * pbr(iquad))
+                !lambq(iquad) = max(lam1,lam2)
+
+                !pbpert_edge = 0.5*(qbl(2,iquad) + qbr(2,iquad))
+                !one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
 
                 ! Compute mass fluxes at each element face.
-                flux_edge_x(iquad) = 0.5 * (qbl(3,iquad) + qbr(3,iquad))
-                flux_edge_y(iquad) = 0.5 * (qbl(4,iquad) + qbr(4,iquad))
+                !dispp = 0.5*lamb*(qbr(2,iquad) - qbl(2,iquad))
+                !flux_edge_x(iquad) = 0.5 * (qbl(3,iquad) + qbr(3,iquad)) - nxl*dispp
+                !flux_edge_y(iquad) = 0.5 * (qbl(4,iquad) + qbr(4,iquad)) - nyl*dispp
+
+                pbpert_edge = coeff_pbpert_L(iquad, iface) * qbl(2,iquad) &
+                                            + coeff_pbpert_R(iquad, iface) * qbr(2,iquad) &
+                                            + coeff_pbub_LR(iquad, iface) * (pU_L + pU_R)
+
+                one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_edge(iquad, iface)
+                !one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_face(1,n,iface)
+
+                ! Compute mass fluxes at each element face.
+
+                flux_edge_x(iquad) = coeff_mass_pbub_L(iquad,iface) * qbl(3,iquad) &
+                                            + coeff_mass_pbub_R(iquad,iface) * qbr(3,iquad) &
+                                            + coeff_mass_pbpert_LR(iquad,iface) * (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
+
+                flux_edge_y(iquad) = coeff_mass_pbub_L(iquad,iface) * qbl(4,iquad) &
+                                            + coeff_mass_pbub_R(iquad,iface) * qbr(4,iquad) &
+                                            + coeff_mass_pbpert_LR(iquad,iface) * (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
 
             end do
 
@@ -292,6 +444,8 @@ contains
             Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:); Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
             ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + (qbl(2,:)/pbl)
             ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + (qbr(2,:)/pbr)
+            !ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + qbl(2,:) * one_over_pbprime_face(1,:,iface)
+            !ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + qbr(2,:) * one_over_pbprime_face(2,:,iface)
             one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) + one_plus_eta_edge(:)
 
             do iquad = 1, nq
@@ -305,17 +459,18 @@ contains
                 H_ky = nyl*H_face_temp(iquad)
 
                 !lamb = coeff_mass_pbpert_LR(iquad,iface)
-                lam1 = abs(nxl*ul(iquad) + nyl*vl(iquad)) + sqrt(alpha_mlswe(nlayers) * pbl(iquad))
-                lam2 = abs(nxr*ur(iquad) + nyr*vr(iquad)) + sqrt(alpha_mlswe(nlayers) * pbr(iquad))
-                lamb = max(lam1,lam2)
+                !lam1 = abs(nxl*ul(iquad) + nyl*vl(iquad)) + sqrt(alpha_mlswe(nlayers) * pbl(iquad))
+                !lam2 = abs(nxr*ur(iquad) + nyr*vr(iquad)) + sqrt(alpha_mlswe(nlayers) * pbr(iquad))
+                !lamb = max(lam1,lam2)
+                lamb = lambq(iquad)
 
                 dispu = 0.5*lamb*(qbr(3,iquad) - qbl(3,iquad))
                 dispv = 0.5*lamb*(qbr(4,iquad) - qbl(4,iquad))
-                flux_x = nxl*quu(iquad) + nyl*quv(iquad) - dispu
-                flux_y = nxl*qvu(iquad) + nyl*qvv(iquad) - dispv
+                flux_x = nxl*quu(iquad) + nyl*quv(iquad) !- dispu
+                flux_y = nxl*qvu(iquad) + nyl*qvv(iquad) !- dispv
 
                 dispp = 0.5*lamb*(qbr(2,iquad) - qbl(2,iquad))
-                flux = nxl*flux_edge_x(iquad) + nyl*flux_edge_y(iquad) - dispp
+                flux = nxl*flux_edge_x(iquad) + nyl*flux_edge_y(iquad) !- dispp
 
                 do n = 1, ngl
 
@@ -349,6 +504,153 @@ contains
         rhs(3,:) = massinv(:)*rhs(3,:)
 
     end subroutine creat_btp_fluxes_qdf
+
+    subroutine creat_btp_fluxes_qdf2(rhs,qb_df_face)
+
+        use mod_basis, only: psi, ngl
+        use mod_input, only: nlayers
+        use mod_grid, only:  npoin, intma, nface,face
+        use mod_face, only: imapl, imapr, normal_vector, jac_face
+        use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
+                                one_plus_eta_edge_2_ave_df, Q_uu_dp_edge_df, Q_uv_dp_edge_df, Q_vv_dp_edge_df, &
+                                H_bcl_edge_df
+
+        use mod_initial, only: coeff_pbpert_L_df, coeff_pbub_LR_df, coeff_pbpert_R_df, &
+                                one_over_pbprime_df_face, one_over_pbprime_edge, &
+                                coeff_mass_pbub_L_df, coeff_mass_pbub_R_df, coeff_mass_pbpert_LR_df, &
+                                pbprime_df, zbot_df, alpha_mlswe, pbprime_df_face
+        use mod_constants, only: gravity
+
+        implicit none
+
+        real, dimension(3,npoin), intent(inout)  :: rhs
+        real, dimension(4,2,ngl,nface), intent(in) :: qb_df_face
+
+        integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n, m
+        real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
+        real, dimension(ngl) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y, one_plus_eta_edge
+        real, dimension(ngl) :: ul, ur, vl, vr, pbl, pbr
+        real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge, dispp
+        real :: qbl(4,ngl), qbr(4,ngl), H, lam1, lam2
+
+        do iface = 1, nface
+
+            !Store Left Side Variables
+            el = face(7,iface)
+            er = face(8,iface)
+
+            qbl = 0.0; qbr = 0.0
+
+            do n = 1,ngl
+
+                nxl = normal_vector(1,n,1,iface)
+                nyl = normal_vector(2,n,1,iface)
+
+                nxr = -nxl ; nyr = -nyl
+
+                qbl(1:4,n) = qb_df_face(1:4,1,n,iface)
+                qbr(1:4,n) = qb_df_face(1:4,2,n,iface)
+                pbl(n) = pbprime_df_face(1,n,iface)
+                pbr(n) = pbprime_df_face(2,n,iface)
+
+                pU_L = nxl * qbl(3,n) + nyl * qbl(4,n)
+                pU_R = nxr * qbr(3,n) + nyr * qbr(4,n)
+
+                !pbpert_edge = 0.5*(qbl(2,n) + qbr(2,n))
+                !one_plus_eta_edge(n) = 1.0 + (pbpert_edge / pbl(n))
+
+                ! Compute mass fluxes at each element face.
+                !dispp = 0.5*lambq(n)*(qbr(2,n) - qbl(2,n))
+                !flux_edge_x(n) = 0.5*(qbl(3,n) + qbr(3,n)) - nxl*dispp
+                !flux_edge_y(n) = 0.5*(qbl(4,n) + qbr(4,n)) - nyl*dispp
+
+                pbpert_edge = coeff_pbpert_L_df(n,iface) * qbl(2,n) &
+                                            + coeff_pbpert_R_df(n,iface) * qbr(2,n) &
+                                            + coeff_pbub_LR_df(n,iface) * (pU_L + pU_R)
+
+                one_plus_eta_edge(n) = 1.0 + pbpert_edge * one_over_pbprime_df_face(1,n,iface)
+
+                ! Compute mass fluxes at each element face.
+
+                flux_edge_x(n) = coeff_mass_pbub_L_df(n,iface) * qbl(3,n) &
+                                            + coeff_mass_pbub_R_df(n,iface) * qbr(3,n) &
+                                            + coeff_mass_pbpert_LR_df(n,iface) * (nxl * qbl(2,n) + nxr * qbr(2,n))
+
+                flux_edge_y(n) = coeff_mass_pbub_L_df(n,iface) * qbl(4,n) &
+                                            + coeff_mass_pbub_R_df(n,iface) * qbr(4,n) &
+                                            + coeff_mass_pbpert_LR_df(n,iface) * (nyl * qbl(2,n) + nyr * qbr(2,n))
+
+            end do
+
+            ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
+            vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
+
+            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge_df(:,iface)
+            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge_df(:,iface)
+            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge_df(:,iface)
+            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge_df(:,iface)
+
+            ! Compute pressure forcing H_face at each element face.
+
+            H_face_temp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge_df(:,iface)
+
+            do m = 1, ngl
+
+                wq = jac_face(m,1,iface)
+                nxl = normal_vector(1,m,1,iface)
+                nyl = normal_vector(2,m,1,iface)
+
+                nxr = -nxl ; nyr = -nyl
+
+                H_kx = nxl*H_face_temp(m)
+                H_ky = nyl*H_face_temp(m)
+
+                !lamb = coeff_mass_pbpert_LR_df(m,iface)
+                lam1 = abs(nxl*ul(m) + nyl*vl(m)) + sqrt(alpha_mlswe(nlayers) * pbl(m))
+                lam2 = abs(nxr*ur(m) + nyr*vr(m)) + sqrt(alpha_mlswe(nlayers) * pbr(m))
+                lamb = max(lam1,lam2)
+
+                dispu = 0.5*lamb*(qbr(3,m) - qbl(3,m))
+                dispv = 0.5*lamb*(qbr(4,m) - qbl(4,m))
+
+                flux_x = nxl*quu(m) + nyl*quv(m) - dispu
+                flux_y = nxl*qvu(m) + nyl*qvv(m) - dispv
+                dispp = 0.5*lamb*(qbr(2,m) - qbl(2,m))
+                flux = nxl*flux_edge_x(m) + nyl*flux_edge_y(m) !- dispp
+
+                do n = 1, ngl
+
+                    hi = psi(n,m)
+
+                    il = imapl(1,n,1,iface)
+                    jl = imapl(2,n,1,iface)
+                    kl = imapl(3,n,1,iface)
+                    I = intma(il,jl,kl,el)
+
+                    rhs(1,I) = rhs(1,I) - wq*hi*flux
+                    rhs(2,I) = rhs(2,I) - wq*hi*(H_kx + flux_x)
+                    rhs(3,I) = rhs(3,I) - wq*hi*(H_ky + flux_y)
+
+                    if(er > 0) then
+                        ir = imapr(1,n,1,iface)
+                        jr = imapr(2,n,1,iface)
+                        kr = imapr(3,n,1,iface)
+                        I = intma(ir,jr,kr,er)
+
+                        rhs(1,I) = rhs(1,I) + wq*hi*flux
+                        rhs(2,I) = rhs(2,I) + wq*hi*(H_kx + flux_x)
+                        rhs(3,I) = rhs(3,I) + wq*hi*(H_ky + flux_y)
+                    end if
+
+                end do
+            end do
+        end do
+
+        rhs(1,:) = massinv(:)*rhs(1,:)
+        rhs(2,:) = massinv(:)*rhs(2,:)
+        rhs(3,:) = massinv(:)*rhs(3,:)
+
+    end subroutine creat_btp_fluxes_qdf2
 
     subroutine create_rhs_btp_dynamics_volume(rhs_mom, qb)
 

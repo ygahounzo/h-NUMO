@@ -22,7 +22,8 @@ module mod_barotropic_terms
                 restart_mlswe_variales, restart_mlswe2, &
                 compute_gradient_uv, compute_btp_mom_terms, btp_bcl_grad_coeffs, &
                 btp_interpolate_avg, btp_extract_df, btp_extract_face, btp_bcl_coeffs_qdf, &
-                btp_interpolate_avg2, btp_interpolate_avg3, btp_interpolate_avg4, btp_flux_ave
+                btp_interpolate_avg2, btp_interpolate_avg3, btp_interpolate_avg4, btp_flux_ave, &
+                compute_gradient_uv_q
 
     contains
 
@@ -627,7 +628,7 @@ module mod_barotropic_terms
 
     end subroutine btp_interpolate_avg4
 
-    subroutine btp_flux_ave(qb_df, qb_df_face, qprime)
+    subroutine btp_flux_ave(qb_df, qb_df_face, qprime_df)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma, nface,face
         use mod_basis, only: ngl, nq, psiq, npts
@@ -639,7 +640,8 @@ module mod_barotropic_terms
         use mod_input, only: nlayers, cd_mlswe, botfr
         use mod_initial, only: coeff_pbpert_L, coeff_pbub_LR, coeff_pbpert_R, &
                                 one_over_pbprime_face, one_over_pbprime_edge, &
-                                coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
+                                coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR, &
+                                pbprime_df_face
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave,Qu_face_ave, Qv_face_ave, &
                                 one_plus_eta_edge_2_ave, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge, uvb_face_ave
@@ -647,8 +649,8 @@ module mod_barotropic_terms
         implicit none
 
         real, dimension(4,npoin), intent(in) :: qb_df
-        real, dimension(3,npoin_q,nlayers), intent(in) :: qprime
         real, dimension(4, 2, ngl, nface), intent(in) :: qb_df_face
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real :: Hq, quux, quvxy, qvvy
         real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
@@ -658,15 +660,16 @@ module mod_barotropic_terms
         integer :: iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
         real :: nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
         real, dimension(nq) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y, one_plus_eta_edge
-        real, dimension(nq) :: ul, ur, vl, vr
+        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq
         real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
-        real :: qbl(4,nq), qbr(4,nq)
+        real :: qbl(4,nq), qbr(4,nq),  pp, up, vp, dispp, lam1, lam2
 
         tau_bot_u = 0.0 ; tau_bot_v = 0.0
 
         do Iq = 1, npoin_q
 
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
+            pp = 0.0; up = 0.0; vp = 0.0
 
             do ip = 1,npts
                 I = indexq(ip,Iq)
@@ -676,48 +679,44 @@ module mod_barotropic_terms
                 dpp = dpp + hi*qb_df(2,I)
                 udp = udp + hi*qb_df(3,I)
                 vdp = vdp + hi*qb_df(4,I)
+                pp = pp + hi*qprime_df(1,I,nlayers)
+                up = up + hi*qprime_df(2,I,nlayers)
+                vp = vp + hi*qprime_df(3,I,nlayers)
             end do
 
+            wq = wjac(Iq)
             ub = udp/dp; vb = vdp/dp
 
             if (botfr == 1) then
-
-                ubot = qprime(2,Iq,nlayers) + ub
-                vbot = qprime(3,Iq,nlayers) + vb
-                speed = (cd_mlswe/gravity)*qprime(1,Iq,nlayers)
-
+                ubot = up + ub
+                vbot = vp + vb
+                speed = (cd_mlswe/gravity)*pp
                 tau_bot_u = speed*ubot
                 tau_bot_v = speed*vbot
             elseif (botfr == 2) then
-
-                ubot = qprime(2,Iq,nlayers) + ub
-                vbot = qprime(3,Iq,nlayers) + vb
+                ubot = up + ub
+                vbot = vp + vb
                 speed = (cd_mlswe/alpha_mlswe(nlayers))*sqrt(ubot**2 + vbot**2)
-
                 tau_bot_u = speed*ubot
                 tau_bot_v = speed*vbot
             end if
 
             ope = 1.0 + dpp * one_over_pbprime(Iq)
             Hq = (ope**2) * H_bcl(Iq)
-
             quux = ub * udp + ope * Q_uu_dp(Iq)
             quvxy = ub * vdp + ope * Q_uv_dp(Iq)
             qvvy = vb * vdp + ope * Q_vv_dp(Iq)
 
             H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + quux
             Qv_ave(Iq) = Qv_ave(Iq) + qvvy;  Quv_ave(Iq) = Quv_ave(Iq) + quvxy
-
             tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tau_bot_u
             tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tau_bot_v
-
             ope_ave(Iq) = ope_ave(Iq) + ope
-
             btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + udp
             btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
 
         enddo
-
+        
         do iface = 1, nface
 
             !Store Left Side Variables
@@ -725,6 +724,7 @@ module mod_barotropic_terms
             er = face(8,iface)
 
             qbl = 0.0; qbr = 0.0
+            pbl = 0.0; pbr = 0.0
 
             do iquad = 1,nq
 
@@ -736,17 +736,34 @@ module mod_barotropic_terms
                     hi = psiq(n,iquad)
                     qbl(1:4,iquad) = qbl(1:4,iquad) + hi*qb_df_face(1:4,1,n,iface)
                     qbr(1:4,iquad) = qbr(1:4,iquad) + hi*qb_df_face(1:4,2,n,iface)
+                    pbl(iquad) = pbl(iquad) + hi*pbprime_df_face(1,n,iface)
+                    pbr(iquad) = pbr(iquad) + hi*pbprime_df_face(2,n,iface)
                 end do
 
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
                 pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
+
+                ul(iquad) = qbl(3,iquad)/qbl(1,iquad); ur(iquad) = qbr(3,iquad)/qbr(1,iquad)
+                vl(iquad) = qbl(4,iquad)/qbl(1,iquad); vr(iquad) = qbr(4,iquad)/qbr(1,iquad)
+
+                lam1 = abs(nxl*ul(iquad) + nyl*vl(iquad)) + sqrt(alpha_mlswe(nlayers) * pbl(iquad))
+                lam2 = abs(nxr*ur(iquad) + nyr*vr(iquad)) + sqrt(alpha_mlswe(nlayers) * pbr(iquad))
+                lambq(iquad) = max(lam1,lam2)
+
+                !pbpert_edge = 0.5*(qbl(2,iquad) + qbr(2,iquad))
+                !one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
+
+                ! Compute mass fluxes at each element face.
+                dispp = 0.5*lamb*(qbr(2,iquad) - qbl(2,iquad))
+                flux_edge_x(iquad) = 0.5 * (qbl(3,iquad) + qbr(3,iquad)) - nxl*dispp
+                flux_edge_y(iquad) = 0.5 * (qbl(4,iquad) + qbr(4,iquad)) - nyl*dispp
 
                 pbpert_edge = coeff_pbpert_L(iquad, iface) * qbl(2,iquad) &
                                             + coeff_pbpert_R(iquad, iface) * qbr(2,iquad) &
                                             + coeff_pbub_LR(iquad, iface) * (pU_L + pU_R)
 
                 one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_edge(iquad, iface)
-                !one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_face(1,iquad,iface)
+                !one_plus_eta_edge(iquad) = 1.0 + pbpert_edge * one_over_pbprime_face(1,n,iface)
 
                 ! Compute mass fluxes at each element face.
 
@@ -760,8 +777,8 @@ module mod_barotropic_terms
 
             end do
 
-            ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
-            vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
+            !ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
+            !vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
             quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:,iface)
             quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:,iface)
@@ -776,20 +793,16 @@ module mod_barotropic_terms
 
             btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
             btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
-
             H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_temp(:)
             Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:); Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
             Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:); Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
-
-            ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + qbl(2,:) * one_over_pbprime_face(1,:,iface)
-            ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + qbr(2,:) * one_over_pbprime_face(2,:,iface)
-
+            ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + (qbl(2,:)/pbl)
+            ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + (qbr(2,:)/pbr)
             one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) + one_plus_eta_edge(:)
 
         enddo
 
     end subroutine btp_flux_ave
-
 
     subroutine compute_btp_mom_terms(qb,qb_face,qprime,qb_df)
 
@@ -1935,6 +1948,7 @@ module mod_barotropic_terms
 
         real, dimension(nlayers+1) :: pprime_l, pprime_r
         real, dimension(nlayers+1) :: pprime
+        real, dimension(npoin,nlayers+1) :: pprime_df
         real :: left_dp, right_dp
         real, dimension(4, npoin) :: graduv
         real :: qq(3), ql(3), qr(3)
@@ -1954,6 +1968,16 @@ module mod_barotropic_terms
 
         btp_dpp_graduv = 0.0
         pbprime_visc = 0.0
+
+        Q_uu_dp_df = 0.0
+        Q_uv_dp_df = 0.0
+        Q_vv_dp_df = 0.0
+        H_bcl_df = 0.0
+
+        Q_uu_dp_edge_df = 0.0
+        Q_uv_dp_edge_df = 0.0
+        Q_vv_dp_edge_df = 0.0
+        H_bcl_edge_df = 0.0
 
         ! Compute Q_up_up_quad and Q_up_vp_quad at quadrature points.
 
@@ -1977,7 +2001,17 @@ module mod_barotropic_terms
             end do
         enddo
 
+        pprime_df(:,1) = 0.0
+
         do k = 1,nlayers
+
+            Q_uu_dp_df(:) = Q_uu_dp_df(:) + qprime_df(2,:,k)*(qprime_df(2,:,k) * qprime_df(1,:,k))
+            Q_uv_dp_df(:) = Q_uv_dp_df(:) + qprime_df(3,:,k)*(qprime_df(2,:,k) * qprime_df(1,:,k))
+            Q_vv_dp_df(:) = Q_vv_dp_df(:) + qprime_df(3,:,k)*(qprime_df(3,:,k) * qprime_df(1,:,k))
+
+            pprime_df(:,k+1) = pprime_df(:,k) + qprime_df(1,:,k)
+            H_bcl_df(:) = H_bcl_df(:) + 0.5*alpha_mlswe(k)*(pprime_df(:,k+1)**2 - pprime_df(:,k)**2)
+
             ! For viscosity terms
 
             call compute_gradient_uv(graduv, qprime_df(2:3,:,k))
@@ -2022,6 +2056,29 @@ module mod_barotropic_terms
                     right_dp = 0.5*alpha_mlswe(k) *(pprime_r(k+1)**2 - pprime_r(k)**2)
 
                     H_bcl_edge(iquad,iface) = H_bcl_edge(iquad,iface) + 0.5*(left_dp + right_dp)
+                enddo
+            end do
+
+            do n = 1,ngl
+
+                ql = 0.0; qr = 0.0;
+                pprime_l(1) = 0.0
+                pprime_r(1) = 0.0
+                do k = 1, nlayers
+
+                    ql(:) = qprime_df_face(:,1,n,iface,k)
+                    qr(:) = qprime_df_face(:,2,n,iface,k)
+
+                    Q_uu_dp_edge_df(n,iface) = Q_uu_dp_edge_df(n,iface) + 0.5*((ql(2)*ql(2)*ql(1)) + (qr(2)*qr(2)*qr(1)))
+                    Q_uv_dp_edge_df(n,iface) = Q_uv_dp_edge_df(n,iface) + 0.5*((ql(3)*ql(2)*ql(1)) + (qr(3)*qr(2)*qr(1)))
+                    Q_vv_dp_edge_df(n,iface) = Q_vv_dp_edge_df(n,iface) + 0.5*((ql(3)*ql(3)*ql(1)) + (qr(3)*qr(3)*qr(1)))
+
+                    pprime_l(k+1) = pprime_l(k) + ql(1)
+                    left_dp = 0.5*alpha_mlswe(k) *(pprime_l(k+1)**2 - pprime_l(k)**2)
+                    pprime_r(k+1) = pprime_r(k) + qr(1)
+                    right_dp = 0.5*alpha_mlswe(k) *(pprime_r(k+1)**2 - pprime_r(k)**2)
+
+                    H_bcl_edge_df(n,iface) = H_bcl_edge_df(n,iface) + 0.5*(left_dp + right_dp)
                 enddo
             end do
 
@@ -2498,6 +2555,43 @@ module mod_barotropic_terms
         end do
 
     end subroutine compute_gradient_uv
+
+    subroutine compute_gradient_uv_q(grad_uv,uv)
+
+        use mod_basis, only: npts
+        use mod_grid, only:  npoin_q, npoin
+
+        use mod_initial, only: dpsidx,dpsidy, indexq
+
+        implicit none
+
+        real, dimension(2,npoin), intent(in) :: uv
+        real, dimension(2,2,npoin_q), intent(out) :: grad_uv
+        integer :: Iq, I, ip
+        real :: dhdx, dhdy
+
+        grad_uv = 0.0
+
+        !Construct Volume Integral Contributions
+
+        do Iq = 1, npoin_q
+
+            do ip = 1,npts
+
+                I = indexq(ip,Iq)
+                dhdx = dpsidx(ip,Iq)
+                dhdy = dpsidy(ip,Iq)
+
+                grad_uv(1,1,Iq) = grad_uv(1,1,Iq) + dhdx*uv(1,I)
+                grad_uv(1,2,Iq) = grad_uv(1,2,Iq) + dhdy*uv(1,I)
+
+                grad_uv(2,1,Iq) = grad_uv(2,1,Iq) + dhdx*uv(2,I)
+                grad_uv(2,2,Iq) = grad_uv(2,2,Iq) + dhdy*uv(2,I)
+
+            end do
+        end do
+
+    end subroutine compute_gradient_uv_q
 
 end module mod_barotropic_terms
             

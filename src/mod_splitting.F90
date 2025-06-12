@@ -81,6 +81,7 @@ module mod_splitting
 
         ! consistency through flux adjustment 
         call apply_consistency(q_df) 
+        !call apply_consistency(q_df, qb_df)
 
         ! Store the degree of freedom (nodal points) values of dpprime_df ( or q_df(1,:,:)) in the array dpprime_df for use in layer_pressure_terms.
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
@@ -240,6 +241,7 @@ module mod_splitting
 
         ! consistency through flux adjustment 
         call apply_consistency(q_df)
+        !call apply_consistency(q_df, qb_df)
 
         ! ==================================== layer momentum ==========================
 
@@ -307,7 +309,7 @@ module mod_splitting
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs
         use mod_layer_terms, only: layer_pressure_terms, layer_momentum_advec_terms_upwind, compute_momentum_edge_values
-        use mod_laplacian_quad, only: bcl_create_laplacian
+        use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v2
 
         use mod_variables, only: H_r,u_udp_temp, v_vdp_temp, p, z_elev, udp_left, &
                     vdp_left, udp_right, vdp_right, u_vdp_temp, grad_z, u_edge, v_edge, udp_flux_edge, vdp_flux_edge, &
@@ -324,7 +326,12 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        if(method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
+        !if(method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
+        if (method_visc == 1) then
+            call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
+        else
+            call bcl_create_laplacian(rhs_visc_bcl)
+        endif 
 
         ! Compute the RHS of the layer momentum equation
         call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)

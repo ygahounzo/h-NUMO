@@ -35,8 +35,8 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
     end do
 
     !q(5,:,1) = qb(2,:)*one_over_pbprime_df(:) 
-    q(5,:,1) = qb(1,:)*one_over_pbprime_df(:) - 1.0
-    !q(5,:,1) = mslwe_elevation(:,1)
+    !q(5,:,1) = qb(1,:)*one_over_pbprime_df(:) - 1.0
+    q(5,:,1) = mslwe_elevation(:,1)
     q(5,:,2:nlayers) = mslwe_elevation(:,2:nlayers)
 
     ! Gather Data onto Head node

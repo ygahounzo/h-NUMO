@@ -25,7 +25,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
     use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
     use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
-    use mod_layer_terms, only: interpolate_qprime, extract_qprime_df_face
+    use mod_layer_terms, only: interpolate_qprime, extract_qprime_df_face, interpolate_dpp
 
     implicit none
 
@@ -47,6 +47,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
     qbp_df = qb_df
     dpprime_visc(:,:) = qprime_df(1,:,:)
+    call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
     call btp_bcl_coeffs_qdf(qprime_df_face, qprime_df)
     call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
@@ -65,6 +66,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     qprime_df2 = 0.5*(qprime_df2 + qprime_df)
     qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
     dpprime_visc(:,:) = qprime_df2(1,:,:)
+    call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
     call btp_bcl_coeffs_qdf(qprime_df_face2, qprime_df2)
     call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)

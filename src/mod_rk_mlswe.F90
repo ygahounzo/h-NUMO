@@ -96,15 +96,20 @@ module mod_rk_mlswe
             qb0_df = qb_df
             qb1_df = qb_df
 
+            qbface_ave = 0.0
+            qbs_df = 0.0
+
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
                 ope_ave_df = ope_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))
                 uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb1_df(3,:)/qb1_df(1,:)
                 uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb1_df(4,:)/qb1_df(1,:)
+                !qbs_df = qbs_df + qb1_df
 
                 ! Compute RHS for the barotropic
                 call create_rhs_btp(rhs,qb1_df,qprime_df)
+                !call create_rhs_btp2(rhs,qb1_df,qprime_df)
 
                 ! Update barotropic variables
 
@@ -125,6 +130,10 @@ module mod_rk_mlswe
             end do 
             tau_wind_ave = tau_wind_ave + tau_wind
 
+            !qbs_df = qbs_df / real(kstages)
+            !qbface_ave = qbface_ave / real(kstages)
+            !call btp_flux_ave(qbs_df, qbface_ave, qprime_df)
+
         end do
 
         ! Compute time averages of the various quantities listed earlier,
@@ -140,6 +149,8 @@ module mod_rk_mlswe
         ope2_ave = N_inv*ope2_ave
 
         call btp_interpolate_avg()
+
+        !N_inv = 1.0 / real(kstages*N_btp)
 
         ope_ave = N_inv*ope_ave
         H_ave = N_inv*H_ave

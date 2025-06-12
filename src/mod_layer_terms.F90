@@ -20,7 +20,7 @@ module mod_layer_terms
             filter_mlswe, layer_mom_boundary, evaluate_mom, velocity_df, evaluate_mom_face, &
             layer_momentum_advec_terms_upwind, evaluate_bcl, evaluate_bcl_v1, &
             evaluate_dpp, evaluate_dpp_face, interpolate_qprime, evaluate_consistency_face, &
-            extract_qprime_df_face, extract_dprime_df_face
+            extract_qprime_df_face, extract_dprime_df_face, interpolate_dpp
 
     contains
 
@@ -71,6 +71,40 @@ module mod_layer_terms
         end do
 
     end subroutine evaluate_dp
+
+    subroutine interpolate_dpp(dprimeq,dprime_df)
+
+        ! This routine interpolate layer mass from dofs to quad points
+
+        use mod_basis, only: npts
+        use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad
+        use mod_input, only: nlayers
+
+        use mod_initial, only: psih, indexq
+
+        implicit none
+        real, dimension(npoin_q,nlayers), intent(inout) :: dprimeq
+        real, dimension(npoin,nlayers), intent(inout) :: dprime_df
+
+        integer :: k, Iq,I, ip
+        real :: hi
+
+        dprimeq = 0.0
+
+        ! do k = 1, nlayers
+
+        do Iq = 1,npoin_q
+            do ip = 1,npts
+
+                I = indexq(ip,Iq)
+                hi = psih(ip,Iq)
+
+                dprimeq(Iq,:) = dprimeq(Iq,:) + dprime_df(I,:)*hi
+
+            end do
+        end do
+
+    end subroutine interpolate_dpp
 
     subroutine evaluate_dpp(qprime,dprime_df)
     
@@ -1209,14 +1243,20 @@ module mod_layer_terms
 
         call extract_velocity(uv_df, q_df, qb_df)
 
+        one_plus_eta_temp = 0.0
+
         do k = 1,nlayers
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+
+            one_plus_eta_temp(:) = one_plus_eta_temp(:) + q_df(1,:,k)
         end do
+
+        one_plus_eta_temp(:) = one_plus_eta_temp(:) / pbprime_df(:)
 
         call extract_velocity(uv_df, q_df, qb_df)
 
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+        !one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
         
         do k = 1,nlayers
             qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)

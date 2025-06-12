@@ -159,7 +159,7 @@ subroutine read_mlswe(q_df,qb_df,fname)
     integer :: npoin_grp, nelem_grp, ncells_grp, nproc_grp
 
     integer, dimension(:), allocatable  :: npoin_l_grp, nelem_l_grp
-    integer :: npoin_l_max_grp, nelem_l_max_grp
+    integer :: npoin_l_max_grp, nelem_l_max_grp, pos
 
     ngroups = 1
 
@@ -192,7 +192,13 @@ subroutine read_mlswe(q_df,qb_df,fname)
         allocate(q_grp(3,npoin_grp, nlayers))
         allocate(qb_grp(3,npoin_grp))
 
-        call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, nlayers)
+        pos = index(fname, '.nc')
+
+        if (pos > 0 .and. pos + 2 == len_trim(fname)) then
+            call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, nlayers)
+        else
+            call load_data_mlswe(fname, qb_grp, q_grp, npoin_grp, nlayers)
+        end if
 
     end if
 
