@@ -39,8 +39,6 @@ module mod_laplacian_quad
         real, dimension(4, npoin) :: graduv
         real :: un, nx, ny, ul, ur, vl, vr, dpp
 
-        !rhs_lap = 0.0
-
         Uk(1,:) = qb_df(3,:)/qb_df(1,:)
         Uk(2,:) = qb_df(4,:)/qb_df(1,:)
 
@@ -52,37 +50,30 @@ module mod_laplacian_quad
         ! Get the auxilary LDG variable graduv at the elements faces
         do iface=1,nface
 
-            !-------------------------------------
             !Store Left and Right Side Variables
-            !-------------------------------------
             iel=face(7,iface)
             ier=face(8,iface)
     
             !----------------------------Left Element
             do iquad = 1,ngl
-                !Get Pointers
+
                 il=imapl(1,iquad,1,iface)
                 jl=imapl(2,iquad,1,iface)
                 kl=imapl(3,iquad,1,iface)
                 Iq = intma(il,jl,kl,iel)
 
-                !Variables
                 graduv_face(:,1,iquad,iface) = graduv(:,Iq) 
 
                 if (ier > 0 ) then
 
-                    !Get Pointers
                     ir=imapr(1,iquad,1,iface)
                     jr=imapr(2,iquad,1,iface)
                     kr=imapr(3,iquad,1,iface)
                     Iq=intma(ir,jr,kr,ier)
 
-                    !Variables
                     graduv_face(:,2,iquad,iface) = graduv(:,Iq)
 
                 else
-                    !default values
-
                     graduv_face(:,2,iquad,iface) = graduv_face(:,1,iquad,iface)
 
                     if(ier == -4) then 
@@ -91,20 +82,16 @@ module mod_laplacian_quad
                         ny = normal_vector(2,iquad,1,iface)
 
                         un = graduv_face(1,1,iquad,iface)*nx + graduv_face(2,1,iquad,iface)*ny
-
                         graduv_face(1,2,iquad,iface) = graduv_face(1,1,iquad,iface) - 2.0*un*nx
                         graduv_face(2,2,iquad,iface) = graduv_face(2,1,iquad,iface) - 2.0*un*ny
 
                         un = graduv_face(3,1,iquad,iface)*nx + graduv_face(4,1,iquad,iface)*ny
-
                         graduv_face(3,2,iquad,iface) = graduv_face(3,1,iquad,iface) - 2.0*un*nx
                         graduv_face(4,2,iquad,iface) = graduv_face(4,1,iquad,iface) - 2.0*un*ny
 
                     end if 
                 end if
-
             end do 
-
         end do
 
         ! Precommunication step 
@@ -127,14 +114,13 @@ module mod_laplacian_quad
 
     end subroutine btp_create_laplacian
 
-     subroutine btp_create_laplacian_v2(rhs_lap,qprime_df,qb_df)
+    subroutine btp_create_laplacian_v2(rhs_lap,qprime_df,qb_df)
 
         ! Barotropic horizontal viscosity
 
         real, dimension(2,npoin), intent(out) :: rhs_lap
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
-
         real, dimension(2,npoin) :: Uk
         real, dimension(4,npoin_q) :: flux_uv_visc
         real :: flux_uv_visc_face(4,2,nq,nface)
@@ -155,7 +141,6 @@ module mod_laplacian_quad
 
             flux_uv_visc(1,:) = flux_uv_visc(1,:) + dpprime_visc_q(:,k)*graduv(1,1,:)
             flux_uv_visc(2,:) = flux_uv_visc(2,:) + dpprime_visc_q(:,k)*graduv(1,2,:)
-
             flux_uv_visc(3,:) = flux_uv_visc(3,:) + dpprime_visc_q(:,k)*graduv(2,1,:)
             flux_uv_visc(4,:) = flux_uv_visc(4,:) + dpprime_visc_q(:,k)*graduv(2,2,:)
 
@@ -164,48 +149,39 @@ module mod_laplacian_quad
         ! Get the auxilary LDG variable graduv at the elements faces
         do iface=1,nface
 
-            !-------------------------------------
             !Store Left and Right Side Variables
-            !-------------------------------------
             iel=face(7,iface)
             ier=face(8,iface)
 
             !----------------------------Left Element
             do iquad = 1,nq
-                !Get Pointers
+
                 il=imapl_q(1,iquad,1,iface)
                 jl=imapl_q(2,iquad,1,iface)
                 kl=imapl_q(3,iquad,1,iface)
                 Iq = intma_dg_quad(il,jl,kl,iel)
 
-                !Variables
                 flux_uv_visc_face(1,1,iquad,iface) = flux_uv_visc(1,Iq)
                 flux_uv_visc_face(2,1,iquad,iface) = flux_uv_visc(2,Iq)
-
                 flux_uv_visc_face(3,1,iquad,iface) = flux_uv_visc(3,Iq)
                 flux_uv_visc_face(4,1,iquad,iface) = flux_uv_visc(4,Iq)
 
                 if (ier > 0 ) then
 
-                    !Get Pointers
                     ir=imapr_q(1,iquad,1,iface)
                     jr=imapr_q(2,iquad,1,iface)
                     kr=imapr_q(3,iquad,1,iface)
                     Iq=intma_dg_quad(ir,jr,kr,ier)
 
-                    !Variables
                     flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq)
                     flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq)
-
                     flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq)
                     flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq)
 
                 else
-                !default values
 
                     flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc_face(1,1,iquad,iface)
                     flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc_face(2,1,iquad,iface)
-
                     flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc_face(3,1,iquad,iface)
                     flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc_face(4,1,iquad,iface)
 
@@ -214,19 +190,16 @@ module mod_laplacian_quad
                         ny = normal_vector_q(2,iquad,1,iface)
 
                         un = flux_uv_visc(1,Iq)*nx + flux_uv_visc(2,Iq)*ny
-
                         flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq) - 2.0*un*nx
                         flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq) - 2.0*un*ny
 
                         un = flux_uv_visc(3,Iq)*nx + flux_uv_visc(4,Iq)*ny
-
                         flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq) - 2.0*un*nx
                         flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq) - 2.0*un*ny
 
                     end if
                 end if
             end do
-
         end do
 
         ! Communicate within processors
@@ -255,7 +228,6 @@ module mod_laplacian_quad
         do k = 1,nlayers
 
             call bcl_compute_laplacian_IBP(rhs_temp,k)
-
             call bcl_create_rhs_laplacian_flux_SIPG(rhs_temp, k)
 
             rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:)
@@ -276,7 +248,6 @@ module mod_laplacian_quad
         real, intent (out) :: rhs_lap(2,npoin,nlayers)
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
-
         real, dimension(2,npoin) :: Uk
         real, dimension(4,npoin_q,nlayers) :: flux_uv_visc
         real, dimension(2,2,nq,nface) :: Uk_face
@@ -295,7 +266,6 @@ module mod_laplacian_quad
 
             flux_uv_visc(1,:,k) = dpprime_visc_q(:,k)*graduv(1,1,:)
             flux_uv_visc(2,:,k) = dpprime_visc_q(:,k)*graduv(1,2,:)
-
             flux_uv_visc(3,:,k) = dpprime_visc_q(:,k)*graduv(2,1,:)
             flux_uv_visc(4,:,k) = dpprime_visc_q(:,k)*graduv(2,2,:)
 
@@ -303,47 +273,39 @@ module mod_laplacian_quad
 
         ! Get the auxilary LDG variable graduv at the elements faces
         do iface=1,nface
-            !-------------------------------------
+
             !Store Left and Right Side Variables
-            !-------------------------------------
             iel=face(7,iface)
             ier=face(8,iface)
 
             !----------------------------Left Element
             do iquad = 1,nq
-                !Get Pointers
+
                 il=imapl_q(1,iquad,1,iface)
                 jl=imapl_q(2,iquad,1,iface)
                 kl=imapl_q(3,iquad,1,iface)
                 Iq = intma_dg_quad(il,jl,kl,iel)
 
-                !Variables
                 flux_uv_visc_face(1,1,iquad,iface,:) = flux_uv_visc(1,Iq,:)
                 flux_uv_visc_face(2,1,iquad,iface,:) = flux_uv_visc(2,Iq,:)
-
                 flux_uv_visc_face(3,1,iquad,iface,:) = flux_uv_visc(3,Iq,:)
                 flux_uv_visc_face(4,1,iquad,iface,:) = flux_uv_visc(4,Iq,:)
 
                 if (ier > 0 ) then
 
-                    !Get Pointers
                     ir=imapr_q(1,iquad,1,iface)
                     jr=imapr_q(2,iquad,1,iface)
                     kr=imapr_q(3,iquad,1,iface)
                     Iq=intma_dg_quad(ir,jr,kr,ier)
 
-                    !Variables
                     flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc(1,Iq,:)
                     flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc(2,Iq,:)
-
                     flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc(3,Iq,:)
                     flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc(4,Iq,:)
 
                 else
-                    !default values
                     flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc_face(1,1,iquad,iface,:)
                     flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc_face(2,1,iquad,iface,:)
-
                     flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc_face(3,1,iquad,iface,:)
                     flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc_face(4,1,iquad,iface,:)
 
@@ -352,19 +314,16 @@ module mod_laplacian_quad
                         ny = normal_vector_q(2,iquad,1,iface)
 
                         un = flux_uv_visc(1,Iq,:)*nx + flux_uv_visc(2,Iq,:)*ny
-
                         flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc(1,Iq,:) - 2.0*un*nx
                         flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc(2,Iq,:) - 2.0*un*ny
 
                         un = flux_uv_visc(3,Iq,:)*nx + flux_uv_visc(4,Iq,:)*ny
-
                         flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc(3,Iq,:) - 2.0*un*nx
                         flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc(4,Iq,:) - 2.0*un*ny
 
                     end if
                 end if
             end do
-
         end do
 
         ! Communication within processors
@@ -374,13 +333,11 @@ module mod_laplacian_quad
         do k = 1,nlayers
 
             call compute_laplacian_IBP_quad(rhs_temp,flux_uv_visc(:,:,k))
-
             call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face(:,:,:,:,k))
 
             !Store Solution
             rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:)
             rhs_lap(2,:,k) = visc_mlswe*massinv(:)*rhs_temp(2,:)
-
         end do
 
     end subroutine bcl_create_laplacian_v2
@@ -388,20 +345,18 @@ module mod_laplacian_quad
     subroutine btp_compute_laplacian_IBP(lap_q,grad_dpuvp)
 
         use mod_variables, only: pbprime_visc, btp_dpp_graduv
+
         implicit none
 
-        !Global Arrays
         real, intent(out) :: lap_q(2,npoin)
         real, dimension(4,npoin), intent(in) :: grad_dpuvp
 
         integer :: Iq, I, ip
         real :: wq, qq(4)
         
-        !initialize
         lap_q = 0.0
 
         ! Compute the gradient of q
-
         do Iq = 1,npoin
 
             wq = wjac_df(Iq)
@@ -414,7 +369,6 @@ module mod_laplacian_quad
             do ip = 1,npts
 
                 I = index_df(ip,Iq)
-
                 lap_q(1,I) = lap_q(1,I) - wq*(dpsidx_df(ip,Iq)*qq(1) + dpsidy_df(ip,Iq)*qq(2))
                 lap_q(2,I) = lap_q(2,I) - wq*(dpsidx_df(ip,Iq)*qq(3) + dpsidy_df(ip,Iq)*qq(4))
 
@@ -429,18 +383,15 @@ module mod_laplacian_quad
 
         implicit none
 
-        !Global Arrays
         real, intent(out) :: lap_q(2,npoin)
         integer, intent(in) :: k
 
         integer :: Iq, I, ip
         real :: wq, qq(4)
         
-        !initialize
         lap_q = 0.0
 
         ! Compute the gradient of q
-
         do Iq = 1,npoin
 
             wq = wjac_df(Iq)
@@ -453,7 +404,6 @@ module mod_laplacian_quad
             do ip = 1,npts
 
                 I = index_df(ip,Iq)
-
                 lap_q(1,I) = lap_q(1,I) - wq*(dpsidx_df(ip,Iq)*qq(1) + dpsidy_df(ip,Iq)*qq(2))
                 lap_q(2,I) = lap_q(2,I) - wq*(dpsidx_df(ip,Iq)*qq(3) + dpsidy_df(ip,Iq)*qq(4))
 
@@ -469,23 +419,18 @@ module mod_laplacian_quad
     
         implicit none
     
-        !global arrays
         real, intent(inout) :: rhs(2,npoin)
         real, intent(in)    :: gradq_face(4,2,ngl,nface)
     
-        !local arrays
         real, dimension(2) :: qu_mean, qv_mean
         real, dimension(4,2) :: flux_uv_visc_face
         real, dimension(2) :: qul,qur
         real, dimension(2) :: qvl,qvr
-    
-        !local variables
         real nx, ny, nz
         real wq, un
         integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er
         integer iel, ier, ilocl, ilocr, ip
         integer iquad, jquad, ivar
-    
         real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
 
         beta = 0.5
@@ -497,7 +442,6 @@ module mod_laplacian_quad
             iel=face(7,iface)
             ier=face(8,iface)
     
-            
             do iquad = 1,ngl
 
                 do ivar = 1,4
@@ -524,25 +468,17 @@ module mod_laplacian_quad
 
                 wq=jac_face(iquad,1,iface)
 
-                ! flux_qu = nx*qu_mean(1) + ny*qu_mean(2)
-                ! flux_qv = nx*qv_mean(1) + ny*qv_mean(2)
-
                 flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
                 flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
 
-                !---------------------------------
                 !  Do Gauss-Lobatto Integration
-                !---------------------------------
-
                 do i=1,ngl
 
                     hi = psi(i,iquad)
 
-                    !Pointers
                     il=imapl(1,i,1,iface)
                     jl=imapl(2,i,1,iface)
                     kl=imapl(3,i,1,iface)
-                    
                     ip=intma(il,jl,kl,iel)
                     
                     !Update Flux
@@ -550,7 +486,7 @@ module mod_laplacian_quad
                     rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
 
                     if (ier > 0) then
-                        !Pointers
+
                         ir=imapr(1,i,1,iface)
                         jr=imapr(2,i,1,iface)
                         kr=imapr(3,i,1,iface)
@@ -560,12 +496,10 @@ module mod_laplacian_quad
                         !Update Flux
                         rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
                         rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
-                    end if !ier
 
+                    end if !ier
                 end do !i
-            
             end do !iquad
-    
         end do !iface
     
     end subroutine create_rhs_laplacian_flux_SIPG
@@ -577,30 +511,24 @@ module mod_laplacian_quad
     
         implicit none
     
-        !global arrays
         real, intent(inout) :: rhs(2,npoin)
         integer, intent(in) :: k
-    
-        !local arrays
         real, dimension(2) :: qu_mean, qv_mean
         real, dimension(4,2) :: flux_uv_visc_face
         real, dimension(2) :: qul,qur
         real, dimension(2) :: qvl,qvr
     
-        !local variables
         real nx, ny, nz
         real wq, un
         integer iface, i, j, il, jl, kl, ir, jr, kr, el, er
         integer iel, ier, ilocl, ilocr, ip
         integer iquad, jquad, ivar
-    
         real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
 
         beta = 0.5
         alpha = 1.0 - beta
       
         !Construct FVM-type Operators
-
         do iface=1,nface
 
             iel=face(7,iface)
@@ -633,9 +561,6 @@ module mod_laplacian_quad
 
                 wq = jac_face(iquad,1,iface)
 
-                ! flux_qu = nx*qu_mean(1) + ny*qu_mean(2)
-                ! flux_qv = nx*qv_mean(1) + ny*qv_mean(2)
-
                 flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
                 flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
 
@@ -643,11 +568,9 @@ module mod_laplacian_quad
 
                     hi = psi(i,iquad)
 
-                    !Pointers
                     il=imapl(1,i,1,iface)
                     jl=imapl(2,i,1,iface)
                     kl=imapl(3,i,1,iface)
-                    
                     ip=intma(il,jl,kl,iel)
                     
                     !Update Flux
@@ -655,22 +578,18 @@ module mod_laplacian_quad
                     rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
 
                     if (ier > 0) then
-                        !Pointers
+
                         ir=imapr(1,i,1,iface)
                         jr=imapr(2,i,1,iface)
                         kr=imapr(3,i,1,iface)
-
                         ip=intma(ir,jr,kr,ier)
 
                         !Update Flux
                         rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
                         rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
                     end if !ier
-
                 end do !i
-            
             end do !iquad
-    
         end do !iface
 
     end subroutine bcl_create_rhs_laplacian_flux_SIPG
@@ -679,18 +598,15 @@ module mod_laplacian_quad
 
         implicit none
 
-        !Global Arrays
         real, intent(out) :: lap_q(2,npoin)
         real, dimension(4,npoin_q), intent(in) :: grad_dpuvp
 
         integer :: Iq, I, ip
         real :: wq, u_visc, v_visc
 
-        !initialize
         lap_q = 0.0
 
         ! Compute the gradient of q
-
         do Iq = 1,npoin_q
 
             wq = wjac(Iq)
@@ -698,7 +614,6 @@ module mod_laplacian_quad
             do ip = 1,npts
 
                 I = indexq(ip,Iq)
-
                 u_visc = dpsidx(ip,Iq)*grad_dpuvp(1,Iq) + dpsidy(ip,Iq)*grad_dpuvp(2,Iq)
                 v_visc = dpsidx(ip,Iq)*grad_dpuvp(3,Iq) + dpsidy(ip,Iq)*grad_dpuvp(4,Iq)
 
@@ -714,22 +629,17 @@ module mod_laplacian_quad
 
         implicit none
 
-        !global arrays
         real, intent(inout) :: rhs(2,npoin)
         real, intent(in)    :: gradq_face(4,2,nq,nface)
 
-        !local arrays
         real, dimension(2) :: qu_mean, qv_mean
         real, dimension(2) :: qul,qur
         real, dimension(2) :: qvl,qvr
-
-        !local variables
         real nx, ny, nz
         real wq
         integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er
         integer iel, ier, ilocl, ilocr, ip
         integer iquad, jquad
-
         real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
 
         beta = 0.5
@@ -737,9 +647,7 @@ module mod_laplacian_quad
 
         !Construct FVM-type Operators
         do iface=1,nface
-            !-------------------------------------
             !Store Left and Right Side Variables
-            !-------------------------------------
             ilocl=face(5,iface)
             iel=face(7,iface)
             ier=face(8,iface)
@@ -757,33 +665,23 @@ module mod_laplacian_quad
                 qu_mean(:) = alpha*qul(:) + beta*qur(:)
                 qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
 
-
                 wq=jac_faceq(iquad,1,iface)
 
                 !Store normals
                 nx = normal_vector_q(1,iquad,1,iface)
                 ny = normal_vector_q(2,iquad,1,iface)
 
-                ! flux_qu = nx*qu_mean(1) + ny*qu_mean(2)
-                ! flux_qv = nx*qv_mean(1) + ny*qv_mean(2)
-
                 flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
                 flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
 
-                !---------------------------------
                 !  Do Gauss-Lobatto Integration
-                !---------------------------------
-                !--------------Left Side------------------!
-
                 do i=1,ngl
 
                     hi = psiq(i,iquad)
 
-                    !Pointers
                     il=imapl(1,i,1,iface)
                     jl=imapl(2,i,1,iface)
                     kl=imapl(3,i,1,iface)
-
                     ip=intma(il,jl,kl,iel)
 
                     !Update Flux
@@ -791,24 +689,21 @@ module mod_laplacian_quad
                     rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
 
                     if (ier > 0) then
-                        !Pointers
+
                         ir=imapr(1,i,1,iface)
                         jr=imapr(2,i,1,iface)
                         kr=imapr(3,i,1,iface)
-
                         ip=intma(ir,jr,kr,ier)
 
                         !Update Flux
                         rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
                         rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
                     end if !ier
-
                 end do !i
-
             end do !iquad
-
         end do !iface
 
     end subroutine create_rhs_laplacian_flux_SIPG_quad
 
 end module mod_laplacian_quad
+

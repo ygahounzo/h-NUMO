@@ -39,7 +39,7 @@ p4est/local/lib/libp4est.a:
 	mv $(P4EST_DIR) $(P4EST_LOC) && \
 	cd $(P4EST_LOC) && \
 	./configure $(P4EST_CONF) && \
-	make -j && \
+	make -j8 V=0 && \
 	make install
 
 p4est_clean:

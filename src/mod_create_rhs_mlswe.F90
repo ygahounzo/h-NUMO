@@ -7,26 +7,17 @@
 ! =======================================================================
 module mod_create_rhs_mlswe
 
-
     use mod_constants, only: gravity
-
     use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad
-
     use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
-        psiqx, psiqy, psiqz
-
+                            psiqx, psiqy, psiqz
     use mod_grid, only: intma, coord
-
     use mod_initial, only: q_ref, coriolis_constant, kvector, nvar
-
-
     use mod_input, only: nlayers
-
-    use mod_metrics, only: &
-        ksiq_x, ksiq_y, ksiq_z, &
-        etaq_x, etaq_y, etaq_z, &
-        zetaq_x, zetaq_y, zetaq_z, &
-        jacq, massinv
+    use mod_metrics, only: ksiq_x, ksiq_y, ksiq_z, &
+                           etaq_x, etaq_y, etaq_z, &
+                           zetaq_x, zetaq_y, zetaq_z, &
+                           jacq, massinv
 
     public :: layer_momentum_rhs, btp_mass_advection_rhs, &
               interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, layer_mass_rhs, &
@@ -53,7 +44,6 @@ module mod_create_rhs_mlswe
         call Apply_layers_fluxes(rhs_mom, qprime_df_face)
 
         do k = 1, nlayers
-
             rhs_mom(1,:,k) = massinv(:)*rhs_mom(1,:,k) + rhs_visc(1,:,k)
             rhs_mom(2,:,k) = massinv(:)*rhs_mom(2,:,k) + rhs_visc(2,:,k)
         end do
@@ -76,15 +66,12 @@ module mod_create_rhs_mlswe
         integer :: k
 
         ! Compute the mass advection term for the degree of freedom for dp in each layer
-
         call create_layers_volume_mass(dp_advec, qprime_df)
 
         ! Compute the mass flux term 
-
         call create_layer_mass_flux(dp_advec, qprime_df_face)
 
         do k = 1, nlayers
-
             dp_advec(:,k) = massinv(:)*dp_advec(:,k)
         end do
         
@@ -106,11 +93,9 @@ module mod_create_rhs_mlswe
         integer :: k
 
         ! Compute the mass advection term for the degree of freedom for dp in each layer
-
         call create_consistency_volume_mass(dp_advec, qprime)
 
         ! Compute the mass flux term 
-
         call create_consistency_mass_flux(dp_advec, flux_deficit_mass_face)
 
     end subroutine consistency_mass_rhs
@@ -144,24 +129,19 @@ module mod_create_rhs_mlswe
             do ip = 1, npts
 
                 I = indexq(ip,Iq)
-
                 hi = psih(ip,Iq)
 
                 q_df(2,I,:) = q_df(2,I,:) + wq*var_u(:)*hi
                 q_df(3,I,:) = q_df(3,I,:) + wq*var_v(:)*hi
-
             end do
         end do
 
         do k = 1, nlayers
-
             q_df(2,:,k) = massinv(:)*q_df(2,:,k)
             q_df(3,:,k) = massinv(:)*q_df(3,:,k)  
-
         end do
         
     end subroutine interpolate_layer_from_quad_to_node
-
 
     subroutine rhs_layer_shear_stress(rhs_stress,q)
 
@@ -176,12 +156,10 @@ module mod_create_rhs_mlswe
         
         real, intent(in) :: q(2,npoin_q,nlayers)
         real, intent(out) :: rhs_stress(2,npoin,nlayers)
- 
         
         real :: tau_u(npoin_q,nlayers+1), tau_v(npoin_q,nlayers+1), coeff(npoin_q)
         real :: tau_u_q(npoin_q, nlayers), tau_v_q(npoin_q, nlayers)
         real :: wq, hi
-        
         integer :: k, e, iquad, jquad, kquad, l, m, n, Iq, I, ip
         
         tau_u = 0.0
@@ -212,25 +190,19 @@ module mod_create_rhs_mlswe
         do Iq = 1,npoin_q
 
             wq = wjac(Iq)
-
             do ip = 1, npts
 
                 I = indexq(ip,Iq)
-
                 hi = psih(ip,Iq)
 
                 rhs_stress(1,I,:) = rhs_stress(1,I,:) + wq*hi*tau_u_q(Iq,:)
                 rhs_stress(2,I,:) = rhs_stress(2,I,:) + wq*hi*tau_v_q(Iq,:)
-
             end do
-
         end do
 
         do k = 1, nlayers
-            
             rhs_stress(1,:,k) = massinv(:)*rhs_stress(1,:,k)
             rhs_stress(2,:,k) = massinv(:)*rhs_stress(2,:,k)
-
         end do
         
     end subroutine rhs_layer_shear_stress
@@ -242,9 +214,8 @@ module mod_create_rhs_mlswe
         use mod_input, only: nlayers
         use mod_constants, only: gravity
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, tau_wind, pbprime, zbot_df
-
         use mod_variables, only: tau_wind_int, tau_bot_int, tau_bot_ave, ope_ave, uvb_ave, H_ave, &
-                    Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope_ave_df
+                                    Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope_ave_df
 
         implicit none
 
@@ -253,7 +224,6 @@ module mod_create_rhs_mlswe
 
         real :: wq, hi, dhdx, dhdy, bot_layer, tau_wind_u, tau_wind_v, temp1
         real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y, Pstress
-
         integer :: k, I, Iq, ip
         real, dimension(nlayers+1) :: pprime_temp
         real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
@@ -295,7 +265,6 @@ module mod_create_rhs_mlswe
                     temp_vv(k) = temp_vv(k) + hi*q_df(3,I,k)
                 enddo
 
-                !qp(:) = qprime(:,Iq,k)
                 qb(1) = ope_ave(Iq)
                 qb(2) = uvb_ave(1,Iq)
                 qb(3) = uvb_ave(2,Iq)
@@ -347,6 +316,7 @@ module mod_create_rhs_mlswe
                 v_vdp(k) = v_vdp(k) + weightq * vv_dp_deficitq
 
                 Hq = H_tmp(k)
+                
                 ! Adjust the values of  H_r, at quadrature points, so that the vertical sum of
                 ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic
                 ! time interval.
@@ -383,7 +353,6 @@ module mod_create_rhs_mlswe
                 tempbot = min(Pbstress,pbprime(Iq)-pprime_temp(k+1)) - min(Pbstress, pbprime(Iq) - pprime_temp(k))
                 tempbot = tempbot / Pbstress
 
-                !tempbot = bot_layer !tempbot/qprime(1,Iq,k)
                 source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
                             p_tmp(k) * gradz(1,k) - p_tmp(k+1) * gradz(1,k+1))
                 source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
@@ -425,7 +394,6 @@ module mod_create_rhs_mlswe
         real, dimension(2, npoin, nlayers), intent(inout) :: rhs_mom
         real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
 
-        ! local variables
         real, dimension(nlayers) :: alpha_over_g, g_over_alpha
         real, dimension(2,nlayers+1) :: p_face, z_face
         real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
@@ -471,15 +439,11 @@ module mod_create_rhs_mlswe
                 nyl = normal_vector_q(2,iquad,1,iface)
 
                 do k = 1,nlayers
-                    !ql(:,iquad,k) = qprime_face(:,1,iquad,iface,k)
-                    !qr(:,iquad,k) = qprime_face(:,2,iquad,iface,k)
 
                     do n = 1, ngl
                         hi = psiq(n,iquad)
                         ql(:,iquad,k) = ql(:,iquad,k) + hi*qprime_df_face(:,1,n,iface,k)
                         qr(:,iquad,k) = qr(:,iquad,k) + hi*qprime_df_face(:,2,n,iface,k)
-                        !qbl(:,iquad) = qbl(:,iquad) + hi*uvb_ope_face_ave_df(:,1,n,iface)
-                        !qbr(:,iquad) = qbr(:,iquad) + hi*uvb_ope_face_ave_df(:,2,n,iface)
                     enddo
 
                     ! Left side of the edge
@@ -760,7 +724,6 @@ module mod_create_rhs_mlswe
                     end do
                 end do
             end do
-
         end do ! iface
 
     end subroutine Apply_layers_fluxes
@@ -778,7 +741,6 @@ module mod_create_rhs_mlswe
 
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(npoin,nlayers), intent(out) :: dp_advec
-
 
         real :: wq, hi, dhde, dhdn
         integer :: k, I, Iq, ip
@@ -853,7 +815,6 @@ module mod_create_rhs_mlswe
                     dp = dp + hi*dprime_df(I,k)
                 enddo
                 weight = dp/pbprime(Iq)
-                !weight = qprime(1,Iq,k) / pbprime(Iq)
 
                 udp = weight * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
                 vdp = weight * (btp_mass_flux_ave(2,Iq) - sum_layer_mass_flux(2,Iq)) 
@@ -940,7 +901,6 @@ module mod_create_rhs_mlswe
                     else
                         flux_edge_v(iquad) = vv * dpr
                     endif
-
                 end do
 
                 sum_layer_mass_flux_face(1,:,iface) = sum_layer_mass_flux_face(1,:,iface) + flux_edge_u(:)
@@ -974,10 +934,8 @@ module mod_create_rhs_mlswe
                             dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
 
                         end if
-
                     end do
                 end do
-
             end do
         end do
 
@@ -1043,7 +1001,6 @@ module mod_create_rhs_mlswe
                         il = imapl(1,n,1,iface)
                         jl = imapl(2,n,1,iface)
                         kl = imapl(3,n,1,iface)
-
                         I = intma(il,jl,kl,el)
 
                         dp_advec(I,k) = dp_advec(I,k) - wq*hi*flux
@@ -1053,16 +1010,13 @@ module mod_create_rhs_mlswe
                             ir = imapr(1,n,1,iface)
                             jr = imapr(2,n,1,iface)
                             kr = imapr(3,n,1,iface)
-
                             I = intma(ir,jr,kr,er)
 
                             dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
 
                         end if
-
                     end do
                 end do
-
             end do
         end do
     

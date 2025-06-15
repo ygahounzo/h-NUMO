@@ -27,13 +27,12 @@ module mod_rk_mlswe
         ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
         ! ===========================================================================================================================
 
-        use mod_initial, only: N_btp, pbprime_df, fdt_btp, fdt2_btp, a_btp, b_btp, tau_wind, one_over_pbprime_df, ssprk_a, ssprk_beta
+        use mod_initial, only: N_btp, pbprime_df, tau_wind, one_over_pbprime_df, ssprk_a, ssprk_beta
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
-        use mod_input, only: nlayers, dt_btp, ifilter, nlayers, kstages, method_visc
-        use mod_rhs_btp, only: create_rhs_btp, create_rhs_btp2, create_rhs_btp3
-        use mod_barotropic_terms, only: btp_bcl_grad_coeffs, btp_mom_boundary_df, btp_interpolate_avg, btp_interpolate_avg2, &
-                                        btp_interpolate_avg3, btp_interpolate_avg4, btp_flux_ave
+        use mod_input, only: nlayers, dt_btp,nlayers, kstages, method_visc
+        use mod_rhs_btp, only: create_rhs_btp
+        use mod_barotropic_terms, only: btp_mom_boundary_df
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
                                 ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
                                 Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
@@ -52,7 +51,7 @@ module mod_rk_mlswe
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(3,npoin) :: rhs
-        real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df, qbs_df
+        real, dimension(4,npoin) :: qb0_df, qb1_df, qb2_df
         integer :: mstep, I, Iq, iquad, iface, ilr, k, ik
         real :: N_inv, a0,a1,a2, beta, dtt
 
@@ -96,20 +95,15 @@ module mod_rk_mlswe
             qb0_df = qb_df
             qb1_df = qb_df
 
-            qbface_ave = 0.0
-            qbs_df = 0.0
-
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
                 ope_ave_df = ope_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))
                 uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb1_df(3,:)/qb1_df(1,:)
                 uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb1_df(4,:)/qb1_df(1,:)
-                !qbs_df = qbs_df + qb1_df
 
                 ! Compute RHS for the barotropic
                 call create_rhs_btp(rhs,qb1_df,qprime_df)
-                !call create_rhs_btp2(rhs,qb1_df,qprime_df)
 
                 ! Update barotropic variables
 
@@ -130,10 +124,6 @@ module mod_rk_mlswe
             end do 
             tau_wind_ave = tau_wind_ave + tau_wind
 
-            !qbs_df = qbs_df / real(kstages)
-            !qbface_ave = qbface_ave / real(kstages)
-            !call btp_flux_ave(qbs_df, qbface_ave, qprime_df)
-
         end do
 
         ! Compute time averages of the various quantities listed earlier,
@@ -147,10 +137,6 @@ module mod_rk_mlswe
         tau_wind_ave = tau_wind_ave / real(N_btp)
         ope_ave_df = N_inv*ope_ave_df
         ope2_ave = N_inv*ope2_ave
-
-        call btp_interpolate_avg()
-
-        !N_inv = 1.0 / real(kstages*N_btp)
 
         ope_ave = N_inv*ope_ave
         H_ave = N_inv*H_ave
@@ -166,6 +152,8 @@ module mod_rk_mlswe
         Qv_face_ave = N_inv*Qv_face_ave
         btp_mass_flux_face_ave = N_inv*btp_mass_flux_face_ave
         one_plus_eta_edge_2_ave = N_inv*one_plus_eta_edge_2_ave
+        uvb_ave = N_inv*uvb_ave
+        uvb_face_ave = N_inv*uvb_face_ave
 
     end subroutine ti_barotropic_ssprk_mlswe
 

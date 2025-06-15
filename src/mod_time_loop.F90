@@ -23,42 +23,23 @@ module mod_time_loop
 
 contains
 
-    !----------------------------------------------------------------------!
-    !>@brief This subroutine contains the time-integration loop
-    !>@author  Francis X. Giraldo on 11/2009
-    !>           Department of Applied Mathematics
-    !>           Naval Postgraduate School
-    !>           Monterey, CA 93943-5216
-    !----------------------------------------------------------------------!
     subroutine time_loop()
 
         use mod_grid, only: npoin,  index2d, ncol, coord, npoin_q, nface
         use mod_basis, only: nq
-
-        use mod_initial, only: q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, q_mlswe_face_init, qprime_face_mlswe_init, qb_mlswe_init, &
-            qb_face_mlswe_init, qb_df_mlswe_init, dpprime_df_init, qprime_df_init, alpha_mlswe, zbot_df
-
+        use mod_initial, only: q_df_mlswe_init, qb_df_mlswe_init, qprime_df_init
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             fname_root, lprint_diagnostics, &
             nlayers, is_mlswe, ti_method_btp, dump_data, lcheck_conserved
-
-        use mod_layer_terms, only: filter_mlswe
         use mod_constants, only: gravity
         use mod_restart, only: restart_mlswe
         use mpi
 
         implicit none
 
-        real, dimension(:,:,:), allocatable :: q0_mlswe, q0_df_mlswe, qout_mlswe, qp_mlswe, qp_df_mlswe, qprime0_df, qprimep_df
-        real, dimension(:,:,:,:,:), allocatable :: q0_mlswe_face, qp_mlswe_face
-        real, dimension(:,:,:,:,:), allocatable :: qprime0_face_mlswe, qprimep_face_mlswe
-        real, dimension(:,:,:), allocatable :: qprime0_mlswe, qprimep_mlswe
-        real, dimension(:,:), allocatable :: dpprime0_df, dpprimep_df
-        real, dimension(:,:,:,:), allocatable :: qb0_face_mlswe, qbp_face_mlswe
-        real, dimension(:,:), allocatable :: qb0_mlswe, qb0_df_mlswe, qbp_mlswe, qbp_df_mlswe
-
+        real, dimension(:,:,:), allocatable :: q0_df_mlswe, qout_mlswe, qprime0_df
+        real, dimension(:,:), allocatable :: qb0_df_mlswe
         integer AllocateStatus
-
         real cfl, cfl_h, cfl_v, cflu
         real mass_conserv_l, mass_conserv_g, mass_conserv0_g(nlayers)
         integer m, itime
@@ -83,25 +64,13 @@ contains
         ntime=ceiling(time_final/dt)
 
         ! Allocate Memory
-
-        allocate(q0_mlswe(3,npoin_q,nlayers), qprime0_mlswe(3,npoin_q,nlayers), &
-            q0_df_mlswe(3,npoin,nlayers), q0_mlswe_face(3,2,nq,nface,nlayers), &
-            qprime0_face_mlswe(3,2,nq,nface,nlayers), qb0_mlswe(4,npoin_q), qb0_face_mlswe(4,2,nq,nface), &
-            qb0_df_mlswe(4,npoin), dpprime0_df(npoin,nlayers), qout_mlswe(5,npoin, nlayers), &
+        allocate(q0_df_mlswe(3,npoin,nlayers), qb0_df_mlswe(4,npoin), qout_mlswe(5,npoin, nlayers), &
             qprime0_df(3,npoin,nlayers), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - MOD_TIME_LOOP:Time_Loop:q0_mlswe **"
 
         !initialize all layers here
-
-        q0_mlswe = q_mlswe_init
-        qprime0_mlswe = qprime_mlswe_init
         q0_df_mlswe = q_df_mlswe_init
-        q0_mlswe_face = q_mlswe_face_init
-        qprime0_face_mlswe = qprime_face_mlswe_init
-        qb0_mlswe = qb_mlswe_init
-        qb0_face_mlswe = qb_face_mlswe_init
         qb0_df_mlswe = qb_df_mlswe_init
-        dpprime0_df = dpprime_df_init
         qprime0_df = qprime_df_init
 
         !Initialize/Restart
@@ -157,7 +126,6 @@ contains
             inorm = irestart_file_number
            
             !Read Snapshot File
-
             if(trim(out_type) == 'txt' .or. trim(out_type) == 'nc') then 
 
                 ifnp = irestart_file_number
@@ -172,18 +140,13 @@ contains
                 fnp=trim('mlswe') // trim(fnp4)
                 if(trim(out_type) == 'nc') fnp = trim('mlswe') // trim(fnp4)//trim('.nc')
 
-                !call read_mlswe(q_df_read,qb_df_read,fnp)
+                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,qprime0_df, qout_mlswe, fnp)
 
-                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,q0_mlswe,qb0_mlswe,qprime0_mlswe, &
-                     qprime0_df,q0_mlswe_face,qprime0_face_mlswe,qb0_face_mlswe, qout_mlswe, fnp)!q_df_read, qb_df_read)
-
-                dpprime0_df = qprime0_df(1,:,:)
                 qb0_df_mlswe = qb0_df_mlswe
             end if
            
            if(irank==0)  print*,' Done Reading'
         end if
-
 
         if(lcheck_conserved) then 
 
@@ -193,7 +156,6 @@ contains
                 call compute_conserved(mass_conserv_l,qout_mlswe(1,:,l))
 
                 mass_conserv_g = 0.0
-
                 call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
 
                 mass_conserv0_g(l) = mass_conserv_g
@@ -202,7 +164,6 @@ contains
             fnps = trim('mass_mlswe.cons')
 
             unit0 = 111
-
             open(unit=unit0, file = fnps)
             
             write(s_layers,'(i3)')nlayers
@@ -227,9 +188,8 @@ contains
             print *, "Begin Time Integration: "
         end if
 
-        !------------------------------
         !     Time Loop
-        !------------------------------
+
         idone=0
         rhs_time = 0.0
         
@@ -244,14 +204,7 @@ contains
             !time1 = wtime()
             call cpu_time(time1)
 
-            !if(ti_method_btp == 'rk35') then 
-
-                call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe, qprime0_df)
-            !else 
-                ! Only predictor-corrector methods 
-            !    call ti_mlswe(q0_mlswe, q0_df_mlswe, q0_mlswe_face, qb0_mlswe, qb0_face_mlswe, qb0_df_mlswe, &
-            !        qprime0_mlswe, qprime0_face_mlswe,dpprime0_df,qprime0_df,qout_mlswe)
-            !end if
+            call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe, qprime0_df)
 
             call cpu_time(time2)
 
@@ -292,7 +245,6 @@ contains
                 end if
 
                 !Append q max and q min to file:
-
                 if (lprint_diagnostics) then 
                     call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
                     mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
@@ -312,15 +264,8 @@ contains
             mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
         !end if
 
-        if(allocated(q0_mlswe)) deallocate(q0_mlswe)
-        if(allocated(qprime0_mlswe)) deallocate(qprime0_mlswe)
         if(allocated(q0_df_mlswe)) deallocate(q0_df_mlswe)
-        if(allocated(q0_mlswe_face)) deallocate(q0_mlswe_face)
-        if(allocated(qprime0_face_mlswe)) deallocate(qprime0_face_mlswe)
-        if(allocated(qb0_mlswe)) deallocate(qb0_mlswe)
-        if(allocated(qb0_face_mlswe)) deallocate(qb0_face_mlswe)
         if(allocated(qb0_df_mlswe)) deallocate(qb0_df_mlswe)
-        if(allocated(dpprime0_df)) deallocate(dpprime0_df)
         if(allocated(qprime0_df)) deallocate(qprime0_df)
         
     end subroutine time_loop

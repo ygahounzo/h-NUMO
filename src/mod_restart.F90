@@ -12,7 +12,7 @@ module mod_restart
 
     contains
 
-subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_face, qp_df_out, fname)
+subroutine restart_mlswe(q_df,qb_df,qprime_df,qp_df_out, fname)
 
         use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma,nface,face
         use mod_basis, only: npts, nq
@@ -20,20 +20,12 @@ subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_
         use mod_initial, only: psih, indexq, pbprime_df, alpha_mlswe, pbprime, zbot_df
         use mod_face, only: imapl_q, imapr_q
         use mod_constants, only: gravity
-        use mod_layer_terms, only: evaluate_mom, evaluate_mom_face, evaluate_dp, evaluate_dp_face
-        use mod_barotropic_terms, only: btp_evaluate_mom_dp, btp_evaluate_mom_dp_face
 
         character(len=*), intent(in) :: fname
 
         real, dimension(4,npoin), intent(out) :: qb_df
         real, dimension(3,npoin,nlayers), intent(out) :: q_df
-        real, dimension(4,npoin_q), intent(out) :: qb
-        real, dimension(3,npoin_q,nlayers), intent(out) :: q
-        real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
         real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
-        real, dimension(3,2,nq,nface,nlayers), intent(out) :: q_face
-        real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
-        real, dimension(4,2,nq,nface), intent(out) :: qb_face
         real, dimension(5,npoin,nlayers) :: qp_df_out
         real, dimension(npoin,nlayers+1) :: mslwe_elevation
         real, dimension(3,npoin) :: qb_df_read
@@ -43,15 +35,7 @@ subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_
         real :: hi
         real, dimension(npoin) :: one_plus_eta_temp
 
-        q = 0.0
-        qb = 0.0
-        qprime = 0.0
-        q_face = 0.0
-        qprime_face = 0.0
-        qb_face = 0.0
-
         ! Read the restart file
-
         call read_mlswe(q_df_read,qb_df_read,fname)
 
         ! Barotropic variables at the dofs (nodal points)
@@ -60,15 +44,7 @@ subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_
         qb_df(3:4,:) = qb_df_read(2:3,:)
         qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
 
-        ! Interpolate to the quadrature points
-
-        call btp_evaluate_mom_dp(qb,qb_df)
-        call btp_evaluate_mom_dp_face(qb_face, qb)
-
-        ! Baroclinic variables at the dofs (nodal points)
-
-        !q_df(:,:,:) = q_df_read(:,:,:)
-
+        ! Baroclinic variables 
         do k = 1,nlayers
 
             q_df(1,:,k) = (gravity/alpha_mlswe(k))*q_df_read(1,:,k)
@@ -77,28 +53,15 @@ subroutine restart_mlswe(q_df,qb_df,q,qb,qprime,qprime_df,q_face,qprime_face,qb_
 
         end do
 
-        ! Interpolate to the quadrature points
-
-        call evaluate_dp(q,qprime,q_df, pbprime)
-        call evaluate_dp_face(q_face, qprime_face,q, qprime)
-
-        call evaluate_mom(q,q_df)
-        call evaluate_mom_face(q_face, q)
-
         ! Prime variables at the dofs (nodal points) and quadrature points
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
 
         do k = 1,nlayers
 
             qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-
-            qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)/qb(1,:)
-            qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)/qb(1,:)
             qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
 
-            qprime_face(2,:,:,:,k) = q_face(2,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(3,:,:,:)/qb_face(1,:,:,:)
-            qprime_face(3,:,:,:,k) = q_face(3,:,:,:,k)/q_face(1,:,:,:,k) - qb_face(4,:,:,:)/qb_face(1,:,:,:)
         end do
 
         ! Prepare output variables

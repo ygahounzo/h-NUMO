@@ -29,9 +29,9 @@ module mod_initial
     public :: &
         mod_initial_create, &
         create_kvector, &
-        rhs_continuous, &
+        !rhs_continuous, &
         q_init, &
-        q_layers_init, &
+        !q_layers_init, &
         rho_layers, hB_grad, phiA_grad, hA, &
         q_exact, &
         q_ref,&
@@ -40,40 +40,69 @@ module mod_initial
         nvar, nvar_diag, nvart, ntracers, &
         nrhs_mxm, &
         height, &
-        pi_values,&
-        ! mod_initial_create_height, &
-        q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, qprime_face_mlswe_init, pbprime_face, one_over_pbprime, &  ! added by Yao Gahounzo
-        one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df_init, one_over_pbprime_df, &  ! added by Yao Gahounzo
-        qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, & ! added by Yao Gahounzo
+        pi_values !,&
+        !q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
+        !qprime_face_mlswe_init, pbprime_face, one_over_pbprime, &
+        !one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df_init, one_over_pbprime_df, & 
+        !qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, & 
+        !coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
+        !coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, grad_zbot_quad, &
+        !psih, dpsidx,dpsidy, indexq, wjac, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, &
+        !a_bclp, b_bclp, qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
+        !ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, grad_zbot_df, pbprime_df_face
+
+    public :: q_df_mlswe_init, pbprime, pbprime_df, &
+        pbprime_face, one_over_pbprime, &
+        one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, & 
+        qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, & 
         coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
         coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, grad_zbot_quad, &
-        psih, dpsidx,dpsidy, indexq, wjac, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
+        psih, dpsidx,dpsidy, indexq, wjac, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, &
+        qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
         ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, grad_zbot_df, pbprime_df_face
 
-        public :: coeff_pbpert_L_df,coeff_pbpert_R_df,coeff_pbub_LR_df, coeff_mass_pbub_L_df, coeff_mass_pbub_R_df, coeff_mass_pbpert_LR_df
+    !public :: coeff_pbpert_L_df,coeff_pbpert_R_df,coeff_pbub_LR_df, coeff_mass_pbub_L_df, coeff_mass_pbub_R_df, coeff_mass_pbpert_LR_df
+    public :: z_interface
 
     private
 
     !-----------------------------------------------------------------------
     real, dimension(:,:), allocatable :: q_init, q_exact, q_ref, kvector, q_sph, coord_sph, pi_values, shear_stress, hA
-    real, dimension(:,:,:), allocatable :: q_layers_init, hB_grad, phiA_grad, q_ref_layers
+    real, dimension(:,:,:), allocatable :: hB_grad, phiA_grad, q_ref_layers
     real, dimension(:), allocatable :: rho_layers, bathymetry
     real, dimension(:), allocatable:: height, coriolis_constant
-    real, dimension(:,:,:), allocatable :: q_mlswe_init, q_df_mlswe_init, qprime_df_init
-    real, dimension(:,:,:,:,:), allocatable :: q_mlswe_face_init
-    real, dimension(:,:,:,:,:), allocatable :: qprime_face_mlswe_init
-    real, dimension(:,:,:), allocatable :: qprime_mlswe_init
+    real, dimension(:,:,:), allocatable :: q_df_mlswe_init, qprime_df_init
     real, dimension(:), allocatable :: pbprime, pbprime_df, one_over_pbprime_df,one_over_pbprime, alpha_mlswe
     real, dimension(:,:,:), allocatable :: pbprime_face, one_over_pbprime_face, one_over_pbprime_df_face, pbprime_df_face
     real, dimension(:,:), allocatable :: pbprime_edge, one_over_pbprime_edge
     real, dimension(:,:,:,:), allocatable :: qb_face_mlswe_init
-    real, dimension(:,:), allocatable :: qb_mlswe_init, qb_df_mlswe_init, tau_wind, dpprime_df_init, tau_wind_df
+    real, dimension(:,:), allocatable :: qb_df_mlswe_init, tau_wind, tau_wind_df
     real, dimension(:), allocatable :: coriolis_df,coriolis_quad
     real, dimension(:,:), allocatable :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
-    real, dimension(:,:), allocatable :: coeff_pbpert_L_df,coeff_pbpert_R_df,coeff_pbub_LR_df, coeff_mass_pbub_L_df, coeff_mass_pbub_R_df, coeff_mass_pbpert_LR_df
-    real, dimension(:), allocatable :: zbot, zbot_df, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
+    real, dimension(:), allocatable :: zbot, zbot_df, fdt_bcl, fdt2_bcl, a_bcl, b_bcl
     real, dimension(:,:,:), allocatable :: zbot_face
-    real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df
+    real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
+
+    !real, dimension(:,:), allocatable :: q_init, q_exact, q_ref, kvector, q_sph, coord_sph, pi_values, shear_stress, hA
+    !real, dimension(:,:,:), allocatable :: q_layers_init, hB_grad, phiA_grad, q_ref_layers
+    !real, dimension(:), allocatable :: rho_layers, bathymetry
+    !real, dimension(:), allocatable:: height, coriolis_constant
+    !real, dimension(:,:,:), allocatable :: q_mlswe_init, q_df_mlswe_init, qprime_df_init
+    !real, dimension(:,:,:,:,:), allocatable :: q_mlswe_face_init
+    !real, dimension(:,:,:,:,:), allocatable :: qprime_face_mlswe_init
+    !real, dimension(:,:,:), allocatable :: qprime_mlswe_init
+    !real, dimension(:), allocatable :: pbprime, pbprime_df, one_over_pbprime_df,one_over_pbprime, alpha_mlswe
+    !real, dimension(:,:,:), allocatable :: pbprime_face, one_over_pbprime_face, one_over_pbprime_df_face, pbprime_df_face
+    !real, dimension(:,:), allocatable :: pbprime_edge, one_over_pbprime_edge
+    !real, dimension(:,:,:,:), allocatable :: qb_face_mlswe_init
+    !real, dimension(:,:), allocatable :: qb_mlswe_init, qb_df_mlswe_init, tau_wind, dpprime_df_init, tau_wind_df
+    !real, dimension(:), allocatable :: coriolis_df,coriolis_quad
+    !real, dimension(:,:), allocatable :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
+    !real, dimension(:,:), allocatable :: coeff_pbpert_L_df,coeff_pbpert_R_df,coeff_pbub_LR_df, coeff_mass_pbub_L_df, &
+    !                                     coeff_mass_pbub_R_df, coeff_mass_pbpert_LR_df
+    !real, dimension(:), allocatable :: zbot, zbot_df, fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
+    !real, dimension(:,:,:), allocatable :: zbot_face
+    !real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
 
     real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psih_df,dpsidx_df,dpsidy_df
     integer, dimension(:,:), allocatable :: indexq, index_df
@@ -122,39 +151,37 @@ module mod_initial
         allocate(rho_layers(1),bathymetry(npoin))
 
         if(is_mlswe) then
-            if(allocated(q_mlswe_init)) deallocate(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, &
-            pbprime_df, q_mlswe_face_init, qprime_face_mlswe_init, pbprime_face, one_over_pbprime, & 
-            one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df_init, one_over_pbprime_df, & 
-            qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, &
+            if(allocated(q_df_mlswe_init)) deallocate(q_df_mlswe_init, pbprime, &
+            pbprime_df, pbprime_face, one_over_pbprime, & 
+            one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, & 
+            qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, &
             coriolis_df, coeff_pbpert_L, coeff_pbpert_R, coeff_pbub_LR, &
-            coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR, zbot, zbot_df, zbot_face, grad_zbot_quad, qprime_df_init, one_over_pbprime_df_face, tau_wind_df,&
+            coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR, zbot, zbot_df, zbot_face, &
+            grad_zbot_quad, qprime_df_init, one_over_pbprime_df_face, tau_wind_df,&
             ssprk_a,ssprk_beta, grad_zbot_df, &
-            coeff_pbpert_L_df, coeff_pbpert_R_df, coeff_pbub_LR_df, &
-            coeff_mass_pbub_L_df, coeff_mass_pbub_R_df, coeff_mass_pbpert_LR_df, pbprime_df_face)
-            allocate(q_mlswe_init(3,npoin_q,nlayers), qprime_mlswe_init(3,npoin_q,nlayers), q_df_mlswe_init(3,npoin,nlayers), pbprime(npoin_q), pbprime_df(npoin), &
-            q_mlswe_face_init(3,2,nq,nface,nlayers), qprime_face_mlswe_init(3,2,nq,nface,nlayers), pbprime_face(2,nq,nface), one_over_pbprime(npoin_q), &
-            one_over_pbprime_face(2,nq,nface), pbprime_edge(nq,nface), one_over_pbprime_edge(nq,nface), dpprime_df_init(npoin,nlayers), &
-            one_over_pbprime_df(npoin), qb_mlswe_init(4,npoin_q), qb_face_mlswe_init(4,2,nq,nface), qb_df_mlswe_init(4,npoin), &
+            pbprime_df_face, z_interface)
+            allocate(q_df_mlswe_init(3,npoin,nlayers), pbprime(npoin_q), pbprime_df(npoin), &
+            pbprime_face(2,nq,nface), one_over_pbprime(npoin_q), &
+            one_over_pbprime_face(2,nq,nface), pbprime_edge(nq,nface), one_over_pbprime_edge(nq,nface), &
+            one_over_pbprime_df(npoin), qb_df_mlswe_init(4,npoin), &
             alpha_mlswe(nlayers), tau_wind(2,npoin_q), coriolis_quad(npoin_q), coriolis_df(npoin), &
             coeff_mass_pbpert_LR(nq,nface), coeff_pbpert_L(nq,nface),coeff_pbpert_R(nq,nface),coeff_pbub_LR(nq,nface), &
             coeff_mass_pbub_L(nq,nface),coeff_mass_pbub_R(nq,nface), &
             zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), grad_zbot_df(2,npoin), &
             psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), indexq(npts,npoin_q), wjac(npoin_q), &
-            fdt_btp(npoin), fdt2_btp(npoin), a_btp(npoin), b_btp(npoin), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
-            b_bcl(npoin), a_bclp(npoin), b_bclp(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
+            fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
+            b_bcl(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
             ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin),psih_df(npts,npoin),&
             dpsidx_df(npts,npoin),dpsidy_df(npts,npoin),index_df(npts,npoin), &
-            coeff_pbpert_L_df(ngl,nface),coeff_pbpert_R_df(ngl,nface),coeff_pbub_LR_df(ngl,nface), &
-            coeff_mass_pbub_L_df(ngl,nface),coeff_mass_pbub_R_df(ngl,nface),coeff_mass_pbpert_LR_df(ngl,nface), &
-            pbprime_df_face(2,ngl,nface))
+            pbprime_df_face(2,ngl,nface),z_interface(npoin,nlayers+1))
 
-            q_mlswe_init = 0.0
-            qprime_mlswe_init = 0.0
+            !q_mlswe_init = 0.0
+            !qprime_mlswe_init = 0.0
             q_df_mlswe_init = 0.0
             pbprime = 0.0
             pbprime_df = 0.0
-            q_mlswe_face_init = 0.
-            qprime_face_mlswe_init = 0.0
+            !q_mlswe_face_init = 0.
+            !qprime_face_mlswe_init = 0.0
 
         end if
 
@@ -169,17 +196,18 @@ module mod_initial
 
             call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
 
-            call initial_conditions(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
-                qprime_face_mlswe_init, pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
-                dpprime_df_init, one_over_pbprime_df, qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, qprime_df_init, &
-                alpha_mlswe, one_over_pbprime_df_face, pbprime_df_face, zbot_df,tau_wind_df)
+            !call initial_conditions(q_mlswe_init, qprime_mlswe_init, q_df_mlswe_init, pbprime, pbprime_df, q_mlswe_face_init, &
+            !    qprime_face_mlswe_init, pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
+            !    dpprime_df_init, one_over_pbprime_df, qb_mlswe_init, qb_face_mlswe_init, qb_df_mlswe_init, qprime_df_init, &
+            !    alpha_mlswe, one_over_pbprime_df_face, pbprime_df_face, zbot_df,tau_wind_df, z_interface)
+            call initial_conditions(q_df_mlswe_init, pbprime, pbprime_df, &
+                pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
+                one_over_pbprime_df, qb_df_mlswe_init, qprime_df_init, &
+                alpha_mlswe, one_over_pbprime_df_face, pbprime_df_face, zbot_df,tau_wind_df, z_interface)
 
             call compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
                 coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha_mlswe)
                 
-            call compute_reference_edge_variables_df(coeff_pbpert_L_df,coeff_pbpert_R_df,coeff_pbub_LR_df,coeff_mass_pbub_L_df, &
-                    coeff_mass_pbub_R_df,coeff_mass_pbpert_LR_df, pbprime_df_face,alpha_mlswe)
-
             call bot_topo_derivatives(zbot,zbot_face,zbot_df)
 
             call compute_gradient_quad(grad_zbot_quad,zbot_df)
@@ -188,7 +216,8 @@ module mod_initial
             N_btp = ceiling(dt/dt_btp)
             dt_btp = dt/real(N_btp)
 
-            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, b_bclp, a_bclp, tau_wind_df)
+            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, tau_wind_df)
+            !call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, b_bclp, a_bclp, tau_wind_df)
 
             call ssprk_coefficients(ssprk_a,ssprk_beta)
         endif

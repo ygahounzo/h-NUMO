@@ -40,7 +40,7 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq, ngl
         use mod_initial, only: pbprime_df, pbprime
-        use mod_layer_terms, only: evaluate_dpp, evaluate_dpp_face, extract_dprime_df_face
+        use mod_layer_terms, only: extract_dprime_df_face
         use mod_create_rhs_mlswe, only: layer_mass_rhs
 
         implicit none
@@ -186,7 +186,6 @@ module mod_splitting
 
     end subroutine momentum
 
-
     subroutine momentum_mass(q_df,qprime_df_face,qprime_df,qb_df)
 
         ! ===========================================================================================================================
@@ -201,9 +200,8 @@ module mod_splitting
         use mod_input, only: nlayers, dt, ad_mlswe
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
-        use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, filter_mlswe, evaluate_mom, &
+        use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, evaluate_mom, &
                                     velocity_df, evaluate_bcl
-
         implicit none
 
         ! Input variables
@@ -241,7 +239,6 @@ module mod_splitting
 
         ! consistency through flux adjustment 
         call apply_consistency(q_df)
-        !call apply_consistency(q_df, qb_df)
 
         ! ==================================== layer momentum ==========================
 
@@ -308,12 +305,7 @@ module mod_splitting
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs
-        use mod_layer_terms, only: layer_pressure_terms, layer_momentum_advec_terms_upwind, compute_momentum_edge_values
         use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v2
-
-        use mod_variables, only: H_r,u_udp_temp, v_vdp_temp, p, z_elev, udp_left, &
-                    vdp_left, udp_right, vdp_right, u_vdp_temp, grad_z, u_edge, v_edge, udp_flux_edge, vdp_flux_edge, &
-                    H_r_face, tau_wind_int, tau_bot_int
 
         implicit none
 
@@ -326,7 +318,6 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        !if(method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
         if (method_visc == 1) then
             call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
         else

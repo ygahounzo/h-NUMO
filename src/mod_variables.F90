@@ -29,7 +29,7 @@ module mod_variables
         H_r_face, flux_adjustment, flux_adjust_edge, tau_wind_int, tau_bot_int
         
     public :: one_plus_eta_edge_2_ave_df, H_face_ave_df, btp_mass_flux_face_ave_df, ope_face_ave_df, Qu_face_ave_df, Qv_face_ave_df
-    public :: qbface_ave
+    public :: qbface_ave, z_elevation
 
     private 
     ! module variable and parameters 

@@ -32,8 +32,6 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     real, dimension(4,npoin), intent(inout) :: qb_df
     real, dimension(3,npoin,nlayers), intent(inout) :: q_df
     real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-    !real, dimension(3,npoin_q,nlayers) :: qprime2, qprime
-    !real, dimension(3,2,nq,nface,nlayers) :: qprime_face2, qprime_face
     real, dimension(3,2,ngl,nface,nlayers) :: qprime_df_face2, qprime_df_face
     real, dimension(npoin,nlayers) :: dpprime_df2
     real, dimension(4,npoin) :: qbp_df

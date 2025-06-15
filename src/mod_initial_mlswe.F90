@@ -275,8 +275,9 @@ module mod_initial_mlswe
 
     end subroutine interpolate_pbprime_init
 
-    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, tau_wind_df)
+    !subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, tau_wind_df)
 
+    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,tau_wind_df)
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, coord
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
@@ -291,7 +292,8 @@ module mod_initial_mlswe
         real, dimension(2,npoin_q), intent(out) :: tau_wind
         real, dimension(npoin), intent(out) :: coriolis_df
         real, dimension(npoin_q), intent(out) :: coriolis_quad
-        real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
+        real, dimension(npoin), intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
+        !real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
 
         real, dimension(2,npoin), intent(in) :: tau_wind_df
 
@@ -343,18 +345,18 @@ module mod_initial_mlswe
             end do
         end do
 
-        fdt_btp = dt_btp * coriolis_df
-        fdt2_btp = 0.5*fdt_btp
-        a_btp = 1.0 / (1.0 + fdt2_btp**2)
-        b_btp = fdt2_btp / (1.0 + fdt2_btp**2)
+        !fdt_btp = dt_btp * coriolis_df
+        !fdt2_btp = 0.5*fdt_btp
+        !a_btp = 1.0 / (1.0 + fdt2_btp**2)
+        !b_btp = fdt2_btp / (1.0 + fdt2_btp**2)
         
         fdt_bcl = dt * coriolis_df
         fdt2_bcl = 0.5 * fdt_bcl
         a_bcl = 1.0 / (1.0 + fdt2_bcl**2)
         b_bcl = fdt2_bcl / (1.0 + fdt2_bcl**2)
 
-        a_bclp = 1.0 - 0.5 * fdt_bcl**2 + fdt_bcl**4/24.0
-        b_bclp = fdt_bcl - fdt_bcl**3/6.0
+        !a_bclp = 1.0 - 0.5 * fdt_bcl**2 + fdt_bcl**4/24.0
+        !b_bclp = fdt_bcl - fdt_bcl**3/6.0
 
     end subroutine wind_stress_coriolis
 
