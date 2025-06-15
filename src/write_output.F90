@@ -13,7 +13,7 @@ subroutine write_output_mlswe(qp,qb,fnp1,time,layer)
       
       use mod_grid, only: npoin
   
-      use mod_initial, only: nvar, q_ref, q_exact, rho_layers, q_ref_layers
+      use mod_initial, only: nvar
   
       use mod_input, only: fname_root
   

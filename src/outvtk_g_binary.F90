@@ -32,7 +32,7 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
 
     use mod_grid, only: npoin, intma, coord, nelem
   
-    use mod_initial, only: nvar, nvar_diag, kvector, rho_layers, bathymetry
+    use mod_initial, only: nvar, nvar_diag, kvector
 
     use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, out_type, &
         eqn_set, format_vtk, space_method, is_mlswe
@@ -326,7 +326,7 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
 
     use mod_grid, only: npoin, intma, coord, nelem
   
-    use mod_initial, only: nvar, nvar_diag, kvector, rho_layers, bathymetry
+    use mod_initial, only: nvar, nvar_diag, kvector
 
     use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, out_type, &
         eqn_set, format_vtk, space_method, is_mlswe

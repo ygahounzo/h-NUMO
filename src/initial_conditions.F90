@@ -5,9 +5,6 @@
 !
 !-----------------------------------------------------------------!
 
-!subroutine initial_conditions(q, qprime, q_df, pbprime_init, pbprime_df, q_face, qprime_face, pbprime_face, &
-!   one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, dpprime_df, one_over_pbprime_df, &
-!   qb, qb_face, qb_df, qprime_df, alpha, one_over_pbprime_df_face, pbprime_df_face, zbot_df, tau_wind_df, z_interface)
 subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, &
    qb_df, qprime_df, alpha, one_over_pbprime_df_face, pbprime_df_face, zbot_df, tau_wind_df, z_interface)
@@ -17,7 +14,6 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    use mod_constants, only: gravity, pi, tol, omega, earth_radius
    use mod_initial_mlswe, only: interpolate_from_dof_to_quad_uv_init, interpolate_pbprime_init
    use mod_basis, only: ngl, nq
-   use mod_layer_terms, only: evaluate_dp, evaluate_dp_face, evaluate_mom, evaluate_mom_face
    use mod_initial, only: kvector
    use mod_input, only: gravity_in, &
                         nelx, nelz, eqn_set, &
@@ -28,14 +24,10 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
 
    implicit none
    
-   !real, dimension(3,npoin_q, nlayers) :: q
-   !real, dimension(3,npoin_q, nlayers):: qprime
    real, dimension(3,npoin, nlayers) :: q_df
    real, dimension(3,npoin, nlayers) :: qprime_df
    real, dimension(npoin_q) :: pbprime_init
    real, dimension(npoin) :: pbprime_df
-   !real, dimension(3,2,nq, nface, nlayers) :: q_face
-   !real, dimension(3,2,nq, nface, nlayers) :: qprime_face
    real, dimension(2,nq,nface) :: pbprime_face
    real, dimension(npoin_q) :: one_over_pbprime
    real, dimension(2,nq,nface) :: one_over_pbprime_face
@@ -43,10 +35,7 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    real, dimension(2,ngl,nface) :: pbprime_df_face
    real, dimension(nq, nface) :: pbprime_edge
    real, dimension(nq, nface) :: one_over_pbprime_edge
-   !real, dimension(npoin,nlayers) :: dpprime_df
    real, dimension(npoin) :: one_over_pbprime_df, zbot_df
-   !real, dimension(4,npoin_q) :: qb
-   !real, dimension(4,2,nq,nface) :: qb_face
    real, dimension(4,npoin) :: qb_df
    real, dimension(nlayers) :: alpha
    real, dimension(2,npoin) :: tau_wind_df
@@ -78,11 +67,7 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    z_init = 0.0
    z_interface = 0.0
    pbprime_df = 0.0
-   !q = 0.0
    q_df = 0.0
-   !qprime = 0.0
-   !q_face = 0.0
-   !qprime_face = 0.0
    one_over_pbprime = 0.0
    one_over_pbprime_face = 0.0
    pbprime_edge = 0.0
@@ -399,13 +384,8 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    
    ! Compute pointwise values of  Delta p  at the dofs
    do k = 1, nlayers
-      !dpprime_df(:,k) = q_df(1,:,k)/one_plus_eta_temp(:) 
       qprime_df(1,:,k) = q_df(1,:,k)/one_plus_eta_temp(:) 
    end do
-
-   ! Compute pointwise values of  Delta p  at the faces and quadrature points
-   !call evaluate_dp(q,qprime,q_df,pbprime_init)
-   !call evaluate_dp_face(q_face, qprime_face,q,qprime)
 
    ! Compute dofs for u*(Delta p) and v*(Delta p)
    do k = 1, nlayers
@@ -413,14 +393,8 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
       q_df(3,:,k) = v_df(:,k)*q_df(1,:,k)
    end do
 
-   ! Compute pointwise values of  u*(Delta p)  and  v*(Delta p) at the faces and quadrature points
-   !call evaluate_mom(q,q_df)
-   !call evaluate_mom_face(q_face, q)
-
    ! === Barotropic variables ===
 
-   !qb = 0.0
-   !qb_face = 0.0
    qb_df = 0.0
    
    ! Compute degrees of freedom for the barotropic mass and momentum
@@ -435,46 +409,11 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    end do
    qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
    
-   ! Compute pointwise values of the barotropic mass and momentum
-   ! dependent variables at quadrature points and endpoints of each
-   ! grid cell. Use vertical sums of the pointwise values of the
-   ! layer variables.
-   ! Also compute pointwise values of pbpert = pb - pbprime_init.
-
-   !do k = 1, nlayers
-   !   qb(1,:) = qb(1,:) + q(1,:,k)
-   !   qb(3,:) = qb(3,:) + q(2,:,k)
-   !   qb(4,:) = qb(4,:) + q(3,:,k)
-   !end do
-   !qb(2,:) = qb(1,:) - pbprime_init(:)
-
-   !do iface = 1, nface
-   !   do ilr = 1, 2 ! 1 = left, 2 = right
-   !      do k = 1, nlayers
-   !         qb_face(1,ilr,:,iface) = qb_face(1,ilr,:,iface) + q_face(1,ilr,:,iface,k)
-   !         qb_face(3,ilr,:,iface) = qb_face(3,ilr,:,iface) + q_face(2,ilr,:,iface,k)
-   !         qb_face(4,ilr,:,iface) = qb_face(4,ilr,:,iface) + q_face(3,ilr,:,iface,k)
-   !      end do
-   !      qb_face(2,ilr,:,iface) = qb_face(1,ilr,:,iface) - pbprime_face(ilr,:,iface)
-   !   end do
-   !end do
-
    ! Compute values of u' and v' at quadrature points and face of each grid element
    do k = 1,nlayers
-      !qprime(2,:,k) = q(2,:,k)/q(1,:,k) - qb(3,:)
-      !qprime(3,:,k) = q(3,:,k)/q(1,:,k) - qb(4,:)
       qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
       qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
    end do
-
-   !do iface = 1, nface
-   !   do ilr = 1,2
-   !      do k = 1,nlayers
-   !         qprime_face(2,ilr,:,iface,k) = q_face(2,ilr,:,iface,k)/q_face(1,ilr,:,iface,k) - qb_face(3,ilr,:,iface)/qb_face(1,ilr,:,iface)
-   !         qprime_face(3,ilr,:,iface,k) = q_face(3,ilr,:,iface,k)/q_face(1,ilr,:,iface,k) - qb_face(4,ilr,:,iface)/qb_face(1,ilr,:,iface)
-   !      end do
-   !   end do
-   !end do
 
 end subroutine initial_conditions
 

@@ -16,7 +16,7 @@ module mod_ref
 
     use mod_grid, only: nelem,  npoin, ncol, nz, node_column, nboun, npoin_cg
 
-    use mod_initial, only: q_ref, nvar, nvart, kvector, bathymetry, q_ref_layers
+    use mod_initial, only: q_ref, nvar, nvart, kvector 
 
     use mod_input, only: space_method, nlayers, is_mlswe
 

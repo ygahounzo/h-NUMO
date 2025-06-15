@@ -340,7 +340,7 @@ module mod_splitting
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df
         use mod_create_rhs_mlswe, only: consistency_mass_rhs
-        use mod_layer_terms, only: evaluate_dpp, evaluate_dpp_face, evaluate_consistency_face
+        use mod_layer_terms, only: evaluate_consistency_face
         use mod_variables, only: btp_mass_flux_face_ave, flux_adjustment, flux_adjust_edge
         use mod_metrics, only: massinv
         

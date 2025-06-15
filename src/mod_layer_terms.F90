@@ -14,59 +14,14 @@ module mod_layer_terms
         
     implicit none
 
-    public :: evaluate_dp, evaluate_dp_face, &
+    public :: &
             shear_stress_system, layer_mom_boundary_df,  &
             evaluate_mom, velocity_df, evaluate_mom_face, &
             evaluate_bcl, evaluate_bcl_v1, &
-            evaluate_dpp, evaluate_dpp_face, interpolate_qprime, evaluate_consistency_face, &
+            interpolate_qprime, evaluate_consistency_face, &
             extract_qprime_df_face, extract_dprime_df_face, interpolate_dpp
 
     contains
-
-    subroutine evaluate_dp(q,qprime,q_df,pbprime)
-    
-        ! This routine interpolate layer mass from dofs to quad points 
-        use mod_basis, only: npts
-        use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad
-        use mod_input, only: nlayers
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
-
-        implicit none
-        real, dimension(3,npoin_q,nlayers), intent(inout) :: q
-        real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
-        real, dimension(3,npoin,nlayers), intent(in) :: q_df
-        real, dimension(npoin_q), intent(in) :: pbprime
-
-        integer :: k, Iq,I, ip
-        real :: hi
-        real, dimension(npoin_q) :: pb_temp, one_plus_eta_temp
-
-        qprime(1,:,:) = 0.0
-        q(1,:,:) = 0.0
-        pb_temp = 0.0
-
-        ! do k = 1, nlayers
-
-        do Iq = 1,npoin_q   
-            do ip = 1,npts
-
-                I = indexq(ip,Iq)
-                hi = psih(ip,Iq)
-
-                q(1,Iq,:) = q(1,Iq,:) + q_df(1,I,:)*hi
-
-            end do
-            pb_temp(Iq) = pb_temp(Iq) + sum(q(1,Iq,:))
-
-        end do
-        ! end do
-      
-        one_plus_eta_temp(:) = pb_temp(:) / pbprime(:)
-        do k = 1, nlayers
-            qprime(1,:,k) = q(1,:,k) / one_plus_eta_temp(:)
-        end do
-
-    end subroutine evaluate_dp
 
     subroutine interpolate_dpp(dprimeq,dprime_df)
 
@@ -99,152 +54,6 @@ module mod_layer_terms
         end do
 
     end subroutine interpolate_dpp
-
-    subroutine evaluate_dpp(qprime,dprime_df)
-    
-        ! This routine interpolate layer mass from dofs to quad points 
-
-        use mod_basis, only: npts
-        use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad
-        use mod_input, only: nlayers
-        use mod_initial, only: psih, indexq
-
-        implicit none
-        real, dimension(3,npoin_q,nlayers), intent(inout) :: qprime
-        real, dimension(npoin,nlayers), intent(in) :: dprime_df
-
-        integer :: k, Iq,I, ip
-        real :: hi
-
-        qprime(1,:,:) = 0.0
-
-        ! do k = 1, nlayers
-
-        do Iq = 1,npoin_q   
-            do ip = 1,npts
-
-                I = indexq(ip,Iq)
-                hi = psih(ip,Iq)
-                qprime(1,Iq,:) = qprime(1,Iq,:) + dprime_df(I,:)*hi
-
-            end do
-        end do
-
-    end subroutine evaluate_dpp
-
-    subroutine evaluate_dp_face(q_face, qprime_face,q,qprime)
-
-        ! This routines extracts the layer mass face values 
-
-        use mod_grid, only:  npoin_q, intma_dg_quad, nface, face
-        use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q
-
-        implicit none
-    
-        real, intent(in) :: q(3,npoin_q,nlayers)
-        real, intent(inout) :: q_face(3,2,nq,nface,nlayers)
-        real, intent(inout) :: qprime_face(3,2,nq,nface,nlayers)
-        real, intent(in) :: qprime(3,npoin_q,nlayers)
-    
-        ! Local variables
-        real :: pb_temp_face(2,nq, nface)
-        integer :: iface, iquad, jquad, k, il, jl, kl, el, er, ilocl, ilocr, ir, jr, kr, I
-        real :: one_plus_eta_temp(2)
-
-        ! do k = 1,nlayers
-        qprime_face(1,:,:,:,:) = 0.0
-        q_face(1,:,:,:,:) = 0.0
-
-        do iface = 1, nface
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do iquad = 1, nq
-
-                il = imapl_q(1,iquad,1,iface)
-                jl = imapl_q(2,iquad,1,iface)
-                kl = imapl_q(3,iquad,1,iface)
-                I = intma_dg_quad(il,jl,kl,el)
-
-                q_face(1,1,iquad,iface,:) = q(1,I,:)
-                qprime_face(1,1,iquad,iface,:) = qprime(1,I,:)
-
-                if(er > 0) then
-
-                    ir = imapr_q(1,iquad,1,iface)
-                    jr = imapr_q(2,iquad,1,iface)
-                    kr = imapr_q(3,iquad,1,iface)
-                    I = intma_dg_quad(ir,jr,kr,er)
-
-                    q_face(1,2,iquad,iface,:) = q(1,I,:)
-                    qprime_face(1,2,iquad,iface,:) = qprime(1,I,:)
-
-                else
-
-                    q_face(1,2,iquad,iface,:) = q_face(1,1,iquad,iface,:)
-                    qprime_face(1,2,iquad,iface,:) = qprime_face(1,1,iquad,iface,:)
-
-                end if
-            end do
-        end do
-        ! end do
-    
-    end subroutine evaluate_dp_face
-
-    subroutine evaluate_dpp_face(qprime_face,qprime)
-
-        ! This routines extracts the layer mass face values 
-
-        use mod_grid, only:  npoin_q, intma_dg_quad, nface, face
-        use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q
-
-        implicit none
-        real, intent(inout) :: qprime_face(3,2,nq,nface,nlayers)
-        real, intent(in) :: qprime(3,npoin_q,nlayers)
-    
-        ! Local variables
-        integer :: iface, iquad, jquad, k, il, jl, kl, el, er, ilocl, ilocr, ir, jr, kr, I
-
-        ! do k = 1,nlayers
-        qprime_face(1,:,:,:,:) = 0.0
-
-        do iface = 1, nface
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do iquad = 1, nq
-
-                il = imapl_q(1,iquad,1,iface)
-                jl = imapl_q(2,iquad,1,iface)
-                kl = imapl_q(3,iquad,1,iface)
-                I = intma_dg_quad(il,jl,kl,el)
-
-                qprime_face(1,1,iquad,iface,:) = qprime(1,I,:)
-
-                if(er > 0) then
-
-                    ir = imapr_q(1,iquad,1,iface)
-                    jr = imapr_q(2,iquad,1,iface)
-                    kr = imapr_q(3,iquad,1,iface)
-                    I = intma_dg_quad(ir,jr,kr,er)
-
-                    qprime_face(1,2,iquad,iface,:) = qprime(1,I,:)
-
-                else
-                    qprime_face(1,2,iquad,iface,:) = qprime_face(1,1,iquad,iface,:)
-
-                end if
-            end do
-        end do
-        ! end do
-    
-    end subroutine evaluate_dpp_face
 
     subroutine evaluate_consistency_face(mass_deficit_mass_face,dprime_df)
 
