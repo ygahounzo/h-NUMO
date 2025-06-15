@@ -139,7 +139,7 @@ subroutine create_communicator_quad(q_face,nvarb)
 
 end subroutine create_communicator_quad
 
-subroutine create_communicator_df(q_df_face,nvarb)
+subroutine create_communicator_df_1var(q0_df_face)
 
     use mod_basis, only: ngl
 
@@ -158,13 +158,14 @@ subroutine create_communicator_df(q_df_face,nvarb)
     implicit none
 
     !Global Arrays
-    real, dimension(nvarb,2,ngl,nface), intent(inout) :: q_df_face
-    integer, intent(in) :: nvarb
+    real, dimension(2,ngl,nface), intent(inout) :: q0_df_face
 
     integer :: multirate
+    real, dimension(1,2,ngl,nface) :: q_df_face
 
     !MPI Variables
     integer :: i,j,k,iv,e,ip
+    integer, parameter :: nvarb = 1
     real :: recv_data_dg_df1(nvarb*ngl*nboun)
     real :: send_data_dg_df1(nvarb*ngl*nboun)
     real :: q_recv_df1(nvarb,ngl,nboun), q_send_df1(nvarb,ngl,nboun)
@@ -173,6 +174,8 @@ subroutine create_communicator_df(q_df_face,nvarb)
     send_data_dg_df1 = 0.0
     q_recv_df1 = 0.0
     q_send_df1 = 0.0
+
+    q_df_face(1,:,:,:) = q0_df_face(:,:,:)
 
     !-----------------------------------
     ! DG - Discontinuous communicator
@@ -193,7 +196,7 @@ subroutine create_communicator_df(q_df_face,nvarb)
     !Build Inviscid Fluxes On Element Boundary - need to add multirate here
     call create_nbhs_face_df(q_df_face,q_send_df1,q_recv_df1,nvarb,0)
 
-end subroutine create_communicator_df
+end subroutine create_communicator_df_1var
 
 subroutine btp_create_precommunicator(q_df_face,nvarb)
 

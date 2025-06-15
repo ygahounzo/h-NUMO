@@ -1,0 +1,18 @@
+This namelist contains the following variables:
+
+nelx : number of elements in the x-direction.
+nely : number of elements in the y-direction.
+nelz : number of elements in the z-direction.
+nop : is the polynomial order inside each element.
+xdims : for some tests, xdims gives the minimum and maximum values (in meters)
+		in that direction.
+ydims : for some tests, ydims gives the minimum and maximum values (in meters)
+		in that direction.
+ztop : for some tests, ztop gives the maximum vertical height. The minimum 
+	   is assumed to be zero which means the ground.
+x_boundary : This gives the boundary condition at the front and back of the 
+			 x-direction (more on boundary conditions, below).
+y_boundary : This gives the boundary condition at the front and back of the 
+			 y-direction (more on boundary conditions, below).
+z_boundary : This gives the boundary condition at the front and back of the 
+			 z-direction (more on boundary conditions, below).

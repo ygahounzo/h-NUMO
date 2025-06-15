@@ -2,7 +2,7 @@ RM = /bin/rm -rf
 MV = /bin/mv -f
 CP = /bin/cp -f
 
-export PLATFORMS:= hnumo hnumo-debug hnumo-brew hnumo-prof
+export PLATFORMS:= hnumo hnumo-debug hnumo-brew hnumo-prof hnumo-CI
 
 export NUMO_DIR    := $(CURDIR)
 export DEPEND_FILE := $(NUMO_DIR)/depend.mk
@@ -39,7 +39,7 @@ p4est/local/lib/libp4est.a:
 	mv $(P4EST_DIR) $(P4EST_LOC) && \
 	cd $(P4EST_LOC) && \
 	./configure $(P4EST_CONF) && \
-	make -j && \
+	make -j8 V=0 && \
 	make install
 
 p4est_clean:

@@ -16,7 +16,7 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
 
   use mod_initial, only: kvector
 
-  use mod_input, only: geometry_type, space_method
+  use mod_input, only: space_method
 
   use mod_parallel, only: num_send_recv_total
 
@@ -32,7 +32,6 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
   real, dimension(:,:), allocatable :: recv_data_matrix
   real, dimension(:),   allocatable :: recv_data_vector, ipoin
   integer :: AllocateStatus
-  logical :: is_sphere
   real :: rnx, rny, rnz, rnr
   real :: x, y, z, s
   integer :: iface, iel, ier, ilocl, ilocr, ip, jp, ipcg, i, j, il, jl, kl
@@ -47,8 +46,6 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
   ipoin_bound=0
   normals=0
   ldirichlet=.false.
-  is_sphere = .false.
-  if(geometry_type(1:6) == 'sphere') is_sphere = .true.
 
   !Modify Normal Vectors
   do iface=1,nface
@@ -84,17 +81,6 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
      end if !ier
 
   end do !iface
-
-  !---Hack to make  2D on the sphere work---!
-  !---The key is to constraint the flow to the curved surface---!
-  if(is_2d .and. is_sphere) then
-     do ip=1,npoin
-        ipoin(ip)=ipoin(ip) + 1
-        normals(1,ip) = kvector(1,ip)
-        normals(2,ip) = kvector(2,ip)
-        normals(3,ip) = kvector(3,ip)
-     enddo
-  endif
 
   !Perform Global Assembly for the Normal Vectors and
   if (space_method == 'cgc') then

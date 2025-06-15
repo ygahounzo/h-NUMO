@@ -13,15 +13,12 @@
 !>      Computing PhD 
 !       Boise State University
 !       Date: April 03, 2023
-!       remove SEMI_ANALYTIC_METRICS and is_sphere flag
 !----------------------------------------------------------------------!
 subroutine create_normals(nv,jac_face,face,nface)
 
     use mod_basis, only: ngl, nglx, ngly, nglz, wglx, wgly, wglz, FACE_LEN
 
     use mod_grid, only: intma, coord
-
-    use mod_input, only: geometry_type
 
     use mod_gradient, only: compute_local_gradient_v3
 

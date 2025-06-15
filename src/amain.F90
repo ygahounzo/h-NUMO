@@ -10,11 +10,9 @@
 !-----------------------------------------------------------------!
 program numa3d
 
-  use mod_time_loop_mlswe, only: time_loop, rhs_time, write_time
+  use mod_time_loop, only: time_loop, rhs_time, write_time
 
   use mod_types, only : r8
-
-  use mod_input, only: lp4est, lp6est
 
   use mod_mpi_utilities
 
@@ -71,7 +69,8 @@ program numa3d
      call print_header(flag,numproc)
   end if
 
-  if (lp4est .or. lp6est) call mod_p4est_finalize()
+  ! ----- call p4est
+  call mod_p4est_finalize()
 
   !Finalize MPI
   call finalize_mpi_util(ierr)
@@ -89,16 +88,13 @@ subroutine initialize_fields()
 
   use mod_face, only: mod_face_create, mod_face_create_boundary, face_send
 
-  use mod_filter, only: mod_filter_create_rhs
-
   use mod_grid, only: nboun
 
   use mod_initial, only: mod_initial_create, q_init, nvar
 
   use mod_input, only: &
        nopx, nopy, nopz, &
-       space_method, &
-       lp4est, lp6est
+       space_method
 
   use mod_metrics, only: mod_metrics_create_metrics, mod_metrics_create_mass
 
@@ -117,7 +113,7 @@ subroutine initialize_fields()
   integer :: ivar
 
   ! Is p4est
-  is_p4est = lp4est .or. lp6est
+  !is_p4est = .true.
 
   !-----Create FACE, METRICS, MASS Matrix-----!
   ! Create Face Data Structures on Processor
@@ -155,10 +151,6 @@ subroutine initialize_fields()
   call mod_ref_create()
   if (irank == irank0) print *, "Reference Fields Created"
 
-   !Create RHS Vectors for the Filter
-   call mod_filter_create_rhs()
-   if (irank == irank0) print *, "Filter RHS Created"
-
    !Create DG Communicator arrays
    if (space_method == 'dg') then
       call mod_mpi_communicator_create()
@@ -184,7 +176,7 @@ subroutine initialize_grid()
   !use mod_initial, only: q_init, nvar
 
   use mod_input, only: mod_input_create, nopx, nopy, nopz, &
-      space_method, lp4est, lp6est, icase
+      space_method
 
   use mod_mpi_utilities
 
@@ -214,12 +206,12 @@ subroutine initialize_grid()
   end if
   
   !--- Read case specific defaults
-  call initial_grid_cube_shallow()
+  call initial_grid_coord()
 
   !-------------------------------------------------------------
   !     Generate Global Grid and Domain Decomposition Graph
   !-------------------------------------------------------------
-  is_p4est = lp4est .or. lp6est
+  !is_p4est = .true.
 
    call mod_p4est_create()
    if (irank == irank0) print*,' P4EST Mesh Created'

@@ -20,8 +20,13 @@ jobs:
     - name: Set up Open MPI
       run: sudo apt-get install -y openmpi-bin libopenmpi-dev
 
+    - name: Install NetCDF
+      run: |
+          sudo apt-get update
+          sudo apt-get install -y libnetcdf-dev libnetcdff-dev netcdf-bin
+
     - name: Compile Fortran code
-      run: make hnumo
+      run: make hnumo-CI
 
     - name: Print home directory
       run: echo ls $GITHUB_WORKSPACE

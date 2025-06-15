@@ -17,7 +17,7 @@ subroutine ti_rk35_mlswe(q, q_df, q_face, qb, qb_face, qb_df, qprime, qprime_fac
 	! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
 
 	use mod_splitting, only: thickness, momentum, momentum_mass
-	use mod_input, only: nlayers, ti_method_btp, dpprime_visc_min
+	use mod_input, only: nlayers, dpprime_visc_min
 	use mod_grid, only: npoin, npoin_q, nface
 	use mod_constants, only: gravity
 	use mod_initial, only: alpha_mlswe, zbot_df

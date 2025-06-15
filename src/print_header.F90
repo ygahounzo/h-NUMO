@@ -19,11 +19,10 @@ subroutine print_header(flag,numproc)
 
     use mod_input, only: eqn_set, dt, time_initial, time_final, time_restart, &
         nelx, nely, nelz, nopx, nopy, nopz, ztop, &
-        icase, space_method, ti_method, si_dimension, kstages, filter_mux, filter_muy, &
-        filter_muz, ifilter, filter_weight_type, filter_basis_type, &
-        geometry_type, fname_root, out_type, visc_mlswe, &
-        lprint_diagnostics, lp4est, lp6est, time_scale, &
-        refinement_levels_h, nel_root_h, refinement_levels_v, nel_root_v
+        test_case, space_method, ti_method_btp, kstages, &
+        fname_root, out_type, visc_mlswe, &
+        lprint_diagnostics, time_scale, &
+        refinement_levels_h, nel_root_h
 
     implicit none
 
@@ -44,34 +43,22 @@ subroutine print_header(flag,numproc)
     write(*,'("dt time_initial time_final time_restart time_scale = ",5(e12.4,1x))')dt,time_initial/time_scale,time_final/time_scale,time_restart/time_scale,time_scale
     write(*,'("nopx nopy nopz = ",3(i6,1x))')nopx,nopy,nopz
     !P4EST and/or P6est Output
-    if (lp4est .or. lp6est) then
-        write(*,'("--------P4est Parameters--------")')
-        write(*,'("lp4est = ",l7)')lp4est
-        write(*,'("lp6est = ",l7)')lp6est
-        nex=nelx*2**refinement_levels_h
-        ney=nely*2**refinement_levels_h
-        if(lp4est) then
-            nez=nelz*2**refinement_levels_h
-        else
-            nez=nelz*2**refinement_levels_v
-        endif
-        write(*,'("nel_root_x refinement_levels_x  nelx = ",3(i6,1x))')nelx,refinement_levels_h,nex
-        write(*,'("nel_root_y refinement_levels_y  nely = ",3(i6,1x))')nely,refinement_levels_h,ney
-        write(*,'("nel_root_z refinement_levels_z  nelz = ",3(i6,1x))')nelz,refinement_levels_v,nez
-        write(*,'("--------P4est Parameters--------")')
-    else
-        write(*,'("nelx nely nelz = ",3(i6,1x))')nelx,nely,nelz
-    end if
-    write(*,'("ztop = ",1(e12.4,1x))')ztop
-    write(*,'("icase  = ",1(i6,1x))')icase
-    write(*,'("space_method = ",a)')space_method
-    write(*,'("ti_method = ",a)')ti_method
-    write(*,'("si_dimension = ",a)')si_dimension
-    write(*,'("kstages = ",1(i6,1x))')kstages
 
-    write(*,'("mux muy muz ifilter = ",3(e12.4,1x),i7)')filter_mux,filter_muy,filter_muz,ifilter
-    write(*,'("filter_weight_type = ",a," filter_basis_type = ",a)')filter_weight_type,filter_basis_type
-    write(*,'("geometry_type = ",a)')geometry_type
+    write(*,'("--------P4est Parameters--------")')
+    write(*,'("p4est = ",l7)') .true.
+    nex=nelx*2**refinement_levels_h
+    ney=nely*2**refinement_levels_h
+    nez=nelz*2**refinement_levels_h
+
+    write(*,'("nel_root_x refinement_levels_x  nelx = ",3(i6,1x))')nelx,refinement_levels_h,nex
+    write(*,'("nel_root_y refinement_levels_y  nely = ",3(i6,1x))')nely,refinement_levels_h,ney
+    write(*,'("--------P4est Parameters--------")')
+
+    write(*,'("ztop = ",1(e12.4,1x))')ztop
+    write(*,'("test_case  = ",a)')test_case
+    write(*,'("space_method = ",a)')space_method
+    write(*,'("ti_method_btp = ",a)')ti_method_btp
+    write(*,'("kstages = ",1(i6,1x))')kstages
     write(*,'("fname_root = ",a)')fname_root
     write(*,'("out_type = ",a)')out_type
 

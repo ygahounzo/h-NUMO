@@ -17,7 +17,8 @@ module mod_initial_mlswe
         compute_gradient_quad, &
         interpolate_from_dof_to_quad_uv_init, &
         interpolate_pbprime_init, wind_stress_coriolis, compute_reference_edge_variables, &
-        map_deriv,Tensor_product, interpolate_layer_from_quad_to_node_1d, ssprk_coefficients
+        map_deriv,interpolate_layer_from_quad_to_node_1d, ssprk_coefficients, &
+        compute_reference_edge_variables_df !, Tensor_product
 
     private
 
@@ -31,7 +32,7 @@ module mod_initial_mlswe
 
         use mod_grid, only : npoin, npoin_q, nface, intma_dg_quad, face, mod_grid_get_face_nq, coord, nelem, intma
         use mod_basis, only : nq, nglx, ngly, nqx, nqy
-        use mod_input, only : nlayers, icase, xdims, ydims
+        use mod_input, only : nlayers, test_case, xdims, ydims
         use mod_face, only : imapl_q, imapr_q
 
 
@@ -165,10 +166,11 @@ module mod_initial_mlswe
     end subroutine interpolate_from_dof_to_quad_uv_init
 
 
-    subroutine interpolate_pbprime_init(pbprime,pbprime_face,one_over_pbprime_df_face,pbprime_df)
+    subroutine interpolate_pbprime_init(pbprime,pbprime_face,pbprime_df_face,pbprime_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, nface, face, mod_grid_get_face_nq
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, nface, face
+        use mod_grid, only:  mod_grid_get_face_nq, mod_grid_get_face_ngl
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers
         use mod_face, only: imapl_q, imapr_q, imapl, imapr
@@ -176,13 +178,16 @@ module mod_initial_mlswe
         implicit none
         real, dimension(npoin_q), intent(out) :: pbprime
         real, dimension(2,nq,nface), intent(out) :: pbprime_face
-        real, dimension(2,ngl,nface), intent(out) :: one_over_pbprime_df_face
+        real, dimension(2,ngl,nface), intent(out) :: pbprime_df_face
         real, dimension(npoin), intent(in) :: pbprime_df
-        integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, iface, I1, I2, nq_i, nq_j, plane_ij, ilocl, ilocr, el, er, il, jl, kl, ir, jr, kr
+        integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, iface, I1
+        integer :: I2, nq_i, nq_j, plane_ij, ilocl, ilocr, el, er, il, jl, kl, ir, jr, kr
+        integer :: ngl_i, ngl_j, ii, jj 
         real :: hi
 
         pbprime = 0.0
         pbprime_face = 0.0
+        pbprime_df_face = 0.0
         
         do e = 1, nelem
             do kquad = 1, nqz
@@ -198,9 +203,7 @@ module mod_initial_mlswe
                                     I = intma(n, m, l, e)
                                     
                                     hi = psiqx(n, iquad) * psiqy(m, jquad)!* psiqz(l, kquad)
-
                                     !print*, "hi = ", hi
-                                    
                                     pbprime(Iq) = pbprime(Iq) + pbprime_df(I) * hi
                                     
                                 end do
@@ -221,82 +224,66 @@ module mod_initial_mlswe
             er = face(8,iface)
 
             call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-                
-            do jquad = 1,nq_j
+            call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
 
+            do jquad = 1,nq_j
                 do iquad = 1, nq_i
 
                     il = imapl_q(1,iquad,jquad,iface)
                     jl = imapl_q(2,iquad,jquad,iface)
                     kl = imapl_q(3,iquad,jquad,iface)
-
                     I1 = intma_dg_quad(il,jl,kl,el)
 
                     pbprime_face(1,iquad,iface) = pbprime(I1)
-
                     if(er > 0) then
 
                         ir = imapr_q(1,iquad,jquad,iface)
                         jr = imapr_q(2,iquad,jquad,iface)
                         kr = imapr_q(3,iquad,jquad,iface)
-
                         I2 = intma_dg_quad(ir,jr,kr,er)
 
                         pbprime_face(2,iquad,iface) = pbprime(I2)
-
                     else
-
                         pbprime_face(2,iquad,iface) = pbprime_face(1,iquad,iface)
-
                     end if
-
                 end do
             end do
 
-            do n = 1,ngl 
-                    
-                il = imapl(1,n,1,iface)
-                jl = imapl(2,n,1,iface)
-                kl = imapl(3,n,1,iface)
+            do jj = 1,ngl_j
+                do ii = 1, ngl_i
 
-                I1 = intma(il,jl,kl,el)
+                    il = imapl(1,ii,jj,iface)
+                    jl = imapl(2,ii,jj,iface)
+                    kl = imapl(3,ii,jj,iface)
+                    I1 = intma(il,jl,kl,el)
 
-                if(pbprime_df(I1) > 0.0) then 
-                    one_over_pbprime_df_face(1,n,iface) = 1.0/pbprime_df(I1)
-                end if
+                    pbprime_df_face(1,ii,iface) = pbprime_df(I1)
+                    if(er > 0) then
 
-                if(er > 0) then
+                        ir = imapr(1,ii,jj,iface)
+                        jr = imapr(2,ii,jj,iface)
+                        kr = imapr(3,ii,jj,iface)
+                        I2 = intma(ir,jr,kr,er)
 
-                    ir = imapr(1,n,1,iface)
-                    jr = imapr(2,n,1,iface)
-                    kr = imapr(3,n,1,iface)
-
-                    I2 = intma(ir,jr,kr,er)
-
-                    if(pbprime_df(I2) > 0.0) then 
-                        one_over_pbprime_df_face(2,n,iface) = 1.0/pbprime_df(I2)
-                    end if
-
-                else
-
-                    one_over_pbprime_df_face(2,n,iface) = one_over_pbprime_df_face(1,n,iface)
-
-                end if
-
-            end do
-
+                        pbprime_df_face(2,ii,iface) = pbprime_df(I2)
+                    else
+                        pbprime_df_face(2,ii,iface) = pbprime_df_face(1,ii,iface)
+                    endif
+                enddo
+            enddo
         end do
 
     end subroutine interpolate_pbprime_init
 
-    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,coord,icase, a_bclp, b_bclp, tau_wind_df)
+    !subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, tau_wind_df)
 
+    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,tau_wind_df)
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
+        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, coord
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
         use mod_input, only: gravity_in, &
             nelx, nelz, &
-            xdims, ydims, nlayers, dt, dt_btp
+            xdims, ydims, nlayers, dt, dt_btp, test_case, f0, beta
 
         !use mod_initial, only: psih, indexq
     
@@ -305,88 +292,29 @@ module mod_initial_mlswe
         real, dimension(2,npoin_q), intent(out) :: tau_wind
         real, dimension(npoin), intent(out) :: coriolis_df
         real, dimension(npoin_q), intent(out) :: coriolis_quad
-        real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
-        real, dimension(3,npoin), intent(in) :: coord
-        integer, intent(in) :: icase
+        real, dimension(npoin), intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
+        !real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
 
-        real, dimension(2,npoin), intent(out) :: tau_wind_df
+        real, dimension(2,npoin), intent(in) :: tau_wind_df
 
         integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, ip
-        real :: f0, ym, Ly, y, hi, tau0, beta, lat, omega1, sig, rho_air, w
+        real :: ym, Ly, y, hi, tau0, lat, omega1, sig, rho_air, w
 
         tau_wind = 0.0
         coriolis_df = 0.0
         coriolis_quad = 0.0
-        tau_wind_df = 0.0
 
         gravity = 9.806
         
         Ly = ydims(2)
         ym = 0.5*Ly
+        
+        do I = 1, npoin
+            y = coord(2,I)
 
-        tau0 = 0.1
+            coriolis_df(I) = f0 + beta*(y - ym)
+        end do
 
-
-        select case (icase)
-        case (2023)
-            beta = 0.0
-            do I = 1, npoin
-                y = coord(2,I)
-                !print*, 'y = ', y
-
-                coriolis_df(I) = 0.0
-                tau_wind_df(1,I) = 0.0
-            end do
-        case (2024)
-            beta = 0.0
-            do I = 1, npoin
-                y = coord(2,I)
-                !print*, 'y = ', y
-
-                coriolis_df(I) = 0.0
-                tau_wind_df(1,I) = 0.0
-            end do
-
-        case (2022)
-            beta = 0.0
-            do I = 1, npoin
-                y = coord(2,I)
-                sig = 0.0015
-                rho_air = 1.2
-                w = 20
-                lat = 45.0*pi/180.0
-
-                coriolis_df(I) = 0.0
-                tau_wind_df(1,I) = sig*rho_air*w**2*cos(lat)
-                tau_wind_df(2,I) = sig*rho_air*w**2*sin(lat)
-            end do
-
-        case (1000)
-            ! tau0 = 0.1027
-            beta = 2.0e-11
-            f0 = 0.93e-4
-            do I = 1, npoin
-                y = coord(2,I)
-
-                coriolis_df(I) = f0 + beta*(y - ym)
-
-                tau_wind_df(1,I) = -tau0*cos(2.0*pi*y/Ly)
-            end do
-        case (1100)
-            ! tau0 = 0.1027
-            beta = 2.0e-11
-            f0 = 0.93e-4
-            do I = 1, npoin
-                y = coord(2,I)
-
-                coriolis_df(I) = f0 + beta*(y - ym)
-
-                tau_wind_df(1,I) = -tau0*cos(2.0*pi*y/Ly)
-            end do
-        case default
-            print*, "Unknown case number in cube initialization ", icase
-            stop
-        end select
 
         do e = 1, nelem
             do kquad = 1, nqz
@@ -417,18 +345,18 @@ module mod_initial_mlswe
             end do
         end do
 
-        fdt_btp = dt_btp * coriolis_df
-        fdt2_btp = 0.5*fdt_btp
-        a_btp = 1.0 / (1.0 + fdt2_btp**2)
-        b_btp = fdt2_btp / (1.0 + fdt2_btp**2)
+        !fdt_btp = dt_btp * coriolis_df
+        !fdt2_btp = 0.5*fdt_btp
+        !a_btp = 1.0 / (1.0 + fdt2_btp**2)
+        !b_btp = fdt2_btp / (1.0 + fdt2_btp**2)
         
         fdt_bcl = dt * coriolis_df
         fdt2_bcl = 0.5 * fdt_bcl
         a_bcl = 1.0 / (1.0 + fdt2_bcl**2)
         b_bcl = fdt2_bcl / (1.0 + fdt2_bcl**2)
 
-        a_bclp = 1.0 - 0.5 * fdt_bcl**2 + fdt_bcl**4/24.0
-        b_bclp = fdt_bcl - fdt_bcl**3/6.0
+        !a_bclp = 1.0 - 0.5 * fdt_bcl**2 + fdt_bcl**4/24.0
+        !b_bclp = fdt_bcl - fdt_bcl**3/6.0
 
     end subroutine wind_stress_coriolis
 
@@ -448,8 +376,6 @@ module mod_initial_mlswe
 
             integer :: iface, iquad
             real :: c_minus, c_plus
-        
-            
         
             coeff_pbpert_L = 0.0
             coeff_pbpert_R = 0.0
@@ -476,140 +402,188 @@ module mod_initial_mlswe
                         coeff_mass_pbub_R(iquad,iface) = c_minus / (c_minus + c_plus)
                         coeff_mass_pbpert_LR(iquad,iface) = c_minus * c_plus / (c_minus + c_plus)
                     end if
-        
+
                 end do
             end do
         
     end subroutine compute_reference_edge_variables
 
+    subroutine compute_reference_edge_variables_df(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
+        coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df_face,alpha)
 
-    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
+        use mod_input, only: nlayers
+        use mod_basis, only: ngl
+        use mod_grid, only: nface
 
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
+        implicit none
 
-        use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
-            psiqx, psiqy, psiqz
+        real, dimension(2,ngl,nface), intent(in) :: pbprime_df_face
+        real, dimension(nlayers), intent(in) :: alpha
+        real, dimension(ngl,nface), intent(out) :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
+            coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR
 
-        use mod_basis, only: dpsix, dpsiy, dpsiz, psix, psiy, psiz
+        integer :: iface, n, il, jl, kl, ir, jr, kr, el, er, I1, I2
+        real :: c_minus, c_plus, pl, pr
 
-        use mod_metrics, only: &
-            ksiq_x, ksiq_y, ksiq_z, &
-            etaq_x, etaq_y, etaq_z, &
-            zetaq_x, zetaq_y, zetaq_z, &
-            jacq, &
-            ksi_x, ksi_y, ksi_z, &
-            eta_x, eta_y, eta_z, &
-            jac
+        coeff_pbpert_L = 0.0
+        coeff_pbpert_R = 0.0
+        coeff_pbub_LR = 0.0
+        coeff_mass_pbub_L = 0.0
+        coeff_mass_pbub_R = 0.0
+        coeff_mass_pbpert_LR = 0.0
 
-        use mod_constants, only: gravity
+        do iface = 1,nface
+            do n = 1,ngl
 
-        !use mod_initial, only: grad_zbot_quad, tau_wind
+                c_minus = sqrt(alpha(nlayers) * pbprime_df_face(2,n,iface))
+                c_plus  = sqrt(alpha(nlayers) * pbprime_df_face(1,n,iface))
+                if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
+                    coeff_pbpert_L(n,iface) = c_plus / (c_minus + c_plus)
+                    coeff_pbpert_R(n,iface) = c_minus / (c_minus + c_plus)
+                    coeff_pbub_LR(n,iface)  = 1.0 / (c_minus + c_plus)
+                end if
 
-        implicit none 
+                c_minus = sqrt(alpha(nlayers) * pbprime_df_face(2,n,iface))
+                c_plus  = sqrt(alpha(nlayers) * pbprime_df_face(1,n,iface))
+                if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
+                    coeff_mass_pbub_L(n,iface) = c_plus / (c_minus + c_plus)
+                    coeff_mass_pbub_R(n,iface) = c_minus / (c_minus + c_plus)
+                    coeff_mass_pbpert_LR(n,iface) = (c_minus * c_plus) / (c_minus + c_plus)
+                end if
 
-        real, dimension(npts,npoin_q), intent(out) :: psih, dpsidx,dpsidy
-        integer, dimension(npts,npoin_q) :: indexq
-        real, dimension(npoin_q), intent(out) :: wjac
+            end do
+        end do
 
-        real, dimension(npts,npoin), intent(out) :: psih_df, dpsidx_df,dpsidy_df
-        integer, dimension(npts,npoin) :: index_df
-        real, dimension(npoin), intent(out) :: wjac_df
+    end subroutine compute_reference_edge_variables_df
 
-        integer :: e, jquad, iquad, Iq, ip, m, n, I
-        real :: h_e, h_n
-        real :: e_x, e_y, n_x, n_y
-      
-        wjac = 0.0
-        psih = 0.0
-        dpsidx = 0.0
-        dpsidy = 0.0
-        indexq = 0
 
-        wjac_df = 0.0
-        psih_df = 0.0
-        dpsidx_df = 0.0
-        dpsidy_df = 0.0
-        index_df = 0
-
-        do e = 1,nelem
-
-            do jquad = 1,nqy
-                do iquad = 1,nqx
-                    
-                    Iq = intma_dg_quad(iquad,jquad,1,e)
-
-                    wjac(Iq) = jacq(iquad,jquad,1,e)
-
-                    e_x = ksiq_x(iquad,jquad,1,e); e_y = ksiq_y(iquad,jquad,1,e); 
-                    n_x = etaq_x(iquad,jquad,1,e); n_y = etaq_y(iquad,jquad,1,e);
-
-                    ip = 0
-                    
-                    do m = 1, ngly 
-                        do n = 1, nglx 
-
-                            I = intma(n,m,1,e)
-                            ip = ip + 1
-                
-                            indexq(ip,Iq) = I
-                            psih(ip,Iq) = psiqx(n, iquad) * psiqy(m, jquad)
-                
-                            ! Xi derivatives
-                            h_e = dpsiqx(n, iquad) * psiqy(m, jquad)
-
-                            ! Eta derivatives
-                            h_n = psiqx(n, iquad) * dpsiqy(m, jquad)
-                
-                            ! Pressure terms
-                            dpsidx(ip,Iq) = h_e * e_x + h_n * n_x
-                            dpsidy(ip,Iq) = h_e * e_y + h_n * n_y
-
-                        end do !n
-                    end do !m
-
-                end do !iquad
-            end do !jquad
-
-            do jquad = 1,ngly
-                do iquad = 1,nglx
-                    
-                    Iq = intma(iquad,jquad,1,e)
-
-                    wjac_df(Iq) = jac(iquad,jquad,1,e)
-
-                    e_x = ksi_x(iquad,jquad,1,e); e_y = ksi_y(iquad,jquad,1,e); 
-                    n_x = eta_x(iquad,jquad,1,e); n_y = eta_y(iquad,jquad,1,e);
-
-                    ip = 0
-                    
-                    do m = 1, ngly 
-                        do n = 1, nglx 
-
-                            I = intma(n,m,1,e)
-                            ip = ip + 1
-                
-                            index_df(ip,Iq) = I
-                            psih_df(ip,Iq) = psix(n, iquad) * psiy(m, jquad)
-                
-                            ! Xi derivatives
-                            h_e = dpsix(n, iquad) * psiy(m, jquad)
-
-                            ! Eta derivatives
-                            h_n = psix(n, iquad) * dpsiy(m, jquad)
-                
-                            ! Pressure terms
-                            dpsidx_df(ip,Iq) = h_e * e_x + h_n * n_x
-                            dpsidy_df(ip,Iq) = h_e * e_y + h_n * n_y
-
-                        end do !n
-                    end do !m
-
-                end do !iquad
-            end do !jquad
-
-        end do !e
-
-    end subroutine Tensor_product
+!    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
+!
+!        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
+!
+!        use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
+!            psiqx, psiqy, psiqz
+!
+!        use mod_basis, only: dpsix, dpsiy, dpsiz, psix, psiy, psiz
+!
+!        use mod_metrics, only: &
+!            ksiq_x, ksiq_y, ksiq_z, &
+!            etaq_x, etaq_y, etaq_z, &
+!            zetaq_x, zetaq_y, zetaq_z, &
+!            jacq, &
+!            ksi_x, ksi_y, ksi_z, &
+!            eta_x, eta_y, eta_z, &
+!            jac
+!
+!        use mod_constants, only: gravity
+!
+!        !use mod_initial, only: grad_zbot_quad, tau_wind
+!
+!        implicit none 
+!
+!        real, dimension(npts,npoin_q), intent(out) :: psih, dpsidx,dpsidy
+!        integer, dimension(npts,npoin_q) :: indexq
+!        real, dimension(npoin_q), intent(out) :: wjac
+!
+!        real, dimension(npts,npoin), intent(out) :: psih_df, dpsidx_df,dpsidy_df
+!        integer, dimension(npts,npoin) :: index_df
+!        real, dimension(npoin), intent(out) :: wjac_df
+!
+!        integer :: e, jquad, iquad, Iq, ip, m, n, I
+!        real :: h_e, h_n
+!        real :: e_x, e_y, n_x, n_y
+!      
+!        wjac = 0.0
+!        psih = 0.0
+!        dpsidx = 0.0
+!        dpsidy = 0.0
+!        indexq = 0
+!
+!        wjac_df = 0.0
+!        psih_df = 0.0
+!        dpsidx_df = 0.0
+!        dpsidy_df = 0.0
+!        index_df = 0
+!
+!        do e = 1,nelem
+!
+!            do jquad = 1,nqy
+!                do iquad = 1,nqx
+!                    
+!                    Iq = intma_dg_quad(iquad,jquad,1,e)
+!
+!                    wjac(Iq) = jacq(iquad,jquad,1,e)
+!
+!                    e_x = ksiq_x(iquad,jquad,1,e); e_y = ksiq_y(iquad,jquad,1,e); 
+!                    n_x = etaq_x(iquad,jquad,1,e); n_y = etaq_y(iquad,jquad,1,e);
+!
+!                    ip = 0
+!                    
+!                    do m = 1, ngly 
+!                        do n = 1, nglx 
+!
+!                            I = intma(n,m,1,e)
+!                            ip = ip + 1
+!                
+!                            indexq(ip,Iq) = I
+!                            psih(ip,Iq) = psiqx(n, iquad) * psiqy(m, jquad)
+!                
+!                            ! Xi derivatives
+!                            h_e = dpsiqx(n, iquad) * psiqy(m, jquad)
+!
+!                            ! Eta derivatives
+!                            h_n = psiqx(n, iquad) * dpsiqy(m, jquad)
+!                
+!                            ! Pressure terms
+!                            dpsidx(ip,Iq) = h_e * e_x + h_n * n_x
+!                            dpsidy(ip,Iq) = h_e * e_y + h_n * n_y
+!
+!                        end do !n
+!                    end do !m
+!
+!                end do !iquad
+!            end do !jquad
+!
+!            do jquad = 1,ngly
+!                do iquad = 1,nglx
+!                    
+!                    Iq = intma(iquad,jquad,1,e)
+!
+!                    wjac_df(Iq) = jac(iquad,jquad,1,e)
+!
+!                    e_x = ksi_x(iquad,jquad,1,e); e_y = ksi_y(iquad,jquad,1,e); 
+!                    n_x = eta_x(iquad,jquad,1,e); n_y = eta_y(iquad,jquad,1,e);
+!
+!                    ip = 0
+!                    
+!                    do m = 1, ngly 
+!                        do n = 1, nglx 
+!
+!                            I = intma(n,m,1,e)
+!                            ip = ip + 1
+!                
+!                            index_df(ip,Iq) = I
+!                            psih_df(ip,Iq) = psix(n, iquad) * psiy(m, jquad)
+!                
+!                            ! Xi derivatives
+!                            h_e = dpsix(n, iquad) * psiy(m, jquad)
+!
+!                            ! Eta derivatives
+!                            h_n = psix(n, iquad) * dpsiy(m, jquad)
+!                
+!                            ! Pressure terms
+!                            dpsidx_df(ip,Iq) = h_e * e_x + h_n * n_x
+!                            dpsidy_df(ip,Iq) = h_e * e_y + h_n * n_y
+!
+!                        end do !n
+!                    end do !m
+!
+!                end do !iquad
+!            end do !jquad
+!
+!        end do !e
+!
+!    end subroutine Tensor_product
 
     subroutine ssprk_coefficients(ssprk_a,ssprk_beta)
 

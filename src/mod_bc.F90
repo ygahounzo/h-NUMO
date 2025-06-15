@@ -19,7 +19,7 @@ module mod_bc
 
     use mod_grid, only: npoin, nbsido, coord, nelem
 
-    use mod_input, only: icase, sponge_type
+    use mod_input, only: sponge_type
 
     use mod_types, only : r8
 
@@ -369,14 +369,6 @@ contains
          end do
       end do
 
-!      bc_count=0
-
-!       do k=1,4
-!          print*,"bc_list",k,irank,"::",bc_count(k),"->",bc_list(k,:)
-!          do i=1,bc_count(k)
-!             print*,"bc point",irank,bc_list(k,i),coord(:,bc_list(k,i))
-!          end do
-!       end do
     end subroutine create_bc_list
 
 

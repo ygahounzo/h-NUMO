@@ -1,0 +1,58 @@
+The input variables:
+
+dt : the time-step in seconds.
+dt_btp : the time-step in seconds.
+time_initial : initial time (can be nonzero if it is a restart).
+time_final : final time (can be in seconds, minutes, hours, or days, 
+			depending on the test case.
+
+time_restart : time at which restart files are produced. The units of 
+			   time depend on the test case as mentioned previously. 
+			   The restart only works for 'txt' outputs at the moment.
+
+cd_mlswe : is the bottom friction value.
+
+method_visc : is for the use of viscosity term. If it is 0, that means
+			  no use, otherwise, the viscosity solver is used.
+
+visc_mlswe : is the value of the viscosity in the Laplacian term.
+
+max_shear_dz : is used to discretize the vertical diffusion or 
+			   friction between layer terms.
+
+adjust_H_vertical_sum : is for applying consistency between 
+						barotropic and baroclinic pressure terms.
+
+dg_integ_exact : a logical flag that turns off and on whether you
+				 want to use 2N-1 quadrature points or 2N+1 for DG 
+				 integrations.
+
+mlswe_bc_strong : a logical flag that turns off and on the strong 
+				  boundary conditions for the free-slip boundary 
+				  condition. We recommend you use ``True``.
+
+dump_data : a logical flag that turns off and on the dumping 
+			of the simulation data to a file
+
+test_case : is the specific test case.  More on this in ``tests section``.
+
+ti_method :  is the time-integration method (only the 
+			 predictor-corrector is available now).
+
+ti_method_btp : is the time-integration method for the barotropic equations
+
+kstages : number of Runge-Kutta stages if ti_method='rk'. 
+		  If ti_method='rk35' then the value of kstages 
+		  does not matter.
+
+fname_root : the root name of the output data. All data files 
+             for this run will have the prefix defined by fname_root.
+
+out_type : defines the type of output file.
+
+lprint_diagnostics : a logical flag that turns off and on the printing. 
+					 For scalability studies we turn off the printing
+					 to the screen.
+
+lcheck_conserved: a logical flag that turns off and on the 
+				  compuation of mass conservation.
