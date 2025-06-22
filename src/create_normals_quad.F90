@@ -368,7 +368,5 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
 
 
     end do !iface
-
-!stop
-
+    
 end subroutine create_imaplr_quad

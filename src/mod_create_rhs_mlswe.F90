@@ -169,7 +169,8 @@ module mod_create_rhs_mlswe
         ! coeff = sqrt(0.5d0*coriolis_quad(:)*ad_mlswe)/alpha_mlswe(1)
 
         !do Iq = 1,npoin_q
-        coeff(:) = max(sqrt(0.5*coriolis_quad(:)*ad_mlswe)/alpha_mlswe(1), ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
+        coeff(:) = max(sqrt(0.5*coriolis_quad(:)*ad_mlswe)/alpha_mlswe(1), &
+                    ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
         !end do
         
         do k = 2, nlayers   ! loop over interfaces between layers
@@ -213,8 +214,9 @@ module mod_create_rhs_mlswe
         use mod_basis, only: npts, dpsiqx
         use mod_input, only: nlayers
         use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, tau_wind, pbprime, zbot_df
-        use mod_variables, only: tau_wind_int, tau_bot_int, tau_bot_ave, ope_ave, uvb_ave, H_ave, &
+        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
+                                tau_wind, pbprime, zbot_df
+        use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
                                     Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope_ave_df
 
         implicit none
@@ -240,8 +242,10 @@ module mod_create_rhs_mlswe
         bot_layer = 0.0
         pprime_temp = 0.0
 
-        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth at which wind stress is reduced to 0
-        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth at which bottom stress is reduced to 0
+        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
+                                                  ! at which wind stress is reduced to 0
+        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth 
+                                                         ! at which bottom stress is reduced to 0
 
         ! Find layer interfaces
         z_elv(:,nlayers+1) = zbot_df(:)
@@ -318,7 +322,8 @@ module mod_create_rhs_mlswe
                 Hq = H_tmp(k)
                 
                 ! Adjust the values of  H_r, at quadrature points, so that the vertical sum of
-                ! H_r  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic
+                ! H_r  over all layers equals the time average of the barotropic forcing  H  
+                ! over all barotropic substeps of the baroclinic
                 ! time interval.
                 ! The difference between the time-averaged  H  and the vertical sum of
                 ! H_r  must be distributed over the layers via some sort of
@@ -350,7 +355,8 @@ module mod_create_rhs_mlswe
                 tau_wind_u = temp1*tau_wind(1,Iq)
                 tau_wind_v = temp1*tau_wind(2,Iq)
 
-                tempbot = min(Pbstress,pbprime(Iq)-pprime_temp(k+1)) - min(Pbstress, pbprime(Iq) - pprime_temp(k))
+                tempbot = min(Pbstress,pbprime(Iq)-pprime_temp(k+1)) - min(Pbstress, pbprime(Iq) &
+                            - pprime_temp(k))
                 tempbot = tempbot / Pbstress
 
                 source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
@@ -366,8 +372,10 @@ module mod_create_rhs_mlswe
                     !Eta derivatives
                     dhdy = dpsidy(ip,Iq)
 
-                    rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*(hi*source_x + dhdx*(Hq + var_uu) + var_uv*dhdy)
-                    rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*(hi*source_y + var_vu*dhdx + dhdy*(Hq +var_vv))
+                    rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*(hi*source_x &
+                                                    + dhdx*(Hq + var_uu) + var_uv*dhdy)
+                    rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*(hi*source_y &
+                                                    + var_vu*dhdx + dhdy*(Hq +var_vv))
 
                 end do
             end do
@@ -566,8 +574,10 @@ module mod_create_rhs_mlswe
                 do k=nlayers,1,-1
                     z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,iquad,k))
                     z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,iquad,k))
-                    z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * (one_plus_eta_edge * ql(1,iquad,k))
-                    z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * (one_plus_eta_edge * qr(1,iquad,k))
+                    z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
+                                                        (one_plus_eta_edge * ql(1,iquad,k))
+                    z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
+                                                        (one_plus_eta_edge * qr(1,iquad,k))
                 end do
 
                 p_edge_plus(2) = one_plus_eta_edge * ql(1,iquad,1)
@@ -591,9 +601,12 @@ module mod_create_rhs_mlswe
                         dz_intersect = z_intersect_top - z_intersect_bot
 
                         if (dz_intersect > 0.0) then
-                            p_intersect_bot = p_edge_minus(ktemp+1) - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
-                            p_intersect_top = p_edge_minus(ktemp+1) - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
-                            H_r_minus = H_r_minus + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                            p_intersect_bot = p_edge_minus(ktemp+1) &
+                                    - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
+                            p_intersect_top = p_edge_minus(ktemp+1) &
+                                    - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
+                            H_r_minus = H_r_minus + &
+                                    0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
 
                         end if
                     end do
@@ -610,12 +623,15 @@ module mod_create_rhs_mlswe
                         dz_intersect = z_intersect_top - z_intersect_bot
 
                         if (dz_intersect > 0.0) then
-                            p_intersect_bot = p_edge_plus(ktemp+1) - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(ktemp+1))
-                            p_intersect_top = p_edge_plus(ktemp+1) - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(ktemp+1))
-                            H_r_plus = H_r_plus + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                            p_intersect_bot = p_edge_plus(ktemp+1) &
+                                - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(ktemp+1))
+                            p_intersect_top = p_edge_plus(ktemp+1) &
+                                - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(ktemp+1))
+                            H_r_plus = H_r_plus &
+                                + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
                         end if
                     end do
-                    H_face(2,iquad,k) = 0.5*(H_r_plus + H_r_minus) ! computation of H_r for the right side
+                    H_face(2,iquad,k) = 0.5*(H_r_plus + H_r_minus) ! H_r for the right side
                 end do !k
 
                 ! Wall Boundary conditions
@@ -634,13 +650,15 @@ module mod_create_rhs_mlswe
                     do k = 1, nlayers-1          ! interface at the bottom of layer k
                         ! Corrections at the left side of a face.
                         p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-                        H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,k+1) + p_inc1)**2 - p_face(1,k+1)**2)
+                        H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,k+1) &
+                                    + p_inc1)**2 - p_face(1,k+1)**2)
                         H_face(1,iquad,k) = H_face(1,iquad,k) - H_corr1
                         H_face(1,iquad,k+1) = H_face(1,iquad,k+1) + H_corr1
 
                         ! Corrections at the right side of a face.
                         p_inc2 = g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
-                        H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2,k+1) + p_inc2)**2 - p_face(2,k+1)**2)
+                        H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2,k+1) &
+                                    + p_inc2)**2 - p_face(2,k+1)**2)
                         H_face(2,iquad,k) = H_face(2,iquad,k) - H_corr2
                         H_face(2,iquad,k+1) = H_face(2,iquad,k+1) + H_corr2
 
@@ -648,7 +666,8 @@ module mod_create_rhs_mlswe
                 end if
 
                 ! Adjust the values of  H_k, at element faces, so that the vertical sum of
-                ! H_k  over all layers equals the time average of the barotropic forcing  H  over all barotropic substeps of the baroclinic
+                ! H_k  over all layers equals the time average of the barotropic forcing  H 
+                ! over all barotropic substeps of the baroclinic
                 ! time interval.
 
                 ! The difference between the time-averaged  H  and the vertical sum of
@@ -869,8 +888,10 @@ module mod_create_rhs_mlswe
                 do iquad = 1,nq
 
                     ! In the following computation of fluxes at element faces,
-                    ! flux_edge iface a numerical approximation to the mass flux at element faces (each face has nq quadrature points)
-                    ! Here we are using centered fluxes, so we need to compute the fluxes at the left and right edges of each face
+                    ! flux_edge iface a numerical approximation to the mass flux at element 
+                    ! faces (each face has nq quadrature points)
+                    ! Here we are using centered fluxes, so we need to compute the fluxes 
+                    ! at the left and right edges of each face
 
                     ql = 0.0; qr = 0.0
                     do n = 1, ngl
@@ -903,8 +924,10 @@ module mod_create_rhs_mlswe
                     endif
                 end do
 
-                sum_layer_mass_flux_face(1,:,iface) = sum_layer_mass_flux_face(1,:,iface) + flux_edge_u(:)
-                sum_layer_mass_flux_face(2,:,iface) = sum_layer_mass_flux_face(2,:,iface) + flux_edge_v(:)
+                sum_layer_mass_flux_face(1,:,iface) = sum_layer_mass_flux_face(1,:,iface) &
+                                                        + flux_edge_u(:)
+                sum_layer_mass_flux_face(2,:,iface) = sum_layer_mass_flux_face(2,:,iface) &
+                                                        + flux_edge_v(:)
 
                 do iquad = 1, nq
 

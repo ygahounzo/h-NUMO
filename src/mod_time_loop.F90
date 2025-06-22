@@ -64,8 +64,8 @@ contains
         ntime=ceiling(time_final/dt)
 
         ! Allocate Memory
-        allocate(q0_df_mlswe(3,npoin,nlayers), qb0_df_mlswe(4,npoin), qout_mlswe(5,npoin, nlayers), &
-            qprime0_df(3,npoin,nlayers), stat=AllocateStatus)
+        allocate(q0_df_mlswe(3,npoin,nlayers), qb0_df_mlswe(4,npoin), &
+            qout_mlswe(5,npoin, nlayers), qprime0_df(3,npoin,nlayers), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - MOD_TIME_LOOP:Time_Loop:q0_mlswe **"
 
         !initialize all layers here
@@ -150,13 +150,16 @@ contains
 
         if(lcheck_conserved) then 
 
-            if (.not. dump_data) call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,1)
+            if (.not. dump_data) then
+                call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,1)
+            end if
 
             do l = 1,nlayers
                 call compute_conserved(mass_conserv_l,qout_mlswe(1,:,l))
 
                 mass_conserv_g = 0.0
-                call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+                call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION, &
+                                mpi_sum,0,mpi_comm_world,ierr)
 
                 mass_conserv0_g(l) = mass_conserv_g
             end do 
@@ -179,7 +182,7 @@ contains
         endif 
 
         if (lprint_diagnostics) then
-            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone, &
             mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
         end if
 
@@ -259,7 +262,9 @@ contains
         idone = 1
 
         !if (lprint_diagnostics) then 
-            if (.not. dump_data) call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+            if (.not. dump_data) then
+                call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+            end if
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
             mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
         !end if

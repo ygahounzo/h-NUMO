@@ -1,13 +1,14 @@
 module mod_rk_mlswe
 
-    ! ===========================================================================================================================
-    ! This module contains the routines for the barotropic-baroclinic splitting
+    ! ============================================================================================
+    ! This module contains the routine for the barotropic solver
     !   Author: Yao Gahounzo 
     !   Date: March 27, 2023
-    ! It contains the following routines:
-    ! - ti_barotropic: barotropic substem for splitting system using SSPRK35 time integration (see Higdon et al. 2005)
+    ! It contains the following routine:
+    ! - ti_barotropic_ssprk_mlswe: based on SSPRK time integration 
+    !   (see Higdon et al. 2005)
     !
-    ! ===========================================================================================================================
+    ! =============================================================================================
         
     implicit none
 
@@ -17,33 +18,19 @@ module mod_rk_mlswe
 
     subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime_df)
 
-        ! ===========================================================================================================================
-        ! This subroutine predicts and corrects the barotropic quantities for the splitting system using SSPRK35 time integration
-        ! The nodal points or degree of freedom of the barotropic variables (pb_df(or pbpert), pbub_df, pbvb_df) are stored in qb_df
-        ! The quadrature points of the barotropic variables (pb, pbpert, ub, vb, pbub, pbvb) are stored in qb. pb_df = pbprime + pb_df
-        ! The face values of the barotropic variables are stored in qb_face
-        ! The quadrature points variables of(dpprime, uprime, vprime) are stored in qprime
-        ! 
-        ! Return the next baroclinic time step values of the barotropic variables and the barotropic substep averages.
-        ! ===========================================================================================================================
-
         use mod_initial, only: N_btp, pbprime_df, tau_wind, one_over_pbprime_df, ssprk_a, ssprk_beta
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp,nlayers, kstages, method_visc
         use mod_rhs_btp, only: create_rhs_btp
         use mod_barotropic_terms, only: btp_mom_boundary_df
-        use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, ope2_ave, &
-                                ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, H_face_ave, &
-                                Qu_face_ave, Qv_face_ave, Quv_face_ave, one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
-                                btp_mass_flux_ave, uvb_ave, uvb_ave_df
+        use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, &
+                                 ope2_ave, ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, &
+                                 ope_face_ave, H_face_ave, Qu_face_ave, Qv_face_ave, Quv_face_ave, &
+                                 one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
+                                 btp_mass_flux_ave, uvb_ave, uvb_ave_df
 
-        use mod_variables, only: tau_bot_ave_df, H_ave_df, Qu_ave_df, Quv_ave_df, Qv_ave_df, btp_mass_flux_ave_df
         use mod_variables, only: graduvb_face_ave, graduvb_ave
-        use mod_variables, only: H_face_ave_df,ope_face_ave_df,btp_mass_flux_face_ave_df,Qu_face_ave_df, Qv_face_ave_df, &
-                                one_plus_eta_edge_2_ave_df
-        use mod_variables, only: qbface_ave
-
 
         implicit none
 
@@ -83,7 +70,8 @@ module mod_rk_mlswe
         graduvb_face_ave = 0.0
         graduvb_ave = 0.0
 
-        ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic pressure forcing, and barotropic
+        ! Compute baroclinic coefficients in the barotropic momentum fluxes, barotropic 
+        ! pressure forcing, and barotropic
         ! horizontal viscosity terms.  These are needed for the barotropic momentum equation.
 
         qb2_df = 0.0
@@ -107,9 +95,12 @@ module mod_rk_mlswe
 
                 ! Update barotropic variables
 
-                qb_df(2,:) = ssprk_a(ik,1)*qb0_df(2,:) + ssprk_a(ik,2)*qb1_df(2,:) + ssprk_a(ik,3)*qb2_df(2,:) + dtt*rhs(1,:)
-                qb_df(3,:) = ssprk_a(ik,1)*qb0_df(3,:) + ssprk_a(ik,2)*qb1_df(3,:) + ssprk_a(ik,3)*qb2_df(3,:) + dtt*rhs(2,:)
-                qb_df(4,:) = ssprk_a(ik,1)*qb0_df(4,:) + ssprk_a(ik,2)*qb1_df(4,:) + ssprk_a(ik,3)*qb2_df(4,:) + dtt*rhs(3,:)
+                qb_df(2,:) = ssprk_a(ik,1)*qb0_df(2,:) + ssprk_a(ik,2)*qb1_df(2,:) + &
+                             ssprk_a(ik,3)*qb2_df(2,:) + dtt*rhs(1,:)
+                qb_df(3,:) = ssprk_a(ik,1)*qb0_df(3,:) + ssprk_a(ik,2)*qb1_df(3,:) + &
+                             ssprk_a(ik,3)*qb2_df(3,:) + dtt*rhs(2,:)
+                qb_df(4,:) = ssprk_a(ik,1)*qb0_df(4,:) + ssprk_a(ik,2)*qb1_df(4,:) + &
+                             ssprk_a(ik,3)*qb2_df(4,:) + dtt*rhs(3,:)
 
                 qb_df(1,:) = qb_df(2,:) + pbprime_df(:)
 

@@ -481,5 +481,4 @@ contains
    
     end subroutine lagrange_basis2
 
-    
 end module mod_legendre

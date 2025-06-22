@@ -1,4 +1,5 @@
-subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
+subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df, &
+                        dpsidy_df,index_df)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
 

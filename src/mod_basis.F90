@@ -1,4 +1,4 @@
-!----------------------------------------------------------------------!
+!----------------------------------------------------------------------
 !>@brief This module builds the basis functions: derivatives and filters
 !>@author  Francis X. Giraldo on 11/2009
 !>           Department of Applied Mathematics
@@ -11,7 +11,7 @@
 !       Boise State University
 !       Date: April 03, 2023
 !       modified for exact integration ( added nq ad is_mlswe condtions)
-!----------------------------------------------------------------------!
+!----------------------------------------------------------------------
 module mod_basis
   
     use mod_input, only: filter_weight_type, filter_basis_type, &
@@ -38,9 +38,9 @@ module mod_basis
   
     private
 
-    !-----------------------------------------------------------------------
     ! module variables and parameters
-    integer :: nop, ngl, nglx, ngly, nglz, npts, nsubcells, FACE_LEN, FACE_CHILDREN, CELL_CHILDREN, P4EST_FACES, P8EST_EDGES
+    integer :: nop, ngl, nglx, ngly, nglz, npts, nsubcells, FACE_LEN, FACE_CHILDREN
+    integer :: CELL_CHILDREN, P4EST_FACES, P8EST_EDGES
     integer :: nqx, nqy, nqz, npts_quad, nq, nsubcells_quad, nq2
     logical :: is_2d
     real, dimension(:,:), allocatable :: psi, psix, psiy, psiz, &
@@ -54,11 +54,8 @@ module mod_basis
         dpsiq, dpsiqx, dpsiqy, dpsiqz, dpsiqx_tr
     real, dimension(:),   allocatable :: xnq, xnqx, xnqy, xnqz, wnq, wnqx, wnqy, wnqz
 
-  !-----------------------------------------------------------------------
   
-contains
-  
-    !-----------------------------------------------------------------------
+    contains
   
     subroutine mod_basis_create(nopx_loc,nopy_loc,nopz_loc)
 
@@ -131,13 +128,13 @@ contains
             xgl(ngl), xglx(nglx), xgly(ngly), xglz(nglz), &
             wgl(ngl), wglx(nglx), wgly(ngly), wglz(nglz), &
             f(ngl,ngl), fx(nglx,nglx), fy(ngly,ngly), fz(nglz,nglz), &
-            f_tr(ngl,ngl), fx_tr(nglx,nglx), fy_tr(ngly,ngly), fz_tr(nglz,nglz),stat=AllocateStatus )
+            f_tr(ngl,ngl), fx_tr(nglx,nglx), fy_tr(ngly,ngly), fz_tr(nglz,nglz),stat=AllocateStatus)
 
         if(is_mlswe) then ! added by Yao Gahounzo
             allocate( psiq(ngl,nq), psiqx(nglx,nqx), psiqy(ngly,nqy), psiqz(nglz,nqz), &
                 dpsiq(ngl,nq), dpsiqx(nglx,nqx), dpsiqy(ngly,nqy), dpsiqz(nglz,nqz), &
                 xnq(nq), xnqx(nqx), xnqy(nqy), xnqz(nqz), &
-                wnq(nq), wnqx(nqx), wnqy(nqy), wnqz(nqz), dpsiqx_tr(nqx,nglx), stat=AllocateStatus )
+                wnq(nq), wnqx(nqx), wnqy(nqy), wnqz(nqz), dpsiqx_tr(nqx,nglx), stat=AllocateStatus)
 
                 print*, "Allocation Created"
         endif 

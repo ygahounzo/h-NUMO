@@ -69,7 +69,8 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
          call compute_conserved(mass_conserv_l,q(1,:))
          mass_conserv_g = 0.0
 
-         call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum,0,mpi_comm_world,ierr)
+         call mpi_reduce(mass_conserv_l,mass_conserv_g,1,MPI_PRECISION,mpi_sum, &
+                           0,mpi_comm_world,ierr)
 
          mass_conserv(ll) = mass_conserv_g
       end if
@@ -136,8 +137,10 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
 
    if (irank == 0 .and. idone == 0) then
       print*,'==============================================================='
-      write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime,time/time_scale, dt, dt_btp
-      write(*,'("CFL_H = ",e11.4," CFL_B = ",e11.4," CFL = ",f9.4)')cfl_vector_g(1),cfl_vector_g(2), cfl_vector_g(5)
+      write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime, &
+               time/time_scale, dt, dt_btp
+      write(*,'("CFL_H = ",e11.4," CFL_B = ",e11.4," CFL = ",f9.4)')cfl_vector_g(1), &
+               cfl_vector_g(2), cfl_vector_g(5)
       write(*,'("CFLU_H = ",e11.4," CFLU_B = ",e11.4)')cfl_vector_g(3),cfl_vector_g(4)
       write(*,'("dx_min = ",e11.4," dy_min = ",e11.4)')min_dx_vec_g(1),min_dx_vec_g(2)
       print*,'---------------------------------------------------------------'
@@ -145,7 +148,8 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
          write(*,'("Layer = ",i8)')ll
          write(*,'("Mass Loss   = ",1(e16.8,1x))') xm1(ll)
          do i=1,nvar
-            write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), qmin_layers(i,ll)
+            write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), &
+                     qmin_layers(i,ll)
          end do !i
          print*,'---------------------------------------------------------------'
       end do
@@ -159,8 +163,10 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
    else if (irank == 0 .and. idone == 1) then
       print*,'---------------------------------------------------------------'
       write(*,'(" **Simulation Finished**")')
-      write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime,time/time_scale,dt, dt_btp
-      write(*,'("CFL_H = ",e11.4," CFL_B = ",e11.4," CFL = ",f9.4)')cfl_vector_g(1),cfl_vector_g(2), cfl_vector_g(5)
+      write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime, &
+               time/time_scale,dt, dt_btp
+      write(*,'("CFL_H = ",e11.4," CFL_B = ",e11.4," CFL = ",f9.4)')cfl_vector_g(1), &
+               cfl_vector_g(2), cfl_vector_g(5)
       write(*,'("CFLU_H = ",e11.4," CFLU_B = ",e11.4)')cfl_vector_g(3),cfl_vector_g(4)
       print*,'---------------------------------------------------------------'
 
@@ -177,10 +183,12 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
          write(100,'("Layer = ",i8)')ll
          write(100,'("Mass Loss  = ",1(e16.8,1x))') xm1(ll)
          do i=1,nvar
-            write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), qmin_layers(i,ll)
+            write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i, qmax_layers(i,ll), &
+                  qmin_layers(i,ll)
 
             if(i /= 4) then
-               write(100,'("Fields:   Max/Min = ",(A),1x,2(e24.12,1x))')fileds(i),qmax_layers(i,ll), qmin_layers(i,ll)
+               write(100,'("Fields:   Max/Min = ",(A),1x,2(e24.12,1x))')fileds(i), &
+                  qmax_layers(i,ll), qmin_layers(i,ll)
             end if 
          end do !i
          print*,'---------------------------------------------------------------'

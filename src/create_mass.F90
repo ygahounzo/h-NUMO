@@ -89,6 +89,3 @@ subroutine create_mass_column(mass_1d,jac_1d)
     end do !ix
   
 end subroutine create_mass_column
-
-
-

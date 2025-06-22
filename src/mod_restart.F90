@@ -166,10 +166,12 @@ subroutine read_mlswe(q_df,qb_df,fname)
     end if
 
     !!scatter data within groups
-    call scatter_data_to(qb_grp, qb_df, 3, npoin, npoin_grp, npoin_l_grp, npoin_l_max_grp, nproc_grp, out_group)
+    call scatter_data_to(qb_grp, qb_df, 3, npoin, npoin_grp, npoin_l_grp, &
+        npoin_l_max_grp, nproc_grp, out_group)
 
     do k = 1, nlayers
-        call scatter_data_to(q_grp(:,:,k), q_df(:,:,k), 3, npoin, npoin_grp, npoin_l_grp, npoin_l_max_grp, nproc_grp, out_group)
+        call scatter_data_to(q_grp(:,:,k), q_df(:,:,k), 3, npoin, npoin_grp, &
+        npoin_l_grp, npoin_l_max_grp, nproc_grp, out_group)
     end do
 
     if(ig_rank==0) then

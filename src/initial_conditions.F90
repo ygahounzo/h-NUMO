@@ -2,12 +2,12 @@
 !>@brief This subroutine builds the Initial Conditions for the multilayer Shallow Water Equations
 !>@author Written by Yao Gahounzo
 !>@date March 27, 2023
-!
 !-----------------------------------------------------------------!
 
 subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
-   one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, &
-   qb_df, qprime_df, alpha, one_over_pbprime_df_face, pbprime_df_face, zbot_df, tau_wind_df, z_interface)
+   one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
+   one_over_pbprime_df, qb_df, qprime_df, alpha, one_over_pbprime_df_face, pbprime_df_face, &
+   zbot_df, tau_wind_df, z_interface)
     
 
    use mod_grid, only: nelem, nface, npoin_q, npoin, coord
@@ -417,8 +417,6 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
 
 end subroutine initial_conditions
 
-
-
 !--------------------------------------------------
 !>brief Initial grid dimensions and BCs for cubes
 !--------------------------------------------------
@@ -438,4 +436,3 @@ subroutine initial_grid_coord()
     ymin=ydims(1) ;  ymax=ydims(2)
 
 end subroutine initial_grid_coord
-

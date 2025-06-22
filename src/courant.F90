@@ -1,10 +1,11 @@
-!----------------------------------------------------------------------!
+!------------------------------------------------------------------------------
 !>@brief This subroutine computes the Courant Number
 !>@author  Francis X. Giraldo on 7/08
 !>           Department of Applied Mathematics
 !>           Naval Postgraduate School
 !>           Monterey, CA 93943-5216
-!----------------------------------------------------------------------!
+!>@ modified by Yao Gahounzo 
+!------------------------------------------------------------------------------
 
 subroutine courant_mlswe(cfl_vector,q_layers,qb,dt,dt_btp,nlayers,min_dx_vec)
 
@@ -21,7 +22,8 @@ subroutine courant_mlswe(cfl_vector,q_layers,qb,dt,dt_btp,nlayers,min_dx_vec)
     real ::  cfl_h, cfl_v, cflu_h, cflu_v, min_dx,min_dy
     real :: cfl_b, cflu_b, cfl
 
-    call courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_btp,nlayers,min_dx,min_dy)
+    call courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt, &
+                            dt_btp,nlayers,min_dx,min_dy)
 
     cfl_vector(1)=cfl_h
     cfl_vector(2)=cfl_b
@@ -34,7 +36,8 @@ subroutine courant_mlswe(cfl_vector,q_layers,qb,dt,dt_btp,nlayers,min_dx_vec)
 
 end subroutine courant_mlswe
 
-subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_btp,nlayers,min_dx,min_dy)
+subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_btp, &
+                                nlayers,min_dx,min_dy)
 
     use mod_basis, only: nglx, ngly, nglz
 
@@ -64,7 +67,8 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
     integer ::  ie, i, j, k, m, ii, jj, kk, il,ill
     real    ::  dxc, dyc, dzc
     integer ::  npoints_per_cell
-    real :: u1,u2,v1,v2,ub,vb,hb,h1,h2,r1,r2,vel1,vel2,vel_b,sig1,sig2,sigb,sig1uv,sig2uv,lam,lamb,c_maxB
+    real :: u1,u2,v1,v2,ub,vb,hb,h1,h2,r1,r2,vel1,vel2,vel_b,sig1,&
+            sig2,sigb,sig1uv,sig2uv,lam,lamb,c_maxB
     real :: gprime, rb,cfl1,cfl2,cfl1uv,cfl2uv
   
     npoints_per_cell=4 !FXG: if always 8, then no issue
@@ -103,25 +107,18 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
                     inode(7)=intma( i,jj,kk,ie)
                     inode(8)=intma(ii,jj,kk,ie)
 
-                    u1=0.0; v1=0.0; u2=0.0; v2=0.0; ub=0.0; vb=0.0; hb=0.0; h1=0.0; h2=0.0; r1=0.0; r2=0.0
+                    u1=0.0; v1=0.0; u2=0.0; v2=0.0; ub=0.0; vb=0.0; hb=0.0
+                    h1=0.0; h2=0.0; r1=0.0; r2=0.0
                     do m=1,npoints_per_cell
                         x(m)=coord(1,inode(m))
                         y(m)=coord(2,inode(m))
                         z(m)=coord(3,inode(m))
-
-                        ! r1 = (alpha_mlswe(1)/gravity)*q_layers(1,inode(m),1)
-                        ! r2 = (alpha_mlswe(2)/gravity)*q_layers(1,inode(m),2)
 
                         r1 = q_layers(1,inode(m),1)
                         r2 = q_layers(1,inode(m),2)
 
                         rb = (sum(alpha_mlswe(:))/gravity)*qb(1,inode(m))
                         
-                        ! u1 = u1 + (q_layers(2,inode(m),1) / q_layers(1,inode(m),1)) / npoints_per_cell
-                        ! v1 = v1 + (q_layers(3,inode(m),1) / q_layers(1,inode(m),1)) / npoints_per_cell
-                        ! u2 = u2 + (q_layers(2,inode(m),2) / q_layers(1,inode(m),2)) / npoints_per_cell
-                        ! v2 = v2 + (q_layers(3,inode(m),2) / q_layers(1,inode(m),2)) / npoints_per_cell
-
                         u1 = u1 + q_layers(2,inode(m),1) / npoints_per_cell
                         v1 = v1 + q_layers(3,inode(m),1) / npoints_per_cell
                         u2 = u2 + q_layers(2,inode(m),2) / npoints_per_cell
@@ -129,9 +126,6 @@ subroutine courant_cube_mlswe(cfl,cfl_h,cfl_b,cflu_h,cflu_b,q_layers,qb,dt,dt_bt
 
                         ub = ub + qb(3,inode(m)) / npoints_per_cell
                         vb = vb + qb(4,inode(m)) / npoints_per_cell
-
-                        ! ub = ub + (qb(3,inode(m)) / qb(1,inode(m))) / npoints_per_cell
-                        ! vb = vb + (qb(4,inode(m)) / qb(1,inode(m))) / npoints_per_cell
 
                         hb = hb + rb/npoints_per_cell
                         h1 = h1 + r1/npoints_per_cell

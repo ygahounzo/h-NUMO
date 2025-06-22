@@ -55,18 +55,20 @@ contains
         integer :: AllocateStatus
         integer :: i, j
 
-        if(allocated(ksi_x)) deallocate(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,xjac)
+        if(allocated(ksi_x)) deallocate(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x, &
+                                zeta_y,zeta_z,jac,xjac)
 
-        allocate( ksi_x(nglx,ngly,nglz,nelem),ksi_y(nglx,ngly,nglz,nelem),ksi_z(nglx,ngly,nglz,nelem), &
-            eta_x(nglx,ngly,nglz,nelem),eta_y(nglx,ngly,nglz,nelem),eta_z(nglx,ngly,nglz,nelem), &
-            zeta_x(nglx,ngly,nglz,nelem), zeta_y(nglx,ngly,nglz,nelem), zeta_z(nglx,ngly,nglz,nelem), &
+        allocate( ksi_x(nglx,ngly,nglz,nelem),ksi_y(nglx,ngly,nglz,nelem), &
+            ksi_z(nglx,ngly,nglz,nelem), eta_x(nglx,ngly,nglz,nelem),eta_y(nglx,ngly,nglz,nelem), &
+            eta_z(nglx,ngly,nglz,nelem), zeta_x(nglx,ngly,nglz,nelem), &
+            zeta_y(nglx,ngly,nglz,nelem), zeta_z(nglx,ngly,nglz,nelem), &
             jac(nglx,ngly,nglz,nelem), xjac(nglx,ngly,nglz,nelem),stat = AllocateStatus )
 
         if(is_mlswe) then ! quads data points added by Yao Gahounzo
-            allocate( ksiq_x(nqx,nqy,nqz,nelem),ksiq_y(nqx,nqy,nqz,nelem),ksiq_z(nqx,nqy,nqz,nelem), & 
-            etaq_x(nqx,nqy,nqz,nelem),etaq_y(nqx,nqy,nqz,nelem),etaq_z(nqx,nqy,nqz,nelem), &
-            zetaq_x(nqx,nqy,nqz,nelem), zetaq_y(nqx,nqy,nqz,nelem), zetaq_z(nqx,nqy,nqz,nelem), &
-            jacq(nqx,nqy,nqz,nelem), xjacq(nqx,nqy,nqz,nelem), &
+            allocate( ksiq_x(nqx,nqy,nqz,nelem),ksiq_y(nqx,nqy,nqz,nelem), &
+            ksiq_z(nqx,nqy,nqz,nelem), etaq_x(nqx,nqy,nqz,nelem),etaq_y(nqx,nqy,nqz,nelem), &
+            etaq_z(nqx,nqy,nqz,nelem), zetaq_x(nqx,nqy,nqz,nelem), zetaq_y(nqx,nqy,nqz,nelem), &
+            zetaq_z(nqx,nqy,nqz,nelem), jacq(nqx,nqy,nqz,nelem), xjacq(nqx,nqy,nqz,nelem), &
             stat = AllocateStatus )
         end if  ! is_mlswe
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Metrics_Create_Metrics **"
@@ -74,7 +76,8 @@ contains
         !Generate Volume Metric Terms
         call metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,xjac)
         if(is_mlswe) then ! quads data points added by Yao Gahounzo
-            call metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_y,zetaq_z,jacq,xjacq)
+            call metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x, &
+            zetaq_y,zetaq_z,jacq,xjacq)
         end if  ! is_mlswe
 
     end subroutine mod_metrics_create_metrics
@@ -115,4 +118,3 @@ contains
     end subroutine mod_metrics_create_mass
 
 end module mod_metrics
-

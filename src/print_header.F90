@@ -40,7 +40,8 @@ subroutine print_header(flag,numproc)
     print*,'---------------------------------------------------------------'
     write(*,'("eqn_set = ",a)')eqn_set
 
-    write(*,'("dt time_initial time_final time_restart time_scale = ",5(e12.4,1x))')dt,time_initial/time_scale,time_final/time_scale,time_restart/time_scale,time_scale
+    write(*,'("dt time_initial time_final time_restart time_scale = ",5(e12.4,1x))')dt, &
+            time_initial/time_scale,time_final/time_scale,time_restart/time_scale,time_scale
     write(*,'("nopx nopy nopz = ",3(i6,1x))')nopx,nopy,nopz
     !P4EST and/or P6est Output
 
@@ -64,7 +65,8 @@ subroutine print_header(flag,numproc)
 
     write(*,'("viscosity = ",f6.3)')visc_mlswe
 
-    write(*,'("nvar npoin npoin_cg nelem nboun = ",5(i9,1x))')nvar,npoin_g,npoin_g_cg,nelem_g,nboun_g
+    write(*,'("nvar npoin npoin_cg nelem nboun = ",5(i9,1x))')nvar,npoin_g,npoin_g_cg, &
+        nelem_g,nboun_g
     write(*,'("lprint_diagnostics = ",l7)')lprint_diagnostics
     write(*,'("numproc = ",(i6,1x))')numproc
     print*,'---------------------------------------------------------------'

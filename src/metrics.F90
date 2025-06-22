@@ -64,7 +64,8 @@ subroutine metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,
             end do
         end do
 
-        !Construct Mapping Derivatives: dx/dksi, dx/deta,dx/dzeta, dy/dksi, dy/deta, dy/dzeta, dz/dksi, dz/deta, dz/dzeta
+        ! Construct Mapping Derivatives: dx/dksi, dx/deta,dx/dzeta, dy/dksi, dy/deta, 
+        ! dy/dzeta, dz/dksi, dz/deta, dz/dzeta
 
         call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,nglx,ngly,nglz,ndim)
         call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,nglx,ngly,nglz,ndim)
@@ -92,10 +93,12 @@ subroutine metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zeta_z,jac,
               
                     !compute inverse of J
 
-                    xj = &
-                        (x_ksi(i,j,k)*y_eta(i,j,k)*z_zeta(i,j,k) - x_ksi(i,j,k)*y_zeta(i,j,k)*z_eta(i,j,k))  &
-                    - (y_ksi(i,j,k)*x_eta(i,j,k)*z_zeta(i,j,k) - y_ksi(i,j,k)*x_zeta(i,j,k)*z_eta(i,j,k))  &
-                    + (z_ksi(i,j,k)*x_eta(i,j,k)*y_zeta(i,j,k) - z_ksi(i,j,k)*x_zeta(i,j,k)*y_eta(i,j,k))
+                    xj = (x_ksi(i,j,k)*y_eta(i,j,k)*z_zeta(i,j,k) &
+                            - x_ksi(i,j,k)*y_zeta(i,j,k)*z_eta(i,j,k)) &
+                            - (y_ksi(i,j,k)*x_eta(i,j,k)*z_zeta(i,j,k) &
+                            - y_ksi(i,j,k)*x_zeta(i,j,k)*z_eta(i,j,k)) &
+                            + (z_ksi(i,j,k)*x_eta(i,j,k)*y_zeta(i,j,k) &
+                            - z_ksi(i,j,k)*x_zeta(i,j,k)*y_eta(i,j,k))
 
                     ksi_x(i,j,k,ie)=  (y_eta(i,j,k)*z_zeta(i,j,k)-y_zeta(i,j,k)*z_eta(i,j,k))/xj
                     ksi_y(i,j,k,ie)= -(x_eta(i,j,k)*z_zeta(i,j,k)-x_zeta(i,j,k)*z_eta(i,j,k))/xj

@@ -16,17 +16,13 @@ module mod_mpi_communicator
         mod_mpi_communicator_create, &
         ireq, status, nreq, ierr
     private
-    !-----------------------------------------------------------------------
   
     !module variables and parameters
     integer, dimension(:),   allocatable :: ireq
     integer, dimension(:,:), allocatable :: status
   
-  !-----------------------------------------------------------------------
-  
 contains
   
-    !-----------------------------------------------------------------------
     subroutine mod_mpi_communicator_create()
     
         implicit none

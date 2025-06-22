@@ -44,35 +44,39 @@ module mod_initial
         one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, & 
         qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, & 
         coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-        coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, grad_zbot_quad, &
-        psih, dpsidx,dpsidy, indexq, wjac, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, &
+        coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, &
+        grad_zbot_quad, psih, dpsidx,dpsidy, indexq, wjac, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, &
         qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
-        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, grad_zbot_df, pbprime_df_face
+        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, &
+        grad_zbot_df, pbprime_df_face
 
     public :: z_interface
 
     private
 
     !-----------------------------------------------------------------------
-    real, dimension(:,:), allocatable :: q_init, q_exact, q_ref, kvector, q_sph, coord_sph, pi_values, shear_stress, hA
+    real, dimension(:,:), allocatable :: q_init, q_exact, q_ref, kvector, q_sph, coord_sph
+    real, dimension(:,:), allocatable :: pi_values, shear_stress, hA
     real, dimension(:,:,:), allocatable :: hB_grad, phiA_grad, q_ref_layers
     real, dimension(:), allocatable :: rho_layers, bathymetry
     real, dimension(:), allocatable:: height, coriolis_constant
     real, dimension(:,:,:), allocatable :: q_df_mlswe_init, qprime_df_init
-    real, dimension(:), allocatable :: pbprime, pbprime_df, one_over_pbprime_df,one_over_pbprime, alpha_mlswe
-    real, dimension(:,:,:), allocatable :: pbprime_face, one_over_pbprime_face, one_over_pbprime_df_face, pbprime_df_face
+    real, dimension(:), allocatable :: pbprime, pbprime_df, one_over_pbprime_df,one_over_pbprime 
+    real, dimension(:,:,:), allocatable :: pbprime_face, one_over_pbprime_face
+    real, dimension(:,:,:), allocatable :: one_over_pbprime_df_face, pbprime_df_face
     real, dimension(:,:), allocatable :: pbprime_edge, one_over_pbprime_edge
     real, dimension(:,:,:,:), allocatable :: qb_face_mlswe_init
     real, dimension(:,:), allocatable :: qb_df_mlswe_init, tau_wind, tau_wind_df
     real, dimension(:), allocatable :: coriolis_df,coriolis_quad
-    real, dimension(:,:), allocatable :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
+    real, dimension(:,:), allocatable :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR
+    real, dimension(:,:), allocatable :: coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
     real, dimension(:), allocatable :: zbot, zbot_df, fdt_bcl, fdt2_bcl, a_bcl, b_bcl
     real, dimension(:,:,:), allocatable :: zbot_face
     real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
 
     real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psih_df,dpsidx_df,dpsidy_df
     integer, dimension(:,:), allocatable :: indexq, index_df
-    real, dimension(:), allocatable :: wjac, ssprk_beta, wjac_df
+    real, dimension(:), allocatable :: wjac, ssprk_beta, wjac_df, alpha_mlswe
 
     integer :: nvar, nvart, nvar_diag
     integer :: nrhs_mxm, N_btp
@@ -103,15 +107,10 @@ module mod_initial
         !Store Number of Tracers
         ntracers=nvar-5
 
-        if(allocated(q_init)) deallocate(q_init,q_exact,q_ref,kvector,pi_values,height,coriolis_constant, shear_stress)
-        allocate( q_init(nvar,npoin),  &
-            q_exact(nvar,npoin), &
-            q_ref(nvar,npoin), &
-            kvector(3,npoin), &
-            pi_values(3,npoin), &
-            height(npoin), &
-            coriolis_constant(npoin), &
-            shear_stress(3,npoin))
+        if(allocated(q_init)) deallocate(q_init,q_exact,q_ref,kvector,pi_values,height, &
+                coriolis_constant, shear_stress)
+        allocate( q_init(nvar,npoin), q_exact(nvar,npoin), q_ref(nvar,npoin), kvector(3,npoin), &
+            pi_values(3,npoin), height(npoin), coriolis_constant(npoin), shear_stress(3,npoin))
 
         !hack to allocate layers stuff anyways
         allocate(rho_layers(1),bathymetry(npoin))
@@ -128,17 +127,18 @@ module mod_initial
             pbprime_df_face, z_interface)
             allocate(q_df_mlswe_init(3,npoin,nlayers), pbprime(npoin_q), pbprime_df(npoin), &
             pbprime_face(2,nq,nface), one_over_pbprime(npoin_q), &
-            one_over_pbprime_face(2,nq,nface), pbprime_edge(nq,nface), one_over_pbprime_edge(nq,nface), &
+            one_over_pbprime_face(2,nq,nface), pbprime_edge(nq,nface), &
+            one_over_pbprime_edge(nq,nface), &
             one_over_pbprime_df(npoin), qb_df_mlswe_init(4,npoin), &
             alpha_mlswe(nlayers), tau_wind(2,npoin_q), coriolis_quad(npoin_q), coriolis_df(npoin), &
-            coeff_mass_pbpert_LR(nq,nface), coeff_pbpert_L(nq,nface),coeff_pbpert_R(nq,nface),coeff_pbub_LR(nq,nface), &
-            coeff_mass_pbub_L(nq,nface),coeff_mass_pbub_R(nq,nface), &
-            zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), grad_zbot_df(2,npoin), &
-            psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), indexq(npts,npoin_q), wjac(npoin_q), &
-            fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
-            b_bcl(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), tau_wind_df(2,npoin), &
-            ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin),psih_df(npts,npoin),&
-            dpsidx_df(npts,npoin),dpsidy_df(npts,npoin),index_df(npts,npoin), &
+            coeff_mass_pbpert_LR(nq,nface), coeff_pbpert_L(nq,nface),coeff_pbpert_R(nq,nface), &
+            coeff_pbub_LR(nq,nface), coeff_mass_pbub_L(nq,nface),coeff_mass_pbub_R(nq,nface), &
+            zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), &
+            grad_zbot_df(2,npoin), psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), &
+            indexq(npts,npoin_q), wjac(npoin_q), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
+            b_bcl(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), &
+            tau_wind_df(2,npoin), ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin), &
+            psih_df(npts,npoin), dpsidx_df(npts,npoin),dpsidy_df(npts,npoin),index_df(npts,npoin), &
             pbprime_df_face(2,ngl,nface),z_interface(npoin,nlayers+1))
 
             q_df_mlswe_init = 0.0
@@ -156,15 +156,17 @@ module mod_initial
     
         if(is_mlswe) then
 
-            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
+            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df, &
+                    dpsidy_df,index_df)
 
             call initial_conditions(q_df_mlswe_init, pbprime, pbprime_df, &
-                pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
-                one_over_pbprime_df, qb_df_mlswe_init, qprime_df_init, &
-                alpha_mlswe, one_over_pbprime_df_face, pbprime_df_face, zbot_df,tau_wind_df, z_interface)
+                pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, &
+                one_over_pbprime_edge, one_over_pbprime_df, qb_df_mlswe_init, qprime_df_init, &
+                alpha_mlswe, one_over_pbprime_df_face, pbprime_df_face, zbot_df,tau_wind_df, &
+                z_interface)
 
-            call compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
-                coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha_mlswe)
+            call compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
+                coeff_mass_pbub_L, coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha_mlswe)
                 
             call bot_topo_derivatives(zbot,zbot_face,zbot_df)
 
@@ -174,7 +176,8 @@ module mod_initial
             N_btp = ceiling(dt/dt_btp)
             dt_btp = dt/real(N_btp)
 
-            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, tau_wind_df)
+            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, &
+                a_bcl, b_bcl, tau_wind_df)
 
             call ssprk_coefficients(ssprk_a,ssprk_beta)
         endif

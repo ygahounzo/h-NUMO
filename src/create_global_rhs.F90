@@ -1,9 +1,10 @@
-!----------------------------------------------------------------------!
-!>@brief A better name for this routine would be APPLY_DSS and this is the name of the routine in NUMA2dCGDG_AMR. 
+!==========================================================================================
+!>@brief A better name for this routine would be APPLY_DSS. 
 !>This routine communicates RHS Matrix and Possibly Multiply by Inverse mass matrix = DSS. 
 !>Note: this routine does both the DSS on-processor and across processors.
 !>@author Daniel S. Abdi and F.X. Giraldo
-!----------------------------------------------------------------------!
+!===========================================================================================
+
 subroutine create_global_rhs(rhs,recv_data,mvar,imass)
 
   use mod_basis, only: nglx, ngly, nglz

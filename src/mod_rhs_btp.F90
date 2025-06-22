@@ -106,7 +106,8 @@ contains
         use mod_constants, only: gravity
         use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, &
                                 coriolis_quad, one_over_pbprime, alpha_mlswe
-        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, uvb_ave, btp_mass_flux_ave
+        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, &
+                                uvb_ave, btp_mass_flux_ave
         use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
         use mod_input, only: nlayers, cd_mlswe, botfr
 
@@ -211,8 +212,9 @@ contains
         use mod_basis, only: psiq, ngl
         use mod_grid, only:  npoin, intma, nface,face
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave,Qu_face_ave, Qv_face_ave, &
-                                one_plus_eta_edge_2_ave, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
+        use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
+                                Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
+                                Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
                                 uvb_face_ave, H_bcl_edge
         use mod_initial, only: coeff_pbpert_L, coeff_pbub_LR, coeff_pbpert_R, &
                                 one_over_pbprime_face, one_over_pbprime_edge, &
@@ -226,8 +228,8 @@ contains
 
         integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
         real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
-        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y, one_plus_eta_edge
-        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq
+        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y
+        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq, one_plus_eta_edge
         real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
         real :: qbl(4,nq), qbr(4,nq), lam1, lam2, dispp
 
@@ -269,11 +271,13 @@ contains
 
                 flux_edge_x(iquad) = coeff_mass_pbub_L(iquad,iface) * qbl(3,iquad) &
                                             + coeff_mass_pbub_R(iquad,iface) * qbr(3,iquad) &
-                                            + coeff_mass_pbpert_LR(iquad,iface) * (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
+                                            + coeff_mass_pbpert_LR(iquad,iface) * &
+                                            (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
 
                 flux_edge_y(iquad) = coeff_mass_pbub_L(iquad,iface) * qbl(4,iquad) &
                                             + coeff_mass_pbub_R(iquad,iface) * qbr(4,iquad) &
-                                            + coeff_mass_pbpert_LR(iquad,iface) * (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
+                                            + coeff_mass_pbpert_LR(iquad,iface) * &
+                                            (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
 
             end do
 
@@ -293,13 +297,18 @@ contains
             btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
             btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
             H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_temp(:)
-            Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:); Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
-            Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:); Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
+            Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:)
+            Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
+            Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:)
+            Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
             ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + (qbl(2,:)/pbl)
             ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + (qbr(2,:)/pbr)
-            !ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + qbl(2,:) * one_over_pbprime_face(1,:,iface)
-            !ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + qbr(2,:) * one_over_pbprime_face(2,:,iface)
-            one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) + one_plus_eta_edge(:)
+            !ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) &
+            !                            + 1.0 + qbl(2,:) * one_over_pbprime_face(1,:,iface)
+            !ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) &
+            !                            + 1.0 + qbr(2,:) * one_over_pbprime_face(2,:,iface)
+            one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) &
+                                                + one_plus_eta_edge(:)
             uvb_face_ave(1,1,:,iface) = uvb_face_ave(1,1,:,iface) + ul
             uvb_face_ave(1,2,:,iface) = uvb_face_ave(1,2,:,iface) + ur
             uvb_face_ave(2,1,:,iface) = uvb_face_ave(2,1,:,iface) + vl
@@ -362,7 +371,8 @@ contains
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
         use mod_constants, only: gravity
-        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad
+        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy
+        use mod_initial, only: indexq, wjac, coriolis_quad
         use mod_variables, only: Quu, Quv, Qvv, tau_bot, H
 
         implicit none 
@@ -413,7 +423,8 @@ contains
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
         use mod_constants, only: gravity
-        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, coriolis_quad
+        use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy
+        use mod_initial, only: indexq, wjac, coriolis_quad
         use mod_variables, only: btp_mass_flux, tau_bot, H, Quu, Quv, Qvv
 
         implicit none 

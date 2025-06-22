@@ -38,9 +38,7 @@ module mod_vtk_binary
   public:: I2P,  FI2P
   public:: I1P,  FI1P
   public:: I_P,  FI_P
-  !----------------------------------------------------------------------------------------------------------------------------------
 
-  !----------------------------------------------------------------------------------------------------------------------------------
   ! overloading of vtk_geo
   interface vtk_geo
      !  module procedure vtk_geo_unst_R8, & ! real(R8P) UNSTRUCTURED_GRID
@@ -75,16 +73,19 @@ module mod_vtk_binary
   endinterface vtk_var
   
 
-  !----------------------------------------------------------------------------------------------------------------------------------
+  !-----------------------------------------------------------------------------------------------
   !
   !Real precision definitions:
   !
-!>  integer, parameter:: R16P = selected_real_kind(33,4931) ! 33  digits, range $[\pm 10^{-4931}  ,\pm 10^{+4931}   -1]$
-!>  integer, parameter:: R8P  = selected_real_kind(15,307)  ! 15  digits, range $[\pm 10^{-307}~~ ,\pm 10^{+307}~~  -1]$
+  !>  integer, parameter:: R16P = selected_real_kind(33,4931) 
+  !>  33  digits, range $[\pm 10^{-4931}  ,\pm 10^{+4931}   -1]$
+  !>  integer, parameter:: R8P  = selected_real_kind(15,307)  
+  !>  15  digits, range $[\pm 10^{-307}~~ ,\pm 10^{+307}~~  -1]$
 
   integer, parameter:: R16P = r16 !modified to comply with mod_types - MAK
   integer, parameter:: R8P  = r8 !modified to comply with mod_types - MAK
-  integer, parameter:: R4P  = selected_real_kind(6,37)    ! 6~~~digits, range $[\pm 10^{-37}~~~~,\pm 10^{+37}~~~~ -1]$
+  integer, parameter:: R4P  = selected_real_kind(6,37) ! 6 digits, 
+                                                      !  range $[\pm 10^{-37} ,\pm 10^{+37} -1]$
   integer, parameter:: R_P  = R8P                         ! default real precision
   
   !
@@ -120,10 +121,12 @@ module mod_vtk_binary
   character(1), parameter:: end_rec      = char(10)    ! end-character for binary-record finalize
   integer(I4P), parameter:: f_out_ascii  = 0           ! ascii-output-format parameter identifier
   integer(I4P), parameter:: f_out_binary = 1           ! binary-output-format parameter identifier
-  integer(I4P)::            f_out        = f_out_ascii ! current output-format (initialized to ascii format)
+  integer(I4P)::            f_out        = f_out_ascii ! current output-format 
+                                                       ! (initialized to ascii format)
   character(len=maxlen)::   topology                   ! mesh topology
   integer(I4P)::            Unit_VTK                   ! internal logical unit
-  integer(I4P)::            Unit_VTK_Append            ! internal logical unit for raw binary xml append file
+  integer(I4P)::            Unit_VTK_Append            ! internal logical unit for raw binary 
+                                                       ! xml append file
   integer(I4P)::            N_Byte                     ! number of byte to be written/read
   real(R8P)::               tipo_R8                    ! prototype of R8P real
   real(R4P)::               tipo_R4                    ! prototype of R4P real
@@ -133,28 +136,27 @@ module mod_vtk_binary
   integer(I1P)::            tipo_I1                    ! prototype of I1P integer
   integer(I4P)::            ioffset                    ! offset pointer
   integer(I4P)::            indent                     ! indent pointer
-  !----------------------------------------------------------------------------------------------------------------------------------
 
   !In the following chapters there is the API reference of all functions of \LIBVTKIO.
 contains
   
   function GetUnit() result(Free_Unit)
-    !--------------------------------------------------------------------------------------------------------------------------------
-    !The GetUnit function is used to get a free logic unit. The users of \LIBVTKIO does not know which is
-    !the logical unit: \LIBVTKIO handels this information without boring the users. The logical unit used is safe-free: if the
-    !program calling \LIBVTKIO has others logical units used \LIBVTKIO will never use these units, but will choice one that is free.
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !----------------------------------------------------------------------------------------------
+    !The GetUnit function is used to get a free logic unit. The users of \LIBVTKIO does not 
+    !know which is the logical unit: \LIBVTKIO handels this information without boring the users. 
+    !The logical unit used is safe-free: if the program calling \LIBVTKIO has others logical units 
+    !used \LIBVTKIO will never use these units, but will choice one that is free.
+    !---------------------------------------------------------------------------------------------
 
     implicit none
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P):: Free_Unit ! free logic unit
     integer(I4P):: n1        ! counter
     integer(I4P):: ios       ! inquiring flag
     logical(4)::   lopen     ! inquiring flag
-    !--------------------------------------------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
-    !The following is the code snippet of GetUnit function: the units 0, 5, 6, 9 and all non-free units are discarded.
+    !The following is the code snippet of GetUnit function: the units 0, 5, 6, 9 and 
+    !all non-free units are discarded.
     !
     Free_Unit = -1_I4P                                      ! initializing free logic unit
     n1=1_I4P                                                ! initializing counter
@@ -173,28 +175,32 @@ contains
     return
   
     !
-    !GetUnit function is private and cannot be called outside \LIBVTKIO. If you are interested to use it change its scope to public.
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !GetUnit function is private and cannot be called outside \LIBVTKIO. If you are interested 
+    !to use it change its scope to public.
+
   endfunction GetUnit
 
   function Upper_Case(string)
-    !--------------------------------------------------------------------------------------------------------------------------------
-    !The Upper\_Case function converts the lower case characters of a string to upper case one. \LIBVTKIO uses this function in
-    !order to achieve case-insensitive: all character variables used within \LIBVTKIO functions are pre-processed by
-    !Uppper\_Case function before these variables are used. So the users can call \LIBVTKIO functions whitout pay attention of the
-    !case of the kwywords passed to the functions: calling the function VTK\_INI with the string \code{E_IO = vtk_ini('Ascii',...)}
+    !---------------------------------------------------------------------------------------------
+    !The Upper\_Case function converts the lower case characters of a string to upper case one. 
+    !\LIBVTKIO uses this function in
+    !order to achieve case-insensitive: all character variables used within \LIBVTKIO functions 
+    !are pre-processed by Uppper\_Case function before these variables are used. So the users 
+    !can call \LIBVTKIO functions whitout pay attention of the
+    !case of the kwywords passed to the functions: calling the function VTK\_INI with the string 
+    !\code{E_IO = vtk_ini('Ascii',...)}
     !or with the string  \code{E_IO = vtk_ini('AscII',...)} is equivalent.
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !--------------------------------------------------------------------------------------------
     character(len=*), intent(IN):: string     ! string to be converted
     character(len=len(string))::   Upper_Case ! converted string
     integer::                      n1         ! characters counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     !The following is the code snippet of Upper\_Case function.
     !
     !(\doc)codesnippet
@@ -206,25 +212,27 @@ contains
        endselect
     enddo
     return
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   endfunction Upper_Case
   
   subroutine vtk_ini(output_format,filename,title,mesh_topology,time_value)
-    !--------------------------------------------------------------------------------------------------------------------------------
-    !The VTK\_INI subroutine is used for initializing file. This subroutine must be the first to be called.
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
+    !The VTK\_INI subroutine is used for initializing file. This subroutine must 
+    !be the first to be called.
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     character(*), intent(IN):: output_format ! output format: ASCII or BINARY
     character(*), intent(IN):: filename      ! name of file
     character(*), intent(IN):: title         ! title
     character(*), intent(IN):: mesh_topology ! mesh topology
-    integer(I4P)            :: E_IO          ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)            :: E_IO          ! Input/Output inquiring flag: $0$ if IO is done, 
+                                             ! $> 0$ if IO is not done
     real(R8P),    intent(IN):: time_value    !Physical time of the simulation
     character(len=maxlen)   :: s_buffer      ! buffer string
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     topology = trim(mesh_topology)
     Unit_VTK=GetUnit()
     select case(trim(Upper_Case(output_format)))
@@ -266,17 +274,17 @@ contains
        write(unit=Unit_VTK,iostat=E_IO)'DATASET '//trim(topology)//end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_ini
   
   subroutine vtk_geo_STRP_R8(Nx,Ny,Nz,X0,Y0,Z0,Dx,Dy,Dz)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine for saving mesh; topology = STRUCTURED\_POINTS (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: Nx        ! number of nodes in x direction
     integer(I4P), intent(IN):: Ny        ! number of nodes in y direction
     integer(I4P), intent(IN):: Nz        ! number of nodes in z direction
@@ -286,11 +294,12 @@ contains
     real(R8P),    intent(IN):: Dx        ! space step in x direction
     real(R8P),    intent(IN):: Dy        ! space step in y direction
     real(R8P),    intent(IN):: Dz        ! space step in z direction
-    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, 
+                                         ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer  ! buffer string
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A,3'//FI4P//')', iostat=E_IO)'DIMENSIONS ',Nx,Ny,Nz
@@ -305,17 +314,17 @@ contains
        write(unit=Unit_VTK,                       iostat=E_IO)trim(s_buffer)//end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_geo_STRP_R8
 
   subroutine vtk_geo_STRP_R4(Nx,Ny,Nz,X0,Y0,Z0,Dx,Dy,Dz)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine for saving mesh; topology = STRUCTURED\_POINTS (R4P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: Nx        ! number of nodes in x direction
     integer(I4P), intent(IN):: Ny        ! number of nodes in y direction
     integer(I4P), intent(IN):: Nz        ! number of nodes in z direction
@@ -325,11 +334,12 @@ contains
     real(R4P),    intent(IN):: Dx        ! space step in x direction
     real(R4P),    intent(IN):: Dy        ! space step in y direction
     real(R4P),    intent(IN):: Dz        ! space step in z direction
-    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, 
+                                         ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer  ! buffer string
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A,3'//FI4P//')', iostat=E_IO)'DIMENSIONS ',Nx,Ny,Nz
@@ -344,17 +354,17 @@ contains
        write(unit=Unit_VTK,                       iostat=E_IO)trim(s_buffer)//end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_geo_STRP_R4
 
   subroutine vtk_geo_STRG_R8(Nx,Ny,Nz,NN,X,Y,Z)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine for saving mesh; topology = STRUCTURED\_GRID (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: Nx       ! number of nodes in x direction
     integer(I4P), intent(IN):: Ny       ! number of nodes in y direction
     integer(I4P), intent(IN):: Nz       ! number of nodes in z direction
@@ -362,12 +372,13 @@ contains
     real(R8P),    intent(IN):: X(1:NN)  ! x coordinates
     real(R8P),    intent(IN):: Y(1:NN)  ! y coordinates
     real(R8P),    intent(IN):: Z(1:NN)  ! z coordinates
-    integer(I4P)::             E_IO     ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO     ! Input/Output inquiring flag: $0$ if IO is done, 
+                                        ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer ! buffer string
     integer(I4P)::             n1       ! counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A,3'//FI4P//')', iostat=E_IO)'DIMENSIONS ',Nx,Ny,Nz
@@ -382,17 +393,17 @@ contains
        write(unit=Unit_VTK,                       iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_geo_STRG_R8
 
   subroutine vtk_geo_STRG_R4(Nx,Ny,Nz,NN,X,Y,Z)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine for saving mesh; topology = STRUCTURED\_GRID (R4P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: Nx       ! number of nodes in x direction
     integer(I4P), intent(IN):: Ny       ! number of nodes in y direction
     integer(I4P), intent(IN):: Nz       ! number of nodes in z direction
@@ -400,12 +411,13 @@ contains
     real(R4P),    intent(IN):: X(1:NN)  ! x coordinates
     real(R4P),    intent(IN):: Y(1:NN)  ! y coordinates
     real(R4P),    intent(IN):: Z(1:NN)  ! z coordinates
-    integer(I4P)::             E_IO     ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO     ! Input/Output inquiring flag: $0$ if IO is done, 
+                                        ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer ! buffer string
     integer(I4P)::             n1       ! counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A,3'//FI4P//')', iostat=E_IO)'DIMENSIONS ',Nx,Ny,Nz
@@ -420,29 +432,30 @@ contains
        write(unit=Unit_VTK,                       iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_geo_STRG_R4
 
   subroutine vtk_geo_RECT_R8(Nx,Ny,Nz,X,Y,Z)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine for saving mesh; topology = RECTILINEAR\_GRID (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: Nx        ! number of nodes in x direction
     integer(I4P), intent(IN):: Ny        ! number of nodes in y direction
     integer(I4P), intent(IN):: Nz        ! number of nodes in z direction
     real(R8P),    intent(IN):: X(1:Nx)   ! x coordinates
     real(R8P),    intent(IN):: Y(1:Ny)   ! y coordinates
     real(R8P),    intent(IN):: Z(1:Nz)   ! z coordinates
-    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, 
+                                         ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer  ! buffer string
     integer(I4P)::             n1        ! counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A,3'//FI4P//')', iostat=E_IO)'DIMENSIONS ',Nx,Ny,Nz
@@ -469,27 +482,28 @@ contains
        write(unit=Unit_VTK,                       iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_geo_RECT_R8
   
   subroutine vtk_geo_unst_R8(NN,X,Y,Z) 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine for saving mesh; topology = UNSTRUCTURED\_GRID (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: NN        ! number of nodes
     real(R8P),    intent(IN):: X(1:NN)   ! x coordinates of all nodes
     real(R8P),    intent(IN):: Y(1:NN)   ! y coordinates of all nodes
     real(R8P),    intent(IN):: Z(1:NN)   ! z coordinates of all nodes
-    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO      ! Input/Output inquiring flag: $0$ if IO is done, 
+                                         ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer  ! buffer string
     integer(I4P)::             n1        ! counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A,'//FI4P//',A)',iostat=E_IO)'POINTS ',NN,' double'
@@ -502,24 +516,25 @@ contains
        write(unit=Unit_VTK,                       iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_geo_unst_R8
 
   subroutine vtk_con(NC,nsize,ncon,connect,cell_type)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     !Subroutine to write the connectivity matrix to the binary file
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: NC,ncon,nsize   ! number of cells
     integer(I4P) connect(ncon)                 ! mesh connectivity
     integer(I4P) cell_type(NC)                 ! VTK cell type
-    integer(I4P)::             E_IO            ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO            ! Input/Output inquiring flag: $0$ if IO is done, 
+                                               ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer        ! buffer string
     integer(I4P)::             i
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     !ncon = size(connect,1)
     select case(f_out)
     case(f_out_ascii)
@@ -539,23 +554,25 @@ contains
        write(unit=Unit_VTK,                      iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_con
 
   subroutine vtk_dat(NC_NN, var_location)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     !@brief This subroutine is called before saving the data related to the 
     !geometric mesh. This subroutine initializes the data variables.
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P), intent(IN):: NC_NN        ! number of cells or nodes of field
-    character(*), intent(IN):: var_location ! location of saving variables: cell for cell-centered, node for node-centered
-    integer(I4P)::             E_IO         ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    character(*), intent(IN):: var_location ! location of saving variables: cell for cell-centered,
+                                            ! node for node-centered
+    integer(I4P)::             E_IO         ! Input/Output inquiring flag: $0$ if IO is done, 
+                                            ! $> 0$ if IO is not done
     character(len=maxlen)::    s_buffer     ! buffer string
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     
     select case(f_out)
     case(f_out_ascii)
@@ -576,27 +593,28 @@ contains
        endselect
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_dat
   
   subroutine vtk_var_scal_R8(NC_NN,variablename,variable)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine to write the field of a scalar variable (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     integer(I4P)            :: n1
     integer(I4P), intent(IN):: NC_NN        ! number of nodes or cells
     character(*), intent(IN):: variablename      ! variable name
     character(len=maxlen)   :: s_buffer     ! buffer string
     real(R8P),    intent(IN):: variable(1:NC_NN) ! variable to be saved
-    integer(I4P)::             E_IO         ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO         ! Input/Output inquiring flag: $0$ if IO is done, 
+                                            ! $> 0$ if IO is not done
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        write(unit=Unit_VTK,fmt='(A)',iostat=E_IO)'SCALARS '//trim(variablename)//' double 1'
@@ -612,28 +630,30 @@ contains
        write(unit=Unit_VTK              ,iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_var_scal_R8
   
   subroutine vtk_var_vect_R8(vec_type,NC_NN,varname,varX,varY,varZ)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine to write the field of a vector variable (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
-    character(*), intent(IN):: vec_type      ! vector type: vect = generic vector , norm = normal vector
+    !---------------------------------------------------------------------------------------------
+    character(*), intent(IN):: vec_type      ! vector type: vect = generic vector, 
+                                             ! norm = normal vector
     integer(I4P), intent(IN):: NC_NN         ! number of nodes or cells
     character(*), intent(IN):: varname       ! variable name
     real(R8P),    intent(IN):: varX(1:NC_NN) ! x component of vector
     real(R8P),    intent(IN):: varY(1:NC_NN) ! y component of vector
     real(R8P),    intent(IN):: varZ(1:NC_NN) ! z component of vector
-    integer(I4P)::             E_IO          ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO          ! Input/Output inquiring flag: $0$ if IO is done, 
+                                             ! $> 0$ if IO is not done
     integer(I8P)::             n1            ! counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        select case(Upper_Case(trim(vec_type)))
@@ -654,27 +674,29 @@ contains
        write(unit=Unit_VTK,iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_var_vect_R8
 
   subroutine vtk_var_vect2D_R8(vec_type,NC_NN,varname,varX,varY)
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
     ! Subroutine to write the field of a vector variable (R8P).
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 
-    !--------------------------------------------------------------------------------------------------------------------------------
-    character(*), intent(IN):: vec_type      ! vector type: vect = generic vector , norm = normal vector
+    !---------------------------------------------------------------------------------------------
+    character(*), intent(IN):: vec_type      ! vector type: vect = generic vector , 
+                                             ! norm = normal vector
     integer(I4P), intent(IN):: NC_NN         ! number of nodes or cells
     character(*), intent(IN):: varname       ! variable name
     real(R8P),    intent(IN):: varX(1:NC_NN) ! x component of vector
     real(R8P),    intent(IN):: varY(1:NC_NN) ! y component of vector
-    integer(I4P)::             E_IO          ! Input/Output inquiring flag: $0$ if IO is done, $> 0$ if IO is not done
+    integer(I4P)::             E_IO          ! Input/Output inquiring flag: $0$ if IO is done, 
+                                             ! $> 0$ if IO is not done
     integer(I8P)::             n1            ! counter
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
 
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !--------------------------------------------------------------------------------------------
     select case(f_out)
     case(f_out_ascii)
        select case(Upper_Case(trim(vec_type)))
@@ -695,14 +717,14 @@ contains
    !     write(unit=Unit_VTK,iostat=E_IO)end_rec
     endselect
     
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
   end subroutine vtk_var_vect2D_R8
   
   subroutine vtk_end()
-    !--------------------------------------------------------------------------------------------------------------------------------
-    !@brief This subroutine is used to finalize the file opened and it has not inputs. The \LIBVTKIO manages the file unit without the
-    !user's action.
-    !--------------------------------------------------------------------------------------------------------------------------------
+    !---------------------------------------------------------------------------------------------
+    !@brief This subroutine is used to finalize the file opened and it has not inputs. 
+    !The \LIBVTKIO manages the file unit without the user's action.
+    !---------------------------------------------------------------------------------------------
 
     implicit none
 

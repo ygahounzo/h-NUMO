@@ -520,7 +520,8 @@ end subroutine gather_connectivity
 !>
 !> @author Michal A. Kopera on 01/2015 
 !---------------------------------------------------------------------!  
-subroutine gather_connectivity_from(conn_g,conn,ncells,ncells_g,npoin_l, npoin_l_max, nproc, nelem_l, nelem_l_max, mpi_comm_custom)
+subroutine gather_connectivity_from(conn_g,conn,ncells,ncells_g,npoin_l, npoin_l_max, &
+            nproc, nelem_l, nelem_l_max, mpi_comm_custom)
 
     use mod_basis, only: nglx, ngly, nglz, nsubcells, CELL_CHILDREN
 
@@ -585,4 +586,3 @@ subroutine gather_connectivity_from(conn_g,conn,ncells,ncells_g,npoin_l, npoin_l
     deallocate(recvcount,ncells_l)
 
 end subroutine gather_connectivity_from
-

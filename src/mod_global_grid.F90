@@ -249,8 +249,9 @@ contains
         ! intma_g_q         = 0
         
         !Construct Grid
-        call create_grid_cube(coord_g_cg,index_g,intma_g,ele_col_g,bsido_g,npoin_g_cg,npoin_g,nelem_g,nboun_g,&
-            xglx,xgly,xglz,nglx,ngly,nglz,nelx,nely,nelz,xmin,xmax,ymin,ymax,zmin,zmax,nx,ny,nz,&
+        call create_grid_cube(coord_g_cg,index_g,intma_g,ele_col_g,bsido_g,npoin_g_cg, &
+            npoin_g,nelem_g,nboun_g,&
+            xglx,xgly,xglz,nglx,ngly,nglz,nelx,nely,nelz,xmin,xmax,ymin,ymax,zmin,zmax,nx,ny,nz, &
             iboundary,xperiodic,yperiodic,zperiodic)
 
 end subroutine mod_global_grid_cube_create

@@ -279,7 +279,8 @@ contains
       x_periodic, y_periodic, z_periodic, FACE_LEN, orient, lrestoring_sponge)
 
     ! TODO: fix to use xglx, xgly, xglz
-    call p4esttonuma_fill_data(nop, xgl, is_dg, iboundary, read_external_grid_flg, p2n, lrestoring_sponge)
+    call p4esttonuma_fill_data(nop, xgl, is_dg, iboundary, read_external_grid_flg, &
+          p2n, lrestoring_sponge)
 
     call p4esttonuma_get_mesh_scalars(p2n, npoin_cg, nelem, num_nbh, &
       num_send_recv_total, nbsido, nface, nboun, nNC)
@@ -329,7 +330,7 @@ contains
     !------------------------------------------
 
 
-    if (irank == irank0) print*, '------------------Entering P4est_Mesh_Arrays-------------------------'
+    if (irank == irank0) print*, '------------------Entering P4est_Mesh_Arrays------------------'
       ! FIXME: Kill the NC_face and NC_edge arrays?
       call p4esttonuma_get_mesh_arrays(p2n, coord, intma_table,           &
           NC_face, NC_edge, EToNC, face, face_type,                      &
@@ -338,7 +339,7 @@ contains
           lrestoring_sponge, D2C_mask)
       call p4esttonuma_free(p2n,lrestoring_sponge)
 
-    if (irank == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------------'
+    if (irank == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------'
 
     !adjust cube dimensions
     if(is_2d.and.read_external_grid_flg==0) then

@@ -1,4 +1,4 @@
-!----------------------------------------------------------------------!
+!------------------------------------------------------------------------------------------------
 !>@brief Generates an LGL 3D Mesh
 !>@details
 !> All arrays below are GLOBAL arrays (should have _g ending)
@@ -30,7 +30,7 @@
 !> of clustering and stretching the nodes along all directions. If no 
 !> stretching option is set in input by the user, a regular grid will 
 !> be built by default
-!----------------------------------------------------------------------------------------------------------------------------
+!--------------------------------------------------------------------------------------------------
 subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,npoin,nelem,nboun,&
     xglx,xgly,xglz,nglx,ngly,nglz,nelex,neley,nelez,xmin,xmax,ymin,ymax,zmin,zmax,&
     nx,ny,nz,iboun,xperiodic,yperiodic,zperiodic)
@@ -167,9 +167,11 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                 ! middle
                 !
                 if( zeta(iz) >= 0.0 .and. zeta(iz) <= zeta_ref) then
-                    h = (zmax-zmin)*zeta_ref*( (exp(zstretch_coe) - exp(zstretch_coe*(1.0 - zeta(iz)/zeta_ref)))/(exp(zstretch_coe) - 1.0))
+                    h = (zmax-zmin)*zeta_ref*( (exp(zstretch_coe) - exp(zstretch_coe*(1.0 - &
+                        zeta(iz)/zeta_ref)))/(exp(zstretch_coe) - 1.0))
                 else if( zeta(iz) > zeta_ref .and. zeta(iz) <= 1.0) then
-                    h = (zmax-zmin)*zeta_ref + (zmax-zmin)*(1.0 - zeta_ref)*(exp(zstretch_coe*(zeta(iz)-zeta_ref)/(1.0 - zeta_ref)) - 1.0)/(exp(zstretch_coe) - 1.0)
+                    h = (zmax-zmin)*zeta_ref + (zmax-zmin)*(1.0 - zeta_ref)*(exp(zstretch_coe* &
+                        (zeta(iz)-zeta_ref)/(1.0 - zeta_ref)) - 1.0)/(exp(zstretch_coe) - 1.0)
                 end if
 
             else
@@ -177,10 +179,12 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                 ! symmetric (Eriksson)
                 !
                 if(zeta(iz) <= zeta_ref ) then
-                    h = (zmax-zmin)*zeta_ref*(exp(zstretch_coe*zeta(iz)/zeta_ref) - 1.0)/(exp(zstretch_coe) - 1.0)
+                    h = (zmax-zmin)*zeta_ref*(exp(zstretch_coe*zeta(iz)/zeta_ref) - &
+                        1.0)/(exp(zstretch_coe) - 1.0)
                 else
 
-                    h = (zmax-zmin) - (zmax-zmin)*(1.0-zeta_ref)*(exp(zstretch_coe*(1-zeta(iz))/(1-zeta_ref)) - 1.0)/(exp(zstretch_coe) - 1.0)
+                    h = (zmax-zmin) - (zmax-zmin)*(1.0-zeta_ref)*(exp(zstretch_coe* &
+                        (1-zeta(iz))/(1-zeta_ref)) - 1.0)/(exp(zstretch_coe) - 1.0)
                 end if
             end if
 
@@ -228,19 +232,24 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                         ! middle
                         !
                         if( eta(iy) >= 0.0 .and. eta(iy) <= eta_ref) then
-                            h = (ymax-ymin)*eta_ref*( (exp(ystretch_coe) - exp(ystretch_coe*(1.0 - eta(iy)/eta_ref)))/(exp(ystretch_coe) - 1.0))
+                            h = (ymax-ymin)*eta_ref*( (exp(ystretch_coe) - exp(ystretch_coe* &
+                            (1.0 - eta(iy)/eta_ref)))/(exp(ystretch_coe) - 1.0))
 
                         else if( eta(iy) > eta_ref .and. eta(iy) <= 1.0) then
-                            h = (ymax-ymin)*eta_ref + (ymax-ymin)*(1.0 - eta_ref)*(exp(ystretch_coe*(eta(iy)-eta_ref)/(1.0 - eta_ref)) - 1.0)/(exp(ystretch_coe) - 1.0)
+                            h = (ymax-ymin)*eta_ref + (ymax-ymin)*(1.0 - eta_ref)* &
+                                (exp(ystretch_coe*(eta(iy)-eta_ref)/(1.0 - eta_ref)) - &
+                                1.0)/(exp(ystretch_coe) - 1.0)
                         end if
                     else 
                         !
                         ! symmetric
                         !
                         if(eta(iy) <= eta_ref ) then
-                            h = (ymax-ymin)*eta_ref*(exp(ystretch_coe*eta(iy)/eta_ref) - 1.0)/(exp(ystretch_coe) - 1.0)
+                            h = (ymax-ymin)*eta_ref*(exp(ystretch_coe*eta(iy)/eta_ref) - &
+                                1.0)/(exp(ystretch_coe) - 1.0)
                         else
-                            h = (ymax-ymin) - (ymax-ymin)*(1.0-eta_ref)*(exp(ystretch_coe*(1-eta(iy))/(1-eta_ref)) - 1.0)/(exp(ystretch_coe) - 1.0)
+                            h = (ymax-ymin) - (ymax-ymin)*(1.0-eta_ref)*(exp(ystretch_coe* &
+                                (1-eta(iy))/(1-eta_ref)) - 1.0)/(exp(ystretch_coe) - 1.0)
                         end if
                     end if
 
@@ -281,24 +290,32 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                                 !
                                 ! one_sided
                                 !
-                                h = (xmax-xmin)*(exp(xstretch_coe*ksi(ix)) - 1.0)/(exp(xstretch_coe) - 1.0)
+                                h = (xmax-xmin)*(exp(xstretch_coe*ksi(ix)) - 1.0) &
+                                    /(exp(xstretch_coe) - 1.0)
                             else if( xstretch_type == 'middle' ) then
                                 !
                                 ! middle
                                 !
                                 if( ksi(ix) >= 0.0 .and. ksi(ix) <= ksi_ref) then
-                                    h = (xmax-xmin)*ksi_ref*( (exp(xstretch_coe) - exp(xstretch_coe*(1.0 - ksi(ix)/ksi_ref)))/(exp(xstretch_coe) - 1.0))
+                                    h = (xmax-xmin)*ksi_ref*( (exp(xstretch_coe) - &
+                                        exp(xstretch_coe*(1.0 - ksi(ix)/ksi_ref)))&
+                                        /(exp(xstretch_coe) - 1.0))
                                 else if( ksi(ix) > ksi_ref .and. ksi(ix) <= 1.0) then
-                                    h = (xmax-xmin)*ksi_ref + (xmax-xmin)*(1.0 - ksi_ref)*(exp(xstretch_coe*(ksi(ix)-ksi_ref)/(1.0 - ksi_ref)) - 1.0)/(exp(xstretch_coe) - 1.0)
+                                    h = (xmax-xmin)*ksi_ref + (xmax-xmin)*(1.0 - ksi_ref)* &
+                                        (exp(xstretch_coe*(ksi(ix)-ksi_ref)/(1.0 - ksi_ref)) - &
+                                        1.0)/(exp(xstretch_coe) - 1.0)
                                 end if
                             else
                                 !
                                 ! symmetric
                                 !
                                 if(ksi(ix) <= ksi_ref ) then
-                                    h = (xmax-xmin)*ksi_ref*(exp(xstretch_coe*ksi(ix)/ksi_ref) - 1.0)/(exp(xstretch_coe) - 1.0)
+                                    h = (xmax-xmin)*ksi_ref*(exp(xstretch_coe*ksi(ix)/ksi_ref) - &
+                                        1.0)/(exp(xstretch_coe) - 1.0)
                                 else
-                                    h = (xmax-xmin) - (xmax-xmin)*(1.0-ksi_ref)*(exp(xstretch_coe*(1-ksi(ix))/(1-ksi_ref)) - 1.0)/(exp(xstretch_coe) - 1.0)
+                                    h = (xmax-xmin) - (xmax-xmin)*(1.0-ksi_ref)* &
+                                        (exp(xstretch_coe*(1-ksi(ix))/(1-ksi_ref)) - 1.0) &
+                                        /(exp(xstretch_coe) - 1.0)
                                 end if
                             end if
 
@@ -640,4 +657,3 @@ subroutine create_bsido(bsido,intma,inode,npoin_cg,nboun,nelem,nelex,neley,nelez
     endif
   
 end subroutine create_bsido
-

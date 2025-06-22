@@ -1,10 +1,10 @@
-! ===========================================================================================================================
+! ===============================================================================================
 ! This module contains the routines for the baroclinic flux terms
 !   Author: Yao Gahounzo 
 !   Computing PhD 
 !   Boise State University
 !   Date: March 27, 2023
-! ==========================================================================================================================
+! ===============================================================================================
 
 module mod_layer_terms
     
@@ -116,15 +116,19 @@ module mod_layer_terms
                     weights_face_l = qprime_l / pbprime_face(1,iquad,iface)
                     weights_face_r = qprime_r / pbprime_face(2,iquad,iface)
 
-                    mass_deficit_mass_face(1,1,iquad,iface,k) = weights_face_l*(btp_mass_flux_face_ave(1,iquad,iface) &
-                                                                 - sum_layer_mass_flux_face(1,iquad,iface))
-                    mass_deficit_mass_face(2,1,iquad,iface,k) = weights_face_l*(btp_mass_flux_face_ave(2,iquad,iface) &
-                                                                 - sum_layer_mass_flux_face(2,iquad,iface))
+                    mass_deficit_mass_face(1,1,iquad,iface,k) = weights_face_l* &
+                                                        (btp_mass_flux_face_ave(1,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(1,iquad,iface))
+                    mass_deficit_mass_face(2,1,iquad,iface,k) = weights_face_l* &
+                                                        (btp_mass_flux_face_ave(2,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(2,iquad,iface))
 
-                    mass_deficit_mass_face(1,2,iquad,iface,k) = weights_face_r*(btp_mass_flux_face_ave(1,iquad,iface) &
-                                                                 - sum_layer_mass_flux_face(1,iquad,iface))
-                    mass_deficit_mass_face(2,2,iquad,iface,k) = weights_face_r*(btp_mass_flux_face_ave(2,iquad,iface) &
-                                                                 - sum_layer_mass_flux_face(2,iquad,iface))
+                    mass_deficit_mass_face(1,2,iquad,iface,k) = weights_face_r* &
+                                                        (btp_mass_flux_face_ave(1,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(1,iquad,iface))
+                    mass_deficit_mass_face(2,2,iquad,iface,k) = weights_face_r* &
+                                                        (btp_mass_flux_face_ave(2,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(2,iquad,iface))
                 end do 
             end do
         end do

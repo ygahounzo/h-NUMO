@@ -218,7 +218,8 @@ subroutine pack_data_dg_quad(q_send,q_face,nvarb)
 
     use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -274,7 +275,8 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
 
     use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -330,7 +332,8 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
 
     use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -392,7 +395,8 @@ subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
 
     use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, npoin_q, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, npoin_q, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -452,7 +456,8 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers,nq)
   
     use mod_basis, only: FACE_CHILDREN
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -507,7 +512,8 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
   
     use mod_basis, only: ngl, FACE_CHILDREN, nq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -569,7 +575,8 @@ subroutine pack_data_dg_quad_1v(q_send,q_face)
 
     use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, mod_grid_get_face_nq, nface
+    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar
 
@@ -960,5 +967,3 @@ subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nq
     
 
 end subroutine send_bound_dg_general_quad_layer
-
-
