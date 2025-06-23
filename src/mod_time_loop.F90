@@ -40,7 +40,6 @@ contains
         real, dimension(:,:,:), allocatable :: q0_df_mlswe, qout_mlswe, qprime0_df
         real, dimension(:,:), allocatable :: qb0_df_mlswe
         integer AllocateStatus
-        real cfl, cfl_h, cfl_v, cflu
         real mass_conserv_l, mass_conserv_g, mass_conserv0_g(nlayers)
         integer m, itime
         integer irestart, ntime, inorm
@@ -183,7 +182,7 @@ contains
 
         if (lprint_diagnostics) then
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone, &
-            mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
+            mass_conserv0_g,ntime,fnp11,unit0)
         end if
 
         if (irank == irank0) then
@@ -250,7 +249,7 @@ contains
                 !Append q max and q min to file:
                 if (lprint_diagnostics) then 
                     call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-                    mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
+                    mass_conserv0_g,ntime,fnp11,unit0)
                 end if
             end if !mod
         end do !time
@@ -266,7 +265,7 @@ contains
                 call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
             end if
             call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
-            mass_conserv0_g,cfl,cflu,ntime,fnp11,unit0)
+            mass_conserv0_g,ntime,fnp11,unit0)
         !end if
 
         if(allocated(q0_df_mlswe)) deallocate(q0_df_mlswe)
