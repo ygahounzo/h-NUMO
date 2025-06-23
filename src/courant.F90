@@ -1,10 +1,9 @@
 !------------------------------------------------------------------------------
 !>@brief This subroutine computes the Courant Number
-!>@author  Francis X. Giraldo on 7/08
-!>           Department of Applied Mathematics
-!>           Naval Postgraduate School
-!>           Monterey, CA 93943-5216
-!>@ modified by Yao Gahounzo 
+!>@author  Yao Gahounzo 
+!>           PhD Computing
+!>           Boise State University
+!>           Date: June 22, 2025
 !------------------------------------------------------------------------------
 
 subroutine courant_mlswe(cfl_vector,q_layers,qb,dt,dt_btp,nlayers,min_dx_vec)
@@ -57,7 +56,7 @@ subroutine courant_cube_mlswe(cfl,cfl_b,q_layers,qb,dt,dt_btp,nlayers,min_dx,min
     integer ::  inode(4)
     integer ::  ie, i, j, k, m, ii, jj, kk, il
     integer ::  npoints_per_cell
-    real :: ub,vb, uk, vk
+    real :: dx, dy, ub,vb, uk, vk
 
     npoints_per_cell = 4 !if always 8, then no issue
 
