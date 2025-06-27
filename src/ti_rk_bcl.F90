@@ -17,7 +17,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     ! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
 
     use mod_splitting, only: thickness, momentum, momentum_mass
-    use mod_input, only: nlayers, dpprime_visc_min
+    use mod_input, only: nlayers
     use mod_grid, only: npoin, npoin_q, nface
     use mod_constants, only: gravity
     use mod_initial, only: alpha_mlswe, zbot_df

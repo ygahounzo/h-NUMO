@@ -143,68 +143,140 @@ module mod_create_rhs_mlswe
         
     end subroutine interpolate_layer_from_quad_to_node
 
-    subroutine rhs_layer_shear_stress(rhs_stress,q)
+    subroutine rhs_layer_shear_stress(rhs_stress,q_df)
 
         use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
         use mod_basis, only: npts
-        use mod_input, only: nlayers, ad_mlswe, max_shear_dz
+        use mod_input, only: nlayers, ad_mlswe, max_shear_dz, dt
         use mod_initial, only: coriolis_quad, alpha_mlswe
         use mod_constants, only: gravity
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
 
         implicit none
         
-        real, intent(in) :: q(2,npoin_q,nlayers)
+        real, intent(in) :: q_df(3,npoin,nlayers)
         real, intent(out) :: rhs_stress(2,npoin,nlayers)
         
-        real :: tau_u(npoin_q,nlayers+1), tau_v(npoin_q,nlayers+1), coeff(npoin_q)
-        real :: tau_u_q(npoin_q, nlayers), tau_v_q(npoin_q, nlayers)
-        real :: wq, hi
+        real, dimension(nlayers+1) :: tau_u, tau_v
+        real, dimension(nlayers)   :: a,b,c, dp, udp, vdp
+        real, dimension(2,nlayers) :: r, uv
+        real :: wq, hi, tau_u_q, tau_v_q, coeff, mult, coeff1
         integer :: k, e, iquad, jquad, kquad, l, m, n, Iq, I, ip
+
+        ! Use shear stress between layers to compute  u  and  v  in each layer. 
+        ! In order to do this, implement the shear stress implicitly and
+        ! solve a linear system in the vertical direction, at each
+        ! horizontal location.   
+        ! This computation assumes that the shear stress at an interface
+        ! between layers has the form 
+        ! tau_u = rho * A_D * (u_upper - u_lower) / Delta z
+        ! tau_v = rho * A_D * (v_upper - v_lower) / Delta z
+        ! Here,  Delta z  is the thickness of the Ekman layer 
+        ! (i.e., sqrt(2*A_D/f)) or the value of  max_shear_dz,  whichever 
+        ! is less.
         
         tau_u = 0.0
         tau_v = 0.0
         rhs_stress = 0.0
         
-        ! coeff = sqrt(0.5d0*coriolis_quad(:)*ad_mlswe)/alpha_mlswe(1)
-
-        !do Iq = 1,npoin_q
-        coeff(:) = max(sqrt(0.5*coriolis_quad(:)*ad_mlswe)/alpha_mlswe(1), &
-                    ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
-        !end do
-        
-        do k = 2, nlayers   ! loop over interfaces between layers
-            tau_u(:,k) = coeff*(q(1,:,k-1) - q(1,:,k))
-            tau_v(:,k) = coeff*(q(2,:,k-1) - q(2,:,k))
-        end do
-
-        do k = 1, nlayers
-            tau_u_q(:,k) = gravity*(tau_u(:,k) - tau_u(:,k+1))
-            tau_v_q(:,k) = gravity*(tau_v(:,k) - tau_v(:,k+1))
-        end do
-        
-        ! do k=1,nlayers
-            
-        !     tau_u_q = gravity*(tau_u(:,k) - tau_u(:,k+1))
-        !     tau_v_q = gravity*(tau_v(:,k) - tau_v(:,k+1))
-
+        ! Compute the shear stress
         do Iq = 1,npoin_q
 
-            wq = wjac(Iq)
-            do ip = 1, npts
-
+            ! Projection from nodal to quadrature points
+            dp = 0.0 ; udp = 0.0 ; vdp = 0.0
+            do ip = 1,npts
                 I = indexq(ip,Iq)
                 hi = psih(ip,Iq)
+                dp(:) = dp(:) + hi*q_df(1,I,:)
+                udp(:) = udp(:) + hi*q_df(2,I,:)
+                vdp(:) = vdp(:) + hi*q_df(3,I,:)
+            enddo
 
-                rhs_stress(1,I,:) = rhs_stress(1,I,:) + wq*hi*tau_u_q(Iq,:)
-                rhs_stress(2,I,:) = rhs_stress(2,I,:) + wq*hi*tau_v_q(Iq,:)
+            ! The linear system is structured as follows.
+            ! a  refers to the subdiagonal.
+            ! b  refers to the diagonal.
+            ! c  refers to the superdiagonal.
+            ! r(1,:)  initially contains the right side for the system
+            ! for  u, and at the end it contains the solution, which consists of 
+            ! values of  u. 
+            ! r(2,:)  initially contains the right side for the system
+            ! for  v, and at the end it contains the solution, which consists of
+            ! values of  v.
+
+            coeff = max(sqrt(0.5*coriolis_quad(Iq)*ad_mlswe)/alpha_mlswe(1), &
+                                  ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
+
+            coeff1 = gravity*dt*coeff
+
+            ! Set up the system
+            do k = 1, nlayers
+                a(k) = -coeff
+                b(k) = dp(k) + 2.0*coeff1
+                c(k) = -coeff1
+                r(1,k) = udp(k)/dp(k)
+                r(2,k) = vdp(k)/dp(k)
             end do
-        end do
+            
+            b(1) = dp(1) + coeff1
+            b(nlayers) = dp(nlayers) + coeff1
+            a(1) = 0.0
+            c(nlayers) = 0.0
+            
+            ! Solve the system
+            do k = 2, nlayers
+                mult = a(k) / b(k-1)
+                b(k) = b(k) - mult*c(k-1)
+                r(1,k) = r(1,k) - mult*r(1,k-1)
+                r(2,k) = r(2,k) - mult*r(2,k-1)
+            end do
+            
+            r(1,nlayers) = r(1,nlayers) / b(nlayers)
+            r(2,nlayers) = r(2,nlayers) / b(nlayers)
+            uv(1,nlayers) = r(1,nlayers)
+            uv(2,nlayers) = r(2,nlayers)
+            
+            do k = nlayers-1,1,-1
+                r(1,k) = (r(1,k) - c(k)*r(1,k+1)) / b(k)
+                r(2,k) = (r(2,k) - c(k)*r(2,k+1)) / b(k)
+                uv(1,k) = r(1,k)
+                uv(2,k) = r(2,k)
+            end do
 
-        do k = 1, nlayers
-            rhs_stress(1,:,k) = massinv(:)*rhs_stress(1,:,k)
-            rhs_stress(2,:,k) = massinv(:)*rhs_stress(2,:,k)
-        end do
+            ! tau_u(k)  and  tau_v(k) contain shear stresses along interface k,
+            ! which is the bottom of layer k.
+
+            tau_u(1) = 0.0 ; tau_v(1) = 0.0
+
+            do k=2,nlayers
+                tau_u(k) = coeff*(uv(1,k-1) - uv(1,k))
+                tau_v(k) = coeff*(uv(2,k-1) - uv(2,k))
+            end do
+
+            ! Do Gauss-Lobatto Integration
+            wq = wjac(Iq)
+
+            do k = 1, nlayers
+
+                tau_u_q = gravity*(tau_u(k) - tau_u(k+1))
+                tau_v_q = gravity*(tau_v(k) - tau_v(k+1))
+                
+                do ip = 1, npts
+
+                    I = indexq(ip,Iq)
+                    hi = psih(ip,Iq)
+
+                    rhs_stress(1,I,k) = rhs_stress(1,I,k) + wq*hi*tau_u_q
+                    rhs_stress(2,I,k) = rhs_stress(2,I,k) + wq*hi*tau_v_q
+                end do
+            end do
+
+        end do ! Iq
+
+        ! Apply the mass inverse to the shear stress
+        ! do k = 1, nlayers
+        !     rhs_stress(1,:,k) = massinv(:)*rhs_stress(1,:,k)
+        !     rhs_stress(2,:,k) = massinv(:)*rhs_stress(2,:,k)
+        ! end do
         
     end subroutine rhs_layer_shear_stress
 
@@ -363,6 +435,8 @@ module mod_create_rhs_mlswe
                             p_tmp(k) * gradz(1,k) - p_tmp(k+1) * gradz(1,k+1))
                 source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
                             p_tmp(k) * gradz(2,k) - p_tmp(k+1) * gradz(2,k+1))
+
+                ! Do Gauss-Lobatto Integration
                 do ip = 1, npts
 
                     I = indexq(ip,Iq)

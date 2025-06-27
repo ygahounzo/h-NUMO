@@ -39,8 +39,8 @@ module mod_input
         space_method, &
         imass, &
         ad_mlswe, cd_mlswe, &
-        dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe,dpprime_visc_min, max_shear_dz, &
-        adjust_H_vertical_sum, botfr, mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
+        dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe, max_shear_dz, &
+        adjust_H_vertical_sum, botfr, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
         f0, beta
  
    public :: eqn_set, is_mlswe
@@ -124,7 +124,6 @@ module mod_input
    integer :: adjust_H_vertical_sum = 2
    integer :: adjust_bcl_mom_flux = 1
    real(kind=r8) :: visc_mlswe = 0.0
-   real(kind=r8) :: dpprime_visc_min = 0.0
    real(kind=r8) :: max_shear_dz = 0.0
    real(kind=r8) :: f0 = 0.0
    real(kind=r8) :: beta = 0.0
@@ -133,12 +132,14 @@ module mod_input
    ! Namelist Variables
    !-----------------------------------------------------------------------
    real(kind=r8), dimension(2) :: xdims, ydims
-   real(kind=r8)     :: ztop
+   real(kind=r8)     :: ztop = 0.0
    real(kind=r8)     :: pi_trig
    real(kind=r8)     :: zbottom = 0.0
    real(kind=r8)     :: delta_domain = 1.0 !used for turbulent channel flows (default value is 1.0)
    real(kind=r8)     :: xstretch_coe, ystretch_coe, zstretch_coe
-   integer           :: nelx, nely, nelz, nopx, nopy, nopz
+   integer           :: nelx, nely, nopx, nopy
+   integer           :: nopz = 0.0 ! 0th order poynomial in the z direction
+   integer           :: nelz = 1 !number of elements in the z direction
    integer           :: nlayers = 1 !number of shallow water layers
    integer           :: nproc_z
    integer           :: zlevel_out = 1 !This integer is given by the user to decide what spherical level to write to a netcdf file. Value 1 is by default
@@ -184,7 +185,7 @@ module mod_input
  
    integer, dimension(2)  :: x_boundary = 4
    integer, dimension(2)  :: y_boundary = 4
-   integer, dimension(2)  :: z_boundary = 4
+   integer, dimension(2)  :: z_boundary = 0
    integer                :: x_periodic = 0
    integer                :: y_periodic = 0
    integer                :: z_periodic = 0
@@ -264,8 +265,7 @@ module mod_input
    logical :: lgpu = .false.
    logical :: luse_hybrid_cpu_gpu = .false.
    
-   logical :: is_mlswe = .false.  
-   logical :: mlswe_bc_strong = .false. 
+   logical :: is_mlswe = .true.  
    logical :: dg_integ_exact = .true. 
    logical :: dump_data = .true. 
    logical :: lcheck_conserved = .false. 
@@ -344,8 +344,8 @@ module mod_input
          limit_threshold, &
          imass, &
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
-         visc_mlswe, dpprime_visc_min, max_shear_dz, adjust_H_vertical_sum, botfr, &
-         mlswe_bc_strong, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
+         visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
+         dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &

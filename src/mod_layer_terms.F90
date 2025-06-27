@@ -646,7 +646,7 @@ module mod_layer_terms
         use mod_grid, only:  npoin, intma, nface, face,mod_grid_get_face_nq
         use mod_initial, only: pbprime_face
         use mod_face, only: imapl, imapr, normal_vector
-        use mod_input, only: nlayers, mlswe_bc_strong
+        use mod_input, only: nlayers
 
         implicit none
 
@@ -708,28 +708,29 @@ module mod_layer_terms
         
         real, dimension(3,npoin_q,nlayers), intent(in) :: q
         real, dimension(2,npoin_q,nlayers), intent(out) :: uv
-        real, dimension(npoin_q) :: coeff
+        
         real, dimension(nlayers) :: a,b,c
         real, dimension(nlayers,2) :: r
-        real :: mult
+        real :: mult, coeff
         integer :: Iq,k
 
         do Iq = 1,npoin_q
-            coeff(Iq) = gravity*dt*max(sqrt(0.5*coriolis_quad(Iq)*ad_mlswe)/alpha_mlswe(1), &
-                                  ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
+            
         end do
         
         do Iq = 1, npoin_q
+            coeff = gravity*dt*max(sqrt(0.5*coriolis_quad(Iq)*ad_mlswe)/alpha_mlswe(1), &
+                                  ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
             do k = 1, nlayers
-                a(k) = -coeff(Iq)
-                b(k) = q(1,Iq,k) + 2.0*coeff(Iq)
-                c(k) = -coeff(Iq)
+                a(k) = -coeff
+                b(k) = q(1,Iq,k) + 2.0*coeff
+                c(k) = -coeff
                 r(k,1) = q(2,Iq,k)/q(1,Iq,k)
                 r(k,2) = q(3,Iq,k)/q(1,Iq,k)
             end do
             
-            b(1) = q(1,Iq,1) + coeff(Iq)
-            b(nlayers) = q(1,Iq,nlayers) + coeff(Iq)
+            b(1) = q(1,Iq,1) + coeff
+            b(nlayers) = q(1,Iq,nlayers) + coeff
             a(1) = 0.0
             c(nlayers) = 0.0
             

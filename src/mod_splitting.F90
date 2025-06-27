@@ -104,7 +104,8 @@ module mod_splitting
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
         use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, &
-                                    shear_stress_system, velocity_df, evaluate_bcl_v1
+                                    velocity_df, evaluate_bcl_v1
+        use mod_metrics, only: massinv
 
         implicit none
 
@@ -149,19 +150,16 @@ module mod_splitting
             end do
 
             !call layer_mom_boundary_df(q_df3(2:3,:,:))
-            !Extract velocity from the momentum at nodal pts
+
+            ! Velocity smoothing from the momentum
             call velocity_df(q_df3, qb_df)
 
-            ! Evaluate velocity and momentum at the quad points
-            call evaluate_mom(q,q_df3)
-
             ! Compute the vertical stress terms
-            call shear_stress_system(uv,q)
             call rhs_layer_shear_stress(rhs_stress,uv)
 
             do k = 1,nlayers
-                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
-                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
+                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*(massinv(:)*rhs_stress(1,:,k))
+                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*(massinv(:)*rhs_stress(2,:,k))
             end do
         end if ! ad_mlswe > 0.0
         
@@ -194,8 +192,10 @@ module mod_splitting
         use mod_input, only: nlayers, dt, ad_mlswe
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
-        use mod_layer_terms, only: shear_stress_system, layer_mom_boundary_df, evaluate_mom, &
+        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, &
                                     velocity_df, evaluate_bcl
+        use mod_metrics, only: massinv
+
         implicit none
 
         ! Input variables
@@ -256,19 +256,17 @@ module mod_splitting
                 q_df3(1,:,k) = q_df(1,:,k)
             end do
 
-            !Extract velocity from the momentum at nodal pts
+            !call layer_mom_boundary_df(q_df3(2:3,:,:))
+
+            ! Velocity smoothing from the momentum
             call velocity_df(q_df3, qb_df)
 
-            ! Evaluate velocity and momentum at the quad points
-            call evaluate_mom(q,q_df3)
-
             ! Compute the vertical stress terms
-            call shear_stress_system(uv,q)
-            call rhs_layer_shear_stress(rhs_stress,uv)
+            call rhs_layer_shear_stress(rhs_stress,q_df3)
 
             do k = 1,nlayers
-                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*rhs_stress(1,:,k)
-                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*rhs_stress(2,:,k)
+                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*(massinv(:)*rhs_stress(1,:,k))
+                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*(massinv(:)*rhs_stress(2,:,k))
             end do
         end if ! ad_mlswe > 0
         

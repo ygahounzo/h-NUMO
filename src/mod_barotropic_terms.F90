@@ -168,7 +168,6 @@ module mod_barotropic_terms
         use mod_grid, only:  npoin, intma, nface, face,mod_grid_get_face_nq
         use mod_initial, only: pbprime_face
         use mod_face, only: imapl, imapr, normal_vector
-        use mod_input, only: mlswe_bc_strong
 
         implicit none
 
@@ -223,7 +222,7 @@ module mod_barotropic_terms
         ! and in the barotropic pressure forcing.
 
         use mod_grid, only: npoin_q, nface, npoin, face, intma
-        use mod_input, only: nlayers, dpprime_visc_min
+        use mod_input, only: nlayers
         use mod_basis, only: nqx, nqy, nqz, nq, ngl, npts, psiq
         use mod_initial, only: alpha_mlswe, indexq, psih
         use mod_Tensorproduct, only: compute_gradient_quad, interpolate_layer_from_quad_to_node_1d
