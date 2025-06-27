@@ -389,10 +389,10 @@ module mod_input
      close(funit)
  
      !Read eqnset namelist
-     funit = get_unit()
-     open(funit,file=namelist_input)
-     read(funit,eqnset)
-     close(funit)
+     !funit = get_unit()
+     !open(funit,file=namelist_input)
+     !read(funit,eqnset)
+     !close(funit)
  
      !Read gridnl namelist
      funit = get_unit()
