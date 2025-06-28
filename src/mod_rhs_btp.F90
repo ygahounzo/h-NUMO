@@ -107,19 +107,19 @@ contains
         use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, &
                                 coriolis_quad, one_over_pbprime, alpha_mlswe
         use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, &
-                                uvb_ave, btp_mass_flux_ave
+                                uvb_ave, btp_mass_flux_ave, ope2_ave
         use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
         use mod_input, only: nlayers, cd_mlswe, botfr
 
-        implicit none 
+        implicit none
 
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(3,npoin), intent(out) :: rhs
 
-        real :: source_x, source_y, Hq, quux, quvxy, qvvy
-        real :: wq, hi, dhdx, dhdy, coef_fric, tau_bot_u, tau_bot_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, speed
+        real :: sc_x, sc_y, Hq, qu, quv, qv
+        real :: wq, hi, dhdx, dhdy, coef_fric, tb_u, tb_v, ope, &
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd
         real :: pp, up, vp
 
         integer :: I, Iq, ip
@@ -127,7 +127,7 @@ contains
         !speed1 = cd_mlswe/gravity
 
         rhs = 0.0
-        tau_bot_u = 0.0 ; tau_bot_v = 0.0
+        tb_u = 0.0 ; tb_v = 0.0
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
                                                   ! at which wind stress is reduced to 0
         Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth
@@ -138,7 +138,7 @@ contains
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
             pp = 0.0; up = 0.0; vp = 0.0
 
-            do ip = 1,npts 
+            do ip = 1,npts
                 I = indexq(ip,Iq)
                 hi = psih(ip,Iq)
 
@@ -149,7 +149,7 @@ contains
                 pp = pp + hi*qprime_df(1,I,nlayers)
                 up = up + hi*qprime_df(2,I,nlayers)
                 vp = vp + hi*qprime_df(3,I,nlayers)
-            end do 
+            end do
 
             wq = wjac(Iq)
             ub = udp/dp; vb = vdp/dp
@@ -157,34 +157,35 @@ contains
             if (botfr == 1) then
                 ubot = up + ub
                 vbot = vp + vb
-                speed = (cd_mlswe/gravity)*pp
-                tau_bot_u = speed*ubot
-                tau_bot_v = speed*vbot
+                spd = (cd_mlswe/gravity)*pp
+                tb_u = spd*ubot
+                tb_v = spd*vbot
             elseif (botfr == 2) then
                 ubot = up + ub
                 vbot = vp + vb
-                speed = (cd_mlswe/alpha_mlswe(nlayers))*sqrt(ubot**2 + vbot**2)
-                tau_bot_u = speed*ubot
-                tau_bot_v = speed*vbot
+                spd = (cd_mlswe/alpha_mlswe(nlayers))*sqrt(ubot**2 + vbot**2)
+                tb_u = spd*ubot
+                tb_v = spd*vbot
             end if
 
-            source_x = coriolis_quad(Iq)*vdp + gravity*(tau_wind(1,Iq) - tau_bot_u) - &
+            sc_x = coriolis_quad(Iq)*vdp + gravity*(tau_wind(1,Iq) - tb_u) - &
                         gravity*dp*grad_zbot_quad(1,Iq)
-            source_y = -coriolis_quad(Iq)*udp + gravity*(tau_wind(2,Iq) - tau_bot_v) - &
+            sc_y = -coriolis_quad(Iq)*udp + gravity*(tau_wind(2,Iq) - tb_v) - &
                         gravity*dp*grad_zbot_quad(2,Iq)
 
             ope = 1.0 + dpp * one_over_pbprime(Iq)
             Hq = (ope**2) * H_bcl(Iq)
 
-            quux = ub * udp + ope * Q_uu_dp(Iq)
-            quvxy = ub * vdp + ope * Q_uv_dp(Iq)
-            qvvy = vb * vdp + ope * Q_vv_dp(Iq)
+            qu = ub * udp + ope * Q_uu_dp(Iq)
+            quv = ub * vdp + ope * Q_uv_dp(Iq)
+            qv = vb * vdp + ope * Q_vv_dp(Iq)
 
-            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + quux
-            Qv_ave(Iq) = Qv_ave(Iq) + qvvy;  Quv_ave(Iq) = Quv_ave(Iq) + quvxy
-            tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tau_bot_u
-            tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tau_bot_v
+            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + qu
+            Qv_ave(Iq) = Qv_ave(Iq) + qv;  Quv_ave(Iq) = Quv_ave(Iq) + quv
+            tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tb_u
+            tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tb_v
             ope_ave(Iq) = ope_ave(Iq) + ope
+            ope2_ave(Iq) = ope2_ave(Iq) + ope**2
             btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + udp
             btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
             uvb_ave(1,Iq) = uvb_ave(1,Iq) + ub
@@ -199,8 +200,8 @@ contains
                 dhdy = dpsidy(ip,Iq)
 
                 rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
-                rhs(2,I) = rhs(2,I) + wq*(hi*source_x + dhdx*(Hq + quux) + quvxy*dhdy)
-                rhs(3,I) = rhs(3,I) + wq*(hi*source_y + dhdx*quvxy + dhdy*(Hq + qvvy))
+                rhs(2,I) = rhs(2,I) + wq*(hi*sc_x + dhdx*(Hq + qu) + quv*dhdy)
+                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*quv + dhdy*(Hq + qv))
 
             end do
         end do
@@ -215,7 +216,7 @@ contains
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
                                 Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
-                                uvb_face_ave, H_bcl_edge
+                                uvb_face_ave, H_bcl_edge, ope2_face_ave
         use mod_initial, only: coeff_pbpert_L, coeff_pbub_LR, coeff_pbpert_R, &
                                 one_over_pbprime_face, one_over_pbprime_edge, &
                                 coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR, &
@@ -301,14 +302,16 @@ contains
             Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
             Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:)
             Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
-            ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + 1.0 + (qbl(2,:)/pbl)
-            ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + 1.0 + (qbr(2,:)/pbr)
+            ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + (1.0 + (qbl(2,:)/pbl))
+            ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + (1.0 + (qbr(2,:)/pbr))
+            ope2_face_ave(1,:,iface) = ope2_face_ave(1,:,iface) + (1.0 + (qbl(2,:)/pbl))**2
+            ope2_face_ave(2,:,iface) = ope2_face_ave(2,:,iface) + (1.0 + (qbr(2,:)/pbr))**2
             !ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) &
             !                            + 1.0 + qbl(2,:) * one_over_pbprime_face(1,:,iface)
             !ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) &
             !                            + 1.0 + qbr(2,:) * one_over_pbprime_face(2,:,iface)
             one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) &
-                                                + one_plus_eta_edge(:)
+                                                + one_plus_eta_edge(:)**2
             uvb_face_ave(1,1,:,iface) = uvb_face_ave(1,1,:,iface) + ul
             uvb_face_ave(1,2,:,iface) = uvb_face_ave(1,2,:,iface) + ur
             uvb_face_ave(2,1,:,iface) = uvb_face_ave(2,1,:,iface) + vl

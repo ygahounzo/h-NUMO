@@ -25,10 +25,10 @@ module mod_rk_mlswe
         use mod_rhs_btp, only: create_rhs_btp
         use mod_barotropic_terms, only: btp_mom_boundary_df
         use mod_variables, only: one_plus_eta_edge_2_ave, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, &
-                                 ope2_ave, ope_ave_df, uvb_face_ave, btp_mass_flux_face_ave, &
+                                 ope2_ave, ope2_ave_df, uvb_face_ave, btp_mass_flux_face_ave, &
                                  ope_face_ave, H_face_ave, Qu_face_ave, Qv_face_ave, Quv_face_ave, &
                                  one_plus_eta_out, tau_wind_ave, tau_bot_ave, &
-                                 btp_mass_flux_ave, uvb_ave, uvb_ave_df
+                                 btp_mass_flux_ave, uvb_ave, uvb_ave_df, ope2_face_ave
 
         use mod_variables, only: graduvb_face_ave, graduvb_ave
 
@@ -53,9 +53,10 @@ module mod_rk_mlswe
         Qv_ave = 0.0
         Quv_ave = 0.0
 
-        ope_ave_df = 0.0
+        ope2_ave_df = 0.0
         uvb_face_ave  = 0.0
         ope_face_ave = 0.0
+        ope2_face_ave = 0.0
         btp_mass_flux_face_ave = 0.0
 
         H_face_ave = 0.0
@@ -86,7 +87,7 @@ module mod_rk_mlswe
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
-                ope_ave_df = ope_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))
+                ope2_ave_df = ope_ave2_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))**2
                 uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb1_df(3,:)/qb1_df(1,:)
                 uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb1_df(4,:)/qb1_df(1,:)
 
@@ -126,7 +127,7 @@ module mod_rk_mlswe
         graduvb_face_ave = N_inv*graduvb_face_ave 
         graduvb_ave = N_inv*graduvb_ave
         tau_wind_ave = tau_wind_ave / real(N_btp)
-        ope_ave_df = N_inv*ope_ave_df
+        ope2_ave_df = N_inv*ope2_ave_df
         ope2_ave = N_inv*ope2_ave
 
         ope_ave = N_inv*ope_ave
@@ -138,6 +139,7 @@ module mod_rk_mlswe
         tau_bot_ave = N_inv*tau_bot_ave
 
         ope_face_ave = N_inv*ope_face_ave
+        ope2_face_ave = N_inv*ope2_face_ave
         H_face_ave = N_inv*H_face_ave
         Qu_face_ave = N_inv*Qu_face_ave
         Qv_face_ave = N_inv*Qv_face_ave

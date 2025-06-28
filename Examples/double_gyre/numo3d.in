@@ -1,18 +1,10 @@
-&eqnset
-eqn_set='set2nc',
-is_mlswe = T,
-/
-
 &gridnl
 nelx  = 25,
 nely  = 25,
-nelz  = 1,
 nopx  = 4,
 nopy  = 4,
-nopz  = 0,
 xdims = 0.0,2e6,
 ydims = 0.0,2e6,
-ztop  =  0.0,
 nlayers = 2,
 
 !P4est Input
@@ -20,16 +12,13 @@ refinement_levels_h = 0, !refinement levels in horizontal
 
 lread_external_grid=F,
 
-!Dimension of the domain: (x,y) in (min,max); z in (0,ztop)	
+!Dimension of the domain: (x,y) in (min,max); z in (0,ztop)
 x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
 y_boundary = 4, 4 !Left and Right (y=-1 and y=+1)
-z_boundary = 0, 0 !Bottom and Top (z=-1 and z=+1)
-	   !These denote constant x,y, or z. 
-	   !E.g. z_boundary(1) is the bottom and z_boundary(2) is the top
-	   !BCs are: 0=do nothing; 10=Dirichlet
-x_periodic = 0,
-y_periodic = 0,
-
+           !These denote constant x,y, or z.
+           !E.g. z_boundary(1) is the bottom and z_boundary(2) is the top
+           !BCs are: 0=do nothing; 10=Dirichlet
+           !(see MOD_GLOBAL_GRID for more info)
 /
 
 &input
@@ -39,20 +28,17 @@ time_initial = 0.0,
 time_final   = 7200,
 time_restart = 10.0,
 time_scale = 86400, !1=seconds, 3600=hours, 86400=days
-lrestart_file = .false.,
+!irestart_file_number = 465,
+!lrestart_file = .false.,
 
 ! mlswe parameter
-ad_mlswe = 0.0, 
+ad_mlswe = 0.0,
 botfr = 1, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 1.0e-7, !(cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction)
 method_visc = 3,  !0=no viscosity
 visc_mlswe = 50.0,
-dpprime_visc_min = 1.5e7,
 max_shear_dz = 20.0,
-adjust_H_vertical_sum = 2,
-adjust_bcl_mom_flux = 1,
-mlswe_bc_strong = T,
-dg_integ_exact = F,
+dg_integ_exact = T,
 dump_data = T,
 beta = 2.0e-11,  ! beta-plane Coriolis parameter (default = 0.0)
 f0 = 0.93e-4,    ! Coriolis parameter (default = 0.0)
@@ -72,14 +58,14 @@ space_method = 'dg', !dg=discontinuous Galerkin
 fname_root='mlswe',
 format_vtk='ascii',
 out_type='txt',
-	       	  !txt=binary output; 
-	       	  !nc=netcdt output; 
-	       	  !vtk=Visual ToolKit (Paraview) output
-	       	  !none=No Output
+                  !txt=binary output
+                  !nc=netcdf output;
+                  !vtk=Visual ToolKit (Paraview) output
+                  !none=No Output
 
-lprint_diagnostics=T, 
-			   !T=true=print diagnostics
-			   !F=false=do NOT print diagnostics
+lprint_diagnostics=T,
+                           !T=true=print diagnostics
+                           !F=false=do NOT print diagnostics
 lcheck_conserved=T
 
 /

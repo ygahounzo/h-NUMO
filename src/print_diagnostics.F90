@@ -136,7 +136,7 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
       print*,'---------------------------------------------------------------'
       do ll = 1,nlayers
          write(*,'("Layer = ",i8)')ll
-         write(*,'("Mass Loss   = ",1(e16.8,1x))') xm1(ll)
+         write(*,'("Mass Loss   = ",1(e22.8,1x))') xm1(ll)
          do i=1,nvar
             write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), &
                      qmin_layers(i,ll)

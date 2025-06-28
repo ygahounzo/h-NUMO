@@ -18,6 +18,7 @@ y_boundary = 4, 4 !Left and Right (y=-1 and y=+1)
 	   !These denote constant x,y, or z. 
 	   !E.g. x_boundary(1) is the west and x_boundary(2) is the east
 	   !BCs are: 0=do nothing, 4=freeslip, 5=noslip
+	
 /
 
 &input

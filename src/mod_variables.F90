@@ -8,18 +8,16 @@ module mod_variables
 
     public :: Qu_face, Qv_face, one_plus_eta_face, flux_edge, &
                 Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge, &
-                Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope_ave_df, one_plus_eta_out, &
+                Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope2_ave_df, one_plus_eta_out, &
                 Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, &
                 ope2_ave, tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2, btp_mass_flux_ave, &
                 uvb_ave, one_plus_eta_edge_2_ave, H_face_ave, tau_wind_ave, tau_bot_ave, &
                 uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, Qu_face_ave, Qv_face_ave, &
                 Quv_face_ave, pbprime_visc, one_plus_eta_edge, mod_allocate_mlswe, uvb_ave_df, &
                 dpprime_visc,btp_dpp_graduv, btp_dpp_uvp, dpp_uvp,dpp_graduv, graduv_dpp_face, &
-                btp_graduv_dpp_face, graduvb_face_ave, graduvb_ave, dpprime_visc_q
+                btp_graduv_dpp_face, graduvb_face_ave, graduvb_ave, dpprime_visc_q, ope2_face_ave
 
-    public :: H_r, sum_layer_mass_flux, p, z_elev, &
-        sum_layer_mass_flux_face, &
-        grad_z, H_r_face
+    public :: sum_layer_mass_flux, sum_layer_mass_flux_face
         
     public :: z_elevation
 
@@ -27,7 +25,7 @@ module mod_variables
     ! module variable and parameters 
     real, dimension(:,:,:), allocatable :: Qu_face, Qv_face, one_plus_eta_face, flux_edge
     real, dimension(:,:), allocatable :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
-    real, dimension(:), allocatable :: Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope_ave_df
+    real, dimension(:), allocatable :: Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope2_ave_df
     real, dimension(:), allocatable :: one_plus_eta_out, pbprime_visc, Qv_ave, Quv_ave, ope2_ave
     real, dimension(:), allocatable :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave 
     real, dimension(:,:), allocatable :: tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2
@@ -37,7 +35,7 @@ module mod_variables
     real, dimension(:,:), allocatable :: one_plus_eta_edge_2_ave, H_face_ave, tau_wind_ave
     real, dimension(:,:), allocatable :: tau_bot_ave, one_plus_eta_edge
     real, dimension(:,:,:,:), allocatable :: uvb_face_ave, btp_graduv_dpp_face, graduvb_face_ave
-    real, dimension(:,:,:), allocatable :: btp_mass_flux_face_ave, ope_face_ave
+    real, dimension(:,:,:), allocatable :: btp_mass_flux_face_ave, ope_face_ave, ope2_face_ave
     real, dimension(:,:,:), allocatable :: Qu_face_ave, Qv_face_ave, Quv_face_ave
 
     real, dimension(:,:,:), allocatable :: dpp_uvp, dpp_graduv
@@ -45,10 +43,8 @@ module mod_variables
     real, dimension(:,:,:,:,:), allocatable :: graduv_dpp_face
 
     ! bcl variables 
-    real, dimension(:,:), allocatable :: sum_layer_mass_flux, H_r, p, z_elev
+    real, dimension(:,:), allocatable :: sum_layer_mass_flux
     real, dimension(:,:,:), allocatable :: sum_layer_mass_flux_face
-    real, dimension(:,:,:), allocatable :: grad_z
-    real, dimension(:,:,:,:), allocatable :: H_r_face
 
     contains
 
@@ -59,13 +55,13 @@ module mod_variables
 
         if(allocated(H_bcl)) then 
             deallocate(Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, &
-            ope2_ave, Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope_ave_df, &
+            ope2_ave, Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope2_ave_df, &
             one_plus_eta_out, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge, &
             Qu_face, Qv_face, one_plus_eta_face, flux_edge, &
             tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2, btp_mass_flux_ave, uvb_ave, &
             one_plus_eta_edge_2_ave, H_face_ave, tau_wind_ave, tau_bot_ave, one_plus_eta_edge, &
             uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, Qu_face_ave, Qv_face_ave, &
-            Quv_face_ave, uvb_ave_df)
+            Quv_face_ave, uvb_ave_df, ope2_face_ave)
         endif 
 
         allocate(Q_uu_dp(npoin_q), Q_uv_dp(npoin_q), Q_vv_dp(npoin_q), H_bcl(npoin_q), &
@@ -76,12 +72,12 @@ module mod_variables
             one_plus_eta_edge_2(nq,nface), Quu(npoin_q), Qvv(npoin_q), Quv(npoin_q), &
             H(npoin_q), one_plus_eta(npoin_q), ope_ave(npoin_q), H_ave(npoin_q), Qu_ave(npoin_q), &
             Qv_ave(npoin_q), Quv_ave(npoin_q), ope2_ave(npoin_q), btp_mass_flux_ave(2,npoin_q), &
-            uvb_ave(2,npoin_q), ope_ave_df(npoin), uvb_face_ave(2,2,nq,nface), &
+            uvb_ave(2,npoin_q), ope2_ave_df(npoin), uvb_face_ave(2,2,nq,nface), &
             btp_mass_flux_face_ave(2,nq,nface), ope_face_ave(2,nq,nface), H_face_ave(nq,nface), &
             Qu_face_ave(2,nq,nface), Qv_face_ave(2,nq,nface), Quv_face_ave(2,nq,nface), &
             one_plus_eta_out(npoin), tau_wind_ave(2,npoin_q), tau_bot_ave(2,npoin_q), &
             one_plus_eta_edge(nq,nface), one_plus_eta_edge_2_ave(nq,nface), &
-            uvb_ave_df(2,npoin), stat=AllocateStatus)
+            uvb_ave_df(2,npoin), ope2_face_ave(2,nq,nface), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables"
 
         if(allocated(dpprime_visc)) then 
@@ -99,17 +95,12 @@ module mod_variables
 
     ! ======== bcl variables =========
 
-    if(allocated(H_r)) then 
-        deallocate(H_r,sum_layer_mass_flux, p, z_elev, &
-        sum_layer_mass_flux_face, grad_z, &
-        H_r_face)
+    if(allocated(sum_layer_mass_flux)) then 
+        deallocate(sum_layer_mass_flux, sum_layer_mass_flux_face)
     endif 
 
-    allocate(H_r(npoin_q,nlayers),sum_layer_mass_flux(2,npoin_q), &
-        p(npoin_q,nlayers+1), z_elev(npoin,nlayers+1), &
+    allocate(sum_layer_mass_flux(2,npoin_q), &
         sum_layer_mass_flux_face(2,nq,nface), &
-        grad_z(2,npoin_q,nlayers+1), &
-        H_r_face(2,nq,nface,nlayers), &
         stat=AllocateStatus)
     if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables" 
         

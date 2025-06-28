@@ -175,8 +175,6 @@ module mod_create_rhs_mlswe
         ! (i.e., sqrt(2*A_D/f)) or the value of  max_shear_dz,  whichever 
         ! is less.
         
-        tau_u = 0.0
-        tau_v = 0.0
         rhs_stress = 0.0
         
         ! Compute the shear stress
@@ -289,7 +287,7 @@ module mod_create_rhs_mlswe
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
                                 tau_wind, pbprime, zbot_df
         use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
-                                    Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope_ave_df
+                                    Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope2_ave_df, ope2_ave
 
         implicit none
 
@@ -322,7 +320,8 @@ module mod_create_rhs_mlswe
         ! Find layer interfaces
         z_elv(:,nlayers+1) = zbot_df(:)
         do k = nlayers,1,-1
-            z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * (qprime_df(1,:,k)*ope_ave_df(:))
+            z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
+                                        (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
         end do
 
         do Iq = 1, npoin_q
@@ -335,7 +334,6 @@ module mod_create_rhs_mlswe
                     I = indexq(ip,Iq)
                     hi = psih(ip,Iq)
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
-                    !qb(:) = qb(:) + hi*uvb_ope_ave_df(:,I)
 
                     temp_uu(k) = temp_uu(k) + hi*q_df(2,I,k)
                     temp_vv(k) = temp_vv(k) + hi*q_df(3,I,k)
@@ -345,15 +343,15 @@ module mod_create_rhs_mlswe
                 qb(2) = uvb_ave(1,Iq)
                 qb(3) = uvb_ave(2,Iq)
 
-                p_tmp(k+1) = p_tmp(k) + qp(1) * qb(1)
+                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
                 H_tmp(k) = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
 
                 dp = qp(1) * qb(1)
                 u = qp(2) + qb(2)
                 v = qp(3) + qb(3)
 
-                u_udp(k) = dp * u**2
-                v_vdp(k) = dp * v**2
+                u_udp(k) = dp * u*u
+                v_vdp(k) = dp * v*v
                 u_vdp(1,k) = u * v * dp
                 u_vdp(2,k) = v * u * dp
 
@@ -469,7 +467,7 @@ module mod_create_rhs_mlswe
         use mod_input, only : nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
-                                uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave
+                                uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
 
         implicit none
 
@@ -631,8 +629,8 @@ module mod_create_rhs_mlswe
                 p_edge_plus = 0.0; p_edge_minus = 0.0
 
                 !Store Left Side Variables
-                ope_l = ope_face_ave(1,iquad,iface)
-                ope_r = ope_face_ave(2,iquad,iface)
+                ope_l = sqrt(ope2_face_ave(1,iquad,iface))
+                ope_r = sqrt(ope2_face_ave(2,iquad,iface))
                 p_face(1,1) = 0.0
                 p_face(2,1) = 0.0
                 do k=1,nlayers
@@ -640,7 +638,7 @@ module mod_create_rhs_mlswe
                     p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,iquad,k)
                 end do
 
-                one_plus_eta_edge = one_plus_eta_edge_2_ave(iquad,iface)
+                one_plus_eta_edge = sqrt(one_plus_eta_edge_2_ave(iquad,iface))
                 z_face(1,nlayers+1) = zbot_face(1,iquad,iface)
                 z_face(2,nlayers+1) = zbot_face(2,iquad,iface)
                 z_edge_plus(nlayers+1) = zbot_face(1,iquad,iface)
@@ -857,7 +855,6 @@ module mod_create_rhs_mlswe
                     I = indexq(ip,Iq)
                     hi = psih(ip,Iq)
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
-                    !qb(:) = qb(:) + hi*uvb_ope_ave_df(:,I)
                 enddo
 
                 dp_temp = qp(1) * qb(1)
@@ -972,8 +969,6 @@ module mod_create_rhs_mlswe
                         hi = psiq(n,iquad)
                         ql(:,iquad) = ql(:,iquad) + hi*qprime_df_face(:,1,n,iface,k)
                         qr(:,iquad) = qr(:,iquad) + hi*qprime_df_face(:,2,n,iface,k)
-                        !qbl(:,iquad) = qbl(:,iquad) + hi*uvb_ope_face_ave_df(:,1,n,iface)
-                        !qbr(:,iquad) = qbr(:,iquad) + hi*uvb_ope_face_ave_df(:,2,n,iface)
                     enddo
 
                     nxl = normal_vector_q(1,iquad,1,iface)

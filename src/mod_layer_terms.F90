@@ -14,11 +14,10 @@ module mod_layer_terms
         
     implicit none
 
-    public :: &
-            shear_stress_system, layer_mom_boundary_df,  &
+    public :: layer_mom_boundary_df,  &
             evaluate_mom, velocity_df, evaluate_mom_face, &
             evaluate_bcl, evaluate_bcl_v1, &
-            interpolate_qprime, evaluate_consistency_face, &
+            evaluate_consistency_face, &
             extract_qprime_df_face, extract_dprime_df_face, interpolate_dpp
 
     contains
@@ -352,119 +351,6 @@ module mod_layer_terms
 
     end subroutine evaluate_mom
 
-    subroutine interpolate_qprime(qprime,qprime_face,qprime_df_face,qprime_df)
-
-        ! Interpolate from dofs to quadrature points 
-
-        use mod_basis, only: nq, npts, ngl
-        use mod_grid, only:  npoin, npoin_q, intma, intma_dg_quad, face
-        use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q, normal_vector_q, normal_vector, imapl, imapr
-        use mod_initial, only: psih, indexq
-
-        implicit none
-
-        real, dimension(3,npoin_q,nlayers), intent(out) :: qprime
-        real, dimension(3,2,nq,nface,nlayers), intent(out) :: qprime_face
-        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-
-        integer :: k, Iq, I, ip, iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
-        real :: hi, nx, ny, un(nlayers)
-
-        qprime = 0.0
-        qprime_face = 0.0
-
-        do Iq = 1,npoin_q
-            do ip = 1,npts
-
-                I = indexq(ip,Iq)
-                hi = psih(ip,Iq)
-
-                qprime(1,Iq,:) = qprime(1,Iq,:) + hi*qprime_df(1,I,:)
-                qprime(2,Iq,:) = qprime(2,Iq,:) + hi*qprime_df(2,I,:)
-                qprime(3,Iq,:) = qprime(3,Iq,:) + hi*qprime_df(3,I,:)
-            end do
-        end do
-    
-        do iface = 1, nface
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do iquad = 1, nq
-
-                il = imapl_q(1,iquad,1,iface)
-                jl = imapl_q(2,iquad,1,iface)
-                kl = imapl_q(3,iquad,1,iface)
-                I = intma_dg_quad(il,jl,kl,el)
-
-                qprime_face(1:3,1,iquad,iface,:) = qprime(1:3,I,:)
-
-                if(er > 0) then
-
-                    ir = imapr_q(1,iquad,1,iface)
-                    jr = imapr_q(2,iquad,1,iface)
-                    kr = imapr_q(3,iquad,1,iface)
-                    I = intma_dg_quad(ir,jr,kr,er)
-
-                    qprime_face(1:3,2,iquad,iface,:) = qprime(1:3,I,:)
-
-                else 
-
-                    qprime_face(1:3,2,iquad,iface,:) = qprime_face(1:3,1,iquad,iface,:)
-
-                    if(er == -4) then
-                        nx = normal_vector_q(1,iquad,1,iface)
-                        ny = normal_vector_q(2,iquad,1,iface)
-                        un = qprime(2,I,:)*nx + qprime(3,I,:)*ny
-                        qprime_face(2,2,iquad,iface,:) = qprime(2,I,:) - 2.0*un*nx
-                        qprime_face(3,2,iquad,iface,:) = qprime(3,I,:) - 2.0*un*ny
-                    elseif(er == -2) then 
-                        qprime_face(2:3,2,iquad,iface,:) = -qprime_face(2:3,1,iquad,iface,:)
-                    end if
-                end if
-
-            end do
-
-            do n = 1, ngl
-
-                il = imapl(1,n,1,iface)
-                jl = imapl(2,n,1,iface)
-                kl = imapl(3,n,1,iface)
-                I = intma(il,jl,kl,el)
-
-                qprime_df_face(1:3,1,n,iface,:) = qprime_df(1:3,I,:)
-
-                if(er > 0) then
-
-                    ir = imapr(1,n,1,iface)
-                    jr = imapr(2,n,1,iface)
-                    kr = imapr(3,n,1,iface)
-                    I = intma(ir,jr,kr,er)
-
-                    qprime_df_face(1:3,2,n,iface,:) = qprime_df(1:3,I,:)
-
-                else 
-
-                    qprime_df_face(1:3,2,n,iface,:) = qprime_df_face(1:3,1,n,iface,:)
-
-                    if(er == -4) then
-                        nx = normal_vector(1,n,1,iface)
-                        ny = normal_vector(2,n,1,iface)
-                        un = qprime_df(2,I,:)*nx + qprime_df(3,I,:)*ny
-                        qprime_df_face(2,2,n,iface,:) = qprime_df(2,I,:) - 2.0*un*nx
-                        qprime_df_face(3,2,n,iface,:) = qprime_df(3,I,:) - 2.0*un*ny
-                    elseif(er == -2) then
-                        qprime_df_face(2:3,2,n,iface,:) = -qprime_df_face(2:3,1,n,iface,:)
-                    end if
-                end if
-            end do
-        end do
-
-    end subroutine interpolate_qprime
-
     subroutine extract_qprime_df_face(qprime_df_face,qprime_df)
 
         ! Interpolate from dofs to quadrature points
@@ -696,64 +582,5 @@ module mod_layer_terms
         end do
       
     end subroutine layer_mom_boundary_df 
-
-    subroutine shear_stress_system(uv,q)
-
-        use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe, coriolis_quad
-        use mod_grid, only : nface, npoin, npoin_q
-        use mod_input, only : dt, ad_mlswe, nlayers, max_shear_dz
-  
-        implicit none
-        
-        real, dimension(3,npoin_q,nlayers), intent(in) :: q
-        real, dimension(2,npoin_q,nlayers), intent(out) :: uv
-        
-        real, dimension(nlayers) :: a,b,c
-        real, dimension(nlayers,2) :: r
-        real :: mult, coeff
-        integer :: Iq,k
-
-        do Iq = 1,npoin_q
-            
-        end do
-        
-        do Iq = 1, npoin_q
-            coeff = gravity*dt*max(sqrt(0.5*coriolis_quad(Iq)*ad_mlswe)/alpha_mlswe(1), &
-                                  ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
-            do k = 1, nlayers
-                a(k) = -coeff
-                b(k) = q(1,Iq,k) + 2.0*coeff
-                c(k) = -coeff
-                r(k,1) = q(2,Iq,k)/q(1,Iq,k)
-                r(k,2) = q(3,Iq,k)/q(1,Iq,k)
-            end do
-            
-            b(1) = q(1,Iq,1) + coeff
-            b(nlayers) = q(1,Iq,nlayers) + coeff
-            a(1) = 0.0
-            c(nlayers) = 0.0
-            
-            do k = 2, nlayers
-                mult = a(k) / b(k-1)
-                b(k) = b(k) - mult*c(k-1)
-                r(k,1) = r(k,1) - mult*r(k-1,1)
-                r(k,2) = r(k,2) - mult*r(k-1,2)
-            end do
-            
-            r(nlayers,1) = r(nlayers,1) / b(nlayers)
-            r(nlayers,2) = r(nlayers,2) / b(nlayers)
-            uv(1,Iq,nlayers) = r(nlayers,1)
-            uv(2,Iq,nlayers) = r(nlayers,2)
-            
-            do k = nlayers-1,1,-1
-                r(k,1) = (r(k,1) - c(k)*r(k+1,1)) / b(k)
-                r(k,2) = (r(k,2) - c(k)*r(k+1,2)) / b(k)
-                uv(1,Iq,k) = r(k,1)
-                uv(2,Iq,k) = r(k,2)
-            end do
-        end do
-        
-    end subroutine shear_stress_system
 
 end module mod_layer_terms
