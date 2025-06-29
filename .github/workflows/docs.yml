@@ -49,6 +49,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: List generated HTML
+        run: |
+          find docs/build/html
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
