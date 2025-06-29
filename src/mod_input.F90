@@ -315,7 +315,7 @@ module mod_input
  
      !Namelist Input
  
-     namelist /eqnset/ eqn_set, is_mlswe
+   !   namelist /eqnset/ eqn_set, is_mlswe
  
      namelist /input/ dt, &
          restoring_time, &
@@ -381,13 +381,6 @@ module mod_input
  
      amr_indicator_variables(1) = 1
  
-     !Read input namelist
-     funit = get_unit()
-     print*,"File:",namelist_input, funit
-     open(funit,file=namelist_input)
-     read(funit,input)
-     close(funit)
- 
      !Read eqnset namelist
      !funit = get_unit()
      !open(funit,file=namelist_input)
@@ -398,6 +391,13 @@ module mod_input
      funit = get_unit()
      open(funit,file=namelist_input)
      read(funit,gridnl)
+     close(funit)
+
+     !Read input namelist
+     funit = get_unit()
+     print*,"File:",namelist_input, funit
+     open(funit,file=namelist_input)
+     read(funit,input)
      close(funit)
  
      ti_method_btp = lowercase(ti_method_btp) !added by YaoG
