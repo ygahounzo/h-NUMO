@@ -1,6 +1,6 @@
 # h-NUMO
 [![tests](https://github.com/ygahounzo/h-NUMO/actions/workflows/ci.yml/badge.svg)](https://github.com/ygahounzo/h-NUMO/actions/workflows/ci.yml)
-[![Documentation Status](https://ygahounzo.github.io/h-NUMO/index.html)](https://ygahounzo.github.io/h-NUMO/index.html)
+[![Documentation Status](https://github.com/ygahounzo/h-NUMO/actions/workflows/docs.yml/badge.svg)](https://github.com/ygahounzo/h-NUMO/actions/workflows/docs.yml)
 
 Hydrostatic version of the Non-hydrostatic Model of the Ocean
 
@@ -9,9 +9,9 @@ model.
 
 h-NUMO is 
 
-- [Easy to install](https://ygahounzo.github.io/h-NUMO/installation.html) either on laptop or HPC systems.
+- Easy to [install](https://ygahounzo.github.io/h-NUMO/installation.html) either on laptop or HPC systems.
 
-- Easy to configure: all the parameters are specified in a single [input file](https://ygahounzo.github.io/h-NUMO/running.html). The user can also define their own initial conditions.
+- Simple to configure: all the parameters are specified in a single [input file](https://ygahounzo.github.io/h-NUMO/running.html). The user can also define their own initial conditions.
 
 - Easy to learn with an extensive [online documentation](https://ygahounzo.github.io/h-NUMO/index.html).
 

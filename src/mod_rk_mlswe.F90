@@ -87,7 +87,7 @@ module mod_rk_mlswe
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
-                ope2_ave_df = ope_ave2_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))**2
+                ope2_ave_df = ope2_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))**2
                 uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb1_df(3,:)/qb1_df(1,:)
                 uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb1_df(4,:)/qb1_df(1,:)
 

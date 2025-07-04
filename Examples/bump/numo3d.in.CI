@@ -7,17 +7,18 @@ xdims = 0.0,2e3,
 ydims = 0.0,2e3,
 nlayers = 2,
 
-!P4est Input
-refinement_levels_h = 0, !refinement levels in horizontal
-
-lread_external_grid=F,  ! Read external grid file
-
 !Dimension of the domain: (x,y) in (min,max)
-x_boundary = 4, 4 !Front and Back (x=-1 and x=+1)
-y_boundary = 4, 4 !Left and Right (y=-1 and y=+1)
-           !These denote constant x or y.
-           !E.g. x_boundary(1) is the west and x_boundary(2) is the east
-           !BCs are: 0=do nothing, 4=freeslip, 5=noslip
+x_boundary = 4, 4 ! Front and Back (x=-1 and x=+1)
+y_boundary = 4, 4 ! Left and Right (y=-1 and y=+1)
+           ! These denote constant x or y.
+           ! E.g. x_boundary(1) is the west and x_boundary(2) is the east
+           ! BCs are: 0=do nothing, 4=freeslip, 5=noslip
+
+!P4est Input
+refinement_levels_h = 0, ! refinement levels in horizontal
+
+lread_external_grid = F,  ! Read external grid file
+
 /
 
 &input
@@ -33,8 +34,8 @@ time_scale = 1, !1=seconds, 3600=hours, 86400=days
 ! mlswe parameter
 ad_mlswe = 0.0,
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
-cd_mlswe = 0.0, !cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
-method_visc = 0,  !0=no viscosity
+cd_mlswe = 0.0, ! cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
+method_visc = 0,  ! 0=no viscosity
 visc_mlswe = 0.0, ! horizontal viscosity
 dg_integ_exact = T,
 dump_data = T,    ! write output files
@@ -42,28 +43,28 @@ beta = 0.0,  ! beta-plane Coriolis parameter (default = 0.0)
 f0 = 0.0,    ! Coriolis parameter (default = 0.0)
 
 !---- Test Cases ------------------------------------
-test_case='bump',
+test_case = 'bump',
            !
            ! 'bump' = 2 layers cosine test;
            ! 'lakeAtrest' = 2, ..., 20 layers lake at rest test;
            ! 'double-gyre' = 2 layers double-gyre test
 
 ti_method_btp = 'rk35', ! Default = 'explicit' which is a two step method
-kstages=5,
+kstages = 5,
 
-space_method = 'dg', !dg=discontinuous Galerkin
+space_method = 'dg', ! dg=discontinuous Galerkin
 
-fname_root='mlswe',
-format_vtk='ascii',
-out_type='txt',
-                  !txt=binary output
-                  !nc=netcdf output;
-                  !vtk=Visual ToolKit (Paraview) output
-                  !none=No Output
+fname_root = 'mlswe',
+format_vtk = 'ascii',
+out_type = 'txt',
+                  ! txt=binary output
+                  ! nc=netcdf output;
+                  ! vtk=Visual ToolKit (Paraview) output
+                  ! none=No Output
 
-lprint_diagnostics=T,
-                           !T=true=print diagnostics
-                           !F=false=do NOT print diagnostics
+lprint_diagnostics = T,
+                           ! T=true=print diagnostics
+                           ! F=false=do NOT print diagnostics
 
-lcheck_conserved=T
+lcheck_conserved = T
 /
