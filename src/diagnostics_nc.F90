@@ -18,7 +18,8 @@ subroutine diagnostics_nc(q,q_df,qb,itime,idone)
     character*5 :: tempchar
     character*4 :: num
     integer     :: i,j,k,iloop, ncid, dimids_2d(2)
-    real :: q_gg(5,npoin_g,nlayers), ql(5,npoin), zbot_g(npoin_g), coord_dg_gathered(3,npoin_g), qb_g(4,npoin_g), q_g(5,npoin_g)
+    real :: q_gg(5,npoin_g,nlayers), ql(5,npoin), zbot_g(npoin_g)
+    real :: coord_dg_gathered(3,npoin_g), qb_g(4,npoin_g), q_g(5,npoin_g)
     real, dimension(npoin,nlayers+1) :: mslwe_elevation
     real, dimension(npoin_g,nlayers+1) :: eta
     character(len=100) ::  fn
@@ -140,7 +141,7 @@ subroutine diagnostics_nc(q,q_df,qb,itime,idone)
         call check(nf90_put_att(ncid, v_varid, "units", "m/s"))
         dimids_2d = (/npoin_dimid, zi_dimid/)
         call check(nf90_def_var(ncid, ETA_NAME, NF90_DOUBLE,dimids_2d,e_varid))
-        call check(nf90_put_att(ncid, e_varid, "name", "Interface Height Relative to Mean Sea Level"))
+        call check(nf90_put_att(ncid, e_varid,"name","Interface Height Relative to Mean Sea Level"))
         call check(nf90_put_att(ncid, e_varid, "units", "m"))
 
         ! End define mode
@@ -178,6 +179,3 @@ subroutine diagnostics_nc(q,q_df,qb,itime,idone)
         end if
     end subroutine check
 end subroutine diagnostics_nc
-
-
-

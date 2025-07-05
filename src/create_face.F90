@@ -1,4 +1,4 @@
-!----------------------------------------------------------------------!
+!----------------------------------------------------------------------
 !> @brief This module builds the Faces and Normals
 !> @author J.F. Kelly on 11/2009
 !>           Department of Applied Mathematics
@@ -17,7 +17,7 @@
 !> @date 17 November 2009 J.F. Kelly
 !> @date 18 November 2009 J.F. Kelly
 !> @date 3 August 2010
-!----------------------------------------------------------------------!
+!----------------------------------------------------------------------
 subroutine create_face(face,nface, FACE_LEN)
 
     use mod_basis, only: nglx, ngly, nglz

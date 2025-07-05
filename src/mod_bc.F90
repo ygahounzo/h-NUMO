@@ -29,12 +29,12 @@ module mod_bc
         read_bc, &
         create_bc_list,&
         normals, &
-        bc_list, bc_count, & !for identifying boundary points not on boundary element faces (unstructured meshes)
+        bc_list, bc_count, & !for identifying boundary points not on boundary element faces
         vc_el_type
     
 
     private
-    !-----------------------------------------------------------------------
+
     real,    dimension(:,:),    allocatable :: normals
     integer, dimension(:),      allocatable :: ipoin_bound, ip_bound_bc
     integer, dimension(:,:),    allocatable :: bc_list
@@ -43,11 +43,9 @@ module mod_bc
     integer npoin_bound
     integer npoin_errmask, num_bound_bc
     logical ldirichlet
-  !-----------------------------------------------------------------------  
 
 contains
 
-    !-----------------------------------------------------------------------
     subroutine mod_bc_create()
 
         implicit none
@@ -244,7 +242,7 @@ contains
       integer :: iface, ier, ilocl, iel, i, j, k, il, jl, kl, ip
       integer :: ngl_i, ngl_j,plane_ij, irank, ierr
       real, dimension (4,num_send_recv_total) :: bc_marker_nbh
-      real, dimension(4,npoin) :: bc_marker  !one marker for velocity, one for temperature, one for salinity, one for mesh velocity
+      real, dimension(4,npoin) :: bc_marker  
       integer, dimension(4) :: bcflag !same here
 
       call mpi_comm_rank(mpi_comm_world,irank,ierr)
@@ -300,7 +298,8 @@ contains
 
       call create_global_rhs(bc_marker,bc_marker_nbh,4,0)
 
-      !remove points that lie on boundary faces to keep only boundary vertices (that lie on a non-boundary face of an element)
+      ! remove points that lie on boundary faces to keep only boundary vertices 
+      ! (that lie on a non-boundary face of an element)
       do iface=1, nface
          ier=face(8,iface)
          if (ier >= 0) cycle
@@ -370,6 +369,5 @@ contains
       end do
 
     end subroutine create_bc_list
-
 
 end module mod_bc

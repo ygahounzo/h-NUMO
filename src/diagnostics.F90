@@ -17,7 +17,8 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
     character*5 :: tempchar
     character*4 :: num
     integer  :: AllocateStatus,i,j,k,iloop, I1
-    real     :: q_gg(5,npoin_g,nlayers), ql(5,npoin), zbot_g(npoin_g), coord_dg_gathered(3,npoin_g), qb_g(4,npoin_g), q_g(5,npoin_g)
+    real     :: q_gg(5,npoin_g,nlayers), ql(5,npoin), zbot_g(npoin_g)
+    real :: coord_dg_gathered(3,npoin_g), qb_g(4,npoin_g), q_g(5,npoin_g)
     real, dimension(npoin,nlayers+1) :: mslwe_elevation
 
     do k = 1,nlayers
@@ -92,4 +93,3 @@ subroutine diagnostics(q,q_df,qb,itime,idone)
 
     return
 end subroutine diagnostics
-

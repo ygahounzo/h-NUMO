@@ -14,15 +14,12 @@
 subroutine print_header(flag,numproc)
   
     use mod_global_grid, only: npoin_g, npoin_g_cg, nelem_g, nboun_g
-
-    use mod_initial, only: nvar
-
-    use mod_input, only: eqn_set, dt, time_initial, time_final, time_restart, &
+    use mod_input, only: eqn_set, dt, dt_btp, time_initial, time_final, time_restart, &
         nelx, nely, nelz, nopx, nopy, nopz, ztop, &
         test_case, space_method, ti_method_btp, kstages, &
         fname_root, out_type, visc_mlswe, &
         lprint_diagnostics, time_scale, &
-        refinement_levels_h, nel_root_h
+        refinement_levels_h, nel_root_h, nlayers
 
     implicit none
 
@@ -40,7 +37,8 @@ subroutine print_header(flag,numproc)
     print*,'---------------------------------------------------------------'
     write(*,'("eqn_set = ",a)')eqn_set
 
-    write(*,'("dt time_initial time_final time_restart time_scale = ",5(e12.4,1x))')dt,time_initial/time_scale,time_final/time_scale,time_restart/time_scale,time_scale
+    write(*,'("dt dt_btp time_initial time_final time_restart time_scale = ",6(e12.4,1x))')dt, &
+            dt_btp, time_initial/time_scale,time_final/time_scale,time_restart/time_scale,time_scale
     write(*,'("nopx nopy nopz = ",3(i6,1x))')nopx,nopy,nopz
     !P4EST and/or P6est Output
 
@@ -54,7 +52,6 @@ subroutine print_header(flag,numproc)
     write(*,'("nel_root_y refinement_levels_y  nely = ",3(i6,1x))')nely,refinement_levels_h,ney
     write(*,'("--------P4est Parameters--------")')
 
-    write(*,'("ztop = ",1(e12.4,1x))')ztop
     write(*,'("test_case  = ",a)')test_case
     write(*,'("space_method = ",a)')space_method
     write(*,'("ti_method_btp = ",a)')ti_method_btp
@@ -64,7 +61,8 @@ subroutine print_header(flag,numproc)
 
     write(*,'("viscosity = ",f6.3)')visc_mlswe
 
-    write(*,'("nvar npoin npoin_cg nelem nboun = ",5(i9,1x))')nvar,npoin_g,npoin_g_cg,nelem_g,nboun_g
+    write(*,'("nlayers npoin nelem nboun = ",5(i9,1x))') nlayers,npoin_g, &
+        nelem_g,nboun_g
     write(*,'("lprint_diagnostics = ",l7)')lprint_diagnostics
     write(*,'("numproc = ",(i6,1x))')numproc
     print*,'---------------------------------------------------------------'

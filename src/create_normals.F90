@@ -394,6 +394,4 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
 
     end do !iface
 
-!stop
-
 end subroutine create_imaplr

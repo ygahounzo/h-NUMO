@@ -22,9 +22,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                     num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -111,9 +113,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -189,9 +193,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -286,9 +292,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    !use mod_metrics, only: jac_faceq
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -414,9 +422,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -485,8 +495,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                end do
             end do
 
-            
- 
             kk=kk+1
 
             ! end if
@@ -510,9 +518,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                     num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -580,7 +590,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_quad_layer
 
-  subroutine create_nbhs_face_quad_layer_all(q_face,qprime_face,q_send,q_recv,nvarb,nlayers,multirate)
+  subroutine create_nbhs_face_quad_layer_all(q_face,qprime_face,q_send,q_recv,nvarb, &
+               nlayers,multirate)
 
    use mod_basis, only: ngl, FACE_CHILDREN,nq
  
@@ -592,9 +603,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -689,9 +702,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_metrics, only: jac
  
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, gather_element_2d_subface, plist, lev_list
+   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
+                        gather_element_2d_subface, plist, lev_list
  
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, num_nbh, num_send_recv
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
  
    use mod_ref, only: nmessage
  
@@ -760,5 +775,3 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    end do !iface
  
  end subroutine create_nbhs_face_quad_1v
-
-

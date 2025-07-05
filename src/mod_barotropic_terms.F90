@@ -1,10 +1,10 @@
-! ===========================================================================================================================
+! ================================================================================================
 ! This module contains the routines for the barotropic flux terms
 !   Author: Yao Gahounzo 
 !   Computing PhD 
 !   Boise State University
 !   Date: March 27, 2023
-! ==========================================================================================================================
+! ================================================================================================
 
 module mod_barotropic_terms
 
@@ -138,7 +138,8 @@ module mod_barotropic_terms
                     kl=imapl(3,n,1,iface)
                     I=intma(il,jl,kl,el)
 
-                    qb_face(1:4,1,iquad,iface) = qb_face(1:4,1,iquad,iface) + hi*qb_df_face(1:4,1,n,iface)
+                    qb_face(1:4,1,iquad,iface) = qb_face(1:4,1,iquad,iface) &
+                                                + hi*qb_df_face(1:4,1,n,iface)
                 end do 
                 ! Right
                 if(er > 0) then
@@ -151,7 +152,8 @@ module mod_barotropic_terms
                         kr=imapr(3,n,1,iface)
                         I=intma(ir,jr,kr,er)
 
-                        qb_face(1:4,2,iquad,iface) = qb_face(1:4,2,iquad,iface) + hi*qb_df_face(1:4,2,n,iface)
+                        qb_face(1:4,2,iquad,iface) = qb_face(1:4,2,iquad,iface) &
+                                                    + hi*qb_df_face(1:4,2,n,iface)
                     end do 
 
                 end if
@@ -166,7 +168,6 @@ module mod_barotropic_terms
         use mod_grid, only:  npoin, intma, nface, face,mod_grid_get_face_nq
         use mod_initial, only: pbprime_face
         use mod_face, only: imapl, imapr, normal_vector
-        use mod_input, only: mlswe_bc_strong
 
         implicit none
 
@@ -217,10 +218,11 @@ module mod_barotropic_terms
  
     subroutine btp_bcl_coeffs_qdf(qprime_df_face, qprime_df)
 
-        ! Compute baroclinic coefficients in the advective barotropic momentum fluxes and in the barotropic pressure forcing.
+        ! Compute baroclinic coefficients in the advective barotropic momentum fluxes 
+        ! and in the barotropic pressure forcing.
 
         use mod_grid, only: npoin_q, nface, npoin, face, intma
-        use mod_input, only: nlayers, dpprime_visc_min
+        use mod_input, only: nlayers
         use mod_basis, only: nqx, nqy, nqz, nq, ngl, npts, psiq
         use mod_initial, only: alpha_mlswe, indexq, psih
         use mod_Tensorproduct, only: compute_gradient_quad, interpolate_layer_from_quad_to_node_1d
@@ -318,9 +320,12 @@ module mod_barotropic_terms
                         qr(:) = qr(:) + hi*qprime_df_face(:,2,n,iface,k)
                     enddo
 
-                    Q_uu_dp_edge(iquad,iface) = Q_uu_dp_edge(iquad,iface) + 0.5*((ql(2)*ql(2)*ql(1)) + (qr(2)*qr(2)*qr(1)))
-                    Q_uv_dp_edge(iquad,iface) = Q_uv_dp_edge(iquad,iface) + 0.5*((ql(3)*ql(2)*ql(1)) + (qr(3)*qr(2)*qr(1)))
-                    Q_vv_dp_edge(iquad,iface) = Q_vv_dp_edge(iquad,iface) + 0.5*((ql(3)*ql(3)*ql(1)) + (qr(3)*qr(3)*qr(1)))
+                    Q_uu_dp_edge(iquad,iface) = Q_uu_dp_edge(iquad,iface) &
+                                                + 0.5*((ql(2)*ql(2)*ql(1)) + (qr(2)*qr(2)*qr(1)))
+                    Q_uv_dp_edge(iquad,iface) = Q_uv_dp_edge(iquad,iface) &
+                                                + 0.5*((ql(3)*ql(2)*ql(1)) + (qr(3)*qr(2)*qr(1)))
+                    Q_vv_dp_edge(iquad,iface) = Q_vv_dp_edge(iquad,iface) &
+                                                + 0.5*((ql(3)*ql(3)*ql(1)) + (qr(3)*qr(3)*qr(1)))
 
                     pprime_l(k+1) = pprime_l(k) + ql(1)
                     left_dp = 0.5*alpha_mlswe(k) *(pprime_l(k+1)**2 - pprime_l(k)**2)
@@ -393,8 +398,10 @@ module mod_barotropic_terms
             do iquad = 1,ngl
                 do k = 1,nlayers
 
-                    btp_graduv_dpp_face(:,1,iquad,iface) = btp_graduv_dpp_face(:,1,iquad,iface) + graduv_dpp_face(:,1,iquad,iface,k)
-                    btp_graduv_dpp_face(:,2,iquad,iface) = btp_graduv_dpp_face(:,2,iquad,iface) + graduv_dpp_face(:,2,iquad,iface,k)
+                    btp_graduv_dpp_face(:,1,iquad,iface) = btp_graduv_dpp_face(:,1,iquad,iface) &
+                                                            + graduv_dpp_face(:,1,iquad,iface,k)
+                    btp_graduv_dpp_face(:,2,iquad,iface) = btp_graduv_dpp_face(:,2,iquad,iface) &
+                                                            + graduv_dpp_face(:,2,iquad,iface,k)
                 end do
             end do
         end do
@@ -469,5 +476,4 @@ module mod_barotropic_terms
 
     end subroutine compute_gradient_uv_q
 
-end module mod_barotropic_terms
-            
+end module mod_barotropic_terms         

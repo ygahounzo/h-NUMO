@@ -1,21 +1,19 @@
-!-----------------------------------------------------------------!
-!>@brief This code solves the multilayer shallow water equations (2D in the horizontal and Nl number of layers in the vertical) using DG
-!> using exact integration and the following time-integrators: 
-!> explicit predictor-correction (Higdon, 2025) and RK35,
-!>The grids are quadrilateral but can be unstructured.
+!=============================================================================================
+!>@brief This code solves the multilayer shallow water equations (2D in the horizontal and Nl 
+!> number of layers in the vertical) using DG
+!> using exact integration and the following time-integrator: RK35
+!> The grids are quadrilateral but can be unstructured.
 !>@ author by Yao Gahounzo 
 !>      Computing PhD 
 !       Boise State University
 !       Date: July 02, 2023
-!-----------------------------------------------------------------!
+!=============================================================================================
+
 program numa3d
 
   use mod_time_loop, only: time_loop, rhs_time, write_time
-
   use mod_types, only : r8
-
   use mod_mpi_utilities
-
   use mod_p4est, only: mod_p4est_finalize
 
   implicit none
@@ -42,9 +40,8 @@ program numa3d
   end if
   
   rhs_time = 0
-  !--------------------------------
+
   !   Perform Time-Integration
-  !--------------------------------
   time1 = wtime()
 
   call time_loop()
@@ -52,9 +49,7 @@ program numa3d
   time2 = wtime()
   cpu_time=time2-time1
 
-  !---------------------------
   !   Finalize
-  !---------------------------
   if (irank == irank0) then
      write(*,'("Wall Clock Time (sec) : ",F12.4)') cpu_time
      write(*,'("RHS  CPU   Time (sec) : ",F12.4)') rhs_time
@@ -83,25 +78,14 @@ end program numa3d
 subroutine initialize_fields()
 
   use mod_bc, only: mod_bc_create
-
   use mod_mpi_communicator, only: mod_mpi_communicator_create
-
   use mod_face, only: mod_face_create, mod_face_create_boundary, face_send
-
   use mod_grid, only: nboun
-
   use mod_initial, only: mod_initial_create, q_init, nvar
-
-  use mod_input, only: &
-       nopx, nopy, nopz, &
-       space_method
-
+  use mod_input, only: nopx, nopy, nopz, space_method
   use mod_metrics, only: mod_metrics_create_metrics, mod_metrics_create_mass
-
   use mod_mpi_utilities
-
   use mod_parallel, only: nproc, mod_parallel_reorder
-
   use mod_variables, only: mod_allocate_mlswe
   use mod_ref, only: mod_ref_create
 
@@ -132,9 +116,8 @@ subroutine initialize_fields()
       call mod_parallel_reorder(face_send)
    endif
 
-  !----------------------------------------------------------------------------------------
-  !    Create Initial Conditions, Boundary Conditions, reference fields, and Metric terms
-  !----------------------------------------------------------------------------------------
+  ! Create Initial Conditions, Boundary Conditions, reference fields, and Metric terms
+
   !Create Initial Conditions
   call mod_initial_create()
   if (irank == irank0) print *, "Initial Fields Created"
@@ -162,24 +145,15 @@ subroutine initialize_fields()
 
 end subroutine initialize_fields
 
-!---------------------------------------------------
 !>@brief Create initial grid
-!---------------------------------------------------
 subroutine initialize_grid()
 
   use mod_basis, only: mod_basis_create
-
   use mod_constants, only: mod_constants_create
-
   use mod_grid, only: npoin, nelem, nboun, face, nface
-
-  !use mod_initial, only: q_init, nvar
-
   use mod_input, only: mod_input_create, nopx, nopy, nopz, &
-      space_method
-
+                        space_method
   use mod_mpi_utilities
-
   use mod_p4est, only: mod_p4est_create
 
   implicit none
@@ -208,10 +182,7 @@ subroutine initialize_grid()
   !--- Read case specific defaults
   call initial_grid_coord()
 
-  !-------------------------------------------------------------
-  !     Generate Global Grid and Domain Decomposition Graph
-  !-------------------------------------------------------------
-  !is_p4est = .true.
+  ! Generate Global Grid and Domain Decomposition Graph
 
    call mod_p4est_create()
    if (irank == irank0) print*,' P4EST Mesh Created'

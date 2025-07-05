@@ -1,9 +1,9 @@
-!----------------------------------------------------------------------!
+!----------------------------------------------------------------------
 !>@brief This subroutine calculates the Mass
 !>@author  Yao Gahounzo on 06/2024
 !>           Computing PhD
 !>           Boise State University
-!----------------------------------------------------------------------!
+!----------------------------------------------------------------------
 subroutine compute_conserved(mass_conserv,q)
 
     use mod_basis, only: npts

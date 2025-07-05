@@ -207,11 +207,14 @@ contains
                         do m = 1,ngly
                             do n = 1,nglx
 
-                                q_e(iquad,jquad,kquad) = q_e(iquad,jquad,kquad) + dpsiqx(n,iquad)*psiqy(m,jquad)*q(n,m,l)
-                                q_n(iquad,jquad,kquad) = q_n(iquad,jquad,kquad) + psiqx(n,iquad)*dpsiqy(m,jquad)*q(n,m,l)
+                                q_e(iquad,jquad,kquad) = q_e(iquad,jquad,kquad) &
+                                                        + dpsiqx(n,iquad)*psiqy(m,jquad)*q(n,m,l)
+                                q_n(iquad,jquad,kquad) = q_n(iquad,jquad,kquad) &
+                                                        + psiqx(n,iquad)*dpsiqy(m,jquad)*q(n,m,l)
 
                                 if(nglz > 1) then
-                                    q_c(iquad,jquad,kquad) = q_c(iquad,jquad,kquad) + psiqx(n,iquad)*psiqy(m,jquad)*dpsiz(l,kquad)*q(n,m,l)
+                                    q_c(iquad,jquad,kquad) = q_c(iquad,jquad,kquad) &
+                                            + psiqx(n,iquad)*psiqy(m,jquad)*dpsiz(l,kquad)*q(n,m,l)
                                 endif
                                 
                             enddo !n

@@ -17,7 +17,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     ! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
 
     use mod_splitting, only: thickness, momentum, momentum_mass
-    use mod_input, only: nlayers, dpprime_visc_min
+    use mod_input, only: nlayers, method_visc
     use mod_grid, only: npoin, npoin_q, nface
     use mod_constants, only: gravity
     use mod_initial, only: alpha_mlswe, zbot_df
@@ -25,7 +25,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
     use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
     use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
-    use mod_layer_terms, only: interpolate_qprime, extract_qprime_df_face, interpolate_dpp
+    use mod_layer_terms, only: extract_qprime_df_face, interpolate_dpp
 
     implicit none
 
@@ -45,7 +45,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
     qbp_df = qb_df
     dpprime_visc(:,:) = qprime_df(1,:,:)
-    call interpolate_dpp(dpprime_visc_q, dpprime_visc)
+    if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
     call btp_bcl_coeffs_qdf(qprime_df_face, qprime_df)
     call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
@@ -64,7 +64,7 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     qprime_df2 = 0.5*(qprime_df2 + qprime_df)
     qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
     dpprime_visc(:,:) = qprime_df2(1,:,:)
-    call interpolate_dpp(dpprime_visc_q, dpprime_visc)
+    if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
     call btp_bcl_coeffs_qdf(qprime_df_face2, qprime_df2)
     call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)

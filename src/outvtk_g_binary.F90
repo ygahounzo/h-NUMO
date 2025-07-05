@@ -1,6 +1,5 @@
 !---------------------------------------------------------------------!
-!>@brief This routine writes out the all 8 Global Variables: Density, velocity, potential temperature,
-!> water vapor, cloud water, and rain water in VTK format
+!>@brief This routine writes out the all Global Variables in VTK format
 !> This data is then read into Paraview or VisIT
 !>@author James F. Kelly 5 Feb. 2011
 !>
@@ -12,15 +11,9 @@
 !>
 !>Adding binary output version
 !>@date F.X. Giraldo
-!>@date February 27 2014 to include Reference Pressure
-!>@date April 23 2014 to include Temperature
-!>@date May 1 1014 to include Radius (for Spherical Cases)
-!>
-!>@date A. Muller
-!>June 2014 to include outasciimaya for CSV output to be fed to Maya Autodesk
-!>@date F.X. Giraldo on October 16, 2016: rewritten to remove all LES, VMS, SMAG, NAZ stuff and to only handle LAV
+!>@ modified by Yao Gahounzo
+!> 20 May 2024
 !---------------------------------------------------------------------!
-
 
 subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
 
@@ -93,8 +86,10 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
 
     if (irank == irank0) then
         allocate(q_g(nvar,npoin_g), coord_dg_gathered(3,npoin_g), &
-            x_uns(npoin_g), y_uns(npoin_g), z_uns(npoin_g), eltype(nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
-            conn(9*nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), var_uns_grid(npoin_g), var_uns_grid_ref(npoin_g),&
+            x_uns(npoin_g), y_uns(npoin_g), z_uns(npoin_g), &
+            eltype(nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
+            conn(9*nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
+            var_uns_grid(npoin_g), var_uns_grid_ref(npoin_g),&
             qb_g(4,npoin_g),stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"
     end if ! irank==irank0
@@ -384,7 +379,8 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
 
     if (irank == irank0) then
         allocate(q_g(3,npoin_g), coord_dg_gathered(3,npoin_g), &
-            x_uns(npoin_g), y_uns(npoin_g), z_uns(npoin_g), eltype(nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
+            x_uns(npoin_g), y_uns(npoin_g), z_uns(npoin_g), &
+            eltype(nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
             conn(9*nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), var_uns_grid(npoin_g),&
             qb_g(4,npoin_g),qprime_g(3,npoin_g), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"

@@ -4,20 +4,13 @@
 subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
 
   use mod_basis, only: nglx, ngly, nglz, is_2d
-
   use mod_constants, only: tol
-
   use mod_face, only: normal_vector, imapl
-
   use mod_global_grid, only: xmin, xmax, ymin, ymax, zmin, zmax, iboundary
-
   use mod_grid, only: intma, intma_dg_to_cg, npoin, coord, sigma, face, nface, &
-       mod_grid_get_face_ngl
-
+                        mod_grid_get_face_ngl
   use mod_initial, only: kvector
-
   use mod_input, only: space_method
-
   use mod_parallel, only: num_send_recv_total
 
   implicit none

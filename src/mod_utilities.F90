@@ -216,7 +216,4 @@ contains
         inquire (file=file_name(1:len_trim(file_name)), exist=file_exist)
     end function file_exist
 
-
-    
-
 end module mod_utilities

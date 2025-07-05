@@ -24,13 +24,12 @@ module mod_initial_mlswe
 
 
     contains
-
-    !-----------------------------------------------------------------------
     
-
+    !> Compute the gradient of the bottom topography at quadrature points
     subroutine bot_topo_derivatives(zbot,zbot_face,zbot_df)
 
-        use mod_grid, only : npoin, npoin_q, nface, intma_dg_quad, face, mod_grid_get_face_nq, coord, nelem, intma
+        use mod_grid, only : npoin, npoin_q, nface, intma_dg_quad, face, &
+                            mod_grid_get_face_nq, coord, nelem, intma
         use mod_basis, only : nq, nglx, ngly, nqx, nqy
         use mod_input, only : nlayers, test_case, xdims, ydims
         use mod_face, only : imapl_q, imapr_q
@@ -44,7 +43,8 @@ module mod_initial_mlswe
         real, dimension(2,nq,nface), intent(out) :: zbot_face
         
         ! Declare local variables
-        integer :: il, jl, ir, jr,kl,kr, el, er, ilocl, ilocr, l, I1,I2, iface, iquad, jquad, nq_i, nq_j, plane_ij
+        integer :: il, jl, ir, jr,kl,kr, el, er, ilocl, ilocr, l, I1,I2, iface, &
+                    iquad, jquad, nq_i, nq_j, plane_ij
         integer :: e,I, m,n,Iq
         real :: depth, x, y, r, xm, yl, hi
 
@@ -119,6 +119,7 @@ module mod_initial_mlswe
         
     end subroutine bot_topo_derivatives
 
+    !> Compute the gradient of the bottom topography at quadrature points
     subroutine interpolate_from_dof_to_quad_uv_init(q, q_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
@@ -165,7 +166,7 @@ module mod_initial_mlswe
 
     end subroutine interpolate_from_dof_to_quad_uv_init
 
-
+    !> Interpolate pressure perturbation from DOF to quadrature points
     subroutine interpolate_pbprime_init(pbprime,pbprime_face,pbprime_df_face,pbprime_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
@@ -275,17 +276,16 @@ module mod_initial_mlswe
 
     end subroutine interpolate_pbprime_init
 
-    !subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad,fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp, tau_wind_df)
+    !> Wind Stress and Coriolis Force
+    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, &
+            a_bcl, b_bcl,tau_wind_df)
 
-    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, a_bcl, b_bcl,tau_wind_df)
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, coord
         use mod_constants, only: gravity, pi, tol, omega, earth_radius
         use mod_input, only: gravity_in, &
             nelx, nelz, &
             xdims, ydims, nlayers, dt, dt_btp, test_case, f0, beta
-
-        !use mod_initial, only: psih, indexq
     
         implicit none
 
@@ -293,7 +293,6 @@ module mod_initial_mlswe
         real, dimension(npoin), intent(out) :: coriolis_df
         real, dimension(npoin_q), intent(out) :: coriolis_quad
         real, dimension(npoin), intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
-        !real, dimension(npoin), intent(out) :: fdt_btp, fdt2_btp, a_btp, b_btp, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, a_bclp, b_bclp
 
         real, dimension(2,npoin), intent(in) :: tau_wind_df
 
@@ -344,24 +343,17 @@ module mod_initial_mlswe
                 end do
             end do
         end do
-
-        !fdt_btp = dt_btp * coriolis_df
-        !fdt2_btp = 0.5*fdt_btp
-        !a_btp = 1.0 / (1.0 + fdt2_btp**2)
-        !b_btp = fdt2_btp / (1.0 + fdt2_btp**2)
         
         fdt_bcl = dt * coriolis_df
         fdt2_bcl = 0.5 * fdt_bcl
         a_bcl = 1.0 / (1.0 + fdt2_bcl**2)
         b_bcl = fdt2_bcl / (1.0 + fdt2_bcl**2)
 
-        !a_bclp = 1.0 - 0.5 * fdt_bcl**2 + fdt_bcl**4/24.0
-        !b_bclp = fdt_bcl - fdt_bcl**3/6.0
-
     end subroutine wind_stress_coriolis
 
-    subroutine compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
-            coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha)
+    !> Compute the wave speeds for linearized shallow equation at quadrature points
+    subroutine compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
+            coeff_mass_pbub_L, coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha)
 
             use mod_input, only: nlayers
             use mod_basis, only: nq
@@ -408,8 +400,9 @@ module mod_initial_mlswe
         
     end subroutine compute_reference_edge_variables
 
-    subroutine compute_reference_edge_variables_df(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR,coeff_mass_pbub_L, &
-        coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df_face,alpha)
+    !> Compute the wave speeds for linearized shallow equation at dofs
+    subroutine compute_reference_edge_variables_df(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
+            coeff_mass_pbub_L, coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df_face,alpha)
 
         use mod_input, only: nlayers
         use mod_basis, only: ngl
@@ -457,7 +450,8 @@ module mod_initial_mlswe
     end subroutine compute_reference_edge_variables_df
 
 
-!    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df)
+!    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df, &
+!               dpsidy_df,index_df)
 !
 !        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
 !
@@ -657,25 +651,30 @@ module mod_initial_mlswe
 
             select case (kstages)
             case (1)               !RK1
-                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;       ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
+                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;  ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
             case (2)               !RK2
-                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;       ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
+                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;  ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
                 ssprk_a(2,1)=1.0/2.0; ssprk_a(2,2)=1.0/2.0; ssprk_a(2,3)=0.0; ssprk_beta(2)=1.0/2.0
             case (3)              !RK3; SSP(3,3)
-                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;       ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
+                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;   ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
                 ssprk_a(2,1)=3.0/4.0; ssprk_a(2,2)=1.0/4.0; ssprk_a(2,3)=0.0; ssprk_beta(2)=1.0/4.0
                 ssprk_a(3,1)=1.0/3.0; ssprk_a(3,2)=2.0/3.0; ssprk_a(3,3)=0.0; ssprk_beta(3)=2.0/3.0
             case (4)              !RK3; SSP(4,3)
-                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;       ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0/2.0
-                ssprk_a(2,1)=0.0;       ssprk_a(2,2)=1.0;       ssprk_a(2,3)=0.0; ssprk_beta(2)=1.0/2.0
+                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;  ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0/2.0
+                ssprk_a(2,1)=0.0;       ssprk_a(2,2)=1.0;  ssprk_a(2,3)=0.0; ssprk_beta(2)=1.0/2.0
                 ssprk_a(3,1)=2.0/3.0; ssprk_a(3,2)=1.0/3.0; ssprk_a(3,3)=0.0; ssprk_beta(3)=1.0/6.0
-                ssprk_a(4,1)=0.0;       ssprk_a(4,2)=1.0;       ssprk_a(4,3)=0.0; ssprk_beta(4)=1.0/2.0
+                ssprk_a(4,1)=0.0;       ssprk_a(4,2)=1.0;  ssprk_a(4,3)=0.0; ssprk_beta(4)=1.0/2.0
             case (5)              !RK3; SSP(5,3)
-                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;       ssprk_a(1,3)=0.0; ssprk_beta(1)=0.377268915331368
-                ssprk_a(2,1)=0.0;       ssprk_a(2,2)=1.0;       ssprk_a(2,3)=0.0; ssprk_beta(2)=0.377268915331368
-                ssprk_a(3,1)=0.355909775063326; ssprk_a(3,2)=0.644090224936674; ssprk_a(3,3)=0.0; ssprk_beta(3)=0.242995220537396
-                ssprk_a(4,1)=0.367933791638137; ssprk_a(4,2)=0.632066208361863; ssprk_a(4,3)=0.0; ssprk_beta(4)=0.238458932846290
-                ssprk_a(5,1)=0.0; ssprk_a(5,2)=0.762406163401431; ssprk_a(5,3)=0.237593836598569; ssprk_beta(5)=0.287632146308408
+                ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0; ssprk_a(1,3)=0.0
+                ssprk_beta(1)=0.377268915331368
+                ssprk_a(2,1)=0.0;       ssprk_a(2,2)=1.0; ssprk_a(2,3)=0.0
+                ssprk_beta(2)=0.377268915331368
+                ssprk_a(3,1)=0.355909775063326; ssprk_a(3,2)=0.644090224936674; ssprk_a(3,3)=0.0
+                ssprk_beta(3)=0.242995220537396
+                ssprk_a(4,1)=0.367933791638137; ssprk_a(4,2)=0.632066208361863; ssprk_a(4,3)=0.0
+                ssprk_beta(4)=0.238458932846290
+                ssprk_a(5,1)=0.0; ssprk_a(5,2)=0.762406163401431; ssprk_a(5,3)=0.237593836598569
+                ssprk_beta(5)=0.287632146308408
             end select
         endif 
 

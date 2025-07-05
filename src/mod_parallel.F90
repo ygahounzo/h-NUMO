@@ -104,13 +104,15 @@ module mod_parallel
     !-----------------------------------------------------------------------
     !Arrays on the head node
     integer nproc, num_nbh, num_send_total, num_send_recv_total
-    integer, dimension(:),     allocatable :: nelem_l, npoin_l, npoin_l_cg, nface_l, nface_boundary_l, nbsido_l
-    integer, dimension(:),     allocatable :: nboun_poin_l
+    integer, dimension(:),     allocatable :: nelem_l, npoin_l, npoin_l_cg, nface_l
+    integer, dimension(:),     allocatable :: nboun_poin_l, nface_boundary_l, nbsido_l
     integer, dimension(:),     allocatable :: nelemx_l, nelemy_l, nelemz_l
     integer, dimension(:),     allocatable :: ncol_l
-    integer, dimension(:,:),   allocatable :: local_global_elem_l, global_local_elem_l, local_global_face_l,face_type_l
+    integer, dimension(:,:),   allocatable :: local_global_elem_l, global_local_elem_l
+    integer, dimension(:,:),   allocatable :: local_global_face_l,face_type_l
     integer, dimension(:),     allocatable :: global_proc
-    integer, dimension(:,:),   allocatable :: local_global_poin_l_cg, local_global_poin_l, local_global_poin_periodic_l, global_local_poin_l
+    integer, dimension(:,:),   allocatable :: local_global_poin_l_cg, local_global_poin_l
+    integer, dimension(:,:),   allocatable :: local_global_poin_periodic_l, global_local_poin_l
     integer, dimension(:,:),   allocatable :: flag_periodic_l
     integer, dimension(:,:),   allocatable :: nbh_proc_l
     integer, dimension(:),     allocatable :: num_nbh_l
@@ -119,7 +121,8 @@ module mod_parallel
   
     !Arrays on individual processors
     integer, dimension(:),   allocatable :: local_global_elem, global_local_elem
-    integer, dimension(:),   allocatable :: local_global_poin_cg, local_global_poin, local_global_poin_periodic,local_global_face
+    integer, dimension(:),   allocatable :: local_global_poin_cg, local_global_poin
+    integer, dimension(:),   allocatable :: local_global_poin_periodic,local_global_face
     integer, dimension(:),   allocatable :: flag_periodic
     integer, dimension(:),   allocatable :: nbh_proc
     integer, dimension(:),   allocatable :: ipoin_proc
@@ -129,47 +132,42 @@ module mod_parallel
     integer, dimension(:),   allocatable :: nbh_send_recv_half
     integer npoin, npoin_cg, nelem, nelemx, nelemy, nelemz
     integer ncol_l_max
-  !-----------------------------------------------------------------------
   
-contains
+    contains
   
     !-------------------------------------------
     !-  Reorder face_send
     !-------------------------------------------
     subroutine mod_parallel_reorder(face_send)
-      use mod_input, only: space_method
-      use mod_mpi_utilities, only: irank
+        use mod_input, only: space_method
+        use mod_mpi_utilities, only: irank
 
-      implicit none
+        implicit none
 
-      integer, dimension(:):: face_send
-      integer:: ind, jnd, imult, inbh, ib, iface
+        integer, dimension(:):: face_send
+        integer:: ind, jnd, imult, inbh, ib, iface
 
-      if (space_method == 'dg') then
-        ind = 0
-        jnd = 0
-        do inbh = 1,num_nbh
-          do ib = 1,num_send_recv(inbh)
-            ind = ind + 1
+        if (space_method == 'dg') then
+            ind = 0
+            jnd = 0
+            do inbh = 1,num_nbh
+                do ib = 1,num_send_recv(inbh)
+                    ind = ind + 1
 
-            iface = nbh_send_recv(ind)
-            do imult = 1,nbh_send_recv_multi(ind)
-              jnd = jnd + 1
-              face_send(jnd) = iface
-            enddo
-          end do
-        end do
-        if(jnd .ne. size(face_send)) then
-          print*,"on rank = ", irank
-          print*,"face_send mismatch"
-          print*,"filled ", jnd, " of ", size(face_send)
-          stop "** mod_parallel_reorder problem"
+                    iface = nbh_send_recv(ind)
+                    do imult = 1,nbh_send_recv_multi(ind)
+                        jnd = jnd + 1
+                        face_send(jnd) = iface
+                  enddo
+                end do
+            end do
+            if(jnd .ne. size(face_send)) then
+                print*,"on rank = ", irank
+                print*,"face_send mismatch"
+                print*,"filled ", jnd, " of ", size(face_send)
+                stop "** mod_parallel_reorder problem"
+            endif
         endif
-      endif
     end subroutine
   
 end module mod_parallel
-
-
-
-

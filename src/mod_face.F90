@@ -54,9 +54,11 @@ contains
         if(allocated(normal_vector)) deallocate(normal_vector,jac_face,imapl,imapr, penalty)
     
         allocate (normal_vector(3,ngl,ngl,nface), jac_face(ngl,ngl,nface), &
-            imapl(3,ngl,ngl,nface), imapr(3,ngl,ngl,nface), penalty(ngl,ngl,nface),  stat=AllocateStatus)
+            imapl(3,ngl,ngl,nface), imapr(3,ngl,ngl,nface), penalty(ngl,ngl,nface), &
+            stat=AllocateStatus)
         if(is_mlswe) then
-            allocate (normal_vector_q(3,nq,nq,nface), jac_faceq(nq,nq,nface), imapl_q(3,nq,nq,nface), imapr_q(3,nq,nq,nface), stat=AllocateStatus)
+            allocate (normal_vector_q(3,nq,nq,nface), jac_faceq(nq,nq,nface), &
+                imapl_q(3,nq,nq,nface), imapr_q(3,nq,nq,nface), stat=AllocateStatus)
         end if
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Face_Create **"
 

@@ -18,28 +18,19 @@ module mod_constants
 
     private r8
 
-    !-----------------------------------------------------------------------
     real(kind=r8), parameter :: tol       = 1e-10
 
     real(kind=r8), parameter :: pi_trig   = 3.1415926535897932346_r8
     real(kind=r8), parameter :: deg2rad   = pi_trig/180.0_r8
     real(kind=r8), parameter :: rad2deg   = 180.0_r8/pi_trig
 
-    !-------------------------------------------------------------------------------
     ! Physical constants
-    !-------------------------------------------------------------------------------
     real(kind=r8), parameter :: omega     = 7.29212e-5_r8 !Earth Angular Velocity
     real(kind=r8), parameter :: earth_rad = 6.37122e6_r8  !Average Earth Radius
     real(kind=r8)            :: gravity   = 9.80616_r8
-    !-------------------------------------------------------------------------------
-    ! LES constants
-    !-------------------------------------------------------------------------------
     real(kind=r8), parameter :: Ck        = 0.15_r8       !Smagorinsky constant
   
-    !-------------------------------------------------------------------------------
     ! Derived constants
-    !-------------------------------------------------------------------------------
-
     real(kind=r8) :: earth_radius, pi
 
     real(kind=r8) :: cm,      &
@@ -47,11 +38,9 @@ module mod_constants
         km_min,  &
         prandtl
     integer nnorm
-  !-----------------------------------------------------------------------
   
 contains
   
-    !-----------------------------------------------------------------------
     subroutine mod_constants_create()
     
         implicit none

@@ -4,7 +4,7 @@ dt : the time-step in seconds.
 dt_btp : the time-step in seconds.
 time_initial : initial time (can be nonzero if it is a restart).
 time_final : final time (can be in seconds, minutes, hours, or days, 
-			depending on the test case.
+			depending on the test case).
 
 time_restart : time at which restart files are produced. The units of 
 			   time depend on the test case as mentioned previously. 
@@ -20,16 +20,9 @@ visc_mlswe : is the value of the viscosity in the Laplacian term.
 max_shear_dz : is used to discretize the vertical diffusion or 
 			   friction between layer terms.
 
-adjust_H_vertical_sum : is for applying consistency between 
-						barotropic and baroclinic pressure terms.
-
 dg_integ_exact : a logical flag that turns off and on whether you
 				 want to use 2N-1 quadrature points or 2N+1 for DG 
 				 integrations.
-
-mlswe_bc_strong : a logical flag that turns off and on the strong 
-				  boundary conditions for the free-slip boundary 
-				  condition. We recommend you use ``True``.
 
 dump_data : a logical flag that turns off and on the dumping 
 			of the simulation data to a file

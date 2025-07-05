@@ -1,20 +1,23 @@
-! ===========================================================================================================================
+! =================================================================================================
 ! This module contains the routines for the barotropic and baroclinic horizontal viscosity terms 
 !   Author: Yao Gahounzo 
 !   Computing PhD 
 !   Boise State University
 !   Date: July 24, 2023
-! ==========================================================================================================================
+! =================================================================================================
 
 module mod_laplacian_quad
 
-    use mod_grid, only: npoin, npoin_q, face, nface, intma_dg_quad, intma, mod_grid_get_face_ngl, mod_grid_get_face_nq
-    use mod_face, only: imapl_q, imapr_q, normal_vector_q, jac_faceq, imapl, imapr, normal_vector, jac_face
+    use mod_grid, only: npoin, npoin_q, face, nface, intma_dg_quad, intma, mod_grid_get_face_ngl, &
+                        mod_grid_get_face_nq
+    use mod_face, only: imapl_q, imapr_q, normal_vector_q, jac_faceq, imapl, imapr, normal_vector, &
+                        jac_face
     use mod_input, only: visc_mlswe, nlayers, xdims, ydims, nelx
     use mod_basis, only: ngl, nq, psiq, npts
     use mod_barotropic_terms, only: compute_gradient_uv, compute_gradient_uv_q
     use mod_metrics, only: massinv, jacq
-    use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, psih_df, dpsidx_df,dpsidy_df, index_df, wjac_df
+    use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, psih_df, dpsidx_df,dpsidy_df, &
+                            index_df, wjac_df
     use mod_variables, only: dpprime_visc_q
 
     implicit none
@@ -24,11 +27,14 @@ module mod_laplacian_quad
 
     contains 
 
+    ! Compute the Laplacian barotropic horizontal viscosity term using the LDG method and
+    ! using nodal points
     subroutine btp_create_laplacian(rhs_lap,qb_df)
 
         ! Barotropic horizontal viscosity 
 
-        use mod_variables, only: pbprime_visc, btp_dpp_graduv, graduvb_ave, graduvb_face_ave, btp_graduv_dpp_face
+        use mod_variables, only: pbprime_visc, btp_dpp_graduv, graduvb_ave, graduvb_face_ave, &
+                                    btp_graduv_dpp_face
 
         real, intent (out) :: rhs_lap(2,npoin)
         real, dimension(4,npoin), intent(in) :: qb_df
@@ -98,7 +104,7 @@ module mod_laplacian_quad
         call create_rhs_lap_precommunicator_df(graduv_face,4)
 
         ! Compute volume integral 
-        call btp_compute_laplacian_IBP(rhs_lap,graduv)
+        call btp_compute_laplacian(rhs_lap,graduv)
 
         ! Postcommunication step 
         call create_rhs_lap_postcommunicator_df(graduv_face,4)
@@ -106,7 +112,7 @@ module mod_laplacian_quad
         graduvb_face_ave = graduvb_face_ave + graduv_face
 
         ! Compute interface integral 
-        call create_rhs_laplacian_flux_SIPG(rhs_lap,graduv_face)
+        call create_rhs_laplacian_flux(rhs_lap,graduv_face)
 
         !RHS of viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_lap(1,:)
@@ -114,6 +120,8 @@ module mod_laplacian_quad
 
     end subroutine btp_create_laplacian
 
+    ! Compute the Laplacian barotropic horizontal viscosity term using the LDG method and
+    ! using quadrature points
     subroutine btp_create_laplacian_v2(rhs_lap,qprime_df,qb_df)
 
         ! Barotropic horizontal viscosity
@@ -205,15 +213,17 @@ module mod_laplacian_quad
         ! Communicate within processors
         call create_communicator_quad(flux_uv_visc_face,4)
         ! Compute volume integral 
-        call compute_laplacian_IBP_quad(rhs_temp,flux_uv_visc)
+        call compute_laplacian_quad(rhs_temp,flux_uv_visc)
         ! Compute interface integral 
-        call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face)
+        call create_rhs_laplacian_flux_quad(rhs_temp,flux_uv_visc_face)
         !RHS of the viscosity 
         rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
         rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
 
     end subroutine btp_create_laplacian_v2
 
+    ! Compute the Laplacian baroclinic horizontal viscosity term using the LDG method and
+    ! using nodal points
     subroutine bcl_create_laplacian(rhs_lap)
 
         use mod_variables, only: dpprime_visc, dpp_graduv, graduvb_ave
@@ -227,8 +237,8 @@ module mod_laplacian_quad
 
         do k = 1,nlayers
 
-            call bcl_compute_laplacian_IBP(rhs_temp,k)
-            call bcl_create_rhs_laplacian_flux_SIPG(rhs_temp, k)
+            call bcl_compute_laplacian(rhs_temp,k)
+            call bcl_create_rhs_laplacian_flux(rhs_temp, k)
 
             rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:)
             rhs_lap(2,:,k) = visc_mlswe*massinv(:)*rhs_temp(2,:)
@@ -237,6 +247,8 @@ module mod_laplacian_quad
 
     end subroutine bcl_create_laplacian
 
+    ! Compute the Laplacian baroclinic horizontal viscosity term using the LDG method and
+    ! using quadrature points
     subroutine bcl_create_laplacian_v2(rhs_lap,qprime_df)
 
         ! Baroclinic horizontal viscosity
@@ -278,7 +290,7 @@ module mod_laplacian_quad
             iel=face(7,iface)
             ier=face(8,iface)
 
-            !----------------------------Left Element
+            ! Left Element
             do iquad = 1,nq
 
                 il=imapl_q(1,iquad,1,iface)
@@ -332,8 +344,8 @@ module mod_laplacian_quad
         ! Commpute bcl viscosity
         do k = 1,nlayers
 
-            call compute_laplacian_IBP_quad(rhs_temp,flux_uv_visc(:,:,k))
-            call create_rhs_laplacian_flux_SIPG_quad(rhs_temp,flux_uv_visc_face(:,:,:,:,k))
+            call compute_laplacian_quad(rhs_temp,flux_uv_visc(:,:,k))
+            call create_rhs_laplacian_flux_quad(rhs_temp,flux_uv_visc_face(:,:,:,:,k))
 
             !Store Solution
             rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:)
@@ -342,7 +354,7 @@ module mod_laplacian_quad
 
     end subroutine bcl_create_laplacian_v2
 
-    subroutine btp_compute_laplacian_IBP(lap_q,grad_dpuvp)
+    subroutine btp_compute_laplacian(lap_q,grad_dpuvp)
 
         use mod_variables, only: pbprime_visc, btp_dpp_graduv
 
@@ -375,9 +387,9 @@ module mod_laplacian_quad
             end do
         end do
 
-    end subroutine btp_compute_laplacian_IBP
+    end subroutine btp_compute_laplacian
 
-    subroutine bcl_compute_laplacian_IBP(lap_q,k)
+    subroutine bcl_compute_laplacian(lap_q,k)
 
         use mod_variables, only: dpprime_visc, graduvb_ave, dpp_graduv
 
@@ -410,9 +422,9 @@ module mod_laplacian_quad
             end do
         end do
 
-    end subroutine bcl_compute_laplacian_IBP
+    end subroutine bcl_compute_laplacian
 
-    subroutine create_rhs_laplacian_flux_SIPG(rhs,gradq_face)
+    subroutine create_rhs_laplacian_flux(rhs,gradq_face)
 
         use mod_basis, only: nq, psi
         use mod_variables, only: btp_graduv_dpp_face
@@ -445,11 +457,13 @@ module mod_laplacian_quad
             do iquad = 1,ngl
 
                 do ivar = 1,4
-                    flux_uv_visc_face(ivar,1) = btp_graduv_dpp_face(5,1,iquad,iface)*gradq_face(ivar,1,iquad,iface) + &
-                                                            btp_graduv_dpp_face(ivar,1,iquad,iface)
+                    flux_uv_visc_face(ivar,1) = btp_graduv_dpp_face(5,1,iquad,iface)* &
+                                                gradq_face(ivar,1,iquad,iface) + &
+                                                btp_graduv_dpp_face(ivar,1,iquad,iface)
                                             
-                    flux_uv_visc_face(ivar,2) = btp_graduv_dpp_face(5,2,iquad,iface)*gradq_face(ivar,2,iquad,iface) + &
-                                                            btp_graduv_dpp_face(ivar,2,iquad,iface)
+                    flux_uv_visc_face(ivar,2) = btp_graduv_dpp_face(5,2,iquad,iface)* &
+                                                gradq_face(ivar,2,iquad,iface) + &
+                                                btp_graduv_dpp_face(ivar,2,iquad,iface)
 
                 end do 
 
@@ -502,9 +516,9 @@ module mod_laplacian_quad
             end do !iquad
         end do !iface
     
-    end subroutine create_rhs_laplacian_flux_SIPG
+    end subroutine create_rhs_laplacian_flux
 
-    subroutine bcl_create_rhs_laplacian_flux_SIPG(rhs,k)
+    subroutine bcl_create_rhs_laplacian_flux(rhs,k)
 
         use mod_basis, only: nq, psi
         use mod_variables, only: graduv_dpp_face, graduvb_face_ave
@@ -538,11 +552,13 @@ module mod_laplacian_quad
             do iquad = 1,ngl
 
                 do ivar = 1,4
-                    flux_uv_visc_face(ivar,1) = graduv_dpp_face(5,1,iquad,iface,k)*graduvb_face_ave(ivar,1,iquad,iface) + &
-                                                            graduv_dpp_face(ivar,1,iquad,iface,k)
+                    flux_uv_visc_face(ivar,1) = graduv_dpp_face(5,1,iquad,iface,k)* &
+                                                graduvb_face_ave(ivar,1,iquad,iface) + &
+                                                graduv_dpp_face(ivar,1,iquad,iface,k)
                                             
-                    flux_uv_visc_face(ivar,2) = graduv_dpp_face(5,2,iquad,iface,k)*graduvb_face_ave(ivar,2,iquad,iface) + &
-                                                            graduv_dpp_face(ivar,2,iquad,iface,k)
+                    flux_uv_visc_face(ivar,2) = graduv_dpp_face(5,2,iquad,iface,k)* &
+                                                graduvb_face_ave(ivar,2,iquad,iface) + &
+                                                graduv_dpp_face(ivar,2,iquad,iface,k)
 
                 end do 
 
@@ -592,9 +608,9 @@ module mod_laplacian_quad
             end do !iquad
         end do !iface
 
-    end subroutine bcl_create_rhs_laplacian_flux_SIPG
+    end subroutine bcl_create_rhs_laplacian_flux
 
-    subroutine compute_laplacian_IBP_quad(lap_q,grad_dpuvp)
+    subroutine compute_laplacian_quad(lap_q,grad_dpuvp)
 
         implicit none
 
@@ -623,9 +639,9 @@ module mod_laplacian_quad
             end do
         end do
 
-    end subroutine compute_laplacian_IBP_quad
+    end subroutine compute_laplacian_quad
 
-    subroutine create_rhs_laplacian_flux_SIPG_quad(rhs,gradq_face)
+    subroutine create_rhs_laplacian_flux_quad(rhs,gradq_face)
 
         implicit none
 
@@ -703,7 +719,6 @@ module mod_laplacian_quad
             end do !iquad
         end do !iface
 
-    end subroutine create_rhs_laplacian_flux_SIPG_quad
+    end subroutine create_rhs_laplacian_flux_quad
 
 end module mod_laplacian_quad
-

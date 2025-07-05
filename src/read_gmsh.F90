@@ -263,7 +263,8 @@ end subroutine read_bathy
 !------------------------------------------------------------------------!
 !This subroutine creates the higher order quads
 !------------------------------------------------------------------------!
-subroutine make_quadh_gmsh(coordh,intmaq,intma,bsido,iboun,npoinq,npoin,nelem,nboun,boundary,nside,nop,ngl,npoin_out,bc,nbc)
+subroutine make_quadh_gmsh(coordh,intmaq,intma,bsido,iboun,npoinq,npoin,nelem,nboun, &
+        boundary,nside,nop,ngl,npoin_out,bc,nbc)
 
     use mod_constants, only: tol
   

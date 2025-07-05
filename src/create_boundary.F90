@@ -9,9 +9,7 @@
 subroutine create_boundary_cg(ip_bound,num_bound,btype,ndim)
   
     use mod_basis, only: ngl, nglx, ngly, nglz
-
     use mod_face, only: imapl
-
     use mod_grid, only: intma_cg, nelem, nboun, nface, face, mod_grid_get_face_ngl
   
     implicit none
