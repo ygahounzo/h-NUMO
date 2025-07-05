@@ -4,18 +4,14 @@
 clear all
 warning('off', 'all')
 
-bc = 'freeslip';
+kemax = 45; % limit for KE
 
-
-kemax = 90; % limit for KE
-
-% viscosity nu = 50 or 500 m^2/s
-nu = 50;
-nop = 4;
+nu = 50; % viscosity
+nop = 4; % polynomial order
         
 % 20 km
-res = 20;
-name_root = sprintf('./KE_nop/NUMO_KE_N%d/ke_numo_%dkmv%d_%s_lfr',nop,res,nu,bc);  % numo ke
+res = 20; % grid resolution
+name_root = sprintf('./KE/ke_numo_20km');  % numo ke
 
 [Time,ke_numo_l1,ke_numo_l2,ket_numo] = load_data_ke(name_root);
 
@@ -27,9 +23,6 @@ ylim([0,kemax])
 grid("on");
 xlabel(sprintf("Time [years]"))
 ylabel(sprintf("KE [cm^2/s^2]"))
-
-
-lgd = legend('h-numo: 20km', 'Location','northoutside', 'Orientation','horizontal');
 
 set(findall(fig,'-property','FontSize'),'FontSize',18,'FontName','Times')
 
@@ -53,6 +46,5 @@ function [time,ke1,ke2,ket] = load_data_ke(name_file)
 
     dim = n;
     ket = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-
 
 end

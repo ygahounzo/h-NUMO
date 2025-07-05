@@ -9,7 +9,6 @@ file_num_end = 720;       % end animating with this file number
 delta_file_num = 1;      % what is the skip between the file numbers
 
 
-bc = 'freeslip'; % or noslip
 nop = 4; % polynomial order
 nu = 50; % viscosity
 Ne = 25; % number of elements 
@@ -21,7 +20,7 @@ ii = 0;
 % Bottom depth
 layer_dz_eq = [1489.5,8438.5];
 depth = sum(layer_dz_eq);
-save_folder = sprintf('./NUMO_SSH/ssh_numo_v%d_%s/',nu,bc);
+save_folder = sprintf('./NUMO_SSH/ssh_numo/');
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
@@ -73,6 +72,3 @@ for ifile = file_num_start:delta_file_num:file_num_end
     fclose(fileID1);
 
 end 
-
-
-

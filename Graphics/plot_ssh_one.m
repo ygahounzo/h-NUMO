@@ -3,25 +3,19 @@
 
 clear all
 warning('off', 'all')
-file_num_start = 360;     % start animating with this file number
-file_num_end = 360;       % end animating with this file number
-delta_file_num = 1;      % what is the skip between the file numbers
-
-
-bc = 'noslip';
 
 nop = 4; % polynomial order
 nu = 50; % viscosity
-Ne = 25;
+Ne = 25; % number of elements
 
 idm = 101;
 jdm = 101;
-kdm = 2; % total number of layers
+nlayers = 2; % total number of layers
 
-res = 20;
+res = 20; % grid resolution
 year = 20; % snapshot at that year
 
-save_folder = './SSH/NUMO';
+save_folder = './SSH';
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
@@ -29,7 +23,7 @@ end
 
 ifile = 36*year;
    
-name_root = sprintf('./NUMO_SSH/ssh_numo_ne%dv%d_N%d_%s/numo',Ne,nu,nop,bc);  % numo       
+name_root = sprintf('./NUMO_SSH/ssh_numo/numo');  % numo       
 
 num_level = 20;
 levels = -0.26:0.02:0.26;
