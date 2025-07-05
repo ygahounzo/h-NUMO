@@ -11,8 +11,7 @@ n = ceil(file_num_end/delta_file_num) + 1;
 
 fig = figure('units','inches','Position',[10 10 8 5]);
 
-
-name_root = './lake/2l/mlswe';
+name_root = './lake/mlswe';
 ifile = 108;
 
 name_fortran_data_file = [name_root, sprintf('%04d', ifile)];

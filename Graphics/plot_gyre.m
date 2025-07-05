@@ -90,7 +90,6 @@ for ifile = file_num_start:delta_file_num:file_num_end
 
     sgtitle(sprintf('MLSWE dt = %.f s at %d days',dt,ifile*10),'FontSize',28)
     
-    
 end
 
 

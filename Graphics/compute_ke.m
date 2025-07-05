@@ -5,7 +5,7 @@ clear all
 warning('off', 'all')
 
 file_num_start = 1;     % start animating with this file number
-file_num_end = 625;       % end animating with this file number
+file_num_end = 720;       % end animating with this file number
 delta_file_num = 1;      % what is the skip between the file numbers
 
 n = ceil(file_num_end / delta_file_num);
@@ -15,50 +15,45 @@ ke1 = zeros(n,1);
 ke2 = zeros(n,1);
 
 % get grid
-kdm = 2;
+nlayers = 2;
 idm = 101; jdm = 101;
 
-bc = 'freeslip'; % or noslip
-nop = 4; % or 2
-nu = 50; % or 50 , viscosity
-Ne = 25;
+nop = 4; % polynomial order
+nu = 50; % viscosity
+Ne = 25; % number of elements
 
 % area
 L = 2e6; % Length of the simulation domain (here [0,2e6]x[0,2e6])
-dx = L/(Ne*nop+1);
-dy = dx;
+dy = 20.0e3; dx = 20.0e3; % meters
 area_numo = dx * dy;
 
-save_folder = './KE_nop/NUMO_KE_N4';
+save_folder = './KE'; % folder to save KE time series
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
 end
 
-name_root = './N4_Ne25_freeslip_lfr/'; % make to put the correct path to your output files
+name_root = './Double_gyre/'; % make sure to put the correct path to your output files
 
 ii = 0;
 
 %READ DATA FROM MATLAB OUTPUT FILE
 
 name_file = [name_root, sprintf('mlswe%04d', 1)];
-[~,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
+[~,pb,ub,vb,h,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
 
 xmin=min(coord(1,:)); xmax=max(coord(1,:));
 ymin=min(coord(2,:)); ymax=max(coord(2,:));
 xe = coord(1,:);
 ye = coord(2,:);
-nxx = 200; nyy = 200;
-dx = (xmax-xmin)/nxx;
-dy = (ymax-ymin)/nyy;
 [xi,yi] = meshgrid(xmin:dx:xmax,ymin:dy:ymax);
 
-u = zeros(nxx+1,nxx+1,nk);
-v = zeros(nxx+1,nxx+1,nk);
-dp = zeros(nxx+1,nxx+1,nk);
+u_tmp = zeros(idm,jdm,nk);
+v_tmp = zeros(idm,jdm,nk);
+h_tmp = zeros(idm,jdm,nk);
 
-s = zeros(nxx+1,nxx+1,kdm);
-vol = zeros(nxx+1,nxx+1,kdm);
+s = zeros(idm,jdm,nlayers);
+vol = zeros(idm,jdm,nlayers);
 
 for ifile = file_num_start:delta_file_num:file_num_end
 
@@ -67,23 +62,22 @@ for ifile = file_num_start:delta_file_num:file_num_end
     
     %READ DATA FROM MATLAB OUTPUT FILE
     name_file = [name_root, sprintf('mlswe%04d', ifile)];
-    [~,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
+    [~,pb,ub,vb,h,u,v,coord,dt,nk, dt_btp,z] = load_data_numo(name_file);
 
+    u_tmp(:,:,1) = griddata(xe,ye,u(:,1),xi,yi,'cubic');
+    u_tmp(:,:,2) = griddata(xe,ye,u(:,2),xi,yi,'cubic');
 
-    u(:,:,1) = griddata(xe,ye,u(:,1),xi,yi,'cubic');
-    u(:,:,2) = griddata(xe,ye,u(:,2),xi,yi,'cubic');
+    v_tmp(:,:,1) = griddata(xe,ye,v(:,1),xi,yi,'cubic');
+    v_tmp(:,:,2) = griddata(xe,ye,v(:,2),xi,yi,'cubic');
 
-    v(:,:,1) = griddata(xe,ye,v(:,1),xi,yi,'cubic');
-    v(:,:,2) = griddata(xe,ye,v(:,2),xi,yi,'cubic');
+    h_tmp(:,:,1) = griddata(xe,ye,h(:,1),xi,yi,'cubic');
+    h_tmp(:,:,2) = griddata(xe,ye,h(:,2),xi,yi,'cubic');
 
-    dp(:,:,1) = griddata(xe,ye,dp(:,1),xi,yi,'cubic');
-    dp(:,:,2) = griddata(xe,ye,dp(:,2),xi,yi,'cubic');
+    vol(:,:,1) = area_numo.*h_tmp(:,:,1);
+    vol(:,:,2) = area_numo.*h_tmp(:,:,2);
 
-    vol(:,:,1) = area_numo.*dp(:,:,1);
-    vol(:,:,2) = area_numo.*dp(:,:,2);
-
-    s(:,:,1) = 0.5*(u(:,:,1).^2 + v(:,:,1).^2).*vol(:,:,1);
-    s(:,:,2) = 0.5*(u(:,:,2).^2 + v(:,:,2).^2).*vol(:,:,2);
+    s(:,:,1) = 0.5*(u_tmp(:,:,1).^2 + v_tmp(:,:,1).^2).*vol(:,:,1);
+    s(:,:,2) = 0.5*(u_tmp(:,:,2).^2 + v_tmp(:,:,2).^2).*vol(:,:,2);
     
     vol1 = vol(:,:,1);
     tmp_vol1 = sum(vol1(:),"omitnan");
@@ -105,7 +99,7 @@ Time = linspace(0,file_num_end/36,n);
 
 temp = [n;Time'; ke1; ke2; ke];
 
-file = [save_folder,sprintf('/ke_numo_20kmv%d_%s_lfr', nu,bc)];
+file = [save_folder,sprintf('/ke_numo_20km')];
 
 eval( ['save ',  file, ' temp -ascii -double'] )
 

@@ -14,21 +14,19 @@ alpha = [9.7370e-04; 9.7350e-04];
 
 idm = 101; 
 jdm = 101;
-kdm = 2;
+nlayers = 2; % number of layers
 
-bc = 'freeslip'; % or noslip
 nop = 4; % ploynomial order
-nu = 50; % or 50 , viscosity
+nu = 50; % viscosity
 Ne = 25; % number of elements
 
-res = 20; % resolution
+res = 20; % grid resolution
 
 ii = 0;
-nlayers = 2; % total number of layers 
 
-name_root = './Double_gyre/'; % make to put the correct path to your output files
+name_root = './Double_gyre/'; % make sure to put the correct path to your output files
 
-save_folder = sprintf('./EKE_numo/EKE_N%d',nop);
+save_folder = sprintf('./EKE');
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
@@ -45,7 +43,6 @@ for ilayer = 1:nlayers
             
         ii = ii + 1
 
-    
         name_file = [name_root, sprintf('mlswe%04d', ifile)];
     
         [~,pb,ub,vb,h,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_file);
@@ -90,7 +87,7 @@ for ilayer = 1:nlayers
     N = idm*jdm;
     temp = [idm;jdm;reshape(mke,N,1);reshape(eke,N,1)];
     
-    file = [save_folder,sprintf('/eke_%dkmv%d_%s_l%d', res, nu,bc,ilayer)];
+    file = [save_folder,sprintf('/eke_%dkm_l%d', res, ilayer)];
     
     eval( ['save ',  file, ' temp -ascii -double'] )
 end

@@ -1,4 +1,4 @@
-function [npoin,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_fortran_data_file)
+function [npoin,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp,z] = load_data_numo(name_fortran_data_file)
 
     %   Load the data written by the Fortran DG code.
 
@@ -36,8 +36,8 @@ function [npoin,pb,ub,vb,dp,u,v,coord,dt,nk, dt_btp] = load_data_numo(name_fortr
     v = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
     v = reshape(v, dim);
 
-%     dim = [npoin,nk+1];
-%     z = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
-%     z = reshape(z, dim);
+    dim = [npoin,nk+1];
+    z = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
+    z = reshape(z, dim);
 
 end

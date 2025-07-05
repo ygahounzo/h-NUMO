@@ -4,36 +4,30 @@
 clear all
 
 nu = 50;  % viscosity
-bc = 'freeslip';  % boundary condition
-
-res = 20;
-
-lim_kem = 400;  % limit for mean KE
-lim_eke = 100; % limit for EKE
+res = 20; % grid resolution
+lim_eke = 400; % limit for EKE
 
 ilayer = 1;  % layer to visualize
 
-name_root = sprintf('./EKE_numo/EKE_N4/eke_%dkmv%d_%s_l%d',res,nu,bc,ilayer);
+name_root = sprintf('./EKE/eke_%dkm_l%d',res,ilayer);
 
 [idm,jdm,mke_numo,eke_numo] = load_data_eke(name_root);
 
-
 x = linspace(0, 2000, idm);
 [plon,plat] = meshgrid(x, x);
-
 
 % fig = figure('Position',[1 1 1200 800]);
 fig = figure('units','inches','Position',[10 10 8 8]);
 tiledlayout(1,2,'TileSpacing','Compact','Padding','Compact');
 
 vals = get_cmapeke();
-levels = 0:20:lim_kem;
+levels = 0:40:lim_eke;
 % Eddy Kinetic Energy
 
 contourf(plon,plat,eke_numo,levels);
 % colorbar('eastOutside')
 colormap(vals)
-caxis([0 lim_kem])
+caxis([0 lim_eke])
 xticks(linspace(0,2000,5))
 yticks(linspace(0,2000,5))
 xlabel('X [km]')
@@ -64,7 +58,4 @@ function [idm,jdm,kem,eke] = load_data_eke(name_file)
     eke = temp(count: (count+prod(dim)-1));  count=count+prod(dim);
     eke = reshape(eke, dim);
 
-
 end
-
-

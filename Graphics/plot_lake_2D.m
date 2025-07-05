@@ -9,7 +9,7 @@ file_num_end = 108;       % end animating with this file number
 delta_file_num = 10;      % what is the skip between the file numbers
                           % (must match the actual file numbers)
 
-name_root = './lake/2l/mlswe';
+name_root = './lake/mlswe';
 
 ii = 0;
 
