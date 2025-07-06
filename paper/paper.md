@@ -32,5 +32,8 @@ Additionally, DG methods can achieve higher accuracy with fewer degrees of freed
 
 Currently, h-NUMO is designed as a prototype for testing the applicability of high-order numerical methods in idealized and large-scale ocean applications. Explore how an increase in polynomial order approximation and a decrease in the number of elements in the computational domain affect the model's accuracy. Analyze the results of such changes and compare them with those from other ocean models.
 
+# Acknowledgements
+
+This work is supported by the Office of Naval Research through Grant N00014-20-1-2038.
 
 # References
