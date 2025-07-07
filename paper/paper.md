@@ -34,6 +34,6 @@ Currently, h-NUMO is designed as a prototype for testing the applicability of hi
 
 # Acknowledgements
 
-This work is supported by the Office of Naval Research through Grant N00014-20-1-2038.
+This code was based on Prof. Robert L. Higdon's 2D code, for which we are grateful to him for sharing it. We are thankful to Prof. Frank X. Giraldo for reviewing this code. The Office of Naval Research supports this work through Grant N00014-20-1-2038.
 
 # References
