@@ -6,7 +6,7 @@
 h-NUMO
 ==================================
 
-**h-NUMO** is isopycnal ocean circulation model developed  in the Galerkin Numerical Modeling Environment(GNuME) (Giraldo, 2016) framework. The GNuME framework uses an arbitrary polynomial basis function expansion and offers a choice of continuous Galerkin (CG) and discontinuous Galerkin (DG) methods Abdi and Giraldo (2016). The framework was previously used to construct the Non-Hydrostatic Unified Model of the Ocean Kopera et al. (2023). The h-NUMO model use arbitrary number of layers.
+**h-NUMO** is an isopycnal ocean circulation model developed  in the Galerkin Numerical Modeling Environment(GNuME) framework (Giraldo, 2016). The GNuME framework uses an arbitrary polynomial basis function expansion and offers a choice of continuous Galerkin (CG) and discontinuous Galerkin (DG) methods Abdi and Giraldo (2016). The framework was previously used to construct the Non-Hydrostatic Unified Model of the Ocean Kopera et al. (2023). The h-NUMO model use arbitrary number of layers. We are thankful to Prof. Robert L. Higdon for sharing his 2D code, which h-NUMO is based on.
 
 .. note::
 
@@ -14,9 +14,9 @@ h-NUMO
 
 h-NUMO is
 
-- `Easy to install and configure <installation.html>`_ on a compute node, including without administrative privileges.
+- `Easy to install and configure <installation.html>`_ on a compute node.
 
-- Easy to learn and understand, with online documentation, including a complete description of `the physisc and the numerics <numo_model.html>`_.
+- Easy to learn with [online documentation](https://ygahounzo.github.io/h-NUMO/index.html), including a complete description of `the physisc and the numerics <numo_model.html>`_.
 
 - Verified with a suites of `test cases <test.html>`_.
 

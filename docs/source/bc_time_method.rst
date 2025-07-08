@@ -4,8 +4,8 @@ Boundary conditions and time intergration methods
 Boundary Conditions
 ---------------------
 
-NUMA reads in boundary conditions via the file numa3d.in through the 
-variables x_boundary, y_boundary, and z_boundary. NUMA allows for the following 
+h-NUMO reads in boundary conditions via the file numo3d.in through the 
+variables x_boundary, y_boundary, and z_boundary. h-NUMO allows for the following 
 types of boundary conditions:
 
 * 0 = do nothing boundary conditions
@@ -28,4 +28,4 @@ Time-Integrators
 h-NUMO is equipped with a suite of time-integrators which include:
 
 * Explicit 5-stage 3rd Order Runge-Kutta Methods (used only for the barotropic equations),
-* Two-level or predictor-corrector method for both barotropic and baroclinic equations.
+* Two-level or predictor-corrector method for baroclinic equations.

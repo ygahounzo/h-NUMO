@@ -10,7 +10,7 @@ Setting up the Workspace
 Once you have successfully compiled h-NUMO, we recommend the following steps to running h-NUMO.
 
 	1.  In the home/root directory create a directory called ``tests``. Inside ``tests`` create another directory for a specific simulation (for example, let's call it ``bump``.
-	2.  Inside of bump copy ``numa3d.in.bump`` from input_files and rename it ``numa3d.in``.
+	2.  Inside of bump copy ``numo3d.in.bump`` from input_files and rename it ``numo3d.in``.
 	3.  Inside of bump copy one of the ``run_numo3d`` from ``run_scripts``. Make sure that the other batch submission commands make sense.
 
 Input file: numo3d.in
@@ -44,4 +44,4 @@ h-NUMO Output
 
     	* :bash:`sbatch run_script.sh`
 
-    2.  At the end of the run, you will have a collection of output files. In the input 	file, you can dump the simulation data as a ``vtk`` file for Paraview visualizations or simply as a ``txt`` file for Matlab visualizations. For the Matlab visualization, turn matlab_viz to true; otherwise, it will output ``vtk`` files.
+    2.  At the end of the run, you will have a collection of output files. In the input file, you can dump the simulation data as a ``vtk`` file for Paraview visualizations, as a ``nc`` file for netCDF output or simply as a ``txt`` file for Matlab visualizations. For the Matlab visualization, turn matlab_viz to true; otherwise, it will output ``vtk`` files.
