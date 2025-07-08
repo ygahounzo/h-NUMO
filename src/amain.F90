@@ -9,7 +9,7 @@
 !       Date: July 02, 2023
 !=============================================================================================
 
-program numa3d
+program numo3d
 
   use mod_time_loop, only: time_loop, rhs_time, write_time
   use mod_types, only : r8
@@ -70,7 +70,7 @@ program numa3d
   !Finalize MPI
   call finalize_mpi_util(ierr)
 
-end program numa3d
+end program numo3d
 
 !---------------------------------------------------
 !>@brief Re-initialize data after refinement
@@ -161,7 +161,7 @@ subroutine initialize_grid()
   !local variables
   logical is_p4est
 
-  ! Read NUMA3D.in
+  ! Read NUMO3D.in
   call mod_input_create(irank)
   if (irank == irank0) then
      print *, "Input file Read"

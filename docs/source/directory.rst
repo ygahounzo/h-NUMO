@@ -4,7 +4,7 @@
 h-NUMO Directory Structure
 *******************************
 
-A typical copy of NUMA consists of the following:
+A typical copy of h-NUMO consists of the following:
 
 | :bash:`Makefile`
 | :bash:`config.user`

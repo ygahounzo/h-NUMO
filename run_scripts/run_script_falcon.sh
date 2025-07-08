@@ -9,6 +9,6 @@
 #SBATCH -N 1
 #SBATCH --exclusive
 
-cp ~/h-NUMO/bin/numa3d .
+cp ~/h-NUMO/bin/numo3d .
 
-mpirun -np 36 ./numa3d
+mpirun -np 36 ./numo3d
