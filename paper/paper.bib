@@ -13,72 +13,116 @@
 }
 
 @article{abdi2016efficient,
-  title     = {Efficient construction of unified continuous and discontinuous {Galerkin} formulations for the 3D {E}uler equations},
-  author    = {Abdi, Daniel S and Giraldo, Francis X},
-  journal   = {Journal of Computational Physics},
-  volume    = {320},
-  pages     = {46--68},
-  year      = {2016},
-  publisher = {Elsevier}
+  title = {Efficient construction of unified continuous and discontinuous Galerkin formulations for the 3D Euler equations},
+  journal = {Journal of Computational Physics},
+  volume = {320},
+  pages = {46-68},
+  year = {2016},
+  issn = {0021-9991},
+  doi = {https://doi.org/10.1016/j.jcp.2016.05.033},
+  url = {https://www.sciencedirect.com/science/article/pii/S0021999116301784},
+  author = {Daniel S. Abdi and Francis X. Giraldo},
+  keywords = {NUMA, Continuous Galerkin, Discontinuous Galerkin},
+  abstract = {A unified approach for the numerical solution of the 3D hyperbolic Euler equations using high order methods, namely continuous Galerkin (CG) and discontinuous Galerkin (DG) methods, is presented. First, we examine how classical CG that uses a global storage scheme can be constructed within the DG framework using constraint imposition techniques commonly used in the finite element literature. Then, we implement and test a simplified version in the Non-hydrostatic Unified Model of the Atmosphere (NUMA) for the case of explicit time integration and a diagonal mass matrix. Constructing CG within the DG framework allows CG to benefit from the desirable properties of DG such as, easier hp-refinement, better stability etc. Moreover, this representation allows for regional mixing of CG and DG depending on the flow regime in an area. The different flavors of CG and DG in the unified implementation are then tested for accuracy and performance using a suite of benchmark problems representative of cloud-resolving scale, meso-scale and global-scale atmospheric dynamics. The value of our unified approach is that we are able to show how to carry both CG and DG methods within the same code and also offer a simple recipe for modifying an existing CG code to DG and vice versa.}
 }
 
 @article{kopera2023non,
   title     = {Non-hydrostatic unified model of the ocean with application to ice/ocean interaction modeling},
   author    = {Kopera, Michal A and Gahounzo, Yao and Enderlin, Ellyn M and Giraldo, Francis X and Maslowski, Wieslaw},
   journal   = {GEM-International Journal on Geomathematics},
+  url = {https://doi.org/10.1007/s13137-022-00212-7},
+  doi = {10.1007/s13137-022-00212-7},
   volume    = {14},
   number    = {1},
   pages     = {2},
   year      = {2023},
-  publisher = {Springer}
+  publisher = {Springer},
+  abstract = {The non-hydrostatic unified model of the ocean (NUMO) has been developed to advance model capability to realistically represent the dynamics and ice/ocean interactions in Greenland fjords, including an accurate representation of complex fjord geometries. To that end, NUMO uses high-order spectral element methods on unstructured grids to solve the incompressible Navier–Stokes equations complemented with heat and salinity transport equations. This paper presents the model’s description and discusses the formulation of ice/ocean Neumann boundary conditions based on the three-equation model. We validate the model on a range of test cases. The convergence study on the classical Kovasznay flow shows exponential convergence with arbitrary basis function polynomial order. The lock-exchange and density current cases show that the model results of buoyancy-driven flows solved with 2D and 3D unstructured meshes agree well with previously published findings. Finally, we show that a high-order simulation of an ice block immersed in saline water produces results that match both direct numerical simulation and laboratory experiments.}
 }
 
 @article{escobar2012high,
-  title     = {High-order discontinuous element-based schemes for the inviscid shallow water equations: {S}pectral multidomain penalty and discontinuous {G}alerkin methods},
-  author    = {Escobar-Vargas, Jorge A and Diamessis, Peter J and Giraldo, Francis X},
-  journal   = {Applied Mathematics and Computation},
-  volume    = {218},
-  number    = {9},
-  pages     = {4825--4848},
-  year      = {2012},
-  publisher = {Elsevier}
+title = {High-order discontinuous element-based schemes for the inviscid shallow water equations: Spectral multidomain penalty and discontinuous Galerkin methods},
+journal = {Applied Mathematics and Computation},
+volume = {218},
+number = {9},
+pages = {4825-4848},
+year = {2012},
+issn = {0096-3003},
+doi = {https://doi.org/10.1016/j.amc.2011.10.046},
+url = {https://www.sciencedirect.com/science/article/pii/S0096300311012914},
+author = {J.A. Escobar-Vargas and P.J. Diamessis and F.X. Giraldo},
+keywords = {Shallow water equations, Spectral multidomain methods, Discontinuous Galerkin methods, Interfacial treatment},
+abstract = {Two commonly used types of high-order-accuracy element-based schemes, collocation-based spectral multidomain penalty methods (SMPM) and nodal discontinuous Galerkin methods (DGM), are compared in the framework of the inviscid shallow water equations. Differences and similarities in formulation are identified, with the primary difference being the dissipative term in the Rusanov form of the numerical flux for the DGM that provides additional numerical stability; however, it should be emphasized that to arrive at this equivalence between SMPM and DGM requires making specific choices in the construction of both methods; these choices are addressed. In general, both methods offer a multitude of choices in the penalty terms used to introduce boundary conditions and stabilize the numerical solution. The resulting specialized class of SMPM and DGM are then applied to a suite of six commonly considered geophysical flow test cases, three linear and three non-linear; we also include results for a classical continuous Galerkin (i.e., spectral element) method for comparison. Both the analysis and numerical experiments show that the SMPM and DGM are essentially identical; both methods can be shown to be equivalent for very special choices of quadrature rules and Riemann solvers in the DGM along with special choices in the type of penalty term in the SMPM. Although we only focus our studies on the inviscid shallow water equations the results presented should be applicable to other systems of nonlinear hyperbolic equations (such as the compressible Euler equations) and extendable to the compressible and incompressible Navier–Stokes equations, where viscous terms are included.}
 }
 
 @article{muller2019strong,
-  title     = {Strong scaling for numerical weather prediction at petascale with the atmospheric model {NUMA}},
-  author    = {M{\"u}ller, Andreas and Kopera, Michal A and Marras, Simone and Wilcox, Lucas C and Isaac, Tobin and Giraldo, Francis X},
-  journal   = {The International Journal of High Performance Computing Applications},
-  volume    = {33},
-  number    = {2},
-  pages     = {411--426},
-  year      = {2019},
-  publisher = {SAGE Publications Sage UK: London, England}
+  author = {Andreas Müller and Michal A Kopera and Simone Marras and Lucas C Wilcox and Tobin Isaac and Francis X Giraldo},
+  title ={Strong scaling for numerical weather prediction at petascale with the atmospheric model NUMA},
+
+  journal = {The International Journal of High Performance Computing Applications},
+  volume = {33},
+  number = {2},
+  pages = {411-426},
+  year = {2019},
+  doi = {10.1177/1094342018763966},
+  URL = {https://doi.org/10.1177/1094342018763966},
+  eprint = { https://doi.org/10.1177/1094342018763966},
+  abstract = { Numerical weather prediction (NWP) has proven to be computationally challenging due to its inherent multiscale nature. Currently, the highest resolution global NWP models use a horizontal resolution of 9 km. At this resolution, many important processes in the atmosphere are not resolved. Needless to say, this introduces errors. In order to increase the resolution of NWP models, highly scalable atmospheric models are needed. The non-hydrostatic unified model of the atmosphere (NUMA), developed by the authors at the Naval Postgraduate School, was designed to achieve this purpose. NUMA is used by the Naval Research Laboratory, Monterey as the engine inside its next generation weather prediction system NEPTUNE. NUMA solves the fully compressible Navier–Stokes equations by means of high-order Galerkin methods (both spectral element as well as discontinuous Galerkin methods can be used). NUMA is capable of running middle and upper atmosphere simulations since it does not make use of the shallow-atmosphere approximation. This article presents the performance analysis and optimization of the spectral element version of NUMA. The performance at different optimization stages is analyzed using a theoretical performance model as well as measurements via hardware counters. Machine-independent optimization is compared to machine-specific optimization using Blue Gene (BG)/Q vector intrinsics. The best portable version of the main computations was found to be about two times slower than the best non-portable version. By using vector intrinsics, the main computations reach 1.2 PFlops on the entire IBM Blue Gene supercomputer Mira (12\% of the theoretical peak performance). The article also presents scalability studies for two idealized test cases that are relevant for NWP applications. The atmospheric model NUMA delivers an excellent strong scaling efficiency of 99\% on the entire supercomputer Mira using a mesh with 1.8 billion grid points. This allows running a global forecast of a baroclinic wave test case at a 3-km uniform horizontal resolution and double precision within the time frame required for operational weather prediction. }
 }
 
 @article{griffies2000developments,
-  title     = {Developments in ocean climate modelling},
-  author    = {Griffies, Stephen M and B{\"o}ning, Claus and Bryan, Frank O and Chassignet, Eric P and Gerdes, R{\"u}diger and Hasumi, Hiroyasu and Hirst, Anthony and Treguier, Anne-Marie and Webb, David},
-  journal   = {Ocean Modelling},
-  volume    = {2},
-  number    = {3-4},
-  pages     = {123--192},
-  year      = {2000},
-  publisher = {Elsevier}
+  title = {Developments in ocean climate modelling},
+  journal = {Ocean Modelling},
+  volume = {2},
+  number = {3},
+  pages = {123-192},
+  year = {2000},
+  issn = {1463-5003},
+  doi = {https://doi.org/10.1016/S1463-5003(00)00014-7},
+  url = {https://www.sciencedirect.com/science/article/pii/S1463500300000147},
+  author = {Stephen M. Griffies and Claus Böning and Frank O. Bryan and Eric P. Chassignet and Rüdiger Gerdes and Hiroyasu Hasumi and Anthony Hirst and Anne-Marie Treguier and David Webb},
+  abstract = {This paper presents some research developments in primitive equation ocean models which could impact the ocean component of realistic global coupled climate models aimed at large-scale, low frequency climate simulations and predictions. It is written primarily to an audience of modellers concerned with the ocean component of climate models, although not necessarily experts in the design and implementation of ocean model algorithms.}
 }
 
 @article{chassignet2006generalized,
-  title     = {Generalized vertical coordinates for eddy-resolving global and coastal ocean forecasts},
-  author    = {Chassignet, Eric P and Hurlburt, Harley E and Smedstad, Ole Martin and Halliwell, George R and Wallcraft, Alan J and Metzger, E Joseph and Blanton, Brian O and Lozano, Carlos and Rao, Desiraju B and Hogan, Patrick J and others},
-  journal   = {Oceanography},
-  volume    = {19},
-  number    = {1},
-  pages     = {118},
-  year      = {2006},
-  publisher = {The Oceanographic Society; 1999}
+    author = {Eric P. Chassignet and Harley E. Hurlburt and Ole Martin Smedstad and George R. Halliwell and Alan J. Wallcraft and E. Joseph Metzger and Brian O. Blanton and Carlos Lozano and Desiraju B. Rao and Patrick J. Hogan and Ashwanth Srinivasan},
+    title = {Generalized Vertical Coordinates for Eddy-Resolving Global and Coastal Ocean Forecasts},
+    journal = {Oceanography},
+    year = {2006},
+    month = {March},
+    note = {},
+    volume = {issue_volume},
+    doi = {https://doi.org/10.5670/oceanog.2006.95},
 }
 
 
+@article{higdon2015multiple,
+title = {Multiple time scales and pressure forcing in discontinuous Galerkin approximations to layered ocean models},
+journal = {Journal of Computational Physics},
+volume = {295},
+pages = {230-260},
+year = {2015},
+issn = {0021-9991},
+doi = {https://doi.org/10.1016/j.jcp.2015.04.010},
+url = {https://www.sciencedirect.com/science/article/pii/S0021999115002569},
+author = {Robert L. Higdon},
+keywords = {Ocean modeling, Multi-layer ocean models, Discontinuous Galerkin, Barotropic–baroclinic splitting, Geostrophic adjustment},
+abstract = {This paper addresses some issues involving the application of discontinuous Galerkin (DG) methods to ocean circulation models having a generalized vertical coordinate. These issues include the following. (1) Determine the pressure forcing at cell edges, where the dependent variables can be discontinuous. In principle, this could be accomplished by solving a Riemann problem for the full system, but some ideas related to barotropic–baroclinic time splitting can be used to reduce the Riemann problem to a much simpler system of lower dimension. Such splittings were originally developed in order to address the multiple time scales that are present in the system. (2) Adapt the general idea of barotropic–baroclinic splitting to a DG implementation. A significant step is enforcing consistency between the numerical solution of the layer equations and the numerical solution of the vertically-integrated barotropic equations. The method used here has the effect of introducing a type of time filtering into the forcing for the layer equations, which are solved with a long time step. (3) Test these ideas in a model problem involving geostrophic adjustment in a multi-layer fluid. In certain situations, the DG formulation can give significantly better results than those obtained with a standard finite difference formulation.}
+}
 
-
-
+@article{ruuth2006global,
+ ISSN = {00255718, 10886842},
+ URL = {http://www.jstor.org/stable/4100149},
+ doi = {https://doi.org/10.1090/S0025-5718-05-01772-2},
+ abstract = {Strong-stability-preserving Runge-Kutta (SSPRK) methods are a type of time discretization method that are widely used, especially for the time evolution of hyperbolic partial differential equations (PDEs). Under a suitable stepsize restriction, these methods share a desirable nonlinear stability property with the underlying PDE; e.g., positivity or stability with respect to total variation. This is of particular interest when the solution exhibits shock-like or other nonsmooth behaviour. A variety of optimality results have been proven for simple SSPRK methods. However, the scope of these results has been limited to low-order methods due to the detailed nature of the proofs. In this article, global optimization software, BARON, is applied to an appropriate mathematical formulation to obtain optimality results for general explicit SSPRK methods up to fifth-order and explicit low-storage SSPRK methods up to fourth-order. Throughout, our studies allow for the possibility of negative coefficients which correspond to downwind-biased spatial discretizations. Guarantees of optimality are obtained for a variety of third- and fourth-order schemes. Where optimality is impractical to guarantee (specifically, for fifth-order methods and certain low-storage methods), extensive numerical optimizations are carried out to derive numerically optimal schemes. As a part of these studies, several new schemes arise which have theoretically improved time-stepping restrictions over schemes appearing in the recent literature.},
+ author = {Steven J. Ruuth},
+ journal = {Mathematics of Computation},
+ number = {253},
+ pages = {183--207},
+ publisher = {American Mathematical Society},
+ title = {Global Optimization of Explicit Strong-Stability-Preserving Runge-Kutta Methods},
+ urldate = {2025-07-15},
+ volume = {75},
+ year = {2006}
+}
 
