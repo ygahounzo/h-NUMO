@@ -14,7 +14,7 @@ R8=-r8
 NUMO_P4EST_DIR := $(NUMO_DIR)/p4est/local
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/lib"
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/local"
-NETCDF_DIR = /opt/rcc/gnu/openmpi
+NETCDF_DIR := /opt/rcc/gnu/openmpi
 #Make sure you have the correct path in NETCDF_DIR for your HPC system
 
 hnumo:
@@ -70,7 +70,7 @@ hnumo-CI:
 #------------------------------------------------------------------------------
 OMPI_COMPILE_BREW := /opt/homebrew/bin
 P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
-NETCDF_DIR = /opt/homebrew
+NETCDF_DIR_BREW = /opt/homebrew
 
 hnumo-brew:	
 	$(MAKE) $(TARGET) \
@@ -79,8 +79,8 @@ hnumo-brew:
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${NETCDF_DIR}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
+	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 hnumo-brew-dbg:	
@@ -90,8 +90,8 @@ hnumo-brew-dbg:
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
 	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${NETCDF_DIR}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
+	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
