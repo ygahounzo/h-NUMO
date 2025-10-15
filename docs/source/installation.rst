@@ -7,18 +7,17 @@ Installation
 Libraries
 ---------------
 
-To compile the h-NUMO model, one needs the following modules
+To compile the h-NUMO model, one needs the following packages installed on the system:
 
 | :bash:`gcc version 8 and above`
 | :bash:`openmpi`
 | :bash:`make`
-| :bash:`lapack`
 | :bash:`netcdf`
 
 Installation instructions
 --------------------------------
 
-h-NUMO will need the :bash:`mpi90` command in order to compile. It is up to the user to ensure that these packages exist on his computing platform.
+h-NUMO will need the :bash:`mpi90` command in order to compile. It is up to the user to ensure that these packages exist on their computing platform.
 
 1. Clone the repository to a local directory
 
@@ -28,13 +27,25 @@ h-NUMO will need the :bash:`mpi90` command in order to compile. It is up to the 
 
    * cd ``h-NUMO``
 
-2. Install and compile h-NUMO
+2. Install and compile h-NUMO:
+   
+   2.1. On HPC systems: Ensure that the required libraries are loaded (gcc, openmpi, netcdf).
 
-   Inside the ``h-NUMO`` directory type the following command to compile p4est and h-NUMO
+      At the root of the ``h-NUMO`` directory type the following command to compile p4est and h-NUMO
 
-   ``make hnumo``
+      ``make hnumo``
 
+      One may need to edit the ``config.user`` file to specify the correct compilers paths and flags for their platform
 
+   2.2. On MacOS: use Homebrew to install the required libraries:
+
+      * Install Homebrew if you haven't already: https://brew.sh/
+      * Install dependencies:
+        ``brew install gcc open-mpi netcdf``
+
+      Then at the root of the ``h-NUMO`` directory type the following command to compile p4est and h-NUMO
+
+      ``make hnumo-brew``
 
    .. warning::
 

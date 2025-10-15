@@ -12,7 +12,7 @@ input parameter 'icase'. h-NUMO contains the following ready-to-use test cases:
 We present some examples of idealised modeling studies. To run these simulations change into the `Examples/` directory.
 
 test_case = 'lakeAtrest': Well-balanced test
----------------------------------
+----------------------------------------------
 
 This test case is used to validate the well-balanced property of the DG scheme for the multilayer equations. We have initialized the layers fluid domain with densities  :math:`\rho_k = 1027.01037 + 0.2110\times (k-1) \frac{kg}{m^3}, \ k = 1,\ldots,N_l` and the layer interface positions :math:`z_k = -40/N_l` m, where :math:`N_l` is the number of layers. The horizontal extend of the domain was :math:`(x,y)\in [0,\ 2000]\times[0,\ 2000]` m with wall boundary conditions on both ends, and the bottom topography is given by
     

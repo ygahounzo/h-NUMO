@@ -7,10 +7,15 @@ NUMOLIBS=-L$(NUMO_DIR)/lib
 #R8=-DSINGLE
 R8=-r8
 
+#------------------------------------------------------------
+# Make sure you have gcc and openmpi loaded on your system
+# Make sure you loaded the netcdf on your system
+#------------------------------------------------------------
 NUMO_P4EST_DIR := $(NUMO_DIR)/p4est/local
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/lib"
 #export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:$NUMO_P4EST_DIR/local"
-NETCDF_DIR = /opt/rcc/gnu/openmpi
+NETCDF_DIR := /opt/rcc/gnu/openmpi
+#Make sure you have the correct path in NETCDF_DIR for your HPC system
 
 hnumo:
 	$(MAKE) $(TARGET) \
@@ -20,7 +25,7 @@ hnumo:
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
 	"INCLUDE= -I${NETCDF_DIR}/include -I${NUMO_P4EST_DIR}/include -I${NUMO_DIR}/include" \
-	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lnetcdff -lp4est -lsc -llapack -lblas -lz" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lnetcdff -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 hnumo-debug:
@@ -31,7 +36,7 @@ hnumo-debug:
 	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
 	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
 	"INCLUDE= -I${NETCDF_DIR}/include -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
-	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lnetcdff -lp4est -lsc -llapack -lblas -lz" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lnetcdff -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 hnumo-prof:
@@ -45,6 +50,9 @@ hnumo-prof:
 	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
+#--------------------------------------------------------------------------------
+# This is used to compile the code on GitHub servers for continuous integration
+#--------------------------------------------------------------------------------
 hnumo-CI:
 	$(MAKE) $(TARGET) \
         "FC=mpif90" \
@@ -58,12 +66,11 @@ hnumo-CI:
 
 #------------------------------------------------------------------------------
 # Flags for building NUMO on Mac OS X with gcc on MACBOOK using Homebrew with p4est library option
-# user must install gcc openmpi using Homebrew
+# user must install gcc openmpi and netcdf using Homebrew
 #------------------------------------------------------------------------------
-#OMPI_COMPILE_BREW := /usr/local/bin
-OMPI_COMPILE_BREW := /usr/local/Cellar/open-mpi/5.0.3_1/bin
-#OMPI_COMPILE_BREW := /opt/local/bin
+OMPI_COMPILE_BREW := /opt/homebrew/bin
 P4EST_DIR_BREW := $(NUMO_DIR)/p4est/local
+NETCDF_DIR_BREW = /opt/homebrew
 
 hnumo-brew:	
 	$(MAKE) $(TARGET) \
@@ -72,8 +79,8 @@ hnumo-brew:
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas -lz" \
+	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 hnumo-brew-dbg:	
@@ -81,10 +88,10 @@ hnumo-brew-dbg:
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
-	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
-	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
-	"INCLUDE=-I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
-	"LIBS=$(NUMOLIBS) -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lp4est -lsc -llapack -lblas" \
+	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
+	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
