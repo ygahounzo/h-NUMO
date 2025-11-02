@@ -1,11 +1,15 @@
 
 warning('off', 'all')
+clear all
+
+fig = figure('Position',[1 1 1600 1200]);
+
 file_num_start = 0;     % start animating with this file number
 file_num_end = 108;       % end animating with this file number
 delta_file_num = 1;      % what is the skip between the file numbers
                           % (must match the actual file numbers)
 
-name_root = './mlswe';
+name_root = './';
 
 layer_dz_eq = [20, 20];
 
@@ -18,9 +22,13 @@ name_fortran_data_file = [name_root, sprintf('%04d', 0)];
 
 [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,z] = load_data(name_fortran_data_file);
 
-fig = figure('Position',[1 1 1600 1200]);
+save_folder = './Animation'; % directory to save the animation
 
-f = sprintf('./bump_layer');
+if ~exist(save_folder, 'dir')
+    mkdir(save_folder);
+end
+
+f = sprintf('%s/bump_2layers',save_folder);
 
 myVideo = VideoWriter(f,'MPEG-4'); % open video file
 myVideo.FrameRate = 10; 

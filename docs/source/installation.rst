@@ -47,6 +47,16 @@ h-NUMO will need the :bash:`mpi90` command in order to compile. It is up to the 
 
       ``make hnumo-brew``
 
+   2.2. On Debian/Ubuntu: use APT to install the required libraries:
+
+      * Install dependencies:
+        ``sudo apt-get install gcc openmpi-bin libopenmpi-dev libnetcdf-dev libnetcdff-dev``
+        ``sudo apt-get install zlib1g`` to avoid zlib errors during compilation
+
+      Then at the root of the ``h-NUMO`` directory type the following command to compile p4est and h-NUMO
+
+      ``make hnumo-debian``
+
    .. warning::
 
       Sometimes simple make does not work, and you need to compile p4est 
