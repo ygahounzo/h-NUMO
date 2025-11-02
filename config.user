@@ -95,6 +95,28 @@ hnumo-brew-dbg:
 	"AR=ar rv"
 
 #------------------------------------------------------------------------------
+# Flags for building NUMO on Debian & Ubuntu with gcc on Linux with p4est library option
+# user must install gcc, openmpi, zlib, and netcdf
+#
+# use "sudo apt-get install libnetcdf-dev libnetcdff-dev" to install netcdf
+# use "sudo apt-get install zlib1g" to install zlib
+#------------------------------------------------------------------------------
+OMPI_COMPILE_DEBIAN := /usr/bin
+NETCDF_DIR_DEBIAN := /usr
+P4EST_DIR_DEBIAN := $(NUMO_DIR)/p4est/local
+
+hnumo-debian:	
+	$(MAKE) $(TARGET) \
+	"FC=${OMPI_COMPILE_DEBIAN}/mpif90" \
+	"LD=${OMPI_COMPILE_DEBIAN}/mpif90" \
+	"CC=${OMPI_COMPILE_DEBIAN}/mpicc" \
+	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
+	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE=-I${NETCDF_DIR_DEBIAN}/include -I${P4EST_DIR_DEBIAN}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_DEBIAN}/lib -L${P4EST_DIR_DEBIAN}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
+	"AR=ar rv"
+
+#------------------------------------------------------------------------------
 # Default rules
 #------------------------------------------------------------------------------
 %.o $(OBJDIR)/%.o : %.f
