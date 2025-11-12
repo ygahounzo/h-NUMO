@@ -19,7 +19,7 @@ module mod_create_rhs_mlswe
                            zetaq_x, zetaq_y, zetaq_z, &
                            jacq, massinv
 
-    public :: layer_momentum_rhs, btp_mass_advection_rhs, &
+    public :: layer_momentum_rhs, &
               interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, layer_mass_rhs, &
               consistency_mass_rhs
               
@@ -285,7 +285,7 @@ module mod_create_rhs_mlswe
         use mod_input, only: nlayers
         use mod_constants, only: gravity
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
-                                tau_wind, pbprime, zbot_df
+                                tau_wind, pbprime_df, zbot_df
         use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
                                     Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope2_ave_df, ope2_ave
 
@@ -299,7 +299,7 @@ module mod_create_rhs_mlswe
         integer :: k, I, Iq, ip
         real, dimension(nlayers+1) :: pprime_temp
         real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
-        real :: weight, acceleration
+        real :: weight, acceleration, pbq
         real, dimension(3) :: qp, qb
         real, dimension(nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp
         real, dimension(2,nlayers) :: u_vdp
@@ -359,11 +359,12 @@ module mod_create_rhs_mlswe
                 temp_vv(k) = abs(temp_vv(k)) + eps1
             end do
 
-            gradz = 0.0
+            gradz = 0.0 ; pbq = 0.0
             do ip = 1,npts
                 I = indexq(ip,Iq)
                 gradz(1,:) = gradz(1,:) + dpsidx(ip,Iq)*z_elv(I,:)
                 gradz(2,:) = gradz(2,:) + dpsidy(ip,Iq)*z_elv(I,:)
+                pbq = pbq + psih(ip,Iq)*pbprime_df(I)
             enddo
 
             ! Consistency
@@ -425,7 +426,7 @@ module mod_create_rhs_mlswe
                 tau_wind_u = temp1*tau_wind(1,Iq)
                 tau_wind_v = temp1*tau_wind(2,Iq)
 
-                tempbot = min(Pbstress,pbprime(Iq)-pprime_temp(k+1)) - min(Pbstress, pbprime(Iq) &
+                tempbot = min(Pbstress,pbq-pprime_temp(k+1)) - min(Pbstress, pbq &
                             - pprime_temp(k))
                 tempbot = tempbot / Pbstress
 
@@ -461,7 +462,7 @@ module mod_create_rhs_mlswe
         ! This routine computes the layer momentum pressure terms
 
         use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe, pbprime_face, zbot_face
+        use mod_initial, only : alpha_mlswe, zbot_face
         use mod_grid, only : nface, npoin, npoin_q, face, intma
         use mod_basis, only : nq, psiq, ngl
         use mod_input, only : nlayers
@@ -882,7 +883,7 @@ module mod_create_rhs_mlswe
         use mod_basis, only: npts
         use mod_input, only: nlayers
         use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, pbprime
+        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, pbprime_df
         use mod_variables, only: sum_layer_mass_flux, btp_mass_flux_ave
 
         implicit none 
@@ -891,20 +892,21 @@ module mod_create_rhs_mlswe
         real, dimension(npoin,nlayers), intent(out) :: dp_advec
 
         integer :: k, I, Iq, ip
-        real :: weight, udp, vdp, wq, hi, dp
+        real :: weight, udp, vdp, wq, hi, dp, pbq
 
         dp_advec = 0.0
 
         do k=1,nlayers
 
             do Iq = 1, npoin_q
-                dp = 0.0
+                dp = 0.0 ; pbq = 0.0
                 do ip = 1,npts
                     I = indexq(ip,Iq)
                     hi = psih(ip,Iq)
                     dp = dp + hi*dprime_df(I,k)
+                    pbq = pbq + hi*pbprime_df(I)
                 enddo
-                weight = dp/pbprime(Iq)
+                weight = dp/pbq
 
                 udp = weight * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
                 vdp = weight * (btp_mass_flux_ave(2,Iq) - sum_layer_mass_flux(2,Iq)) 
@@ -1040,7 +1042,6 @@ module mod_create_rhs_mlswe
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: uvb_face_ave, ope_face_ave, sum_layer_mass_flux_face
-        use mod_initial, only: pbprime_face
 
         implicit none
 

@@ -4,13 +4,11 @@
 !>@date March 27, 2023
 !-----------------------------------------------------------------!
 
-subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
-   one_over_pbprime, one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, &
-   one_over_pbprime_df, qb_df, qprime_df, alpha, one_over_pbprime_df_face, pbprime_df_face, &
-   zbot_df, tau_wind_df, z_interface)
+subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, zbot_df, &
+   tau_wind_df, z_interface)
     
 
-   use mod_grid, only: nelem, nface, npoin_q, npoin, coord
+   use mod_grid, only: nelem, nface, npoin_q, npoin, coord, intma_dg_quad, face
    use mod_constants, only: gravity, pi, tol, omega, earth_radius
    use mod_initial_mlswe, only: interpolate_from_dof_to_quad_uv_init, interpolate_pbprime_init
    use mod_basis, only: ngl, nq
@@ -21,21 +19,14 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    use mod_types, only : r8
    use mpi
    use mod_mpi_utilities, only: MPI_PRECISION
+   use mod_face, only: imapl_q
 
    implicit none
    
    real, dimension(3,npoin, nlayers) :: q_df
-   real, dimension(3,npoin, nlayers) :: qprime_df
-   real, dimension(npoin_q) :: pbprime_init
    real, dimension(npoin) :: pbprime_df
-   real, dimension(2,nq,nface) :: pbprime_face
-   real, dimension(npoin_q) :: one_over_pbprime
-   real, dimension(2,nq,nface) :: one_over_pbprime_face
-   real, dimension(2,ngl,nface) :: one_over_pbprime_df_face
    real, dimension(2,ngl,nface) :: pbprime_df_face
-   real, dimension(nq, nface) :: pbprime_edge
-   real, dimension(nq, nface) :: one_over_pbprime_edge
-   real, dimension(npoin) :: one_over_pbprime_df, zbot_df
+   real, dimension(npoin) :: zbot_df
    real, dimension(4,npoin) :: qb_df
    real, dimension(nlayers) :: alpha
    real, dimension(2,npoin) :: tau_wind_df
@@ -48,7 +39,7 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
 
    integer :: e, m, n, I1, iquad, Iq
    real :: x, y, xmid, ymid, L, amp, r, rho_0, H_bot
-   integer :: ierr, iface, ilr, k,ip
+   integer :: ierr, iface, ilr, k,ip, il, jl, kl, el
    real :: xmax, xmin, ymax, ymin, zmin, zmax, yl, xm
    real :: xmax_l, xmin_l, ymax_l, ymin_l, zmin_l, zmax_l, Ly
    real :: delta
@@ -68,15 +59,9 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    z_interface = 0.0
    pbprime_df = 0.0
    q_df = 0.0
-   one_over_pbprime = 0.0
-   one_over_pbprime_face = 0.0
-   pbprime_edge = 0.0
-   one_over_pbprime_edge = 0.0
-   one_over_pbprime_df = 0.0
    u_df = 0.0
    v_df = 0.0
    tau_wind_df = 0.0
-   one_over_pbprime_df_face = 0.0
    pbprime_df_face = 0.0
 
    kvector(1,:)=0.0
@@ -228,12 +213,6 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
       enddo
       z_interface(:,nlayers+1) = zbot_df(:)
 
-      !do k = 2, nlayers
-      !   z_interface(:,k) = -(real(k-1)-0.5)*H_bot/real(nlayers-1)
-         !print*, 'k = ', k, -(k-1)*H_bot/real(nlayers)
-      !end do
-      !z_interface(:,nlayers+1) = zbot_df(I1)
-
       do k = 1, nlayers
           do I1 = 1,npoin
              !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
@@ -334,57 +313,12 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    ! pb = vertical sum of  Delta p  over all layers
    ! at the reference state.
 
-   call interpolate_pbprime_init(pbprime_init,pbprime_face,pbprime_df_face, pbprime_df)
-
-   ! Compute  1/p'_b  at the faces and quadrature points
-   do iface = 1, nface
-
-      do iquad = 1, nq
-
-         pbprime_edge(iquad,iface) = pbprime_face(1,iquad,iface)
-
-         if(pbprime_edge(iquad,iface) > 0.0) then
-            one_over_pbprime_edge(iquad,iface) = 1.0/pbprime_edge(iquad,iface)
-         end if
-
-         do ilr = 1,2
-            if(pbprime_face(ilr,iquad,iface) > 0.0) then
-               one_over_pbprime_face(ilr,iquad,iface) = 1.0/pbprime_face(ilr,iquad,iface)
-            end if
-         end do
-      end do
-
-      do n = 1, ngl
-         do ilr = 1,2
-            if(pbprime_df_face(ilr,n,iface) > 0.0) then
-               one_over_pbprime_df_face(ilr,n,iface) = 1.0/pbprime_df_face(ilr,n,iface)
-            end if
-         end do
-      end do
-   end do
-
-   do I1 = 1, npoin
-      if(pbprime_df(I1) > 0.0) then
-         one_over_pbprime_df(I1) = 1.0/pbprime_df(I1)
-      end if
-   end do
-
-   do Iq = 1, npoin_q
-      if(pbprime_init(Iq) > 0.0) then
-         one_over_pbprime(Iq) = 1.0/pbprime_init(Iq)
-      end if
-   end do
+   call interpolate_pbprime_init(pbprime_df_face, pbprime_df)
 
    ! Compute pointwise values of  Delta p  at the quadrature points
    ! in each cell, for each layer.
    do k = 1, nlayers
       q_df(1,:,k) = (gravity/alpha(k))*(z_interface(:,k) - z_interface(:,k+1))
-      one_plus_eta_temp(:) = one_plus_eta_temp(:) + q_df(1,:,k)/pbprime_df(:)
-   end do
-   
-   ! Compute pointwise values of  Delta p  at the dofs
-   do k = 1, nlayers
-      qprime_df(1,:,k) = q_df(1,:,k)/one_plus_eta_temp(:) 
    end do
 
    ! Compute dofs for u*(Delta p) and v*(Delta p)
@@ -409,12 +343,6 @@ subroutine initial_conditions(q_df, pbprime_init, pbprime_df, pbprime_face, &
    end do
    qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
    
-   ! Compute values of u' and v' at quadrature points and face of each grid element
-   do k = 1,nlayers
-      qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
-      qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
-   end do
-
 end subroutine initial_conditions
 
 !--------------------------------------------------

@@ -6,7 +6,7 @@
 !   Date: October 27, 2023
 ! ==========================================================================================================================
 
-subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
+subroutine ti_rk_bcl(q_df, qb_df)
 
     ! q: layer variable dp, u*dp, v*dp at quad points and their face values: q_face
     ! q_df : layer variable dp, u*dp, v*dp at nodal (dof) point
@@ -31,16 +31,15 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
 
     real, dimension(4,npoin), intent(inout) :: qb_df
     real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-    real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
+    
     real, dimension(3,2,ngl,nface,nlayers) :: qprime_df_face2, qprime_df_face
-    real, dimension(npoin,nlayers) :: dpprime_df2
     real, dimension(4,npoin) :: qbp_df
-    real, dimension(3,npoin,nlayers) :: qprime_df2, q_df2
+    real, dimension(3,npoin,nlayers) :: qprime_df, qprime_df2, q_df2
     integer :: k
     
     ! ==================== Prediction step =================================
 
-    call extract_qprime_df_face(qprime_df_face,qprime_df)
+    call extract_qprime_df_face(qprime_df_face,qprime_df,q_df,qb_df)
     call bcl_create_communicator(qprime_df_face,3,nlayers,ngl)
 
     qbp_df = qb_df
@@ -75,13 +74,9 @@ subroutine ti_rk_bcl(q_df, qb_df, qprime_df)
     ! Communication of qprime_df_face values within the processor boundary
     call bcl_create_communicator(qprime_df_face2(1,:,:,:,:),1,nlayers,ngl)
 
-    dpprime_df2(:,:) = qprime_df2(1,:,:)
-    qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + dpprime_df2(:,:))
+    qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + qprime_df2(1,:,:))
     qprime_df_face2(1,:,:,:,:) = 0.5*(qprime_df_face(1,:,:,:,:) + qprime_df_face2(1,:,:,:,:))
       
     call momentum(q_df,qprime_df2,qb_df,qprime_df_face2)
-
-    qprime_df(1,:,:) = dpprime_df2
-    qprime_df(2:3,:,:) = qprime_df2(2:3,:,:) 
 
 end subroutine ti_rk_bcl

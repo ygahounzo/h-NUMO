@@ -166,7 +166,6 @@ module mod_barotropic_terms
 
         use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl,nq
         use mod_grid, only:  npoin, intma, nface, face,mod_grid_get_face_nq
-        use mod_initial, only: pbprime_face
         use mod_face, only: imapl, imapr, normal_vector
 
         implicit none

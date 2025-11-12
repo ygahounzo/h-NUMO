@@ -18,7 +18,7 @@ module mod_rk_mlswe
 
     subroutine ti_barotropic_ssprk_mlswe(qb_df,qprime_df)
 
-        use mod_initial, only: N_btp, pbprime_df, tau_wind, one_over_pbprime_df, ssprk_a, ssprk_beta
+        use mod_initial, only: N_btp, pbprime_df, tau_wind, ssprk_a, ssprk_beta
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nqx, nqy, nqz, nq
         use mod_input, only: nlayers, dt_btp,nlayers, kstages, method_visc
@@ -87,7 +87,7 @@ module mod_rk_mlswe
             do ik=1,kstages
 
                 dtt = dt_btp*ssprk_beta(ik)
-                ope2_ave_df = ope2_ave_df + (1.0 + qb1_df(2,:) * one_over_pbprime_df(:))**2
+                ope2_ave_df = ope2_ave_df + (1.0 + qb1_df(2,:)/pbprime_df(:))**2
                 uvb_ave_df(1,:) = uvb_ave_df(1,:) + qb1_df(3,:)/qb1_df(1,:)
                 uvb_ave_df(2,:) = uvb_ave_df(2,:) + qb1_df(4,:)/qb1_df(1,:)
 

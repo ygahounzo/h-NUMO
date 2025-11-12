@@ -21,8 +21,7 @@ module mod_initial
         nlayers, dt, dt_btp, is_mlswe, kstages
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
-        wind_stress_coriolis, compute_reference_edge_variables, ssprk_coefficients, &
-        compute_reference_edge_variables_df !, Tensor_product
+        wind_stress_coriolis, ssprk_coefficients
     
     use mod_Tensorproduct, only: compute_gradient_quad, compute_gradient_df
 
@@ -39,14 +38,11 @@ module mod_initial
         height, &
         pi_values 
 
-    public :: q_df_mlswe_init, pbprime, pbprime_df, &
-        pbprime_face, one_over_pbprime, &
-        one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, & 
+    public :: q_df_mlswe_init, pbprime_df, &
         qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, & 
-        coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-        coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR, N_btp, zbot,zbot_face,zbot_df, &
+        N_btp, zbot,zbot_face,zbot_df, &
         grad_zbot_quad, psih, dpsidx,dpsidy, indexq, wjac, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, &
-        qprime_df_init, one_over_pbprime_df_face, tau_wind_df, &
+        tau_wind_df, &
         ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, &
         grad_zbot_df, pbprime_df_face
 
@@ -60,16 +56,12 @@ module mod_initial
     real, dimension(:,:,:), allocatable :: hB_grad, phiA_grad, q_ref_layers
     real, dimension(:), allocatable :: rho_layers, bathymetry
     real, dimension(:), allocatable:: height, coriolis_constant
-    real, dimension(:,:,:), allocatable :: q_df_mlswe_init, qprime_df_init
-    real, dimension(:), allocatable :: pbprime, pbprime_df, one_over_pbprime_df,one_over_pbprime 
-    real, dimension(:,:,:), allocatable :: pbprime_face, one_over_pbprime_face
-    real, dimension(:,:,:), allocatable :: one_over_pbprime_df_face, pbprime_df_face
-    real, dimension(:,:), allocatable :: pbprime_edge, one_over_pbprime_edge
+    real, dimension(:,:,:), allocatable :: q_df_mlswe_init
+    real, dimension(:), allocatable :: pbprime_df
+    real, dimension(:,:,:), allocatable :: pbprime_df_face
     real, dimension(:,:,:,:), allocatable :: qb_face_mlswe_init
     real, dimension(:,:), allocatable :: qb_df_mlswe_init, tau_wind, tau_wind_df
     real, dimension(:), allocatable :: coriolis_df,coriolis_quad
-    real, dimension(:,:), allocatable :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR
-    real, dimension(:,:), allocatable :: coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR
     real, dimension(:), allocatable :: zbot, zbot_df, fdt_bcl, fdt2_bcl, a_bcl, b_bcl
     real, dimension(:,:,:), allocatable :: zbot_face
     real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
@@ -116,33 +108,24 @@ module mod_initial
         allocate(rho_layers(1),bathymetry(npoin))
 
         if(is_mlswe) then
-            if(allocated(q_df_mlswe_init)) deallocate(q_df_mlswe_init, pbprime, &
-            pbprime_df, pbprime_face, one_over_pbprime, & 
-            one_over_pbprime_face, pbprime_edge, one_over_pbprime_edge, one_over_pbprime_df, & 
+            if(allocated(q_df_mlswe_init)) deallocate(q_df_mlswe_init, pbprime_df, & 
             qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, &
-            coriolis_df, coeff_pbpert_L, coeff_pbpert_R, coeff_pbub_LR, &
-            coeff_mass_pbub_L, coeff_mass_pbub_R, coeff_mass_pbpert_LR, zbot, zbot_df, zbot_face, &
-            grad_zbot_quad, qprime_df_init, one_over_pbprime_df_face, tau_wind_df,&
+            coriolis_df, zbot, zbot_df, zbot_face, &
+            grad_zbot_quad, tau_wind_df,&
             ssprk_a,ssprk_beta, grad_zbot_df, &
             pbprime_df_face, z_interface)
-            allocate(q_df_mlswe_init(3,npoin,nlayers), pbprime(npoin_q), pbprime_df(npoin), &
-            pbprime_face(2,nq,nface), one_over_pbprime(npoin_q), &
-            one_over_pbprime_face(2,nq,nface), pbprime_edge(nq,nface), &
-            one_over_pbprime_edge(nq,nface), &
-            one_over_pbprime_df(npoin), qb_df_mlswe_init(4,npoin), &
+            allocate(q_df_mlswe_init(3,npoin,nlayers), pbprime_df(npoin), &
+            qb_df_mlswe_init(4,npoin), &
             alpha_mlswe(nlayers), tau_wind(2,npoin_q), coriolis_quad(npoin_q), coriolis_df(npoin), &
-            coeff_mass_pbpert_LR(nq,nface), coeff_pbpert_L(nq,nface),coeff_pbpert_R(nq,nface), &
-            coeff_pbub_LR(nq,nface), coeff_mass_pbub_L(nq,nface),coeff_mass_pbub_R(nq,nface), &
             zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), &
             grad_zbot_df(2,npoin), psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), &
             indexq(npts,npoin_q), wjac(npoin_q), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
-            b_bcl(npoin), qprime_df_init(3,npoin,nlayers), one_over_pbprime_df_face(2,ngl,nface), &
+            b_bcl(npoin), &
             tau_wind_df(2,npoin), ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin), &
             psih_df(npts,npoin), dpsidx_df(npts,npoin),dpsidy_df(npts,npoin),index_df(npts,npoin), &
             pbprime_df_face(2,ngl,nface),z_interface(npoin,nlayers+1))
 
             q_df_mlswe_init = 0.0
-            pbprime = 0.0
             pbprime_df = 0.0
 
         end if
@@ -159,14 +142,9 @@ module mod_initial
             call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df, &
                     dpsidy_df,index_df)
 
-            call initial_conditions(q_df_mlswe_init, pbprime, pbprime_df, &
-                pbprime_face, one_over_pbprime, one_over_pbprime_face, pbprime_edge, &
-                one_over_pbprime_edge, one_over_pbprime_df, qb_df_mlswe_init, qprime_df_init, &
-                alpha_mlswe, one_over_pbprime_df_face, pbprime_df_face, zbot_df,tau_wind_df, &
-                z_interface)
-
-            call compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-                coeff_mass_pbub_L, coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha_mlswe)
+            call initial_conditions(q_df_mlswe_init, pbprime_df, &
+                qb_df_mlswe_init, alpha_mlswe, pbprime_df_face, &
+                zbot_df,tau_wind_df, z_interface)
                 
             call bot_topo_derivatives(zbot,zbot_face,zbot_df)
 

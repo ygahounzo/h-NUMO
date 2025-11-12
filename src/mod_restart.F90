@@ -12,12 +12,12 @@ module mod_restart
 
     contains
 
-subroutine restart_mlswe(q_df,qb_df,qprime_df,qp_df_out, fname)
+subroutine restart_mlswe(q_df,qb_df,qp_df_out, fname)
 
         use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma,nface,face
         use mod_basis, only: npts, nq
         use mod_input, only: nlayers
-        use mod_initial, only: psih, indexq, pbprime_df, alpha_mlswe, pbprime, zbot_df
+        use mod_initial, only: psih, indexq, pbprime_df, alpha_mlswe, zbot_df
         use mod_face, only: imapl_q, imapr_q
         use mod_constants, only: gravity
 
@@ -25,7 +25,6 @@ subroutine restart_mlswe(q_df,qb_df,qprime_df,qp_df_out, fname)
 
         real, dimension(4,npoin), intent(out) :: qb_df
         real, dimension(3,npoin,nlayers), intent(out) :: q_df
-        real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
         real, dimension(5,npoin,nlayers) :: qp_df_out
         real, dimension(npoin,nlayers+1) :: mslwe_elevation
         real, dimension(3,npoin) :: qb_df_read
@@ -50,17 +49,6 @@ subroutine restart_mlswe(q_df,qb_df,qprime_df,qp_df_out, fname)
             q_df(1,:,k) = (gravity/alpha_mlswe(k))*q_df_read(1,:,k)
             q_df(2,:,k) = q_df_read(2,:,k)*q_df(1,:,k)
             q_df(3,:,k) = q_df_read(3,:,k)*q_df(1,:,k)
-
-        end do
-
-        ! Prime variables at the dofs (nodal points) and quadrature points
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
-        do k = 1,nlayers
-
-            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-            qprime_df(2,:,k) = q_df(2,:,k)/q_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
-            qprime_df(3,:,k) = q_df(3,:,k)/q_df(1,:,k) - qb_df(4,:)/qb_df(1,:)
 
         end do
 

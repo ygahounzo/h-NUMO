@@ -15,8 +15,7 @@ module mod_layer_terms
     implicit none
 
     public :: layer_mom_boundary_df,  &
-            evaluate_mom, velocity_df, evaluate_mom_face, &
-            evaluate_bcl, evaluate_bcl_v1, &
+            velocity_df, &
             evaluate_consistency_face, &
             extract_qprime_df_face, extract_dprime_df_face, interpolate_dpp
 
@@ -62,7 +61,7 @@ module mod_layer_terms
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr
         use mod_variables, only: sum_layer_mass_flux_face, btp_mass_flux_face_ave
-        use mod_initial, only: pbprime_face
+        use mod_initial, only: pbprime_df
         use mod_basis, only: ngl, psiq
 
         implicit none
@@ -72,6 +71,7 @@ module mod_layer_terms
         ! Local variables
         integer :: iface, iquad, k, il, jl, kl, el, er, ir, jr, kr, I, n
         real :: qprime_l, qprime_r, weights_face_l, weights_face_r, hi
+        real :: pbprime_l, pbprime_r
 
         mass_deficit_mass_face = 0.0
 
@@ -87,6 +87,7 @@ module mod_layer_terms
                 do iquad = 1, nq
                     
                     qprime_l = 0.0; qprime_r = 0.0
+                    pbprime_l = 0.0; pbprime_r = 0.0
 
                     do n = 1,ngl
                         hi = psiq(n,iquad)
@@ -97,6 +98,7 @@ module mod_layer_terms
 
                         I = intma(il,jl,kl,el)
                         qprime_l = qprime_l + hi*dprime_df(I,k)
+                        pbprime_l = pbprime_l + hi*pbprime_df(I)
                     enddo
 
                     if(er > 0) then
@@ -107,13 +109,15 @@ module mod_layer_terms
                             kr = imapr(3,n,1,iface)
                             I = intma(ir,jr,kr,er)
                            qprime_r = qprime_r + hi*dprime_df(I,k)
+                        pbprime_r = pbprime_r + hi*pbprime_df(I)
                         enddo
                     else
                         qprime_r = qprime_l
+                        pbprime_r = pbprime_l
                     endif
   
-                    weights_face_l = qprime_l / pbprime_face(1,iquad,iface)
-                    weights_face_r = qprime_r / pbprime_face(2,iquad,iface)
+                    weights_face_l = qprime_l / pbprime_l
+                    weights_face_r = qprime_r / pbprime_r
 
                     mass_deficit_mass_face(1,1,iquad,iface,k) = weights_face_l* &
                                                         (btp_mass_flux_face_ave(1,iquad,iface) &
@@ -195,80 +199,6 @@ module mod_layer_terms
 
     end subroutine velocity_df
 
-    subroutine evaluate_bcl(qprime_df_face, q_df, qprime_df, qb_df)
-
-        use mod_grid, only : npoin, intma, face, nface 
-        use mod_basis, only : ngl
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime_df
-
-        implicit none
-        
-        real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
-        real, dimension(4,npoin), intent(in) :: qb_df
-        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        
-        integer :: I, k, el, er, n , iface, il, jl, kl, Iq
-        real :: uv_df(2,npoin,nlayers), one_plus_eta_temp(npoin)
-
-        call extract_velocity(uv_df, q_df, qb_df)
-
-        one_plus_eta_temp = 0.0
-
-        do k = 1,nlayers
-            q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
-            q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
-
-            one_plus_eta_temp(:) = one_plus_eta_temp(:) + q_df(1,:,k)
-        end do
-
-        one_plus_eta_temp(:) = one_plus_eta_temp(:) / pbprime_df(:)
-
-        call extract_velocity(uv_df, q_df, qb_df)
-
-        do k = 1,nlayers
-            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-            qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
-            qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
-        end do 
-
-        call extract_qprime_df_face(qprime_df_face,qprime_df)
-
-    end subroutine evaluate_bcl
-
-    subroutine evaluate_bcl_v1(q_df, qprime_df, qb_df)
-
-        use mod_grid, only : npoin, intma, face, nface 
-        use mod_basis, only : ngl
-        use mod_input, only: nlayers
-        use mod_initial, only: pbprime_df
-
-        implicit none
-        
-        real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(4,npoin), intent(in) :: qb_df
-        
-        integer :: I, k, el, er, n , iface, il, jl, kl, Iq
-        real :: uv_df(2,npoin,nlayers), one_plus_eta_temp(npoin)
-
-        call extract_velocity(uv_df, q_df, qb_df)
-
-        do k = 1,nlayers
-            q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
-            q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
-        end do
-
-        call extract_velocity(uv_df, q_df, qb_df)
-
-        do k = 1,nlayers
-            qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
-            qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
-        end do 
-        
-    end subroutine evaluate_bcl_v1
-
     subroutine extract_velocity(uv_df, q_df, qb_df)
 
         use mod_grid, only : npoin, intma, face, nface 
@@ -319,39 +249,7 @@ module mod_layer_terms
         
     end subroutine extract_velocity
 
-    subroutine evaluate_mom(q,q_df)
-
-        ! Interpolate from dofs to quadrature points 
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
-        use mod_input, only: nlayers
-        use mod_initial, only: psih, indexq
-
-        implicit none
-
-        real, intent(inout) :: q(3,npoin_q,nlayers)
-        real, intent(in) :: q_df(3,npoin,nlayers)
-
-        integer :: k, Iq, m, n, l,I, ip
-        real :: hi
-
-        q(2:3,:,:) = 0.0
-
-        do Iq = 1,npoin_q
-            do ip = 1,npts
-
-                I = indexq(ip,Iq)
-                hi = psih(ip,Iq)
-                
-                q(2,Iq,:) = q(2,Iq,:) + q_df(2,I,:)*hi
-                q(3,Iq,:) = q(3,Iq,:) + q_df(3,I,:)*hi
-            end do
-        end do
-
-    end subroutine evaluate_mom
-
-    subroutine extract_qprime_df_face(qprime_df_face,qprime_df)
+    subroutine extract_qprime_df_face(qprime_df_face,qprime_df, q_df, qb_df)
 
         ! Interpolate from dofs to quadrature points
 
@@ -359,17 +257,35 @@ module mod_layer_terms
         use mod_grid, only:  npoin, npoin_q, intma, intma_dg_quad, face
         use mod_input, only: nlayers
         use mod_face, only: imapl_q, imapr_q, normal_vector_q, normal_vector, imapl, imapr
-        use mod_initial, only: psih, indexq
+        use mod_initial, only: psih, indexq, pbprime_df
 
         implicit none
 
         real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+        real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
+        real, dimension(3,npoin,nlayers), intent(in) :: q_df
+        real, dimension(4,npoin), intent(in) :: qb_df
 
         integer :: k, Iq, I, ip, iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
         real :: hi, nx, ny, un(nlayers)
+        real, dimension(npoin) :: one_plus_eta_temp
+        real :: uv_df(2,npoin,nlayers)
 
+        qprime_df = 0.0
         qprime_df_face = 0.0
+
+        call extract_velocity(uv_df, q_df, qb_df)
+
+        ! Prime variables at the dofs (nodal points) and quadrature points
+        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+
+        do k = 1,nlayers
+
+            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+            qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
+            qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
+
+        end do
 
         do iface = 1, nface
 
@@ -464,73 +380,10 @@ module mod_layer_terms
 
     end subroutine extract_dprime_df_face
 
-    subroutine evaluate_mom_face(q_face, q)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz,nq
-        use mod_grid, only:  npoin_q, intma_dg_quad, mod_grid_get_face_nq, nface,face
-        use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q, normal_vector_q
-
-        implicit none
-
-        real, dimension(3, 2, nq, nface, nlayers), intent(inout) :: q_face
-        real, dimension(3, npoin_q, nlayers), intent(in) :: q
-    
-        integer :: k, iface, iquad, ilocl, ilocr, el, er, il, jl, ir, jr, I, kl, kr, jquad
-        real :: nx, ny, un(nlayers)
-    
-        q_face(2:3,:,:,:,:) = 0.0
-    
-        ! do k = 1, nlayers
-        do iface = 1, nface
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do iquad = 1, nq
-
-                il = imapl_q(1,iquad,1,iface)
-                jl = imapl_q(2,iquad,1,iface)
-                kl = imapl_q(3,iquad,1,iface)
-                I = intma_dg_quad(il,jl,kl,el)
-
-                q_face(2:3,1,iquad,iface,:) = q(2:3,I,:)
-
-                if(er > 0) then
-
-                    ir = imapr_q(1,iquad,1,iface)
-                    jr = imapr_q(2,iquad,1,iface)
-                    kr = imapr_q(3,iquad,1,iface)
-                    I = intma_dg_quad(ir,jr,kr,er)
-
-                    q_face(2:3,2,iquad,iface,:) = q(2:3,I,:)
-
-                else 
-                    q_face(2:3,2,iquad,iface,:) = q_face(2:3,1,iquad,iface,:)
-                    if(er == -4) then
-
-                        nx = normal_vector_q(1,iquad,1,iface)
-                        ny = normal_vector_q(2,iquad,1,iface)
-
-                        un = q(2,I,:)*nx + q(3,I,:)*ny
-                        q_face(2,2,iquad,iface,:) = q(2,I,:) - 2.0*un*nx
-                        q_face(3,2,iquad,iface,:) = q(3,I,:) - 2.0*un*ny
-                    elseif(er == -2) then 
-                        q_face(2:3,2,iquad,iface,:) = -q_face(2:3,1,iquad,iface,:)
-                    end if
-                end if
-            end do
-        end do
-        ! end do
-    
-    end subroutine evaluate_mom_face
-
     subroutine layer_mom_boundary_df(q)
 
         use mod_basis, only: nglx, ngly, nqx, nqy, nqz, ngl,nq
         use mod_grid, only:  npoin, intma, nface, face,mod_grid_get_face_nq
-        use mod_initial, only: pbprime_face
         use mod_face, only: imapl, imapr, normal_vector
         use mod_input, only: nlayers
 

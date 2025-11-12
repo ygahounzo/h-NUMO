@@ -27,7 +27,7 @@ contains
 
         use mod_grid, only: npoin,  index2d, ncol, coord, npoin_q, nface
         use mod_basis, only: nq
-        use mod_initial, only: q_df_mlswe_init, qb_df_mlswe_init, qprime_df_init
+        use mod_initial, only: q_df_mlswe_init, qb_df_mlswe_init
         use mod_input, only: dt,time_initial, time_final, time_restart, &
             fname_root, lprint_diagnostics, &
             nlayers, is_mlswe, ti_method_btp, dump_data, lcheck_conserved
@@ -37,7 +37,7 @@ contains
 
         implicit none
 
-        real, dimension(:,:,:), allocatable :: q0_df_mlswe, qout_mlswe, qprime0_df
+        real, dimension(:,:,:), allocatable :: q0_df_mlswe, qout_mlswe
         real, dimension(:,:), allocatable :: qb0_df_mlswe
         integer AllocateStatus
         real mass_conserv_l, mass_conserv_g, mass_conserv0_g(nlayers)
@@ -64,13 +64,12 @@ contains
 
         ! Allocate Memory
         allocate(q0_df_mlswe(3,npoin,nlayers), qb0_df_mlswe(4,npoin), &
-            qout_mlswe(5,npoin, nlayers), qprime0_df(3,npoin,nlayers), stat=AllocateStatus)
+            qout_mlswe(5,npoin, nlayers), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - MOD_TIME_LOOP:Time_Loop:q0_mlswe **"
 
         !initialize all layers here
         q0_df_mlswe = q_df_mlswe_init
         qb0_df_mlswe = qb_df_mlswe_init
-        qprime0_df = qprime_df_init
 
         !Initialize/Restart
         inorm=0
@@ -139,7 +138,7 @@ contains
                 fnp=trim('mlswe') // trim(fnp4)
                 if(trim(out_type) == 'nc') fnp = trim('mlswe') // trim(fnp4)//trim('.nc')
 
-                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,qprime0_df, qout_mlswe, fnp)
+                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,qout_mlswe, fnp)
 
                 qb0_df_mlswe = qb0_df_mlswe
             end if
@@ -206,7 +205,7 @@ contains
             !time1 = wtime()
             call cpu_time(time1)
 
-            call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe, qprime0_df)
+            call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe)
 
             call cpu_time(time2)
 
@@ -270,7 +269,6 @@ contains
 
         if(allocated(q0_df_mlswe)) deallocate(q0_df_mlswe)
         if(allocated(qb0_df_mlswe)) deallocate(qb0_df_mlswe)
-        if(allocated(qprime0_df)) deallocate(qprime0_df)
         
     end subroutine time_loop
 

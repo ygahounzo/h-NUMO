@@ -16,9 +16,8 @@ module mod_initial_mlswe
         bot_topo_derivatives, &
         compute_gradient_quad, &
         interpolate_from_dof_to_quad_uv_init, &
-        interpolate_pbprime_init, wind_stress_coriolis, compute_reference_edge_variables, &
-        map_deriv,interpolate_layer_from_quad_to_node_1d, ssprk_coefficients, &
-        compute_reference_edge_variables_df !, Tensor_product
+        interpolate_pbprime_init, wind_stress_coriolis, &
+            map_deriv,interpolate_layer_from_quad_to_node_1d, ssprk_coefficients
 
     private
 
@@ -167,7 +166,7 @@ module mod_initial_mlswe
     end subroutine interpolate_from_dof_to_quad_uv_init
 
     !> Interpolate pressure perturbation from DOF to quadrature points
-    subroutine interpolate_pbprime_init(pbprime,pbprime_face,pbprime_df_face,pbprime_df)
+    subroutine interpolate_pbprime_init(pbprime_df_face,pbprime_df)
 
         use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
         use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, nface, face
@@ -177,8 +176,6 @@ module mod_initial_mlswe
         use mod_face, only: imapl_q, imapr_q, imapl, imapr
 
         implicit none
-        real, dimension(npoin_q), intent(out) :: pbprime
-        real, dimension(2,nq,nface), intent(out) :: pbprime_face
         real, dimension(2,ngl,nface), intent(out) :: pbprime_df_face
         real, dimension(npoin), intent(in) :: pbprime_df
         integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, iface, I1
@@ -186,35 +183,7 @@ module mod_initial_mlswe
         integer :: ngl_i, ngl_j, ii, jj 
         real :: hi
 
-        pbprime = 0.0
-        pbprime_face = 0.0
         pbprime_df_face = 0.0
-        
-        do e = 1, nelem
-            do kquad = 1, nqz
-                do jquad = 1, nqy
-                    do iquad = 1, nqx
-                    
-                        Iq = intma_dg_quad(iquad, jquad, kquad, e)
-                        
-                        do l = 1, nglz
-                            do m = 1, ngly
-                                do n = 1, nglx
-                                    
-                                    I = intma(n, m, l, e)
-                                    
-                                    hi = psiqx(n, iquad) * psiqy(m, jquad)!* psiqz(l, kquad)
-                                    !print*, "hi = ", hi
-                                    pbprime(Iq) = pbprime(Iq) + pbprime_df(I) * hi
-                                    
-                                end do
-                            end do
-                        end do
-                    end do
-                    
-                end do
-            end do
-        end do
 
         do iface = 1, nface
 
@@ -224,31 +193,7 @@ module mod_initial_mlswe
             el = face(7,iface)
             er = face(8,iface)
 
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
             call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
-
-            do jquad = 1,nq_j
-                do iquad = 1, nq_i
-
-                    il = imapl_q(1,iquad,jquad,iface)
-                    jl = imapl_q(2,iquad,jquad,iface)
-                    kl = imapl_q(3,iquad,jquad,iface)
-                    I1 = intma_dg_quad(il,jl,kl,el)
-
-                    pbprime_face(1,iquad,iface) = pbprime(I1)
-                    if(er > 0) then
-
-                        ir = imapr_q(1,iquad,jquad,iface)
-                        jr = imapr_q(2,iquad,jquad,iface)
-                        kr = imapr_q(3,iquad,jquad,iface)
-                        I2 = intma_dg_quad(ir,jr,kr,er)
-
-                        pbprime_face(2,iquad,iface) = pbprime(I2)
-                    else
-                        pbprime_face(2,iquad,iface) = pbprime_face(1,iquad,iface)
-                    end if
-                end do
-            end do
 
             do jj = 1,ngl_j
                 do ii = 1, ngl_i
@@ -350,104 +295,6 @@ module mod_initial_mlswe
         b_bcl = fdt2_bcl / (1.0 + fdt2_bcl**2)
 
     end subroutine wind_stress_coriolis
-
-    !> Compute the wave speeds for linearized shallow equation at quadrature points
-    subroutine compute_reference_edge_variables(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-            coeff_mass_pbub_L, coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_face,alpha)
-
-            use mod_input, only: nlayers
-            use mod_basis, only: nq
-            use mod_grid, only: nface
-        
-            implicit none
-
-            real, dimension(2,nq,nface), intent(in) :: pbprime_face
-            real, dimension(nlayers), intent(in) :: alpha
-            real, dimension(nq,nface), intent(out) :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-                coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR
-
-            integer :: iface, iquad
-            real :: c_minus, c_plus
-        
-            coeff_pbpert_L = 0.0
-            coeff_pbpert_R = 0.0
-            coeff_pbub_LR = 0.0
-            coeff_mass_pbub_L = 0.0
-            coeff_mass_pbub_R = 0.0
-            coeff_mass_pbpert_LR = 0.0
-        
-            do iface = 1,nface
-                do iquad = 1,nq
-        
-                    c_minus = sqrt(alpha(nlayers) * pbprime_face(2,iquad,iface))
-                    c_plus  = sqrt(alpha(nlayers) * pbprime_face(1,iquad,iface))
-                    if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
-                        coeff_pbpert_L(iquad,iface) = c_minus / (c_minus + c_plus)
-                        coeff_pbpert_R(iquad,iface) = c_plus / (c_minus + c_plus)
-                        coeff_pbub_LR(iquad,iface)  = 1.0 / (c_minus + c_plus)
-                    end if
-        
-                    c_minus = sqrt(alpha(nlayers) * pbprime_face(2,iquad,iface))
-                    c_plus  = sqrt(alpha(nlayers) * pbprime_face(1,iquad,iface))
-                    if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
-                        coeff_mass_pbub_L(iquad,iface) = c_plus / (c_minus + c_plus)
-                        coeff_mass_pbub_R(iquad,iface) = c_minus / (c_minus + c_plus)
-                        coeff_mass_pbpert_LR(iquad,iface) = c_minus * c_plus / (c_minus + c_plus)
-                    end if
-
-                end do
-            end do
-        
-    end subroutine compute_reference_edge_variables
-
-    !> Compute the wave speeds for linearized shallow equation at dofs
-    subroutine compute_reference_edge_variables_df(coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-            coeff_mass_pbub_L, coeff_mass_pbub_R,coeff_mass_pbpert_LR, pbprime_df_face,alpha)
-
-        use mod_input, only: nlayers
-        use mod_basis, only: ngl
-        use mod_grid, only: nface
-
-        implicit none
-
-        real, dimension(2,ngl,nface), intent(in) :: pbprime_df_face
-        real, dimension(nlayers), intent(in) :: alpha
-        real, dimension(ngl,nface), intent(out) :: coeff_pbpert_L,coeff_pbpert_R,coeff_pbub_LR, &
-            coeff_mass_pbub_L,coeff_mass_pbub_R,coeff_mass_pbpert_LR
-
-        integer :: iface, n, il, jl, kl, ir, jr, kr, el, er, I1, I2
-        real :: c_minus, c_plus, pl, pr
-
-        coeff_pbpert_L = 0.0
-        coeff_pbpert_R = 0.0
-        coeff_pbub_LR = 0.0
-        coeff_mass_pbub_L = 0.0
-        coeff_mass_pbub_R = 0.0
-        coeff_mass_pbpert_LR = 0.0
-
-        do iface = 1,nface
-            do n = 1,ngl
-
-                c_minus = sqrt(alpha(nlayers) * pbprime_df_face(2,n,iface))
-                c_plus  = sqrt(alpha(nlayers) * pbprime_df_face(1,n,iface))
-                if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
-                    coeff_pbpert_L(n,iface) = c_plus / (c_minus + c_plus)
-                    coeff_pbpert_R(n,iface) = c_minus / (c_minus + c_plus)
-                    coeff_pbub_LR(n,iface)  = 1.0 / (c_minus + c_plus)
-                end if
-
-                c_minus = sqrt(alpha(nlayers) * pbprime_df_face(2,n,iface))
-                c_plus  = sqrt(alpha(nlayers) * pbprime_df_face(1,n,iface))
-                if ((c_minus > 0.0) .or. (c_plus > 0.0)) then
-                    coeff_mass_pbub_L(n,iface) = c_plus / (c_minus + c_plus)
-                    coeff_mass_pbub_R(n,iface) = c_minus / (c_minus + c_plus)
-                    coeff_mass_pbpert_LR(n,iface) = (c_minus * c_plus) / (c_minus + c_plus)
-                end if
-
-            end do
-        end do
-
-    end subroutine compute_reference_edge_variables_df
 
 
 !    subroutine Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df, &

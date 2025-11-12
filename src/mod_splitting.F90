@@ -36,7 +36,7 @@ module mod_splitting
         use mod_input, only: nlayers, dt
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq, ngl
-        use mod_initial, only: pbprime_df, pbprime
+        use mod_initial, only: pbprime_df
         use mod_layer_terms, only: extract_dprime_df_face
         use mod_create_rhs_mlswe, only: layer_mass_rhs
 
@@ -103,8 +103,8 @@ module mod_splitting
         use mod_input, only: nlayers, dt, ad_mlswe
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
-        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, &
-                                    velocity_df, evaluate_bcl_v1
+        use mod_layer_terms, only: layer_mom_boundary_df, &
+                                    velocity_df, extract_velocity
         use mod_metrics, only: massinv
 
         implicit none
@@ -112,12 +112,12 @@ module mod_splitting
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
-        real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
         ! Local variables
         real, dimension(2,npoin_q,nlayers)     :: uv
-        real, dimension(2,npoin,nlayers)       :: q_df_temp
+        real, dimension(2,npoin,nlayers)       :: q_df_temp, uv_df
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
         real, dimension(3,npoin,nlayers) :: q_df3
         real, dimension(3,npoin_q,nlayers) :: q
@@ -174,8 +174,13 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
-        ! Compute dpprime, uprime and vprime at the quad and nodal points
-        call evaluate_bcl_v1(q_df, qprime_df, qb_df)
+        ! Compute dpprime, uprime and vprime at the nodal points
+        call extract_velocity(uv_df, q_df, qb_df)
+
+        do k = 1,nlayers
+            q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
+            q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+        end do
 
     end subroutine momentum
 
@@ -190,10 +195,10 @@ module mod_splitting
         use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, dt, ad_mlswe
-        use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, pbprime
+        use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
-        use mod_layer_terms, only: layer_mom_boundary_df, evaluate_mom, &
-                                    velocity_df, evaluate_bcl
+        use mod_layer_terms, only: layer_mom_boundary_df, &
+                                    velocity_df, extract_qprime_df_face,extract_velocity
         use mod_metrics, only: massinv
 
         implicit none
@@ -206,7 +211,7 @@ module mod_splitting
 
         ! Local variables
         real, dimension(npoin,nlayers) :: dp_advec, dpprime_df
-        real, dimension(2,npoin,nlayers) :: q_df_temp
+        real, dimension(2,npoin,nlayers) :: q_df_temp, uv_df
         real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
         real, dimension(npoin) :: one_plus_eta_temp
         real, dimension(3,npoin_q,nlayers) :: qprime_temp, q
@@ -282,7 +287,14 @@ module mod_splitting
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
-        call evaluate_bcl(qprime_df_face, q_df, qprime_df, qb_df)
+        call extract_velocity(uv_df, q_df, qb_df)
+
+        do k = 1,nlayers
+            q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
+            q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+        end do
+
+        call extract_qprime_df_face(qprime_df_face, qprime_df, q_df, qb_df)
 
     end subroutine momentum_mass
 
