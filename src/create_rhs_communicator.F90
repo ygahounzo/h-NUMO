@@ -224,6 +224,40 @@ subroutine btp_create_precommunicator(q_df_face,nvarb)
 
 end subroutine btp_create_precommunicator
 
+subroutine btp_create_precommunicator_v1(q,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send, q_recv, recv_data_dg, send_data_dg
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,npoin), intent(inout) :: q
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    ! DG - Discontinuous communicator
+
+    !Load all the boundary data into a vector
+    call pack_data_dg_df_btp(send_data_dg,q,nvarb)
+
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_df(send_data_dg,recv_data_dg,nvarb,nreq,ireq,status)
+
+end subroutine btp_create_precommunicator_v1
+
 subroutine btp_create_postcommunicator(q_df_face,nvarb)
 
     use mod_basis, only: ngl
@@ -260,6 +294,43 @@ subroutine btp_create_postcommunicator(q_df_face,nvarb)
     call create_nbhs_face_df(q_df_face,q_send,q_recv,nvarb,0)
 
 end subroutine btp_create_postcommunicator
+
+subroutine btp_create_postcommunicator_v1(rhs,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send, q_recv, recv_data_dg, send_data_dg
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(3,npoin), intent(inout) :: rhs
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    ! DG - Discontinuous communicator
+
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
+
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_df(q_send,q_recv,send_data_dg,recv_data_dg,nvarb)
+
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_df_v1(rhs,q_send,q_recv,nvarb,0)
+
+end subroutine btp_create_postcommunicator_v1
 
 
 subroutine create_rhs_lap_precommunicator_df(q_df_face,nvarb)

@@ -77,7 +77,7 @@ module mod_create_rhs_mlswe
         
     end subroutine layer_mass_rhs
 
-    subroutine consistency_mass_rhs(dp_advec, qprime, flux_deficit_mass_face)
+    subroutine consistency_mass_rhs(dp_advec, dprime_df, flux_deficit_mass_face)
 
         use mod_metrics, only: massinv
         use mod_input, only: nlayers
@@ -87,13 +87,13 @@ module mod_create_rhs_mlswe
         implicit none
 
         real, dimension(npoin, nlayers), intent(out) :: dp_advec
-        real, dimension(3, npoin_q, nlayers), intent(in) :: qprime
+        real, dimension(npoin, nlayers), intent(in) :: dprime_df
         real, dimension(2,2,nq,nface,nlayers), intent(in)  :: flux_deficit_mass_face
         
         integer :: k
 
         ! Compute the mass advection term for the degree of freedom for dp in each layer
-        call create_consistency_volume_mass(dp_advec, qprime)
+        call create_consistency_volume_mass(dp_advec, dprime_df)
 
         ! Compute the mass flux term 
         call create_consistency_mass_flux(dp_advec, flux_deficit_mass_face)
