@@ -2,4 +2,4 @@
 
 cp ../bin/numo3d .
 
-./numo3d
+mpirun -np 2 ./numo3d

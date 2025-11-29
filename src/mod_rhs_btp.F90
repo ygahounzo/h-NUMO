@@ -24,7 +24,7 @@ module mod_rhs_btp
 
 contains
 
-    subroutine create_rhs_btp_v0(rhs,qb_df,qprime_df)
+    subroutine create_rhs_btp(rhs,qb_df,qprime_df)
 
         implicit none
 
@@ -55,9 +55,9 @@ contains
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
 
-    end subroutine create_rhs_btp_v0
+    end subroutine create_rhs_btp
 
-    subroutine create_rhs_btp(rhs,qb_df,qprime_df)
+    subroutine create_rhs_btp_v1(rhs,qb_df,qprime_df)
 
         implicit none
 
@@ -77,6 +77,10 @@ contains
 
         call btp_create_postcommunicator_v1(rhs,4)
 
+        rhs(1,:) = massinv(:)*rhs(1,:)
+        rhs(2,:) = massinv(:)*rhs(2,:)
+        rhs(3,:) = massinv(:)*rhs(3,:)
+
         ! Compute RHS viscosity terms
 
         if(method_visc == 1) then
@@ -88,7 +92,7 @@ contains
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
 
-    end subroutine create_rhs_btp
+    end subroutine create_rhs_btp_v1
 
     subroutine create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 

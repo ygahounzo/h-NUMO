@@ -113,8 +113,8 @@ contains
                 deallocate(recv_data_dg_quad, send_data_dg_quad)
             endif
 
-            allocate( recv_data_dg(4*ngl*nboun), &
-                send_data_dg(4*ngl*nboun), &
+            allocate( recv_data_dg(5*ngl*nboun), &
+                send_data_dg(5*ngl*nboun), &
                 recv_data_dg_quad(4*nq*nboun), &
                 send_data_dg_quad(4*nq*nboun), &
                 stat=AllocateStatus )

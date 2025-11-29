@@ -251,6 +251,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
          imulti = nbh_send_recv_multi(jj)
+
+         ! jj=jj+1
  
          ftype = face_type(iface)
  
@@ -262,7 +264,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             !Store Left Side Variables
             !-------------------------------------
 
-            qbl = 0.0 ; qbr = 0.0 ; pbl = 0.0 ; pbr = 0.0
+            qbl = 0.0 ; qbr = 0.0
+            pbl = 0.0 ; pbr = 0.0
+
             do iquad = 1, nq
 
                nxl = normal_vector_q(1,iquad,1,iface)
@@ -280,36 +284,38 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   pbr(iquad) = pbr(iquad) + hi*q_recv(nvarb+1,n,kk)
                end do
 
-            pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
-            pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
+               pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
+               pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
 
-            c_minus = sqrt(alpha_mlswe(nlayers) * pbr(iquad))
-            c_plus  = sqrt(alpha_mlswe(nlayers) * pbl(iquad))
-            c_pb_L = c_minus / (c_minus + c_plus)
-            c_pb_R = c_plus / (c_minus + c_plus)
-            c_pbub_LR  = 1.0 / (c_minus + c_plus)
+               c_minus = sqrt(alpha_mlswe(nlayers) * pbr(iquad))
+               c_plus  = sqrt(alpha_mlswe(nlayers) * pbl(iquad))
+               c_pb_L = c_minus / (c_minus + c_plus)
+               c_pb_R = c_plus / (c_minus + c_plus)
+               c_pbub_LR  = 1.0 / (c_minus + c_plus)
 
-            pbpert_edge = c_pb_L * qbl(2,iquad) &
-                                       + c_pb_R * qbr(2,iquad) &
-                                       + c_pbub_LR * (pU_L + pU_R)
+               pbpert_edge = c_pb_L * qbl(2,iquad) &
+                                          + c_pb_R * qbr(2,iquad) &
+                                          + c_pbub_LR * (pU_L + pU_R)
 
-            one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
+               ! print*, "pbpert_edge:", pbpert_edge, qbl(2,iquad), qbr(2,iquad)
 
-            ! Compute mass fluxes at each element face.
+               one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
 
-            c_pbub_L = c_minus / (c_minus + c_plus)
-            c_pbub_R = c_plus / (c_minus + c_plus)
-            c_pb_LR(iquad) = c_minus * c_plus / (c_minus + c_plus)
+               ! Compute mass fluxes at each element face.
 
-            flux_edge_x(iquad) = c_pbub_L * qbl(3,iquad) &
-                                       + c_pbub_R * qbr(3,iquad) &
-                                       + c_pb_LR(iquad) * &
-                                       (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
+               c_pbub_L = c_minus / (c_minus + c_plus)
+               c_pbub_R = c_plus / (c_minus + c_plus)
+               c_pb_LR(iquad) = c_minus * c_plus / (c_minus + c_plus)
 
-            flux_edge_y(iquad) = c_pbub_L * qbl(4,iquad) &
-                                       + c_pbub_R * qbr(4,iquad) &
-                                       + c_pb_LR(iquad) * &
-                                       (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
+               flux_edge_x(iquad) = c_pbub_L * qbl(3,iquad) &
+                                          + c_pbub_R * qbr(3,iquad) &
+                                          + c_pb_LR(iquad) * &
+                                          (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
+
+               flux_edge_y(iquad) = c_pbub_L * qbl(4,iquad) &
+                                          + c_pbub_R * qbr(4,iquad) &
+                                          + c_pb_LR(iquad) * &
+                                          (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
 
             end do !iquad
 
@@ -384,9 +390,12 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    end do !iface
 
-   rhs(1,:) = massinv(:)*rhs(1,:)
-   rhs(2,:) = massinv(:)*rhs(2,:)
-   rhs(3,:) = massinv(:)*rhs(3,:)
+   ! print*, "After create_nbhs_face_df_v1"
+   ! stop
+
+   ! rhs(1,:) = massinv(:)*rhs(1,:)
+   ! rhs(2,:) = massinv(:)*rhs(2,:)
+   ! rhs(3,:) = massinv(:)*rhs(3,:)
  
  end subroutine create_nbhs_face_df_v1
 

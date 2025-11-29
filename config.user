@@ -116,6 +116,17 @@ hnumo-debian:
 	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_DEBIAN}/lib -L${P4EST_DIR_DEBIAN}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
 	"AR=ar rv"
 
+hnumo-debian-debug:	
+	$(MAKE) $(TARGET) \
+	"FC=${OMPI_COMPILE_DEBIAN}/mpif90" \
+	"LD=${OMPI_COMPILE_DEBIAN}/mpif90" \
+	"CC=${OMPI_COMPILE_DEBIAN}/mpicc" \
+	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
+	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
+	"INCLUDE=-I${NETCDF_DIR_DEBIAN}/include -I${P4EST_DIR_DEBIAN}/include -I$(NUMO_DIR)/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_DEBIAN}/lib -L${P4EST_DIR_DEBIAN}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
+	"AR=ar rv"
+
 #------------------------------------------------------------------------------
 # Default rules
 #------------------------------------------------------------------------------

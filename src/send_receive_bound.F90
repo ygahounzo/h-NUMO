@@ -71,8 +71,8 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
     implicit none
 
     !Global Variables
-    real, dimension(nvarb,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension(nvarb*ngl*nboun), intent(in)  :: send_data, recv_data
+    real, dimension(5,ngl,nboun), intent(out) :: q_send,q_recv
+    real, dimension(5*ngl*nboun), intent(in)  :: send_data, recv_data
     integer, intent(in) :: nvarb
 
     !Local Variables
@@ -87,9 +87,9 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
-            !ftype = face_type(iface)
+            ftype = face_type(iface)
 
-            ! if (ftype == 2 .and. imulti>0) then
+            if (ftype == 2 .and. imulti>0) then
                 ilocl = face(5,iface)
 
                 do inode = 1,ngl
@@ -100,7 +100,7 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
                     end do
                 end do
                 kk=kk+1
-            ! end if
+            end if
             jj = jj + 1
         end do
     end do
@@ -273,9 +273,9 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
   
     use mod_basis, only: ngl, FACE_CHILDREN
 
-    use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
+    use mod_face, only: face_send, imapl, imapr, normal_vector_q, jac_faceq
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
+    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
                         mod_grid_get_face_nq, nface
 
     use mod_initial, only: nvar, pbprime_df
@@ -287,7 +287,7 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
     implicit none
   
     !Global Variables
-    real, intent(out) :: q_send((nvarb+1)*ngl*nboun)
+    real, intent(out) :: q_send(5*ngl*nboun)
     real, intent(in) :: q_face(nvarb,2,ngl,nface)
     integer, intent(in) :: nvarb
 
@@ -306,12 +306,18 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
             imulti = nbh_send_recv_multi(jj)
             ! jj = jj + 1
 
-            !if(face_type(iface) == 2 .and. imulti > 0) then
+            if(face_type(iface) == 2 .and. imulti > 0) then
 
                 ilocl=face(5,iface)
                 el = face(7,iface)      ! Get Element
 
                 do inode = 1,ngl
+
+                    il = imapl(1,inode,1,iface)
+                    jl = imapl(2,inode,1,iface)
+                    kl = imapl(3,inode,1,iface)
+
+                    ip=intma(il,jl,kl,el)
                     
                     ! Load primitive variables
                     do ivar=1,nvarb
@@ -321,7 +327,7 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
                     ii = ii + 1
                     q_send(ii)=pbprime_df(ip)
                 end do
-            !end if
+            end if
             jj = jj + 1
         end do
     end do
@@ -346,7 +352,7 @@ subroutine pack_data_dg_df_btp(q_send,q,nvarb)
     implicit none
   
     !Global Variables
-    real, intent(out) :: q_send((nvarb+1)*ngl*nboun)
+    real, intent(out) :: q_send(5*ngl*nboun)
     real, intent(in) :: q(nvarb,npoin)
     integer, intent(in) :: nvarb
 
@@ -363,7 +369,7 @@ subroutine pack_data_dg_df_btp(q_send,q,nvarb)
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
             imulti = nbh_send_recv_multi(jj)
-            jj = jj + 1
+            ! jj = jj + 1
 
             if(face_type(iface) == 2 .and. imulti > 0) then
 
@@ -372,9 +378,9 @@ subroutine pack_data_dg_df_btp(q_send,q,nvarb)
 
                 do inode = 1,ngl
 
-                    il = imapr(1,inode,1,iface)
-                    jl = imapr(2,inode,1,iface)
-                    kl = imapr(3,inode,1,iface)
+                    il = imapl(1,inode,1,iface)
+                    jl = imapl(2,inode,1,iface)
+                    kl = imapl(3,inode,1,iface)
 
                     ip=intma(il,jl,kl,el)
                     
@@ -387,7 +393,7 @@ subroutine pack_data_dg_df_btp(q_send,q,nvarb)
                     q_send(ii)=pbprime_df(ip)
                 end do
             end if
-            ! jj = jj + 1
+            jj = jj + 1
         end do
     end do
   
@@ -889,8 +895,8 @@ subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
     implicit none
 
     !global variables
-    real, intent(in)  :: send_data((nvarb+1)*ngl*nboun)
-    real, intent(out) :: recv_data((nvarb+1)*ngl*nboun)
+    real, intent(in)  :: send_data(5*ngl*nboun)
+    real, intent(out) :: recv_data(5*ngl*nboun)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*num_nbh)
