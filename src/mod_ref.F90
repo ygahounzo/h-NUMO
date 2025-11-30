@@ -93,14 +93,14 @@ contains
         if(allocated(lap_q_recv_df1)) then 
             deallocate(lap_q_recv_df1, lap_q_send_df1) 
         endif 
-        allocate(lap_q_recv_df1(4,ngl,nboun), lap_q_send_df1(4,ngl,nboun), &
+        allocate(lap_q_recv_df1(5,ngl,nboun), lap_q_send_df1(5,ngl,nboun), &
             stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
         if(allocated(lap_recv_data_dg_df1)) then
             deallocate(lap_recv_data_dg_df1, lap_send_data_dg_df1)
         endif
-        allocate(lap_recv_data_dg_df1(4*ngl*nboun), lap_send_data_dg_df1(4*ngl*nboun), &
+        allocate(lap_recv_data_dg_df1(5*ngl*nboun), lap_send_data_dg_df1(5*ngl*nboun), &
             stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 

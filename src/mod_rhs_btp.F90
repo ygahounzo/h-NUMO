@@ -48,7 +48,7 @@ contains
 
         if(method_visc == 1) then
             call btp_create_laplacian_v2(rhs_visc_btp, qprime_df, qb_df)
-        else
+        elseif (method_visc > 1) then
             call btp_create_laplacian(rhs_visc_btp,qb_df)
         endif 
 
@@ -67,16 +67,11 @@ contains
         real, dimension(4, 2, ngl, nface) :: qb_df_face
         real, dimension(2,npoin) :: rhs_visc_btp
 
-        ! call btp_extract_df(qb_df_face, qb_df)
-
         call btp_create_precommunicator_v1(qb_df,4)
-        ! call btp_create_precommunicator(qb_df_face,4)
 
         call create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 
         call create_btp_fluxes_qdf_v1(rhs,qb_df)
-
-        ! call create_btp_fluxes_qdf(rhs,qb_df_face)
 
         call btp_create_postcommunicator_v1(rhs,4)
 
@@ -406,7 +401,7 @@ contains
 
             itype = face_type(iface)   !Type of face
             !Skip boundary faces
-            if (itype == 2 .or. itype == 21 .or. itype == 12) then
+            if (itype == 2) then
                 cycle
             end if
 

@@ -324,7 +324,7 @@ module mod_splitting
 
         if (method_visc == 1) then
             call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
-        else
+        elseif (method_visc > 1) then
             call bcl_create_laplacian(rhs_visc_bcl)
         endif 
 
