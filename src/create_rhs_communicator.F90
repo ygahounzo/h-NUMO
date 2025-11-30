@@ -295,7 +295,7 @@ subroutine btp_create_postcommunicator(q_df_face,nvarb)
 
 end subroutine btp_create_postcommunicator
 
-subroutine btp_create_postcommunicator_v1(rhs,nvarb)
+subroutine btp_create_postcommunicator_v1(rhs, nvarb)
 
     use mod_basis, only: ngl
 

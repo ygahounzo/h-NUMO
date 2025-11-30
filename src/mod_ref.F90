@@ -86,7 +86,7 @@ contains
             norm_inf_bt(nelem), grad_press_ref(3,npoin), grad_rho_ref(3,npoin), &
             grad_theta_ref(3,npoin), grad_salinity_ref(3,npoin), div_u_ref(npoin), &
             q_send(5,ngl,nboun),q_recv(5,ngl,nboun), grad_bathy(3,npoin), &
-            q_recv_quad(5,nq,nboun), q_send_quad(5,nq,nboun),&
+            q_recv_quad(4,nq,nboun), q_send_quad(4,nq,nboun),&
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 

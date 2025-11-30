@@ -352,7 +352,7 @@ subroutine pack_data_dg_df_btp(q_send,q,nvarb)
     implicit none
   
     !Global Variables
-    real, intent(out) :: q_send(5*ngl*nboun)
+    real, intent(out) :: q_send((nvarb+1)*ngl*nboun)
     real, intent(in) :: q(nvarb,npoin)
     integer, intent(in) :: nvarb
 

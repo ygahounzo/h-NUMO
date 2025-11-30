@@ -24,7 +24,7 @@ module mod_rhs_btp
 
 contains
 
-    subroutine create_rhs_btp(rhs,qb_df,qprime_df)
+    subroutine create_rhs_btp_v1(rhs,qb_df,qprime_df)
 
         implicit none
 
@@ -55,9 +55,9 @@ contains
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
 
-    end subroutine create_rhs_btp
+    end subroutine create_rhs_btp_v1
 
-    subroutine create_rhs_btp_v1(rhs,qb_df,qprime_df)
+    subroutine create_rhs_btp(rhs,qb_df,qprime_df)
 
         implicit none
 
@@ -70,10 +70,13 @@ contains
         ! call btp_extract_df(qb_df_face, qb_df)
 
         call btp_create_precommunicator_v1(qb_df,4)
+        ! call btp_create_precommunicator(qb_df_face,4)
 
         call create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 
         call create_btp_fluxes_qdf_v1(rhs,qb_df)
+
+        ! call create_btp_fluxes_qdf(rhs,qb_df_face)
 
         call btp_create_postcommunicator_v1(rhs,4)
 
@@ -92,7 +95,7 @@ contains
         rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
         rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
 
-    end subroutine create_rhs_btp_v1
+    end subroutine create_rhs_btp
 
     subroutine create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 
@@ -374,7 +377,7 @@ contains
     subroutine create_btp_fluxes_qdf_v1(rhs,qb)
 
         use mod_basis, only: psiq, ngl
-        use mod_grid, only:  npoin, intma, nface,face
+        use mod_grid, only:  npoin, intma, nface, face, face_type
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
@@ -397,8 +400,15 @@ contains
         real :: qbl(4,nq), qbr(4,nq), lam1, lam2, dispp
         real :: c_minus, c_plus, c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
         real, dimension(nq) :: c_pb_LR
+        integer :: itype
 
         do iface = 1, nface
+
+            itype = face_type(iface)   !Type of face
+            !Skip boundary faces
+            if (itype == 2 .or. itype == 21 .or. itype == 12) then
+                cycle
+            end if
 
             !Store Left Side Variables
             el = face(7,iface)
@@ -439,6 +449,14 @@ contains
                 else
                     qbr(:,iquad) = qbl(:,iquad)
                     pbr(iquad) = pbl(iquad)
+
+                    if(er == -4) then
+                        un = nxl*qbl(3,iquad) + nyl*qbl(4,iquad)
+                        qbr(3,iquad) = qbl(3,iquad) - 2.0*un*nxl
+                        qbr(4,iquad) = qbl(4,iquad) - 2.0*un*nyl
+                    elseif(er == -2) then
+                        qbr(3:4,iquad) = -qbl(3:4,iquad)
+                    end if
                 end if
 
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)

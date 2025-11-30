@@ -108,8 +108,8 @@ module mod_layer_terms
                             jr = imapr(2,n,1,iface)
                             kr = imapr(3,n,1,iface)
                             I = intma(ir,jr,kr,er)
-                            qprime_r = qprime_r + hi*dprime_df(I,k)
-                            pbprime_r = pbprime_r + hi*pbprime_df(I)
+                           qprime_r = qprime_r + hi*dprime_df(I,k)
+                        pbprime_r = pbprime_r + hi*pbprime_df(I)
                         enddo
                     else
                         qprime_r = qprime_l

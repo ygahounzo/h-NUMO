@@ -109,7 +109,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
  
-   use mod_initial, only: nvar
+   use mod_initial, only: nvar, pbprime_df_face
  
    use mod_metrics, only: jac
  
@@ -125,8 +125,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    !global arrays
    real, intent(inout) :: q_face(nvarb,2,ngl,nface)
-   real,intent(in):: q_send(nvarb,ngl,nboun)
-   real,intent(in):: q_recv(nvarb,ngl,nboun)
+   real,intent(in):: q_send(nvarb+1,ngl,nboun)
+   real,intent(in):: q_recv(nvarb+1,ngl,nboun)
    integer, intent(in) :: nvarb
  
    !local variables
@@ -169,6 +169,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                !Right Element
                q_face(k,2,:,iface)=q_recv(k,:,kk)
             end do
+
+            pbprime_df_face(1,:,iface) = q_send(nvarb+1,:,kk)
+            pbprime_df_face(2,:,iface) = q_recv(nvarb+1,:,kk)
  
             kk=kk+1
 
@@ -189,7 +192,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
  
-   use mod_initial, only: nvar, alpha_mlswe
+   use mod_initial, only: nvar, alpha_mlswe, pbprime_df_face
  
    use mod_metrics, only: jac, massinv
  
@@ -226,27 +229,22 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
    integer :: ftype, pface, subface, imulti
    integer :: multirate
-   real, dimension(nvarb,nq) :: qbl, qbr
+   real, dimension(4,nq) :: qbl, qbr
    real, dimension(nq) :: pbl, pbr, H_face_temp
    real :: nxl, nyl, nxr, nyr
    real :: pbpert_edge, c_minus, c_plus
    real :: c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
    real, dimension(nq) :: one_plus_eta_edge, c_pb_LR
    real, dimension(nq) :: flux_edge_x, flux_edge_y
-   integer :: el, iquad, n, I, il, jl, kl
+   integer :: el, iquad, n, I, il, jl, kl, er, itype
    real, dimension(nq) :: quu, quv, qvu, qvv, ul, ur, vl, vr
    real :: pU_L, pU_R, lamb, dispu, dispv, flux_x, flux_y, flux
    real :: hi, H_kx, H_ky
- 
-   !Constants
- 
+
    jj=1
    kk=1
    imm = 0
 
-   ! do ifaceb =1,nboun
-   !    iface = face_send(ifaceb)  ! Get Local Face
- 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
@@ -255,10 +253,10 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          ! jj=jj+1
  
          ftype = face_type(iface)
- 
+         el=face(7,iface)
+         er=face(8,iface)
+         
          do im = 1,imulti
-
-            el=face(7,iface)
  
             !-------------------------------------
             !Store Left Side Variables
@@ -277,11 +275,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                do n = 1,ngl
                   hi = psiq(n,iquad)
                   !Left Element
-                  qbl(:,iquad) = qbl(:,iquad) + hi*q_send(1:nvarb,n,kk)
-                  pbl(iquad) = pbl(iquad) + hi*q_send(nvarb+1,n,kk)
+                  qbl(1:4,iquad) = qbl(1:4,iquad) + hi*q_send(1:4,n,kk)
+                  pbl(iquad) = pbl(iquad) + hi*q_send(5,n,kk)
                   !Right Element
-                  qbr(:,iquad) = qbr(:,iquad) + hi*q_recv(1:nvarb,n,kk)
-                  pbr(iquad) = pbr(iquad) + hi*q_recv(nvarb+1,n,kk)
+                  qbr(1:4,iquad) = qbr(1:4,iquad) + hi*q_recv(1:4,n,kk)
+                  pbr(iquad) = pbr(iquad) + hi*q_recv(5,n,kk)
                end do
 
                pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
@@ -296,8 +294,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                pbpert_edge = c_pb_L * qbl(2,iquad) &
                                           + c_pb_R * qbr(2,iquad) &
                                           + c_pbub_LR * (pU_L + pU_R)
-
-               ! print*, "pbpert_edge:", pbpert_edge, qbl(2,iquad), qbr(2,iquad)
 
                one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
 
@@ -389,13 +385,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
       end do
  
    end do !iface
-
-   ! print*, "After create_nbhs_face_df_v1"
-   ! stop
-
-   ! rhs(1,:) = massinv(:)*rhs(1,:)
-   ! rhs(2,:) = massinv(:)*rhs(2,:)
-   ! rhs(3,:) = massinv(:)*rhs(3,:)
  
  end subroutine create_nbhs_face_df_v1
 
