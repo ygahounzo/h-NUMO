@@ -252,11 +252,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
          ! jj=jj+1
  
-         ftype = face_type(iface)
+         ! ftype = face_type(iface)
          el=face(7,iface)
          er=face(8,iface)
          
-         do im = 1,imulti
+         ! do im = 1,imulti
  
             !-------------------------------------
             !Store Left Side Variables
@@ -380,7 +380,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             end do !iquad
 
             kk=kk+1
-         end do
+         ! end do
          jj=jj+1
       end do
  

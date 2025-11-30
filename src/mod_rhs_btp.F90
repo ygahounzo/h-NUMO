@@ -83,7 +83,7 @@ contains
 
         if(method_visc == 1) then
             call btp_create_laplacian_v2(rhs_visc_btp, qprime_df, qb_df)
-        else
+        elseif (method_visc > 1) then
             call btp_create_laplacian(rhs_visc_btp,qb_df)
         endif 
 
