@@ -242,7 +242,7 @@ subroutine create_rhs_lap_postcommunicator_df(rhs,nvarb)
 
     use mod_mpi_communicator, only: ierr, ireq, nreq, status
 
-    use mod_grid, only:  nface,nboun
+    use mod_grid, only:  nface,npoin
 
     use mod_ref, only: lap_recv_data_dg_df1, lap_send_data_dg_df1, &
                         lap_q_recv_df1, lap_q_send_df1, nmessage

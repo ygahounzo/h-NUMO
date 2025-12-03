@@ -24,39 +24,6 @@ module mod_rhs_btp
 
 contains
 
-    subroutine create_rhs_btp_v1(rhs,qb_df,qprime_df)
-
-        implicit none
-
-        real, dimension(3, npoin), intent(out) :: rhs
-        real, dimension(4,npoin), intent(in) :: qb_df
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(4, 2, ngl, nface) :: qb_df_face
-        real, dimension(2,npoin) :: rhs_visc_btp
-
-        call btp_extract_df(qb_df_face, qb_df)
-
-        call btp_create_precommunicator(qb_df_face,4)
-
-        call create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
-
-        call btp_create_postcommunicator(qb_df_face,4)
-
-        call create_btp_fluxes_qdf(rhs,qb_df_face)
-
-        ! Compute RHS viscosity terms
-
-        if(method_visc == 1) then
-            call btp_create_laplacian_v2(rhs_visc_btp, qprime_df, qb_df)
-        elseif (method_visc > 1) then
-            call btp_create_laplacian(rhs_visc_btp,qb_df)
-        endif 
-
-        rhs(2,:) = rhs(2,:) + rhs_visc_btp(1,:)
-        rhs(3,:) = rhs(3,:) + rhs_visc_btp(2,:)
-
-    end subroutine create_rhs_btp_v1
-
     subroutine create_rhs_btp(rhs,qb_df,qprime_df)
 
         implicit none
@@ -73,7 +40,7 @@ contains
 
         call create_btp_fluxes_qdf(rhs,qb_df)
 
-        call btp_create_postcommunicator_v1(rhs,4)
+        call btp_create_postcommunicator(rhs,4)
 
         ! Compute RHS viscosity terms
 

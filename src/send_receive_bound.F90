@@ -411,6 +411,8 @@ subroutine pack_data_dg_df_bcl(q_send,q,nvarb)
 
     use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
 
+    use mod_input, only: nlayers
+
     implicit none
   
     !Global Variables
@@ -422,7 +424,7 @@ subroutine pack_data_dg_df_bcl(q_send,q,nvarb)
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
     integer :: nq_i, nq_j, plane_ij
     real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: inode, jnode, ip, ilocl, ilocr,ll
     integer :: iface_type
 
     ii = 0
