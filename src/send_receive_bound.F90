@@ -396,6 +396,72 @@ subroutine pack_data_dg_df_btp(q_send,q,nvarb)
   
 end subroutine pack_data_dg_df_btp
 
+subroutine pack_data_dg_df_bcl(q_send,q,nvarb)
+  
+    use mod_basis, only: ngl, FACE_CHILDREN
+
+    use mod_face, only: face_send, imapl, imapr, normal_vector, jac_face
+
+    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
+                        mod_grid_get_face_nq, nface
+
+    use mod_initial, only: nvar, pbprime_df
+
+    use mod_metrics, only: jac
+
+    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+
+    implicit none
+  
+    !Global Variables
+    real, intent(out) :: q_send((nvarb+1)*ngl*nboun)
+    real, intent(in) :: q(nvarb,npoin)
+    integer, intent(in) :: nvarb
+
+    !Local Variables
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
+
+    ii = 0
+    jj = 1
+    do inbh = 1,num_nbh
+        do ib = 1,num_send_recv(inbh)
+            iface = nbh_send_recv(jj)
+            imulti = nbh_send_recv_multi(jj)
+
+            if(face_type(iface) == 2 .and. imulti > 0) then
+
+                ilocl=face(5,iface)
+                el = face(7,iface)      ! Get Element
+
+                do inode = 1,ngl
+
+                    il = imapl(1,inode,1,iface)
+                    jl = imapl(2,inode,1,iface)
+                    kl = imapl(3,inode,1,iface)
+
+                    ip=intma(il,jl,kl,el)
+
+                    do ll = 1,nlayers
+                        ! Load primitive variables
+                        do ivar=1,nvarb
+                            ii = ii + 1
+                            q_send(ii)=q(ivar,ip)
+                        end do
+                    end do
+                    ii = ii + 1
+                    q_send(ii)=pbprime_df(ip)
+                end do
+            end if
+            jj = jj + 1
+        end do
+    end do
+  
+end subroutine pack_data_dg_df_bcl
+
 subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
   
     use mod_basis, only: ngl, FACE_CHILDREN, nq

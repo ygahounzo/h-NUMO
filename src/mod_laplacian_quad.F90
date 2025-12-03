@@ -29,97 +29,6 @@ module mod_laplacian_quad
 
     ! Compute the Laplacian barotropic horizontal viscosity term using the LDG method and
     ! using nodal points
-    subroutine btp_create_laplacian_v0(rhs_lap,qb_df)
-
-        ! Barotropic horizontal viscosity 
-
-        use mod_variables, only: pbprime_visc, btp_dpp_graduv, graduvb_ave, graduvb_face_ave, &
-                                    btp_graduv_dpp_face
-
-        real, intent (out) :: rhs_lap(2,npoin)
-        real, dimension(4,npoin), intent(in) :: qb_df
-
-        real, dimension(2,npoin) :: Uk
-        real :: graduv_face(4,2,ngl,nface)
-        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, ivar
-        real, dimension(4, npoin) :: graduv
-        real :: un, nx, ny, ul, ur, vl, vr, dpp
-
-        Uk(1,:) = qb_df(3,:)/qb_df(1,:)
-        Uk(2,:) = qb_df(4,:)/qb_df(1,:)
-
-        ! Compute the auxilary LDG variable graduv
-        call compute_gradient_uv(graduv, Uk)
-
-        graduvb_ave = graduvb_ave + graduv
-
-        ! Get the auxilary LDG variable graduv at the elements faces
-        do iface=1,nface
-
-            !Store Left and Right Side Variables
-            iel=face(7,iface)
-            ier=face(8,iface)
-    
-            !----------------------------Left Element
-            do iquad = 1,ngl
-
-                il=imapl(1,iquad,1,iface)
-                jl=imapl(2,iquad,1,iface)
-                kl=imapl(3,iquad,1,iface)
-                Iq = intma(il,jl,kl,iel)
-
-                graduv_face(:,1,iquad,iface) = graduv(:,Iq) 
-
-                if (ier > 0 ) then
-
-                    ir=imapr(1,iquad,1,iface)
-                    jr=imapr(2,iquad,1,iface)
-                    kr=imapr(3,iquad,1,iface)
-                    Iq=intma(ir,jr,kr,ier)
-
-                    graduv_face(:,2,iquad,iface) = graduv(:,Iq)
-
-                else
-                    graduv_face(:,2,iquad,iface) = graduv_face(:,1,iquad,iface)
-
-                    if(ier == -4) then 
-
-                        nx = normal_vector(1,iquad,1,iface)
-                        ny = normal_vector(2,iquad,1,iface)
-
-                        un = graduv_face(1,1,iquad,iface)*nx + graduv_face(2,1,iquad,iface)*ny
-                        graduv_face(1,2,iquad,iface) = graduv_face(1,1,iquad,iface) - 2.0*un*nx
-                        graduv_face(2,2,iquad,iface) = graduv_face(2,1,iquad,iface) - 2.0*un*ny
-
-                        un = graduv_face(3,1,iquad,iface)*nx + graduv_face(4,1,iquad,iface)*ny
-                        graduv_face(3,2,iquad,iface) = graduv_face(3,1,iquad,iface) - 2.0*un*nx
-                        graduv_face(4,2,iquad,iface) = graduv_face(4,1,iquad,iface) - 2.0*un*ny
-
-                    end if 
-                end if
-            end do 
-        end do
-
-        ! Precommunication step 
-        call create_rhs_lap_precommunicator_df(graduv_face,4)
-
-        ! Compute volume integral 
-        call btp_compute_laplacian(rhs_lap,graduv)
-
-        ! Postcommunication step 
-        call create_rhs_lap_postcommunicator_df(graduv_face,4)
-
-        graduvb_face_ave = graduvb_face_ave + graduv_face
-
-        ! Compute interface integral 
-        call create_rhs_laplacian_flux(rhs_lap,graduv_face)
-
-        !RHS of viscosity 
-        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_lap(1,:)
-        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_lap(2,:)
-
-    end subroutine btp_create_laplacian_v0
-
     subroutine btp_create_laplacian(rhs_lap,qb_df)
 
         ! Barotropic horizontal viscosity 
@@ -131,10 +40,7 @@ module mod_laplacian_quad
         real, dimension(4,npoin), intent(in) :: qb_df
 
         real, dimension(2,npoin) :: Uk
-        real :: graduv_face(4,2,ngl,nface)
-        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k, ivar
         real, dimension(4, npoin) :: graduv
-        real :: un, nx, ny, ul, ur, vl, vr, dpp
 
         Uk(1,:) = qb_df(3,:)/qb_df(1,:)
         Uk(2,:) = qb_df(4,:)/qb_df(1,:)
@@ -144,74 +50,21 @@ module mod_laplacian_quad
 
         graduvb_ave = graduvb_ave + graduv
 
-        ! Get the auxilary LDG variable graduv at the elements faces
-        do iface=1,nface
-
-            !Store Left and Right Side Variables
-            iel=face(7,iface)
-            ier=face(8,iface)
-    
-            !----------------------------Left Element
-            do iquad = 1,ngl
-
-                il=imapl(1,iquad,1,iface)
-                jl=imapl(2,iquad,1,iface)
-                kl=imapl(3,iquad,1,iface)
-                Iq = intma(il,jl,kl,iel)
-
-                graduv_face(:,1,iquad,iface) = graduv(:,Iq) 
-
-                if (ier > 0 ) then
-
-                    ir=imapr(1,iquad,1,iface)
-                    jr=imapr(2,iquad,1,iface)
-                    kr=imapr(3,iquad,1,iface)
-                    Iq=intma(ir,jr,kr,ier)
-
-                    graduv_face(:,2,iquad,iface) = graduv(:,Iq)
-
-                else
-                    graduv_face(:,2,iquad,iface) = graduv_face(:,1,iquad,iface)
-
-                    if(ier == -4) then 
-
-                        nx = normal_vector(1,iquad,1,iface)
-                        ny = normal_vector(2,iquad,1,iface)
-
-                        un = graduv_face(1,1,iquad,iface)*nx + graduv_face(2,1,iquad,iface)*ny
-                        graduv_face(1,2,iquad,iface) = graduv_face(1,1,iquad,iface) - 2.0*un*nx
-                        graduv_face(2,2,iquad,iface) = graduv_face(2,1,iquad,iface) - 2.0*un*ny
-
-                        un = graduv_face(3,1,iquad,iface)*nx + graduv_face(4,1,iquad,iface)*ny
-                        graduv_face(3,2,iquad,iface) = graduv_face(3,1,iquad,iface) - 2.0*un*nx
-                        graduv_face(4,2,iquad,iface) = graduv_face(4,1,iquad,iface) - 2.0*un*ny
-
-                    end if 
-                end if
-            end do 
-        end do
-
         ! Precommunication step 
-        ! call create_rhs_lap_precommunicator_df(graduv_face,4)
-
-        call btp_create_precommunicator_v1(graduv,4)
+        call btp_create_precommunicator(graduv,4)
 
         ! Compute volume integral 
         call btp_compute_laplacian(rhs_lap,graduv)
 
-        call create_rhs_laplacian_flux_v1(rhs_lap,graduv)
+        ! Compute interface integral 
+        call create_rhs_laplacian_flux(rhs_lap,graduv)
 
         ! Postcommunication step 
-        call create_rhs_lap_postcommunicator_df(graduv_face,4)
-
-        ! graduvb_face_ave = graduvb_face_ave + graduv_face
-
-        ! Compute interface integral 
-        ! call create_rhs_laplacian_flux(rhs_lap,graduv_face)
+        call create_rhs_lap_postcommunicator_df(rhs_lap,4)
 
         !RHS of viscosity 
-        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_lap(1,:)
-        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_lap(2,:)
+        rhs_lap(1,:) = visc_mlswe*rhs_lap(1,:)
+        rhs_lap(2,:) = visc_mlswe*rhs_lap(2,:)
 
     end subroutine btp_create_laplacian
 
@@ -519,102 +372,7 @@ module mod_laplacian_quad
 
     end subroutine bcl_compute_laplacian
 
-    subroutine create_rhs_laplacian_flux(rhs,gradq_face)
-
-        use mod_basis, only: nq, psi
-        use mod_variables, only: btp_graduv_dpp_face
-        use mod_grid, only: face_type
-    
-        implicit none
-    
-        real, intent(inout) :: rhs(2,npoin)
-        real, intent(in)    :: gradq_face(4,2,ngl,nface)
-    
-        real, dimension(2) :: qu_mean, qv_mean
-        real, dimension(4,2) :: flux_uv_visc_face
-        real, dimension(2) :: qul,qur
-        real, dimension(2) :: qvl,qvr
-        real nx, ny, nz
-        real wq, un
-        integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er
-        integer iel, ier, ilocl, ilocr, ip
-        integer iquad, jquad, ivar
-        real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
-
-        beta = 0.5
-        alpha = 1.0 - beta
-      
-        !Construct FVM-type Operators
-        do iface=1,nface
-            
-            iel=face(7,iface)
-            ier=face(8,iface)
-    
-            do iquad = 1,ngl
-
-                do ivar = 1,4
-                    flux_uv_visc_face(ivar,1) = btp_graduv_dpp_face(5,1,iquad,iface)* &
-                                                gradq_face(ivar,1,iquad,iface) + &
-                                                btp_graduv_dpp_face(ivar,1,iquad,iface)
-                                            
-                    flux_uv_visc_face(ivar,2) = btp_graduv_dpp_face(5,2,iquad,iface)* &
-                                                gradq_face(ivar,2,iquad,iface) + &
-                                                btp_graduv_dpp_face(ivar,2,iquad,iface)
-
-                end do 
-
-                nx = normal_vector(1,iquad,1,iface)
-                ny = normal_vector(2,iquad,1,iface)
-
-                qul(:) = flux_uv_visc_face(1:2,1)
-                qvl(:) = flux_uv_visc_face(3:4,1)
-                qur(:) = flux_uv_visc_face(1:2,2)
-                qvr(:) = flux_uv_visc_face(3:4,2)
-
-                ! The Flip-Flop flux of Cockburn & Shu 
-                ! NOTE: beta=0.5 is the central flux
-                qu_mean(:) = alpha*qul(:) + beta*qur(:)
-                qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
-
-                wq=jac_face(iquad,1,iface)
-
-                flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
-                flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
-
-                !  Do Gauss-Lobatto Integration
-                do i=1,ngl
-
-                    hi = psi(i,iquad)
-
-                    il=imapl(1,i,1,iface)
-                    jl=imapl(2,i,1,iface)
-                    kl=imapl(3,i,1,iface)
-                    ip=intma(il,jl,kl,iel)
-                    
-                    !Update Flux
-                    rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
-                    rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
-
-                    if (ier > 0) then
-
-                        ir=imapr(1,i,1,iface)
-                        jr=imapr(2,i,1,iface)
-                        kr=imapr(3,i,1,iface)
-
-                        ip=intma(ir,jr,kr,ier)
-
-                        !Update Flux
-                        rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
-                        rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
-
-                    end if !ier
-                end do !i
-            end do !iquad
-        end do !iface
-    
-    end subroutine create_rhs_laplacian_flux
-
-    subroutine create_rhs_laplacian_flux_v1(rhs,gradq)
+    subroutine create_rhs_laplacian_flux(rhs,gradq)
 
         use mod_basis, only: nq, psi
         use mod_variables, only: btp_graduv_dpp_face, graduvb_face_ave
@@ -744,7 +502,7 @@ module mod_laplacian_quad
             end do !iquad
         end do !iface
     
-    end subroutine create_rhs_laplacian_flux_v1
+    end subroutine create_rhs_laplacian_flux
 
     subroutine bcl_create_rhs_laplacian_flux(rhs,k)
 
