@@ -38,7 +38,7 @@ contains
 
         call create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 
-        call create_btp_fluxes_qdf(rhs,qb_df)
+        call create_btp_fluxes_qdf(rhs,qb_df, qprime_df)
 
         call btp_create_postcommunicator(rhs,4)
 
@@ -74,12 +74,12 @@ contains
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(3,npoin), intent(out) :: rhs
 
-        real :: sc_x, sc_y, Hq, qu, quv, qv
+        real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b
         real :: wq, hi, dhdx, dhdy, coef_fric, tb_u, tb_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd
-        real :: pp, up, vp, pbq
-
-        integer :: I, Iq, ip
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd, pbq
+        real, dimension(nlayers) :: pp, up, vp
+        real, dimension(nlayers+1) :: pprime
+        integer :: I, Iq, ip, k
 
         !speed1 = cd_mlswe/gravity
 
@@ -94,6 +94,7 @@ contains
 
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
             pp = 0.0; up = 0.0; vp = 0.0; pbq = 0.0
+            pprime(1) = 0.0 ; H_b = 0.0
 
             do ip = 1,npts
                 I = indexq(ip,Iq)
@@ -103,24 +104,37 @@ contains
                 dpp = dpp + hi*qb_df(2,I)
                 udp = udp + hi*qb_df(3,I)
                 vdp = vdp + hi*qb_df(4,I)
-                pp = pp + hi*qprime_df(1,I,nlayers)
-                up = up + hi*qprime_df(2,I,nlayers)
-                vp = vp + hi*qprime_df(3,I,nlayers)
+                ! pp(:) = pp(:) + hi*qprime_df(1,I,:)
+                ! up(:) = up(:) + hi*qprime_df(2,I,:)
+                ! vp(:) = vp(:) + hi*qprime_df(3,I,:)
                 pbq = pbq + hi*pbprime_df(I)
             end do
+
+            do k = 1, nlayers
+                do ip = 1,npts
+                    I = indexq(ip,Iq)
+                    hi = psih(ip,Iq)
+                    pp(k) = pp(k) + hi*qprime_df(1,I,k)
+                    up(k) = up(k) + hi*qprime_df(2,I,k)
+                    vp(k) = vp(k) + hi*qprime_df(3,I,k)
+                enddo
+
+                pprime(k+1) = pprime(k) + pp(k)
+                H_b = H_b + 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
+            enddo 
 
             wq = wjac(Iq)
             ub = udp/dp; vb = vdp/dp
 
             if (botfr == 1) then
-                ubot = up + ub
-                vbot = vp + vb
-                spd = (cd_mlswe/gravity)*pp
+                ubot = up(nlayers) + ub
+                vbot = vp(nlayers) + vb
+                spd = (cd_mlswe/gravity)*pp(nlayers)
                 tb_u = spd*ubot
                 tb_v = spd*vbot
             elseif (botfr == 2) then
-                ubot = up + ub
-                vbot = vp + vb
+                ubot = up(nlayers) + ub
+                vbot = vp(nlayers) + vb
                 spd = (cd_mlswe/alpha_mlswe(nlayers))*sqrt(ubot**2 + vbot**2)
                 tb_u = spd*ubot
                 tb_v = spd*vbot
@@ -132,11 +146,12 @@ contains
                         gravity*dp*grad_zbot_quad(2,Iq)
 
             ope = 1.0 + (dpp / pbq)
-            Hq = (ope**2) * H_bcl(Iq)
+            Hq = (ope**2) * H_b
 
-            qu = ub * udp + ope * Q_uu_dp(Iq)
-            quv = ub * vdp + ope * Q_uv_dp(Iq)
-            qv = vb * vdp + ope * Q_vv_dp(Iq)
+            qu = ub * udp + ope * sum(up(:)*(pp(:) * up(:)))
+            quv = vb * udp + ope * sum(vp(:)*(pp(:) * up(:)))
+            qvu = ub * vdp + ope * sum(up(:)*(pp(:) * vp(:)))
+            qv = vb * vdp + ope * sum(vp(:)*(pp(:) * vp(:)))
 
             H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + qu
             Qv_ave(Iq) = Qv_ave(Iq) + qv;  Quv_ave(Iq) = Quv_ave(Iq) + quv
@@ -159,14 +174,14 @@ contains
 
                 rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
                 rhs(2,I) = rhs(2,I) + wq*(hi*sc_x + dhdx*(Hq + qu) + quv*dhdy)
-                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*quv + dhdy*(Hq + qv))
+                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*qvu + dhdy*(Hq + qv))
 
             end do
         end do
 
     end subroutine create_rhs_btp_volume_qdf
 
-    subroutine create_btp_fluxes_qdf(rhs,qb)
+    subroutine create_btp_fluxes_qdf(rhs,qb,qprime_df)
 
         use mod_basis, only: psiq, ngl
         use mod_grid, only:  npoin, intma, nface, face, face_type
@@ -183,16 +198,20 @@ contains
 
         real, dimension(3, npoin), intent(inout)  :: rhs
         real, dimension(4, npoin), intent(in) :: qb
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
         real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
-        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_temp, flux_edge_x, flux_edge_y
+        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_tmp, flux_edge_x, flux_edge_y
         real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq, one_plus_eta_edge
         real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
         real :: qbl(4,nq), qbr(4,nq), lam1, lam2, dispp
         real :: c_minus, c_plus, c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
         real, dimension(nq) :: c_pb_LR
-        integer :: itype
+        real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
+        real :: ppl, ppr, upl, upr, vpl, vpr
+        real, dimension(nlayers+1) :: pprime_l, pprime_r
+        integer :: itype, k
 
         do iface = 1, nface
 
@@ -206,8 +225,8 @@ contains
             el = face(7,iface)
             er = face(8,iface)
 
-            qbl = 0.0; qbr = 0.0
-            pbl = 0.0; pbr = 0.0
+            qbl = 0.0; qbr = 0.0 ; pbl = 0.0; pbr = 0.0
+            Q_uu_q = 0.0; Q_uv_q = 0.0; Q_vu_q = 0.0; Q_vv_q = 0.0 ; H_bcl_q = 0.0
 
             do iquad = 1,nq
 
@@ -251,6 +270,60 @@ contains
                     end if
                 end if
 
+                pprime_l(1) = 0.0; pprime_r(1) = 0.0
+                do k = 1, nlayers
+                    ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
+                    do n = 1, ngl
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
+                        I = intma(il,jl,kl,el)
+
+                        hi = psiq(n,iquad)
+                        ppl = ppl + hi*qprime_df(1,I,k)
+                        upl = upl + hi*qprime_df(2,I,k)
+                        vpl = vpl + hi*qprime_df(3,I,k)
+                    enddo
+
+                    if (er > 0) then
+                        do n = 1, ngl
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
+                            I = intma(ir,jr,kr,er)
+
+                            hi = psiq(n,iquad)
+                            ppr = ppr + hi*qprime_df(1,I,k)
+                            upr = upr + hi*qprime_df(2,I,k)
+                            vpr = vpr + hi*qprime_df(3,I,k)
+                        enddo
+                    else
+                        ppr = ppl
+                        upr = upl
+                        vpr = vpl
+
+                        ! Apply boundary conditions
+                        if(er == -4) then
+                            un = nxl*upl + nyl*vpl
+                            upr = upl - 2.0*un*nxl
+                            vpr = vpl - 2.0*un*nyl
+                        elseif(er == -2) then
+                            upr = -upl
+                            vpr = -vpl
+                        end if
+                    end if
+
+                    Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
+                    Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
+                    Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
+                    Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+
+                    pprime_l(k+1) = pprime_l(k) + ppl
+                    pprime_r(k+1) = pprime_r(k) + ppr
+
+                    H_bcl_q(iquad) = H_bcl_q(iquad) + 0.25*alpha_mlswe(k)*((pprime_l(k+1)**2 - pprime_l(k)**2) + (pprime_r(k+1)**2 - pprime_r(k)**2))
+                end do
+
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
                 pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
 
@@ -287,19 +360,20 @@ contains
             ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
             vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
-            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:, iface)
-            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
-            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
-            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:, iface)
+            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_q(:)
+            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_q(:)
+            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_vu_q(:)
+            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_q(:)
 
             ! Compute pressure forcing H_face at each element face.
-            H_face_temp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
+            ! H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
+            H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_q(:)
 
             ! Accumulate sums for time averaging
 
             btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
             btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
-            H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_temp(:)
+            H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_tmp(:)
             Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:)
             Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
             Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:)
@@ -322,8 +396,8 @@ contains
                 nxl = normal_vector_q(1,iquad,1,iface)
                 nyl = normal_vector_q(2,iquad,1,iface)
 
-                H_kx = nxl*H_face_temp(iquad)
-                H_ky = nyl*H_face_temp(iquad)
+                H_kx = nxl*H_face_tmp(iquad)
+                H_ky = nyl*H_face_tmp(iquad)
 
                 lamb = c_pb_LR(iquad)
 

@@ -261,25 +261,25 @@ module mod_barotropic_terms
 
         ! Compute Q_up_up_quad and Q_up_vp_quad at quadrature points.
 
-        do Iq = 1,npoin_q
-            pprime(1) = 0.0
-            do k = 1, nlayers
-                qq = 0.0
-                do ip = 1,npts
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
-                    qq(:) = qq(:) + hi*qprime_df(:,I,k)
-                enddo
-                Q_uu_dp(Iq) = Q_uu_dp(Iq) + qq(2)*(qq(2)*qq(1))
-                Q_uv_dp(Iq) = Q_uv_dp(Iq) + qq(3)*(qq(2)*qq(1))
-                Q_vv_dp(Iq) = Q_vv_dp(Iq) + qq(3)*(qq(3)*qq(1))
+        ! do Iq = 1,npoin_q
+        !     pprime(1) = 0.0
+        !     do k = 1, nlayers
+        !         qq = 0.0
+        !         do ip = 1,npts
+        !             I = indexq(ip,Iq)
+        !             hi = psih(ip,Iq)
+        !             qq(:) = qq(:) + hi*qprime_df(:,I,k)
+        !         enddo
+        !         Q_uu_dp(Iq) = Q_uu_dp(Iq) + qq(2)*(qq(2)*qq(1))
+        !         Q_uv_dp(Iq) = Q_uv_dp(Iq) + qq(3)*(qq(2)*qq(1))
+        !         Q_vv_dp(Iq) = Q_vv_dp(Iq) + qq(3)*(qq(3)*qq(1))
 
-                ! Pressure term in barotropic momentum equation
+        !         ! Pressure term in barotropic momentum equation
 
-                pprime(k+1) = pprime(k) + qq(1)
-                H_bcl(Iq) = H_bcl(Iq) + 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
-            end do
-        enddo
+        !         pprime(k+1) = pprime(k) + qq(1)
+        !         H_bcl(Iq) = H_bcl(Iq) + 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
+        !     end do
+        ! enddo
 
         pprime_df(:,1) = 0.0
 
@@ -307,33 +307,33 @@ module mod_barotropic_terms
             iel=face(7,iface)
             ier=face(8,iface)
 
-            do iquad = 1,nq
+            ! do iquad = 1,nq
 
-                pprime_l(1) = 0.0
-                pprime_r(1) = 0.0
-                do k = 1, nlayers
-                    ql = 0.0; qr = 0.0;
-                    do n = 1, ngl
-                        hi = psiq(n,iquad)
-                        ql(:) = ql(:) + hi*qprime_df_face(:,1,n,iface,k)
-                        qr(:) = qr(:) + hi*qprime_df_face(:,2,n,iface,k)
-                    enddo
+            !     pprime_l(1) = 0.0
+            !     pprime_r(1) = 0.0
+            !     do k = 1, nlayers
+            !         ql = 0.0; qr = 0.0;
+            !         do n = 1, ngl
+            !             hi = psiq(n,iquad)
+            !             ql(:) = ql(:) + hi*qprime_df_face(:,1,n,iface,k)
+            !             qr(:) = qr(:) + hi*qprime_df_face(:,2,n,iface,k)
+            !         enddo
 
-                    Q_uu_dp_edge(iquad,iface) = Q_uu_dp_edge(iquad,iface) &
-                                                + 0.5*((ql(2)*ql(2)*ql(1)) + (qr(2)*qr(2)*qr(1)))
-                    Q_uv_dp_edge(iquad,iface) = Q_uv_dp_edge(iquad,iface) &
-                                                + 0.5*((ql(3)*ql(2)*ql(1)) + (qr(3)*qr(2)*qr(1)))
-                    Q_vv_dp_edge(iquad,iface) = Q_vv_dp_edge(iquad,iface) &
-                                                + 0.5*((ql(3)*ql(3)*ql(1)) + (qr(3)*qr(3)*qr(1)))
+            !         Q_uu_dp_edge(iquad,iface) = Q_uu_dp_edge(iquad,iface) &
+            !                                     + 0.5*((ql(2)*ql(2)*ql(1)) + (qr(2)*qr(2)*qr(1)))
+            !         Q_uv_dp_edge(iquad,iface) = Q_uv_dp_edge(iquad,iface) &
+            !                                     + 0.5*((ql(3)*ql(2)*ql(1)) + (qr(3)*qr(2)*qr(1)))
+            !         Q_vv_dp_edge(iquad,iface) = Q_vv_dp_edge(iquad,iface) &
+            !                                     + 0.5*((ql(3)*ql(3)*ql(1)) + (qr(3)*qr(3)*qr(1)))
 
-                    pprime_l(k+1) = pprime_l(k) + ql(1)
-                    left_dp = 0.5*alpha_mlswe(k) *(pprime_l(k+1)**2 - pprime_l(k)**2)
-                    pprime_r(k+1) = pprime_r(k) + qr(1)
-                    right_dp = 0.5*alpha_mlswe(k) *(pprime_r(k+1)**2 - pprime_r(k)**2)
+            !         pprime_l(k+1) = pprime_l(k) + ql(1)
+            !         left_dp = 0.5*alpha_mlswe(k) *(pprime_l(k+1)**2 - pprime_l(k)**2)
+            !         pprime_r(k+1) = pprime_r(k) + qr(1)
+            !         right_dp = 0.5*alpha_mlswe(k) *(pprime_r(k+1)**2 - pprime_r(k)**2)
 
-                    H_bcl_edge(iquad,iface) = H_bcl_edge(iquad,iface) + 0.5*(left_dp + right_dp)
-                enddo
-            end do
+            !         H_bcl_edge(iquad,iface) = H_bcl_edge(iquad,iface) + 0.5*(left_dp + right_dp)
+            !     enddo
+            ! end do
 
             do iquad = 1,ngl
                 !Get Pointers
