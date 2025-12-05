@@ -110,7 +110,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
                            num_nbh, num_send_recv
  
-   use mod_ref, only: nmessage
+   use mod_ref, only: nbtp_var
    use mod_input, only: nlayers
    use mod_constants, only: gravity
    use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
@@ -122,8 +122,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    !global arrays
    real, intent(inout) :: rhs(3,npoin)
-   real,intent(in):: q_send(nvarb+1,ngl,nboun)
-   real,intent(in):: q_recv(nvarb+1,ngl,nboun)
+   real,intent(in):: q_send(nbtp_var,ngl,nboun)
+   real,intent(in):: q_recv(nbtp_var,ngl,nboun)
    integer, intent(in) :: nvarb
  
    !local variables
@@ -131,11 +131,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real :: wq
    integer :: iface, k
  
-   integer :: jj, imm, inbh, ib, kk, ivar
+   integer :: jj, imm, inbh, ib, kk, ivar, ii
    integer :: imulti
    integer :: multirate
    real, dimension(4,nq) :: qbl, qbr
-   real, dimension(nq) :: pbl, pbr, H_face_temp
+   real, dimension(nq) :: pbl, pbr, H_face_tmp
    real :: nxl, nyl, nxr, nyr
    real :: pbpert_edge, c_minus, c_plus
    real :: c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
@@ -145,6 +145,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, dimension(nq) :: quu, quv, qvu, qvv, ul, ur, vl, vr
    real :: pU_L, pU_R, lamb, dispu, dispv, flux_x, flux_y, flux
    real :: hi, H_kx, H_ky
+   real, dimension(nlayers+1) :: pprime_l, pprime_r
+   real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
+   real :: ppl, ppr, upl, upr, vpl, vpr
 
    jj=1
    kk=1
@@ -164,6 +167,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
          qbl = 0.0 ; qbr = 0.0
          pbl = 0.0 ; pbr = 0.0
+         Q_uu_q = 0.0; Q_uv_q = 0.0; Q_vu_q = 0.0; Q_vv_q = 0.0 ; H_bcl_q = 0.0
 
          do iquad = 1, nq
 
@@ -180,6 +184,40 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                !Right Element
                qbr(1:4,iquad) = qbr(1:4,iquad) + hi*q_recv(1:4,n,kk)
                pbr(iquad) = pbr(iquad) + hi*q_recv(5,n,kk)
+            end do
+
+            pprime_l(1) = 0.0; pprime_r(1) = 0.0
+            ii = 5
+            do k = 1, nlayers
+               ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
+               
+               do n = 1, ngl
+                  il = imapl(1,n,1,iface)
+                  jl = imapl(2,n,1,iface)
+                  kl = imapl(3,n,1,iface)
+                  I = intma(il,jl,kl,el)
+
+                  hi = psiq(n,iquad)
+                  ii = ii + 1
+                  ppl = ppl + hi*q_send(ii,n,kk)
+                  ppr = ppr + hi*q_recv(ii,n,kk)
+                  ii = ii + 1
+                  upl = upl + hi*q_send(ii,n,kk)
+                  upr = upr + hi*q_recv(ii,n,kk)
+                  ii = ii + 1
+                  vpl = vpl + hi*q_send(ii,n,kk)
+                  vpr = vpr + hi*q_recv(ii,n,kk)
+               enddo
+
+               Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
+               Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
+               Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
+               Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+
+               pprime_l(k+1) = pprime_l(k) + ppl
+               pprime_r(k+1) = pprime_r(k) + ppr
+
+               H_bcl_q(iquad) = H_bcl_q(iquad) + 0.25*alpha_mlswe(k)*((pprime_l(k+1)**2 - pprime_l(k)**2) + (pprime_r(k+1)**2 - pprime_r(k)**2))
             end do
 
             pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
@@ -218,19 +256,19 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
          vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
-         quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_dp_edge(:, iface)
-         quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
-         qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_uv_dp_edge(:, iface)
-         qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_dp_edge(:, iface)
+         quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_q(:)
+         quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_q(:)
+         qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_vu_q(:)
+         qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_q(:)
 
          ! Compute pressure forcing H_face at each element face.
-         H_face_temp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
+         H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_q(:)
 
          ! Accumulate sums for time averaging
 
          btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
          btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
-         H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_temp(:)
+         H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_tmp(:)
          Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:)
          Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
          Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:)
@@ -253,8 +291,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             nxl = normal_vector_q(1,iquad,1,iface)
             nyl = normal_vector_q(2,iquad,1,iface)
 
-            H_kx = nxl*H_face_temp(iquad)
-            H_ky = nyl*H_face_temp(iquad)
+            H_kx = nxl*H_face_tmp(iquad)
+            H_ky = nyl*H_face_tmp(iquad)
 
             lamb = c_pb_LR(iquad)
 

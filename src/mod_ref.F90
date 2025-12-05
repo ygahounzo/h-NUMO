@@ -30,7 +30,8 @@ module mod_ref
         f0_ref, g0_ref, grad_g0_ref, d_g0_ref_dr, recv_data_dg, send_data_dg, nmessage, &
         grad_bathy, grad_hB_ref, grad_phiA_ref, grad_rho_ref_layers, &
         q_recv_quad, q_send_quad, recv_data_dg_quad, send_data_dg_quad, &
-        lap_recv_data_dg_df1, lap_send_data_dg_df1, lap_q_recv_df1, lap_q_send_df1
+        lap_recv_data_dg_df1, lap_send_data_dg_df1, lap_q_recv_df1, lap_q_send_df1, &
+        q_send_lap, q_recv_lap, recv_data_dg_lap, send_data_dg_lap, nbtp_var
 
     private
 
@@ -46,13 +47,13 @@ module mod_ref
     real,    dimension(:),   allocatable :: press_ref, g0, f0, h0, press, div_u_ref, f0_ref
     real,    dimension(:),   allocatable :: g0_ref, dens_var
     real,    dimension(:,:), allocatable :: recv_data
-    real,    dimension(:,:,:), allocatable :: q_recv, q_send
-    real,    dimension(:), allocatable :: recv_data_dg, send_data_dg
+    real,    dimension(:,:,:), allocatable :: q_recv, q_send, q_recv_lap, q_send_lap
+    real,    dimension(:), allocatable :: recv_data_dg, send_data_dg, recv_data_dg_lap, send_data_dg_lap
     real,    dimension(:,:,:), allocatable :: q_recv_quad, q_send_quad, lap_q_recv_df1
     real,    dimension(:,:,:), allocatable :: lap_q_send_df1
     real,    dimension(:), allocatable :: recv_data_dg_quad, send_data_dg_quad
     real,    dimension(:), allocatable :: lap_recv_data_dg_df1, lap_send_data_dg_df1
-    integer :: nmessage
+    integer :: nmessage, nbtp_var
 
 contains
 
@@ -69,12 +70,13 @@ contains
         !Size of Max DG Message
         nmessage=2*nvar+4 !nvar+3 for inviscid dynamics
         if(is_mlswe) nmessage = 6 ! 2 for uv-momentum
+        nbtp_var = 3*nlayers + 5 ! 3*nlayers for baroclinic variables + 5 for barotropic variables
 
         if(allocated(qb)) then
             deallocate(qb, press_ref, press, dens_var, recv_data, norm_inf_brhs, norm_inf_bene, &
                 norm_inf_br, norm_inf_bu, norm_inf_bv, norm_inf_bw, norm_inf_bt, &
                 grad_press_ref, grad_rho_ref, grad_theta_ref, grad_salinity_ref,div_u_ref, &
-                q_send, q_recv, grad_bathy)
+                grad_bathy)
         endif
         if(allocated(q_recv_quad)) then
             deallocate(q_recv_quad, q_send_quad)
@@ -85,7 +87,7 @@ contains
             norm_inf_br(nelem), norm_inf_bu(nelem), norm_inf_bv(nelem), norm_inf_bw(nelem), &
             norm_inf_bt(nelem), grad_press_ref(3,npoin), grad_rho_ref(3,npoin), &
             grad_theta_ref(3,npoin), grad_salinity_ref(3,npoin), div_u_ref(npoin), &
-            q_send(5,ngl,nboun),q_recv(5,ngl,nboun), grad_bathy(3,npoin), &
+            grad_bathy(3,npoin), &
             q_recv_quad(4,nq,nboun), q_send_quad(4,nq,nboun),&
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
@@ -104,22 +106,34 @@ contains
             stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
-        if (space_method(1:2) == 'dg') then
+        if(allocated(q_send)) then
+            deallocate(q_send, q_recv, q_send_lap, q_recv_lap)
+        endif
+        allocate(q_send(nbtp_var,ngl,nboun),q_recv(nbtp_var,ngl,nboun), &
+            q_send_lap(5,ngl,nboun), q_recv_lap(5,ngl,nboun), &
+            stat=AllocateStatus )
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
+
+        ! if (space_method(1:2) == 'dg') then
             if(allocated(recv_data_dg)) then
-                deallocate(recv_data_dg, send_data_dg)
+                deallocate(recv_data_dg, send_data_dg, recv_data_dg_lap, send_data_dg_lap)
             endif
+            allocate( recv_data_dg(nbtp_var*ngl*nboun), &
+                send_data_dg(nbtp_var*ngl*nboun), &
+                recv_data_dg_lap(5*ngl*nboun), &
+                send_data_dg_lap(5*ngl*nboun), &
+                stat=AllocateStatus )
+            if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 
             if(allocated(recv_data_dg_quad)) then
                 deallocate(recv_data_dg_quad, send_data_dg_quad)
             endif
 
-            allocate( recv_data_dg(5*ngl*nboun), &
-                send_data_dg(5*ngl*nboun), &
-                recv_data_dg_quad(4*nq*nboun), &
+            allocate(recv_data_dg_quad(4*nq*nboun), &
                 send_data_dg_quad(4*nq*nboun), &
                 stat=AllocateStatus )
             if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
-        end if
+        ! end if
 
         !Initialize allocated arrays:
         qb             = 0.0

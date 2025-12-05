@@ -34,7 +34,7 @@ contains
         real, dimension(4, 2, ngl, nface) :: qb_df_face
         real, dimension(2,npoin) :: rhs_visc_btp
 
-        call btp_create_precommunicator(qb_df,4)
+        call btp_create_precommunicator(qb_df,qprime_df,4)
 
         call create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 
@@ -104,9 +104,6 @@ contains
                 dpp = dpp + hi*qb_df(2,I)
                 udp = udp + hi*qb_df(3,I)
                 vdp = vdp + hi*qb_df(4,I)
-                ! pp(:) = pp(:) + hi*qprime_df(1,I,:)
-                ! up(:) = up(:) + hi*qprime_df(2,I,:)
-                ! vp(:) = vp(:) + hi*qprime_df(3,I,:)
                 pbq = pbq + hi*pbprime_df(I)
             end do
 

@@ -133,7 +133,7 @@ subroutine create_communicator_quad(q_face,nvarb)
 
 end subroutine create_communicator_quad
 
-subroutine btp_create_precommunicator(q,nvarb)
+subroutine btp_create_precommunicator(q,qprime_df,nvarb)
 
     use mod_basis, only: ngl
 
@@ -149,6 +149,43 @@ subroutine btp_create_precommunicator(q,nvarb)
 
     use mod_ref, only: q_send, q_recv, recv_data_dg, send_data_dg
 
+    use mod_input, only: nlayers
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(nvarb,npoin), intent(inout) :: q
+    real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+    integer, intent(in) :: nvarb
+
+    integer :: multirate
+
+    ! DG - Discontinuous communicator
+
+    !Load all the boundary data into a vector
+    call pack_data_dg_df_btp(send_data_dg,q,qprime_df,nvarb)
+
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_df(send_data_dg,recv_data_dg,nvarb,nreq,ireq,status)
+
+end subroutine btp_create_precommunicator
+
+subroutine btp_lap_create_precommunicator(q,nvarb)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send_lap, q_recv_lap, recv_data_dg_lap, send_data_dg_lap
+
     implicit none
 
     !Global Arrays
@@ -160,12 +197,12 @@ subroutine btp_create_precommunicator(q,nvarb)
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_df_btp(send_data_dg,q,nvarb)
+    call pack_data_dg_df_btp_lap(send_data_dg_lap,q,nvarb)
 
     !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_df(send_data_dg,recv_data_dg,nvarb,nreq,ireq,status)
+    call send_bound_dg_general_lap(send_data_dg_lap,recv_data_dg_lap,nvarb,nreq,ireq,status)
 
-end subroutine btp_create_precommunicator
+end subroutine btp_lap_create_precommunicator
 
 subroutine btp_create_postcommunicator(rhs, nvarb)
 
@@ -204,38 +241,6 @@ subroutine btp_create_postcommunicator(rhs, nvarb)
 
 end subroutine btp_create_postcommunicator
 
-
-subroutine create_rhs_lap_precommunicator_df(q_df_face,nvarb)
-
-    use mod_basis, only: ngl
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only:  npoin, intma, nelem,nface,nboun
-
-    use mod_initial, only: nvar
-
-    use mod_ref, only: lap_recv_data_dg_df1, lap_send_data_dg_df1, &
-                        lap_q_recv_df1, lap_q_send_df1, nmessage
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(nvarb,2,ngl,nface), intent(in) :: q_df_face
-    integer, intent(in) :: nvarb
-
-    integer :: multirate
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_df(lap_send_data_dg_df1,q_df_face,nvarb)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_df(lap_send_data_dg_df1,lap_recv_data_dg_df1,nvarb,nreq,ireq,status)
-
-end subroutine create_rhs_lap_precommunicator_df
-
 subroutine create_rhs_lap_postcommunicator_df(rhs,nvarb)
 
     use mod_basis, only: ngl
@@ -244,8 +249,7 @@ subroutine create_rhs_lap_postcommunicator_df(rhs,nvarb)
 
     use mod_grid, only:  nface,npoin
 
-    use mod_ref, only: lap_recv_data_dg_df1, lap_send_data_dg_df1, &
-                        lap_q_recv_df1, lap_q_send_df1, nmessage
+    use mod_ref, only: q_send_lap, q_recv_lap, recv_data_dg_lap, send_data_dg_lap
 
     implicit none
 
@@ -261,11 +265,11 @@ subroutine create_rhs_lap_postcommunicator_df(rhs,nvarb)
     call mpi_waitall(nreq,ireq,status,ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_df(lap_q_send_df1,lap_q_recv_df1,lap_send_data_dg_df1, &
-            lap_recv_data_dg_df1,nvarb)
+    call unpack_data_dg_general_lap(q_send_lap,q_recv_lap,send_data_dg_lap, &
+            recv_data_dg_lap,nvarb)
 
     !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_df_lap(rhs,lap_q_send_df1,lap_q_recv_df1,nvarb,0)
+    call create_nbhs_face_df_lap(rhs,q_send_lap,q_recv_lap,nvarb,0)
 
 end subroutine create_rhs_lap_postcommunicator_df
 

@@ -51,7 +51,7 @@ module mod_laplacian_quad
         graduvb_ave = graduvb_ave + graduv
 
         ! Precommunication step 
-        call btp_create_precommunicator(graduv,4)
+        call btp_lap_create_precommunicator(graduv,4)
 
         ! Compute volume integral 
         call btp_compute_laplacian(rhs_lap,graduv)
