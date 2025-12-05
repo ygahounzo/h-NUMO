@@ -187,10 +187,10 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             end do
 
             pprime_l(1) = 0.0; pprime_r(1) = 0.0
-            ii = 5
             do k = 1, nlayers
                ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
-               
+
+               ii = 5 + (k-1)*3
                do n = 1, ngl
                   il = imapl(1,n,1,iface)
                   jl = imapl(2,n,1,iface)
@@ -198,15 +198,14 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   I = intma(il,jl,kl,el)
 
                   hi = psiq(n,iquad)
-                  ii = ii + 1
-                  ppl = ppl + hi*q_send(ii,n,kk)
-                  ppr = ppr + hi*q_recv(ii,n,kk)
-                  ii = ii + 1
-                  upl = upl + hi*q_send(ii,n,kk)
-                  upr = upr + hi*q_recv(ii,n,kk)
-                  ii = ii + 1
-                  vpl = vpl + hi*q_send(ii,n,kk)
-                  vpr = vpr + hi*q_recv(ii,n,kk)
+                  ppl = ppl + hi*q_send(ii+1,n,kk)
+                  ppr = ppr + hi*q_recv(ii+1,n,kk)
+
+                  upl = upl + hi*q_send(ii+2,n,kk)
+                  upr = upr + hi*q_recv(ii+2,n,kk)
+
+                  vpl = vpl + hi*q_send(ii+3,n,kk)
+                  vpr = vpr + hi*q_recv(ii+3,n,kk)
                enddo
 
                Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
@@ -344,8 +343,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
    !global arrays
    real, intent(inout) :: rhs(2,npoin)
-   real,intent(in):: q_send(nvarb+1,ngl,nboun)
-   real,intent(in):: q_recv(nvarb+1,ngl,nboun)
+   real,intent(in):: q_send(10,ngl,nboun)
+   real,intent(in):: q_recv(10,ngl,nboun)
    integer, intent(in) :: nvarb
  
    !local variables
@@ -365,6 +364,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, dimension(4,2) :: flux_uv_visc_face
    real, dimension(2) :: qul,qur
    real, dimension(2) :: qvl,qvr
+   real, dimension(5) :: grad_uvb_pb_l, grad_uvb_pb_r
    real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
 
    jj=1
@@ -384,14 +384,20 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          
          do iquad = 1,ngl
 
+            nxl = normal_vector(1,iquad,1,iface)
+            nyl = normal_vector(2,iquad,1,iface)
+
+            do ivar = 6, 10
+               grad_uvb_pb_l(ivar-5) =  q_send(ivar,iquad,kk)
+               grad_uvb_pb_r(ivar-5) =  q_recv(ivar,iquad,kk)
+            end do
+
             do ivar = 1,4
-               flux_uv_visc_face(ivar,1) = btp_graduv_dpp_face(5,1,iquad,iface)* &
-                                          q_send(ivar,iquad,kk) + &
-                                          btp_graduv_dpp_face(ivar,1,iquad,iface)
-                                       
-               flux_uv_visc_face(ivar,2) = btp_graduv_dpp_face(5,2,iquad,iface)* &
-                                          q_recv(ivar,iquad,kk) + &
-                                          btp_graduv_dpp_face(ivar,2,iquad,iface)
+               flux_uv_visc_face(ivar,1) = grad_uvb_pb_l(5)* q_send(ivar,iquad,kk) + &
+                                          grad_uvb_pb_l(ivar)
+
+               flux_uv_visc_face(ivar,2) = grad_uvb_pb_r(5)* q_recv(ivar,iquad,kk) + &
+                                          grad_uvb_pb_r(ivar)
 
                graduvb_face_ave(ivar,1,iquad,iface) = graduvb_face_ave(ivar,1,iquad,iface) + q_send(ivar,iquad,kk)
                graduvb_face_ave(ivar,2,iquad,iface) = graduvb_face_ave(ivar,2,iquad,iface) + q_recv(ivar,iquad,kk)

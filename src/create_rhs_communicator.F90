@@ -186,6 +186,8 @@ subroutine btp_lap_create_precommunicator(q,nvarb)
 
     use mod_ref, only: q_send_lap, q_recv_lap, recv_data_dg_lap, send_data_dg_lap
 
+    use mod_variables, only: pbprime_visc, btp_dpp_graduv
+
     implicit none
 
     !Global Arrays
@@ -197,7 +199,7 @@ subroutine btp_lap_create_precommunicator(q,nvarb)
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_df_btp_lap(send_data_dg_lap,q,nvarb)
+    call pack_data_dg_df_btp_lap(send_data_dg_lap,q,btp_dpp_graduv,pbprime_visc,nvarb)
 
     !non-blocking sends-receives: message size=nmessage
     call send_bound_dg_general_lap(send_data_dg_lap,recv_data_dg_lap,nvarb,nreq,ireq,status)

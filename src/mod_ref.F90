@@ -110,7 +110,7 @@ contains
             deallocate(q_send, q_recv, q_send_lap, q_recv_lap)
         endif
         allocate(q_send(nbtp_var,ngl,nboun),q_recv(nbtp_var,ngl,nboun), &
-            q_send_lap(5,ngl,nboun), q_recv_lap(5,ngl,nboun), &
+            q_send_lap(10,ngl,nboun), q_recv_lap(10,ngl,nboun), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
@@ -120,8 +120,8 @@ contains
             endif
             allocate( recv_data_dg(nbtp_var*ngl*nboun), &
                 send_data_dg(nbtp_var*ngl*nboun), &
-                recv_data_dg_lap(5*ngl*nboun), &
-                send_data_dg_lap(5*ngl*nboun), &
+                recv_data_dg_lap(10*ngl*nboun), &
+                send_data_dg_lap(10*ngl*nboun), &
                 stat=AllocateStatus )
             if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 

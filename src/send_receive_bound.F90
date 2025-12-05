@@ -119,8 +119,8 @@ subroutine unpack_data_dg_general_lap(q_send,q_recv,send_data,recv_data,nvarb)
     implicit none
 
     !Global Variables
-    real, dimension(5,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension(5*ngl*nboun), intent(in)  :: send_data, recv_data
+    real, dimension(10,ngl,nboun), intent(out) :: q_send,q_recv
+    real, dimension(10*ngl*nboun), intent(in)  :: send_data, recv_data
     integer, intent(in) :: nvarb
 
     !Local Variables
@@ -140,7 +140,7 @@ subroutine unpack_data_dg_general_lap(q_send,q_recv,send_data,recv_data,nvarb)
                 ! ilocl = face(5,iface)
 
                 do inode = 1,ngl
-                    do ivar = 1,nvarb+1
+                    do ivar = 1,10
                         ii = ii + 1
                         q_send(ivar,inode,kk) = send_data(ii)
                         q_recv(ivar,inode,kk) = recv_data(ii)
@@ -456,7 +456,7 @@ subroutine pack_data_dg_df_btp(q_send,q,qprime_df,nvarb)
   
 end subroutine pack_data_dg_df_btp
 
-subroutine pack_data_dg_df_btp_lap(q_send,q,nvarb)
+subroutine pack_data_dg_df_btp_lap(q_send,q,btp_dpp_graduv,pbprime_visc,nvarb)
   
     use mod_basis, only: ngl, FACE_CHILDREN
 
@@ -474,8 +474,10 @@ subroutine pack_data_dg_df_btp_lap(q_send,q,nvarb)
     implicit none
   
     !Global Variables
-    real, intent(out) :: q_send((nvarb+1)*ngl*nboun)
+    real, intent(out) :: q_send(10*ngl*nboun)
     real, intent(in) :: q(nvarb,npoin)
+    real, intent(in) :: btp_dpp_graduv(4,npoin)
+    real, intent(in) :: pbprime_visc(npoin)
     integer, intent(in) :: nvarb
 
     !Local Variables
@@ -513,6 +515,13 @@ subroutine pack_data_dg_df_btp_lap(q_send,q,nvarb)
                     end do
                     ii = ii + 1
                     q_send(ii)=pbprime_df(ip)
+                    do ivar=1,4
+                        ii = ii + 1
+                        q_send(ii)=btp_dpp_graduv(ivar,ip)
+                    end do
+                    ii = ii + 1
+                    q_send(ii)=pbprime_visc(ip)
+
                 end do
             end if
             jj = jj + 1
@@ -1166,8 +1175,8 @@ subroutine send_bound_dg_general_lap(send_data,recv_data,nvarb,nreq,ireq,status)
     implicit none
 
     !global variables
-    real, intent(in)  :: send_data(5*ngl*nboun)
-    real, intent(out) :: recv_data(5*ngl*nboun)
+    real, intent(in)  :: send_data(10*ngl*nboun)
+    real, intent(out) :: recv_data(10*ngl*nboun)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*num_nbh)
@@ -1196,7 +1205,7 @@ subroutine send_bound_dg_general_lap(send_data,recv_data,nvarb,nreq,ireq,status)
             ! if(ftype==21) ilocl = face(6,iface)
 
             do i=1,nbh_send_recv_multi(jj)
-                nqp = nqp + ngl *  (nvarb + 1) !NSIZE is the size of the message
+                nqp = nqp + ngl *  10 !NSIZE is the size of the message
             end do
             jj = jj + 1
         end do
