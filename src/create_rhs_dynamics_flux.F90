@@ -384,9 +384,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          
          do iquad = 1,ngl
 
-            nxl = normal_vector(1,iquad,1,iface)
-            nyl = normal_vector(2,iquad,1,iface)
-
             do ivar = 6, 10
                grad_uvb_pb_l(ivar-5) =  q_send(ivar,iquad,kk)
                grad_uvb_pb_r(ivar-5) =  q_recv(ivar,iquad,kk)
@@ -447,6 +444,124 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    end do !iface
  
  end subroutine create_nbhs_face_df_lap
+
+  subroutine create_nbhs_face_df_lap_bcl(rhs,q_send,q_recv,nlayers,multirate)
+
+   use mod_basis, only: ngl, FACE_CHILDREN,nq, psi
+ 
+   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
+ 
+   use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
+ 
+   use mod_metrics, only: jac, massinv
+ 
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
+
+   use mod_variables, only: graduvb_face_ave
+ 
+   implicit none
+ 
+   !global arrays
+   real, intent(inout) :: rhs(2,npoin,nlayers)
+   real,intent(in):: q_send(5*nlayers,ngl,nboun)
+   real,intent(in):: q_recv(5*nlayers,ngl,nboun)
+   integer, intent(in) :: nlayers
+ 
+   !local variables
+ 
+   real :: wq, a_constant, iflux
+   integer ::iface,k
+   integer :: iel, ier, ilocl, ilocr
+   integer :: ifaceb, nq_i, nq_j, plane_ij
+ 
+   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
+   integer :: ftype, pface, subface, imulti
+   integer :: multirate
+   real :: nxl, nyl, nxr, nyr
+   integer :: el, iquad, n, I, il, jl, kl, er, itype, ip
+
+   real, dimension(2) :: qu_mean, qv_mean
+   real, dimension(4,2) :: flux_uv_visc_face
+   real, dimension(2) :: qul,qur
+   real, dimension(2) :: qvl,qvr
+   real, dimension(5) :: grad_uvb_pb_l, grad_uvb_pb_r
+   real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
+
+   jj=1
+   kk=1
+   imm = 0
+
+   beta = 0.5
+   alpha = 1.0 - beta
+
+   do inbh = 1, num_nbh
+      do ib=1,num_send_recv(inbh)
+         iface = nbh_send_recv(jj)
+         imulti = nbh_send_recv_multi(jj)
+
+         el=face(7,iface)
+         er=face(8,iface)
+
+         do k = 1, nlayers
+         
+            do iquad = 1,ngl
+
+               do ivar = 1,4
+                  flux_uv_visc_face(ivar,1) = q_send(5,iquad,kk)* &
+                                                graduvb_face_ave(ivar,1,iquad,iface) + &
+                                                q_send(ivar,iquad,kk)
+                                          
+                  flux_uv_visc_face(ivar,2) = q_recv(5,iquad,kk)* &
+                                                graduvb_face_ave(ivar,2,iquad,iface) + &
+                                                q_recv(ivar,iquad,kk)
+
+               end do 
+
+               nxl = normal_vector(1,iquad,1,iface)
+               nyl = normal_vector(2,iquad,1,iface)
+
+               qul(:) = flux_uv_visc_face(1:2,1)
+               qvl(:) = flux_uv_visc_face(3:4,1)
+               qur(:) = flux_uv_visc_face(1:2,2)
+               qvr(:) = flux_uv_visc_face(3:4,2)
+
+               ! The Flip-Flop flux of Cockburn & Shu 
+               ! NOTE: beta=0.5 is the central flux
+               qu_mean(:) = alpha*qul(:) + beta*qur(:)
+               qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
+
+               wq=jac_face(iquad,1,iface)
+
+               flux_qu = (qu_mean(1) - qul(1)*nxl) + (qu_mean(2) - qul(2)*nyl)
+               flux_qv = (qv_mean(1) - qvl(1)*nxl) + (qv_mean(2) - qvl(2)*nyl)
+
+               !  Do Gauss-Lobatto Integration
+               do i=1,ngl
+
+                  hi = psi(i,iquad)
+
+                  il=imapl(1,i,1,iface)
+                  jl=imapl(2,i,1,iface)
+                  kl=imapl(3,i,1,iface)
+                  ip=intma(il,jl,kl,el)
+                  
+                  !Update Flux
+                  rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
+                  rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
+
+               end do !i
+            end do !iquad
+         enddo !klayers
+
+            kk=kk+1
+         ! end do
+         jj=jj+1
+      end do
+ 
+   end do !iface
+ 
+ end subroutine create_nbhs_face_df_lap_bcl
 
  subroutine create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send,q_recv,nvarb,multirate)
 

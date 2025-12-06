@@ -280,66 +280,66 @@ module mod_barotropic_terms
 
         end do
 
-        do iface = 1, nface
+        ! do iface = 1, nface
 
-            iel=face(7,iface)
-            ier=face(8,iface)
+        !     iel=face(7,iface)
+        !     ier=face(8,iface)
 
-            do iquad = 1,ngl
-                !Get Pointers
-                il=imapl(1,iquad,1,iface)
-                jl=imapl(2,iquad,1,iface)
-                kl=imapl(3,iquad,1,iface)
-                Iq = intma(il,jl,kl,iel)
+        !     do iquad = 1,ngl
+        !         !Get Pointers
+        !         il=imapl(1,iquad,1,iface)
+        !         jl=imapl(2,iquad,1,iface)
+        !         kl=imapl(3,iquad,1,iface)
+        !         Iq = intma(il,jl,kl,iel)
 
-                !Variables
-                graduv_dpp_face(1,1,iquad,iface,:) = dpp_graduv(1,Iq,:)
-                graduv_dpp_face(2,1,iquad,iface,:) = dpp_graduv(2,Iq,:)
-                graduv_dpp_face(3,1,iquad,iface,:) = dpp_graduv(3,Iq,:)
-                graduv_dpp_face(4,1,iquad,iface,:) = dpp_graduv(4,Iq,:)
-                graduv_dpp_face(5,1,iquad,iface,:) = dpprime_visc(Iq,:)
+        !         !Variables
+        !         graduv_dpp_face(1,1,iquad,iface,:) = dpp_graduv(1,Iq,:)
+        !         graduv_dpp_face(2,1,iquad,iface,:) = dpp_graduv(2,Iq,:)
+        !         graduv_dpp_face(3,1,iquad,iface,:) = dpp_graduv(3,Iq,:)
+        !         graduv_dpp_face(4,1,iquad,iface,:) = dpp_graduv(4,Iq,:)
+        !         graduv_dpp_face(5,1,iquad,iface,:) = dpprime_visc(Iq,:)
 
-                if (ier > 0 ) then
+        !         if (ier > 0 ) then
 
-                    !Get Pointers
-                    ir=imapr(1,iquad,1,iface)
-                    jr=imapr(2,iquad,1,iface)
-                    kr=imapr(3,iquad,1,iface)
-                    Iq=intma(ir,jr,kr,ier)
+        !             !Get Pointers
+        !             ir=imapr(1,iquad,1,iface)
+        !             jr=imapr(2,iquad,1,iface)
+        !             kr=imapr(3,iquad,1,iface)
+        !             Iq=intma(ir,jr,kr,ier)
 
-                    !Variables
-                    graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:)
-                    graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:)
-                    graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:)
-                    graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:)
-                    graduv_dpp_face(5,2,iquad,iface,:) = dpprime_visc(Iq,:)
+        !             !Variables
+        !             graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:)
+        !             graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:)
+        !             graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:)
+        !             graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:)
+        !             graduv_dpp_face(5,2,iquad,iface,:) = dpprime_visc(Iq,:)
 
-                else
-                    !default values
-                    graduv_dpp_face(1,2,iquad,iface,:) = graduv_dpp_face(1,1,iquad,iface,:)
-                    graduv_dpp_face(2,2,iquad,iface,:) = graduv_dpp_face(2,1,iquad,iface,:)
-                    graduv_dpp_face(3,2,iquad,iface,:) = graduv_dpp_face(3,1,iquad,iface,:)
-                    graduv_dpp_face(4,2,iquad,iface,:) = graduv_dpp_face(4,1,iquad,iface,:)
-                    graduv_dpp_face(5,2,iquad,iface,:) = graduv_dpp_face(5,1,iquad,iface,:)
+        !         else
+        !             !default values
+        !             graduv_dpp_face(1,2,iquad,iface,:) = graduv_dpp_face(1,1,iquad,iface,:)
+        !             graduv_dpp_face(2,2,iquad,iface,:) = graduv_dpp_face(2,1,iquad,iface,:)
+        !             graduv_dpp_face(3,2,iquad,iface,:) = graduv_dpp_face(3,1,iquad,iface,:)
+        !             graduv_dpp_face(4,2,iquad,iface,:) = graduv_dpp_face(4,1,iquad,iface,:)
+        !             graduv_dpp_face(5,2,iquad,iface,:) = graduv_dpp_face(5,1,iquad,iface,:)
 
-                    if(ier == -4) then
-                        nx = normal_vector(1,iquad,1,iface)
-                        ny = normal_vector(2,iquad,1,iface)
+        !             if(ier == -4) then
+        !                 nx = normal_vector(1,iquad,1,iface)
+        !                 ny = normal_vector(2,iquad,1,iface)
 
-                        un = dpp_graduv(1,Iq,:)*nx + dpp_graduv(2,Iq,:)*ny
-                        graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:) - 2.0*un*nx
-                        graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:) - 2.0*un*ny
+        !                 un = dpp_graduv(1,Iq,:)*nx + dpp_graduv(2,Iq,:)*ny
+        !                 graduv_dpp_face(1,2,iquad,iface,:) = dpp_graduv(1,Iq,:) - 2.0*un*nx
+        !                 graduv_dpp_face(2,2,iquad,iface,:) = dpp_graduv(2,Iq,:) - 2.0*un*ny
 
-                        un = dpp_graduv(3,Iq,:)*nx + dpp_graduv(4,Iq,:)*ny
-                        graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:) - 2.0*un*nx
-                        graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:) - 2.0*un*ny
+        !                 un = dpp_graduv(3,Iq,:)*nx + dpp_graduv(4,Iq,:)*ny
+        !                 graduv_dpp_face(3,2,iquad,iface,:) = dpp_graduv(3,Iq,:) - 2.0*un*nx
+        !                 graduv_dpp_face(4,2,iquad,iface,:) = dpp_graduv(4,Iq,:) - 2.0*un*ny
 
-                    end if
-                end if
-            end do
-        end do
+        !             end if
+        !         end if
+        !     end do
+        ! end do
 
-        call bcl_create_communicator(graduv_dpp_face,5,nlayers,ngl)
+        ! call bcl_create_communicator(graduv_dpp_face,5,nlayers,ngl)
 
     end subroutine btp_bcl_coeffs_qdf
 

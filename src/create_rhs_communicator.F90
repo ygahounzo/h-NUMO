@@ -206,6 +206,42 @@ subroutine btp_lap_create_precommunicator(q,nvarb)
 
 end subroutine btp_lap_create_precommunicator
 
+subroutine bcl_lap_create_precommunicator(dpp_graduv,dpprime_visc)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send_lap_bcl, q_recv_lap_bcl, recv_data_lap_bcl, send_data_lap_bcl
+
+    use mod_input, only: nlayers
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(5,npoin,nlayers), intent(in) :: dpp_graduv
+    real, dimension(npoin,nlayers), intent(in) :: dpprime_visc
+
+    integer :: multirate
+
+    ! DG - Discontinuous communicator
+
+    !Load all the boundary data into a vector
+    call pack_data_dg_df_bcl_lap(send_data_lap_bcl,dpp_graduv,dpprime_visc,nlayers)
+
+    !non-blocking sends-receives: message size=nmessage
+    call send_bound_dg_general_lap_bcl(send_data_lap_bcl,recv_data_lap_bcl,nlayers,nreq,ireq,status)
+
+end subroutine bcl_lap_create_precommunicator
+
 subroutine btp_create_postcommunicator(rhs, nvarb)
 
     use mod_basis, only: ngl
@@ -274,6 +310,39 @@ subroutine create_rhs_lap_postcommunicator_df(rhs,nvarb)
     call create_nbhs_face_df_lap(rhs,q_send_lap,q_recv_lap,nvarb,0)
 
 end subroutine create_rhs_lap_postcommunicator_df
+
+subroutine bcl_create_rhs_lap_postcommunicator_df(rhs)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  nface,npoin
+
+    use mod_ref, only: q_send_lap_bcl, q_recv_lap_bcl, recv_data_lap_bcl, send_data_lap_bcl
+
+    use mod_input, only: nlayers
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(2,npoin,nlayers), intent(inout) :: rhs
+
+    integer :: multirate
+
+    ! DG - Discontinuous communicator
+
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
+
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_lap_bcl(q_send_lap_bcl,q_recv_lap_bcl,send_data_lap_bcl, &
+            recv_data_lap_bcl,nlayers)
+
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_df_lap_bcl(rhs,q_send_lap_bcl,q_recv_lap_bcl,nlayers,0)
+
+end subroutine bcl_create_rhs_lap_postcommunicator_df
 
 subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 
