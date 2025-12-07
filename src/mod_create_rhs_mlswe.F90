@@ -115,7 +115,7 @@ module mod_create_rhs_mlswe
 
     end subroutine bcl_rhs
 
-    subroutine consistency_mass_rhs(dp_advec, qprime, flux_deficit_mass_face)
+    subroutine consistency_mass_rhs(dp_advec, dprime_df)
 
         use mod_metrics, only: massinv
         use mod_input, only: nlayers
@@ -125,16 +125,19 @@ module mod_create_rhs_mlswe
         implicit none
 
         real, dimension(npoin, nlayers), intent(out) :: dp_advec
-        real, dimension(3, npoin_q, nlayers), intent(in) :: qprime
-        real, dimension(2,2,nq,nface,nlayers), intent(in)  :: flux_deficit_mass_face
+        real, dimension(npoin, nlayers), intent(in) :: dprime_df
         
         integer :: k
 
+        call create_consistency_precommunicator(dprime_df)
+
         ! Compute the mass advection term for the degree of freedom for dp in each layer
-        call create_consistency_volume_mass(dp_advec, qprime)
+        call create_consistency_volume_mass(dp_advec, dprime_df)
 
         ! Compute the mass flux term 
-        call create_consistency_mass_flux(dp_advec, flux_deficit_mass_face)
+        call create_consistency_mass_flux(dp_advec, dprime_df)
+
+        call create_postcommunicator_consistency(dp_advec)
 
     end subroutine consistency_mass_rhs
 
@@ -1720,26 +1723,32 @@ module mod_create_rhs_mlswe
 
     end subroutine create_layer_mass_flux
 
-    subroutine create_consistency_mass_flux(dp_advec, flux_deficit_mass_face)
+    subroutine create_consistency_mass_flux(dp_advec, dprime_df)
 
         use mod_basis, only: nq, psiq, ngl
-        use mod_grid, only:  npoin_q, intma,  nface, face
+        use mod_grid, only:  npoin_q, intma,  nface, face, face_type
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: uvb_face_ave, ope_face_ave, sum_layer_mass_flux_face
+        use mod_initial, only: pbprime_df
+        use mod_variables, only: btp_mass_flux_face_ave, sum_layer_mass_flux_face
 
         implicit none
 
         real, dimension(npoin, nlayers), intent(inout) :: dp_advec
-        real, dimension(2,2,nq,nface,nlayers), intent(in)  :: flux_deficit_mass_face
+        real, dimension(npoin,nlayers), intent(in)  :: dprime_df
     
         integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
         integer :: kl, kr, jquad, n, m
         real :: wq, nxl, nyl, hi, flux
         real, dimension(nq) :: flux_edge_u, flux_edge_v
+        real :: qprime_l, qprime_r, pbprime_l, pbprime_r
+        real :: weights_face_l, weights_face_r
+        real :: mass_deficit_u_l, mass_deficit_v_l, mass_deficit_u_r, mass_deficit_v_r
     
         do k = 1, nlayers
             do iface = 1, nface
+
+                if (face_type(iface) == 2) cycle
 
                 el = face(7,iface)
                 er = face(8,iface)
@@ -1749,17 +1758,64 @@ module mod_create_rhs_mlswe
                     nxl = normal_vector_q(1,iquad,1,iface)
                     nyl = normal_vector_q(2,iquad,1,iface)
 
-                    if(flux_deficit_mass_face(1,1,iquad,iface,k)*nxl > 0.0) then 
+                    qprime_l = 0.0; qprime_r = 0.0
+                    pbprime_l = 0.0; pbprime_r = 0.0
 
-                        flux_edge_u(iquad) = flux_deficit_mass_face(1,1,iquad,iface,k)
-                    else 
-                        flux_edge_u(iquad) = flux_deficit_mass_face(1,2,iquad,iface,k)
-                    end if 
+                    do n = 1,ngl
+                        hi = psiq(n,iquad)
 
-                    if(flux_deficit_mass_face(2,1,iquad,iface,k)*nyl > 0.0) then 
-                        flux_edge_v(iquad) = flux_deficit_mass_face(2,1,iquad,iface,k)
-                    else 
-                        flux_edge_v(iquad) = flux_deficit_mass_face(2,2,iquad,iface,k)
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
+
+                        I = intma(il,jl,kl,el)
+                        qprime_l = qprime_l + hi*dprime_df(I,k)
+                        pbprime_l = pbprime_l + hi*pbprime_df(I)
+                    enddo
+
+                    if(er > 0) then
+                        do n = 1,ngl
+                            hi = psiq(n,iquad)
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
+                            I = intma(ir,jr,kr,er)
+                            qprime_r = qprime_r + hi*dprime_df(I,k)
+                            pbprime_r = pbprime_r + hi*pbprime_df(I)
+                        enddo
+                    else
+                        qprime_r = qprime_l
+                        pbprime_r = pbprime_l
+                    endif
+  
+                    weights_face_l = qprime_l / pbprime_l
+                    weights_face_r = qprime_r / pbprime_r
+
+                    mass_deficit_u_l = weights_face_l* &
+                                                        (btp_mass_flux_face_ave(1,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(1,iquad,iface))
+                    mass_deficit_v_l = weights_face_l* &
+                                                        (btp_mass_flux_face_ave(2,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(2,iquad,iface))
+
+                    mass_deficit_u_r = weights_face_r* &
+                                                        (btp_mass_flux_face_ave(1,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(1,iquad,iface))
+                    mass_deficit_v_r = weights_face_r* &
+                                                        (btp_mass_flux_face_ave(2,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(2,iquad,iface))
+
+                    if(mass_deficit_u_l*nxl > 0.0) then
+
+                        flux_edge_u(iquad) = mass_deficit_u_l
+                    else
+                        flux_edge_u(iquad) = mass_deficit_u_r
+                    end if
+
+                    if(mass_deficit_v_l*nyl > 0.0) then
+                        flux_edge_v(iquad) = mass_deficit_v_l
+                    else
+                        flux_edge_v(iquad) = mass_deficit_v_r
                     end if 
                 enddo 
 

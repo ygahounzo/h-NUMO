@@ -1379,6 +1379,143 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_df_lap_bcl
 
+ subroutine create_nbhs_face_consistency(rhs,q_send,q_recv,multirate)
+
+   use mod_basis, only: ngl, FACE_CHILDREN,nq, psiq
+   use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
+   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
+   use mod_initial, only: nvar, alpha_mlswe
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+                           num_nbh, num_send_recv
+ 
+   use mod_input, only: nlayers
+   use mod_constants, only: gravity
+   use mod_variables, only: btp_mass_flux_face_ave, sum_layer_mass_flux_face
+ 
+   implicit none
+ 
+   !global arrays
+   real, intent(inout) :: rhs(npoin,nlayers)
+   real,intent(in):: q_send(nlayers+1,ngl,nboun)
+   real,intent(in):: q_recv(nlayers+1,ngl,nboun)
+ 
+   !local variables
+ 
+   real :: wq
+   integer :: iface, k
+ 
+   integer :: jj, imm, inbh, ib, kk, ivar, ii
+   integer :: imulti
+   integer :: multirate
+   real :: nxl, nyl, nxr, nyr
+   integer :: el, iquad, n, I, il, jl, kl, er, itype
+   real, dimension(nlayers) :: qpl, qpr
+   real, dimension(nq,nlayers) :: flux_edge_u, flux_edge_v
+   real :: mass_deficit_u_l, mass_deficit_v_l
+   real :: mass_deficit_u_r, mass_deficit_v_r
+   real :: weight, flux, pbl, pbr, hi
+
+   jj=1
+   kk=1
+   imm = 0
+
+   do inbh = 1, num_nbh
+      do ib=1,num_send_recv(inbh)
+         iface = nbh_send_recv(jj)
+         imulti = nbh_send_recv_multi(jj)
+
+         el=face(7,iface)
+         er=face(8,iface)
+ 
+         !-------------------------------------
+         !Store Left Side Variables
+         !-------------------------------------
+
+         do iquad = 1, nq
+
+            nxl = normal_vector_q(1,iquad,1,iface)
+            nyl = normal_vector_q(2,iquad,1,iface)
+
+            qpl = 0.0 ; qpr = 0.0 ; pbl = 0.0 ; pbr = 0.0
+            do n = 1, ngl
+               il = imapl(1,n,1,iface)
+               jl = imapl(2,n,1,iface)
+               kl = imapl(3,n,1,iface)
+               I = intma(il,jl,kl,el)
+
+               hi = psiq(n,iquad)
+
+               do k = 1,nlayers
+                  qpl(k) = qpl(k) + hi*q_send(k,n,kk)
+                  qpr(k) = qpr(k) + hi*q_recv(k,n,kk)
+               end do
+               pbl = pbl + hi*q_send(nlayers+1,n,kk)
+               pbr = pbr + hi*q_recv(nlayers+1,n,kk)
+            enddo
+
+            do k = 1, nlayers
+
+               weight = qpl(k) / pbl
+               mass_deficit_u_l = weight * (btp_mass_flux_face_ave(1,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(1,iquad,iface))
+
+               mass_deficit_v_l = weight * (btp_mass_flux_face_ave(2,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(2,iquad,iface))
+
+               weight = qpr(k) / pbr
+               mass_deficit_u_r = weight * (btp_mass_flux_face_ave(1,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(1,iquad,iface))
+               mass_deficit_v_r = weight * (btp_mass_flux_face_ave(2,iquad,iface) &
+                                                        - sum_layer_mass_flux_face(2,iquad,iface))
+
+               if(mass_deficit_u_l*nxl > 0.0) then 
+
+                  flux_edge_u(iquad,k) = mass_deficit_u_l
+               else 
+                  flux_edge_u(iquad,k) = mass_deficit_u_r
+               end if 
+
+               if(mass_deficit_v_l*nyl > 0.0) then 
+                  flux_edge_v(iquad,k) = mass_deficit_v_l
+               else 
+                  flux_edge_v(iquad,k) = mass_deficit_v_r
+               end if 
+            enddo
+
+         end do !iquad
+
+         do k = 1, nlayers
+
+            do iquad = 1, nq
+
+               wq = jac_faceq(iquad,1,iface)
+
+               nxl = normal_vector_q(1,iquad,1,iface)
+               nyl = normal_vector_q(2,iquad,1,iface)
+
+               flux = nxl*flux_edge_u(iquad,k) + nyl*flux_edge_v(iquad,k)
+
+               do n = 1, ngl
+
+                  hi = psiq(n,iquad)
+                  il = imapl(1,n,1,iface)
+                  jl = imapl(2,n,1,iface)
+                  kl = imapl(3,n,1,iface)
+                  I = intma(il,jl,kl,el)
+
+                  rhs(I,k) = rhs(I,k) - wq*hi*flux
+               end do
+            end do !iquad
+         end do !klayers
+
+         kk=kk+1
+         jj=jj+1
+      end do
+ 
+   end do !iface
+ 
+ end subroutine create_nbhs_face_consistency
+
  subroutine create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send,q_recv,nvarb,multirate)
 
    use mod_basis, only: ngl, FACE_CHILDREN,nq

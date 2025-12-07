@@ -415,10 +415,10 @@ module mod_splitting
         end do
 
         ! Consistency flux terms 
-        call evaluate_consistency_face(mass_deficit_mass_face,dpprime_df)
+        ! call evaluate_consistency_face(mass_deficit_mass_face,dpprime_df)
 
         ! RHS of the consistency terms
-        call consistency_mass_rhs(dp_advec, dpprime_df, mass_deficit_mass_face)
+        call consistency_mass_rhs(dp_advec, dpprime_df)
 
         ! Apply consistency to the thickness
         do k = 1,nlayers

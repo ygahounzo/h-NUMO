@@ -33,7 +33,8 @@ module mod_ref
         lap_recv_data_dg_df1, lap_send_data_dg_df1, lap_q_recv_df1, lap_q_send_df1, &
         q_send_lap, q_recv_lap, recv_data_dg_lap, send_data_dg_lap, nbtp_var, &
         q_send_bcl, q_recv_bcl, q_send_lap_bcl, q_recv_lap_bcl, &
-        recv_data_bcl, send_data_bcl, recv_data_lap_bcl, send_data_lap_bcl
+        recv_data_bcl, send_data_bcl, recv_data_lap_bcl, send_data_lap_bcl, &
+        q_send_csty, q_recv_csty, recv_data_csty, send_data_csty
 
     private
 
@@ -57,6 +58,8 @@ module mod_ref
     real,    dimension(:,:,:), allocatable :: lap_q_send_df1
     real,    dimension(:), allocatable :: recv_data_dg_quad, send_data_dg_quad
     real,    dimension(:), allocatable :: lap_recv_data_dg_df1, lap_send_data_dg_df1
+    real,    dimension(:,:,:), allocatable :: q_send_csty, q_recv_csty
+    real,    dimension(:), allocatable :: recv_data_csty, send_data_csty
     integer :: nmessage, nbtp_var
 
 contains
@@ -154,6 +157,21 @@ contains
             send_data_bcl(3*nlayers*ngl*nboun), &
             recv_data_lap_bcl(5*nlayers*ngl*nboun), &
             send_data_lap_bcl(5*nlayers*ngl*nboun), &
+            stat=AllocateStatus )
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
+
+        if(allocated(q_send_csty)) then
+            deallocate(q_send_csty, q_recv_csty)
+        endif
+        allocate(q_send_csty((nlayers+1),ngl,nboun),q_recv_csty((nlayers+1),ngl,nboun), &
+            stat=AllocateStatus )
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
+
+        if(allocated(recv_data_csty)) then
+            deallocate(recv_data_csty, send_data_csty)
+        endif
+        allocate( recv_data_csty((nlayers+1)*ngl*nboun), &
+            send_data_csty((nlayers+1)*ngl*nboun), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 
