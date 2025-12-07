@@ -40,8 +40,13 @@ module mod_create_rhs_mlswe
 
         integer :: k,I
 
+        call bcl_create_precommunicator(qprime_df)
+
         call create_rhs_dynamics_volume_layers(rhs_mom, qprime_df, q_df)
-        call Apply_layers_fluxes(rhs_mom, qprime_df_face)
+
+        call Apply_layers_fluxes(rhs_mom, qprime_df)
+
+        call bcl_create_postcommunicator_momentum(rhs_mom)
 
         do k = 1, nlayers
             rhs_mom(1,:,k) = massinv(:)*rhs_mom(1,:,k) + rhs_visc(1,:,k)
@@ -677,14 +682,14 @@ module mod_create_rhs_mlswe
 
     end subroutine create_rhs_dynamics_volume_bcl
 
-    subroutine Apply_layers_fluxes(rhs_mom, qprime_df_face)
+    subroutine Apply_layers_fluxes(rhs_mom, qprime_df)
 
         ! This routine computes the layer momentum advection flux terms using upwind flux
         ! This routine computes the layer momentum pressure terms
 
         use mod_constants, only : gravity
         use mod_initial, only : alpha_mlswe, zbot_face
-        use mod_grid, only : nface, npoin, npoin_q, face, intma
+        use mod_grid, only : nface, npoin, npoin_q, face, intma, face_type
         use mod_basis, only : nq, psiq, ngl
         use mod_input, only : nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
@@ -694,7 +699,7 @@ module mod_create_rhs_mlswe
         implicit none
 
         real, dimension(2, npoin, nlayers), intent(inout) :: rhs_mom
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(nlayers) :: alpha_over_g, g_over_alpha
         real, dimension(2,nlayers+1) :: p_face, z_face
@@ -712,7 +717,7 @@ module mod_create_rhs_mlswe
         real :: vu_dp_flux_deficit, vv_dp_flux_deficit
         real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
         integer :: il, jl, ir, jr, kl, kr, jquad, n, m
-        real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k
+        real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, un
         real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux
 
         do k=1,nlayers
@@ -722,6 +727,8 @@ module mod_create_rhs_mlswe
 
         ! Compute H_r at the element face
         do iface = 1, nface
+
+            if (face_type(iface) == 2) cycle
 
             ! Store Left Side Variables
             el = face(7,iface)
@@ -743,10 +750,39 @@ module mod_create_rhs_mlswe
                 do k = 1,nlayers
 
                     do n = 1, ngl
+
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
+                        I = intma(il,jl,kl,el)
                         hi = psiq(n,iquad)
-                        ql(:,iquad,k) = ql(:,iquad,k) + hi*qprime_df_face(:,1,n,iface,k)
-                        qr(:,iquad,k) = qr(:,iquad,k) + hi*qprime_df_face(:,2,n,iface,k)
+
+                        ql(:,iquad,k) = ql(:,iquad,k) + hi*qprime_df(:,I,k)
                     enddo
+
+                    if (er > 0) then
+                        do n = 1, ngl
+
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
+                            I = intma(ir,jr,kr,er)
+                            hi = psiq(n,iquad)
+
+                            qr(:,iquad,k) = qr(:,iquad,k) + hi*qprime_df(:,I,k)
+                        enddo
+                    else 
+                        qr(:,iquad,k) = ql(:,iquad,k)
+
+                        if (er == -4) then
+                            un = ql(2,iquad,k)*nxl + ql(3,iquad,k)*nyl
+                            qr(2,iquad,k) = ql(2,iquad,k) - 2.0*un*nxl
+                            qr(3,iquad,k) = ql(3,iquad,k) - 2.0*un*nyl
+                        elseif (er == -2) then
+                            qr(2,iquad,k) = -ql(2,iquad,k)
+                            qr(3,iquad,k) = -ql(3,iquad,k)
+                        endif
+                    end if
 
                     ! Left side of the edge
                     dpl = qbl(1,iquad) * ql(1,iquad,k)
@@ -762,9 +798,6 @@ module mod_create_rhs_mlswe
                     udpr(iquad,k) = ur*dpr
                     vdpl(iquad,k) = vl*dpl
                     vdpr(iquad,k) = vr*dpr
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
 
                     if(uu*nxl > 0.0) then
                         udp_flux(1,iquad,k) = uu * (ul*dpl)
@@ -787,9 +820,6 @@ module mod_create_rhs_mlswe
                 uv_dp_flux_deficit = Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,iquad,:))
                 vu_dp_flux_deficit = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,iquad,:))
                 vv_dp_flux_deficit = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,iquad,:))
-
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
 
                 ! Adjust the fluxes for the u-momentum equation
                 one_over_sum_l = 1.0 / sum(abs(udpl(iquad,:))+eps1)
@@ -1180,10 +1210,10 @@ module mod_create_rhs_mlswe
 
                 enddo
 
-                sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface) &
-                                                        + udp_flux(1,iquad,iface)
-                sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface) &
-                                                        + vdp_flux(1,iquad,iface)
+                sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface)  + &
+                                                      sum(udp_flux(1,iquad,:))
+                sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface)  + &
+                                                      sum(vdp_flux(1,iquad,:))
 
                 uu_dp_flux_deficit = Qu_face_ave(1,iquad,iface) - sum(udp_flux(2,iquad,:))
                 uv_dp_flux_deficit = Qu_face_ave(2,iquad,iface) - sum(udp_flux(3,iquad,:))

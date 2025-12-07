@@ -40,7 +40,7 @@ subroutine ti_rk_bcl(q_df, qb_df)
     ! ==================== Prediction step =================================
 
     call extract_qprime_df_face(qprime_df_face,qprime_df,q_df,qb_df)
-    call bcl_create_communicator(qprime_df_face,3,nlayers,ngl)
+    ! call bcl_create_communicator(qprime_df_face,3,nlayers,ngl)
 
     qbp_df = qb_df
     dpprime_visc(:,:) = qprime_df(1,:,:)
@@ -58,7 +58,7 @@ subroutine ti_rk_bcl(q_df, qb_df)
     ! ==================== Correction step =================================
 
     ! Communication of qprime_df_face2 values within the inter-processor boundary
-    call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
+    ! call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
 
     qprime_df2 = 0.5*(qprime_df2 + qprime_df)
     qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
@@ -72,7 +72,7 @@ subroutine ti_rk_bcl(q_df, qb_df)
     call thickness(qprime_df2, q_df, qb_df, qprime_df_face2)
 
     ! Communication of qprime_df_face values within the processor boundary
-    call bcl_create_communicator(qprime_df_face2(1,:,:,:,:),1,nlayers,ngl)
+    ! call bcl_create_communicator(qprime_df_face2(1,:,:,:,:),1,nlayers,ngl)
 
     qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + qprime_df2(1,:,:))
     qprime_df_face2(1,:,:,:,:) = 0.5*(qprime_df_face(1,:,:,:,:) + qprime_df_face2(1,:,:,:,:))
