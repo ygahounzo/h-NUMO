@@ -504,6 +504,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          iface = nbh_send_recv(jj)
          imulti = nbh_send_recv_multi(jj)
 
+         el=face(7,iface)
+         er=face(8,iface)
+
          qbl(1,:) = ope_face_ave(1,:,iface)
          qbl(2,:) = uvb_face_ave(1,1,:,iface)
          qbl(3,:) = uvb_face_ave(2,1,:,iface)
@@ -514,239 +517,239 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
          ql = 0.0; qr = 0.0
          do iquad = 1,nq
 
-               nxl = normal_vector_q(1,iquad,1,iface)
-               nyl = normal_vector_q(2,iquad,1,iface)
+            nxl = normal_vector_q(1,iquad,1,iface)
+            nyl = normal_vector_q(2,iquad,1,iface)
 
-               do k = 1,nlayers
+            do k = 1,nlayers
 
-                  index = 3*(k-1)
+               index = 3*(k-1)
 
-                  do n = 1, ngl
-                     hi = psiq(n,iquad)
-                     do ivar = 1,3
-                        !Left Element
-                        ql(ivar,iquad,k) = ql(ivar,iquad,k) + hi*q_send(index+ivar,n,kk)
-                        !Right Element
-                        qr(ivar,iquad,k) = qr(ivar,iquad,k) + hi*q_recv(index+ivar,n,kk)
-                     end do
-                  enddo
-
-                  ! Left side of the edge
-                  dpl = qbl(1,iquad) * ql(1,iquad,k)
-                  dpr = qbr(1,iquad) * qr(1,iquad,k)
-                  ul = ql(2,iquad,k)+qbl(2,iquad)
-                  ur = qr(2,iquad,k)+qbr(2,iquad)
-                  vl = ql(3,iquad,k)+qbl(3,iquad)
-                  vr = qr(3,iquad,k)+qbr(3,iquad)
-
-                  uu = 0.5*(ul+ur)
-                  vv = 0.5*(vl+vr)
-                  udpl(iquad,k) = ul*dpl
-                  udpr(iquad,k) = ur*dpr
-                  vdpl(iquad,k) = vl*dpl
-                  vdpr(iquad,k) = vr*dpr
-
-                  nxl = normal_vector_q(1,iquad,1,iface)
-                  nyl = normal_vector_q(2,iquad,1,iface)
-
-                  if(uu*nxl > 0.0) then
-                     udp_flux(1,iquad,k) = uu * dpl
-                     udp_flux(2,iquad,k) = uu * (ul*dpl)
-                     vdp_flux(2,iquad,k) = uu * (vl*dpl)
-                  else
-                     udp_flux(1,iquad,k) = uu * dpr
-                     udp_flux(2,iquad,k) = uu * (ur*dpr)
-                     vdp_flux(2,iquad,k) = uu * (vr*dpr)
-                  endif
-                  if(vv*nyl > 0.0) then
-                     vdp_flux(1,iquad,k) = vv * dpl
-                     udp_flux(3,iquad,k) = vv * (ul*dpl)
-                     vdp_flux(3,iquad,k) = vv * (vl*dpl)
-                  else
-                     vdp_flux(1,iquad,k) = vv * dpr
-                     udp_flux(3,iquad,k) = vv * (ur*dpr)
-                     vdp_flux(3,iquad,k) = vv * (vr*dpr)
-                  endif
-
+               do n = 1, ngl
+                  hi = psiq(n,iquad)
+                  do ivar = 1,3
+                     !Left Element
+                     ql(ivar,iquad,k) = ql(ivar,iquad,k) + hi*q_send(index+ivar,n,kk)
+                     !Right Element
+                     qr(ivar,iquad,k) = qr(ivar,iquad,k) + hi*q_recv(index+ivar,n,kk)
+                  end do
                enddo
 
-               uu_dp_flux_deficit = Qu_face_ave(1,iquad,iface) - sum(udp_flux(2,iquad,:))
-               uv_dp_flux_deficit = Qu_face_ave(2,iquad,iface) - sum(udp_flux(3,iquad,:))
-               vu_dp_flux_deficit = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(2,iquad,:))
-               vv_dp_flux_deficit = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(3,iquad,:))
+               ! Left side of the edge
+               dpl = qbl(1,iquad) * ql(1,iquad,k)
+               dpr = qbr(1,iquad) * qr(1,iquad,k)
+               ul = ql(2,iquad,k)+qbl(2,iquad)
+               ur = qr(2,iquad,k)+qbr(2,iquad)
+               vl = ql(3,iquad,k)+qbl(3,iquad)
+               vr = qr(3,iquad,k)+qbr(3,iquad)
+
+               uu = 0.5*(ul+ur)
+               vv = 0.5*(vl+vr)
+               udpl(iquad,k) = ul*dpl
+               udpr(iquad,k) = ur*dpr
+               vdpl(iquad,k) = vl*dpl
+               vdpr(iquad,k) = vr*dpr
 
                nxl = normal_vector_q(1,iquad,1,iface)
                nyl = normal_vector_q(2,iquad,1,iface)
 
-               ! Adjust the fluxes for the u-momentum equation
-               one_over_sum_l = 1.0 / sum(abs(udpl(iquad,:))+eps1)
-               one_over_sum_r = 1.0 / sum(abs(udpr(iquad,:))+eps1)
-               !x-direction
-               if(uu_dp_flux_deficit*nxl > 0.0) then
-                  do k = 1,nlayers
-                     weight = abs(udpl(iquad,k)) * one_over_sum_l
-                     udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + weight * uu_dp_flux_deficit
-                  end do
+               if(uu*nxl > 0.0) then
+                  udp_flux(1,iquad,k) = uu * dpl
+                  udp_flux(2,iquad,k) = uu * (ul*dpl)
+                  vdp_flux(2,iquad,k) = uu * (vl*dpl)
                else
-                  do k = 1,nlayers
-                     weight = abs(udpr(iquad,k)) * one_over_sum_r
-                     udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + weight * uu_dp_flux_deficit
-                  end do
-               end if
-               !y-direction
-               if(uv_dp_flux_deficit*nyl > 0.0) then
-                  do k = 1,nlayers
-                     weight = abs(udpl(iquad,k)) * one_over_sum_l
-                     udp_flux(3,iquad,k) = udp_flux(3,iquad,k) + weight * uv_dp_flux_deficit
-                  end do
+                  udp_flux(1,iquad,k) = uu * dpr
+                  udp_flux(2,iquad,k) = uu * (ur*dpr)
+                  vdp_flux(2,iquad,k) = uu * (vr*dpr)
+               endif
+               if(vv*nyl > 0.0) then
+                  vdp_flux(1,iquad,k) = vv * dpl
+                  udp_flux(3,iquad,k) = vv * (ul*dpl)
+                  vdp_flux(3,iquad,k) = vv * (vl*dpl)
                else
-                  do k = 1,nlayers
-                     weight = abs(udpr(iquad,k)) * one_over_sum_r
-                     udp_flux(3,iquad,k) = udp_flux(3,iquad,k) + weight * uv_dp_flux_deficit
-                  end do
-               end if
-               ! Adjust the fluxes for the v-momentum equation
-               one_over_sum_l = 1.0 / sum(abs(vdpl(iquad,:))+eps1)
-               one_over_sum_r = 1.0 / sum(abs(vdpr(iquad,:))+eps1)
-               !x-direction
-               if(vu_dp_flux_deficit*nxl > 0.0) then
-                  do k = 1,nlayers
-                     weight = abs(vdpl(iquad,k)) * one_over_sum_l
-                     vdp_flux(2,iquad,k) = vdp_flux(2,iquad,k) + weight * vu_dp_flux_deficit
-                  end do
-               else
-                  do k = 1,nlayers
-                     weight = abs(vdpr(iquad,k)) * one_over_sum_r
-                     vdp_flux(2,iquad,k) = vdp_flux(2,iquad,k) + weight * vu_dp_flux_deficit
-                  end do
-               end if
-               !y-direction
-               if(vv_dp_flux_deficit*nyl > 0.0) then
-                  do k = 1,nlayers
-                     weight = abs(vdpl(iquad,k)) * one_over_sum_l
-                     vdp_flux(3,iquad,k) = vdp_flux(3,iquad,k) + weight * vv_dp_flux_deficit
-                  end do
-               else
-                  do k = 1,nlayers
-                     weight = abs(vdpr(iquad,k)) * one_over_sum_r
-                     vdp_flux(3,iquad,k) = vdp_flux(3,iquad,k) + weight * vv_dp_flux_deficit
-                  end do
-               end if
+                  vdp_flux(1,iquad,k) = vv * dpr
+                  udp_flux(3,iquad,k) = vv * (ur*dpr)
+                  vdp_flux(3,iquad,k) = vv * (vr*dpr)
+               endif
 
-               z_face = 0.0 ; p_face = 0.0
-               z_edge_plus = 0.0 ; z_edge_minus = 0.0
-               p_edge_plus = 0.0; p_edge_minus = 0.0
+            enddo
 
-               !Store Left Side Variables
-               ope_l = sqrt(ope2_face_ave(1,iquad,iface))
-               ope_r = sqrt(ope2_face_ave(2,iquad,iface))
-               p_face(1,1) = 0.0
-               p_face(2,1) = 0.0
-               do k=1,nlayers
-                  p_face(1,k+1) = p_face(1,k) + ope_l * ql(1,iquad,k)
-                  p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,iquad,k)
+            uu_dp_flux_deficit = Qu_face_ave(1,iquad,iface) - sum(udp_flux(2,iquad,:))
+            uv_dp_flux_deficit = Qu_face_ave(2,iquad,iface) - sum(udp_flux(3,iquad,:))
+            vu_dp_flux_deficit = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(2,iquad,:))
+            vv_dp_flux_deficit = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(3,iquad,:))
+
+            nxl = normal_vector_q(1,iquad,1,iface)
+            nyl = normal_vector_q(2,iquad,1,iface)
+
+            ! Adjust the fluxes for the u-momentum equation
+            one_over_sum_l = 1.0 / sum(abs(udpl(iquad,:))+eps1)
+            one_over_sum_r = 1.0 / sum(abs(udpr(iquad,:))+eps1)
+            !x-direction
+            if(uu_dp_flux_deficit*nxl > 0.0) then
+               do k = 1,nlayers
+                  weight = abs(udpl(iquad,k)) * one_over_sum_l
+                  udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + weight * uu_dp_flux_deficit
                end do
-
-               one_plus_eta_edge = sqrt(one_plus_eta_edge_2_ave(iquad,iface))
-               z_face(1,nlayers+1) = zbot_face(1,iquad,iface)
-               z_face(2,nlayers+1) = zbot_face(2,iquad,iface)
-               z_edge_plus(nlayers+1) = zbot_face(1,iquad,iface)
-               z_edge_minus(nlayers+1) = zbot_face(2,iquad,iface)
-               do k=nlayers,1,-1
-                  z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,iquad,k))
-                  z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,iquad,k))
-                  z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
-                                                      (one_plus_eta_edge * ql(1,iquad,k))
-                  z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
-                                                      (one_plus_eta_edge * qr(1,iquad,k))
+            else
+               do k = 1,nlayers
+                  weight = abs(udpr(iquad,k)) * one_over_sum_r
+                  udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + weight * uu_dp_flux_deficit
                end do
-
-               p_edge_plus(2) = one_plus_eta_edge * ql(1,iquad,1)
-               p_edge_minus(2) = one_plus_eta_edge * qr(1,iquad,1)
-               do k = 2,nlayers
-                  p_edge_plus(k+1) = p_edge_plus(k) + one_plus_eta_edge * ql(1,iquad,k)
-                  p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,iquad,k)
+            end if
+            !y-direction
+            if(uv_dp_flux_deficit*nyl > 0.0) then
+               do k = 1,nlayers
+                  weight = abs(udpl(iquad,k)) * one_over_sum_l
+                  udp_flux(3,iquad,k) = udp_flux(3,iquad,k) + weight * uv_dp_flux_deficit
                end do
-
-               do k = 1, nlayers
-
-                  ! Computation from + side for layer k
-                  H_r_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
-
-                  ! Computation from - side for layer k
-                  H_r_minus = 0.0
-                  do ktemp = 1, nlayers
-
-                     z_intersect_top = min(z_edge_minus(ktemp), z_edge_plus(k))
-                     z_intersect_bot = max(z_edge_minus(ktemp+1), z_edge_plus(k+1))
-                     dz_intersect = z_intersect_top - z_intersect_bot
-
-                     if (dz_intersect > 0.0) then
-                           p_intersect_bot = p_edge_minus(ktemp+1) &
-                                 - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
-                           p_intersect_top = p_edge_minus(ktemp+1) &
-                                 - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
-                           H_r_minus = H_r_minus + &
-                                 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
-
-                     end if
-                  end do
-                  H_face(1,iquad,k) = 0.5*(H_r_plus + H_r_minus) !computation of H_r for the left side
-                  ! Computation from - side for layer k
-                  H_r_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
-
-                  ! Computation from + side for layer k
-                  H_r_plus = 0.0
-                  do ktemp = 1, nlayers
-
-                     z_intersect_top = min(z_edge_plus(ktemp), z_edge_minus(k))
-                     z_intersect_bot = max(z_edge_plus(ktemp+1), z_edge_minus(k+1))
-                     dz_intersect = z_intersect_top - z_intersect_bot
-
-                     if (dz_intersect > 0.0) then
-                           p_intersect_bot = p_edge_plus(ktemp+1) &
-                              - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(ktemp+1))
-                           p_intersect_top = p_edge_plus(ktemp+1) &
-                              - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(ktemp+1))
-                           H_r_plus = H_r_plus &
-                              + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
-                     end if
-                  end do
-                  H_face(2,iquad,k) = 0.5*(H_r_plus + H_r_minus) ! H_r for the right side
-               end do !k
-
-               do k = 1, nlayers-1          ! interface at the bottom of layer k
-                  ! Corrections at the left side of a face.
-                  p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-                  H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,k+1) &
-                              + p_inc1)**2 - p_face(1,k+1)**2)
-                  H_face(1,iquad,k) = H_face(1,iquad,k) - H_corr1
-                  H_face(1,iquad,k+1) = H_face(1,iquad,k+1) + H_corr1
-
-                  ! Corrections at the right side of a face.
-                  p_inc2 = g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
-                  H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2,k+1) &
-                              + p_inc2)**2 - p_face(2,k+1)**2)
-                  H_face(2,iquad,k) = H_face(2,iquad,k) - H_corr2
-                  H_face(2,iquad,k+1) = H_face(2,iquad,k+1) + H_corr2
-
+            else
+               do k = 1,nlayers
+                  weight = abs(udpr(iquad,k)) * one_over_sum_r
+                  udp_flux(3,iquad,k) = udp_flux(3,iquad,k) + weight * uv_dp_flux_deficit
                end do
+            end if
+            ! Adjust the fluxes for the v-momentum equation
+            one_over_sum_l = 1.0 / sum(abs(vdpl(iquad,:))+eps1)
+            one_over_sum_r = 1.0 / sum(abs(vdpr(iquad,:))+eps1)
+            !x-direction
+            if(vu_dp_flux_deficit*nxl > 0.0) then
+               do k = 1,nlayers
+                  weight = abs(vdpl(iquad,k)) * one_over_sum_l
+                  vdp_flux(2,iquad,k) = vdp_flux(2,iquad,k) + weight * vu_dp_flux_deficit
+               end do
+            else
+               do k = 1,nlayers
+                  weight = abs(vdpr(iquad,k)) * one_over_sum_r
+                  vdp_flux(2,iquad,k) = vdp_flux(2,iquad,k) + weight * vu_dp_flux_deficit
+               end do
+            end if
+            !y-direction
+            if(vv_dp_flux_deficit*nyl > 0.0) then
+               do k = 1,nlayers
+                  weight = abs(vdpl(iquad,k)) * one_over_sum_l
+                  vdp_flux(3,iquad,k) = vdp_flux(3,iquad,k) + weight * vv_dp_flux_deficit
+               end do
+            else
+               do k = 1,nlayers
+                  weight = abs(vdpr(iquad,k)) * one_over_sum_r
+                  vdp_flux(3,iquad,k) = vdp_flux(3,iquad,k) + weight * vv_dp_flux_deficit
+               end do
+            end if
 
-               ! Left side of face
-               weight = 1.0
-               acceleration = sum(H_face(1,iquad,:))
-               if(acceleration > 0.0) then
-                  weight = H_face_ave(iquad,iface) / acceleration
-               end if
-               H_face(1,iquad,:) = H_face(1,iquad,:) * weight
+            z_face = 0.0 ; p_face = 0.0
+            z_edge_plus = 0.0 ; z_edge_minus = 0.0
+            p_edge_plus = 0.0; p_edge_minus = 0.0
 
-               ! Right side of face
-               weight = 1.0
-               acceleration = sum(H_face(2,iquad,:))
-               if(acceleration > 0.0) then
-                  weight = H_face_ave(iquad,iface) / acceleration
-               end if
-               H_face(2,iquad,:) = H_face(2,iquad,:) * weight
+            !Store Left Side Variables
+            ope_l = sqrt(ope2_face_ave(1,iquad,iface))
+            ope_r = sqrt(ope2_face_ave(2,iquad,iface))
+            p_face(1,1) = 0.0
+            p_face(2,1) = 0.0
+            do k=1,nlayers
+               p_face(1,k+1) = p_face(1,k) + ope_l * ql(1,iquad,k)
+               p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,iquad,k)
+            end do
+
+            one_plus_eta_edge = sqrt(one_plus_eta_edge_2_ave(iquad,iface))
+            z_face(1,nlayers+1) = zbot_face(1,iquad,iface)
+            z_face(2,nlayers+1) = zbot_face(2,iquad,iface)
+            z_edge_plus(nlayers+1) = zbot_face(1,iquad,iface)
+            z_edge_minus(nlayers+1) = zbot_face(2,iquad,iface)
+            do k=nlayers,1,-1
+               z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,iquad,k))
+               z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,iquad,k))
+               z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
+                                                   (one_plus_eta_edge * ql(1,iquad,k))
+               z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
+                                                   (one_plus_eta_edge * qr(1,iquad,k))
+            end do
+
+            p_edge_plus(2) = one_plus_eta_edge * ql(1,iquad,1)
+            p_edge_minus(2) = one_plus_eta_edge * qr(1,iquad,1)
+            do k = 2,nlayers
+               p_edge_plus(k+1) = p_edge_plus(k) + one_plus_eta_edge * ql(1,iquad,k)
+               p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,iquad,k)
+            end do
+
+            do k = 1, nlayers
+
+               ! Computation from + side for layer k
+               H_r_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
+
+               ! Computation from - side for layer k
+               H_r_minus = 0.0
+               do ktemp = 1, nlayers
+
+                  z_intersect_top = min(z_edge_minus(ktemp), z_edge_plus(k))
+                  z_intersect_bot = max(z_edge_minus(ktemp+1), z_edge_plus(k+1))
+                  dz_intersect = z_intersect_top - z_intersect_bot
+
+                  if (dz_intersect > 0.0) then
+                        p_intersect_bot = p_edge_minus(ktemp+1) &
+                              - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
+                        p_intersect_top = p_edge_minus(ktemp+1) &
+                              - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
+                        H_r_minus = H_r_minus + &
+                              0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+
+                  end if
+               end do
+               H_face(1,iquad,k) = 0.5*(H_r_plus + H_r_minus) !computation of H_r for the left side
+               ! Computation from - side for layer k
+               H_r_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
+
+               ! Computation from + side for layer k
+               H_r_plus = 0.0
+               do ktemp = 1, nlayers
+
+                  z_intersect_top = min(z_edge_plus(ktemp), z_edge_minus(k))
+                  z_intersect_bot = max(z_edge_plus(ktemp+1), z_edge_minus(k+1))
+                  dz_intersect = z_intersect_top - z_intersect_bot
+
+                  if (dz_intersect > 0.0) then
+                        p_intersect_bot = p_edge_plus(ktemp+1) &
+                           - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(ktemp+1))
+                        p_intersect_top = p_edge_plus(ktemp+1) &
+                           - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(ktemp+1))
+                        H_r_plus = H_r_plus &
+                           + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                  end if
+               end do
+               H_face(2,iquad,k) = 0.5*(H_r_plus + H_r_minus) ! H_r for the right side
+            end do !k
+
+            do k = 1, nlayers-1          ! interface at the bottom of layer k
+               ! Corrections at the left side of a face.
+               p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+               H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,k+1) &
+                           + p_inc1)**2 - p_face(1,k+1)**2)
+               H_face(1,iquad,k) = H_face(1,iquad,k) - H_corr1
+               H_face(1,iquad,k+1) = H_face(1,iquad,k+1) + H_corr1
+
+               ! Corrections at the right side of a face.
+               p_inc2 = g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
+               H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2,k+1) &
+                           + p_inc2)**2 - p_face(2,k+1)**2)
+               H_face(2,iquad,k) = H_face(2,iquad,k) - H_corr2
+               H_face(2,iquad,k+1) = H_face(2,iquad,k+1) + H_corr2
+
+            end do
+
+            ! Left side of face
+            weight = 1.0
+            acceleration = sum(H_face(1,iquad,:))
+            if(acceleration > 0.0) then
+               weight = H_face_ave(iquad,iface) / acceleration
+            end if
+            H_face(1,iquad,:) = H_face(1,iquad,:) * weight
+
+            ! Right side of face
+            weight = 1.0
+            acceleration = sum(H_face(2,iquad,:))
+            if(acceleration > 0.0) then
+               weight = H_face_ave(iquad,iface) / acceleration
+            end if
+            H_face(2,iquad,:) = H_face(2,iquad,:) * weight
 
          end do ! iquad
          
