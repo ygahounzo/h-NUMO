@@ -384,6 +384,44 @@ subroutine bcl_create_postcommunicator(rhs)
 
 end subroutine bcl_create_postcommunicator
 
+subroutine bcl_create_postcommunicator_continuity(rhs)
+
+    use mod_basis, only: ngl
+
+    use mod_mpi_communicator, only: ierr, ireq, nreq, status
+
+    use mod_grid, only:  npoin, intma, nelem,nface,nboun
+
+    use mod_initial, only: nvar
+
+    use mod_metrics, only: massinv
+
+    use mod_p4est, only: plist
+
+    use mod_ref, only: q_send_bcl, q_recv_bcl, recv_data_bcl, send_data_bcl
+
+    use mod_input, only: nlayers
+
+    implicit none
+
+    !Global Arrays
+    real, dimension(npoin,nlayers), intent(inout) :: rhs
+
+    integer :: multirate
+
+    ! DG - Discontinuous communicator
+
+    !To build inter-processor fluxes, All Procs Must Wait
+    call mpi_waitall(nreq,ireq,status,ierr)
+
+    !Map Recv buffer to the boundary of the Receiver (unpack data)
+    call unpack_data_dg_general_bcl(q_send_bcl,q_recv_bcl,send_data_bcl,recv_data_bcl)
+
+    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
+    call create_nbhs_face_bcl_continuity(rhs,q_send_bcl,q_recv_bcl,0)
+
+end subroutine bcl_create_postcommunicator_continuity
+
 subroutine bcl_create_rhs_lap_postcommunicator_df(rhs)
 
     use mod_basis, only: ngl

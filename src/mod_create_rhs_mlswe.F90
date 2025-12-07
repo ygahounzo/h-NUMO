@@ -65,11 +65,14 @@ module mod_create_rhs_mlswe
         
         integer :: k
 
+        call bcl_create_precommunicator(qprime_df)
         ! Compute the mass advection term for the degree of freedom for dp in each layer
         call create_layers_volume_mass(dp_advec, qprime_df)
 
         ! Compute the mass flux term 
-        call create_layer_mass_flux(dp_advec, qprime_df_face)
+        call create_layer_mass_flux(dp_advec, qprime_df)
+
+        call bcl_create_postcommunicator_continuity(dp_advec)
 
         do k = 1, nlayers
             dp_advec(:,k) = massinv(:)*dp_advec(:,k)
@@ -1051,6 +1054,7 @@ module mod_create_rhs_mlswe
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
                                 uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
+        use mod_variables, only: sum_layer_mass_flux_face
 
         implicit none
 
@@ -1136,7 +1140,7 @@ module mod_create_rhs_mlswe
                             qr(3,iquad,k) = ql(3,iquad,k) - 2.0*un*nyl
                         elseif (er == -2) then
                             qr(2,iquad,k) = -ql(2,iquad,k)
-                            qr(3,iquad,k) = ql(3,iquad,k)
+                            qr(3,iquad,k) = -ql(3,iquad,k)
                         endif
                     end if
 
@@ -1154,9 +1158,6 @@ module mod_create_rhs_mlswe
                     udpr(iquad,k) = ur*dpr
                     vdpl(iquad,k) = vl*dpl
                     vdpr(iquad,k) = vr*dpr
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
 
                     if(uu*nxl > 0.0) then
                         udp_flux(1,iquad,k) = uu * dpl
@@ -1179,13 +1180,15 @@ module mod_create_rhs_mlswe
 
                 enddo
 
+                sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface) &
+                                                        + udp_flux(1,iquad,iface)
+                sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface) &
+                                                        + vdp_flux(1,iquad,iface)
+
                 uu_dp_flux_deficit = Qu_face_ave(1,iquad,iface) - sum(udp_flux(2,iquad,:))
                 uv_dp_flux_deficit = Qu_face_ave(2,iquad,iface) - sum(udp_flux(3,iquad,:))
                 vu_dp_flux_deficit = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(2,iquad,:))
                 vv_dp_flux_deficit = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(3,iquad,:))
-
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
 
                 ! Adjust the fluxes for the u-momentum equation
                 one_over_sum_l = 1.0 / sum(abs(udpl(iquad,:))+eps1)
@@ -1541,10 +1544,10 @@ module mod_create_rhs_mlswe
 
     end subroutine create_consistency_volume_mass
 
-    subroutine create_layer_mass_flux(dp_advec, qprime_df_face)
+    subroutine create_layer_mass_flux(dp_advec, qprime_df)
 
         use mod_basis, only: nq, psiq, ngl
-        use mod_grid, only:  npoin_q, intma,  nface, face
+        use mod_grid, only:  npoin_q, intma,  nface, face, face_type
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: sum_layer_mass_flux_face, ope_face_ave, uvb_face_ave
@@ -1552,46 +1555,78 @@ module mod_create_rhs_mlswe
         implicit none
 
         real, dimension(npoin, nlayers), intent(inout) :: dp_advec
-        real, dimension(3, 2, ngl, nface, nlayers), intent(in) :: qprime_df_face
+        real, dimension(3, npoin, nlayers), intent(in) :: qprime_df
 
         integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
         integer :: kl, kr, jquad, n, m
         real :: wq, nxl, nyl, hi
         real, dimension(nq) :: ul,ur,vl,vr, flux_edge_u, flux_edge_v
-        real :: dpl, dpr, uu, vv, flux
+        real :: dpl, dpr, uu, vv, flux, un
         real, dimension(3,nq) :: ql, qr, qbl, qbr
 
         sum_layer_mass_flux_face = 0.0
 
-        do iface = 1, nface
+        do k = 1, nlayers
 
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-            
-            qbl(1,:) = ope_face_ave(1,:,iface)
-            qbl(2,:) = uvb_face_ave(1,1,:,iface)
-            qbl(3,:) = uvb_face_ave(2,1,:,iface)
-            qbr(1,:) = ope_face_ave(2,:,iface)
-            qbr(2,:) = uvb_face_ave(1,2,:,iface)
-            qbr(3,:) = uvb_face_ave(2,2,:,iface)
+            do iface = 1, nface
 
-            do k = 1, nlayers
+                if (face_type(iface) == 2) cycle
+
+                !Store Left Side Variables
+                el = face(7,iface)
+                er = face(8,iface)
+                
+                qbl(1,:) = ope_face_ave(1,:,iface)
+                qbl(2,:) = uvb_face_ave(1,1,:,iface)
+                qbl(3,:) = uvb_face_ave(2,1,:,iface)
+                qbr(1,:) = ope_face_ave(2,:,iface)
+                qbr(2,:) = uvb_face_ave(1,2,:,iface)
+                qbr(3,:) = uvb_face_ave(2,2,:,iface)
+
+                ql = 0.0; qr = 0.0
 
                 do iquad = 1,nq
+
+                    do n = 1, ngl
+
+                        il = imapl(1,n,1,iface)
+                        jl = imapl(2,n,1,iface)
+                        kl = imapl(3,n,1,iface)
+                        I = intma(il,jl,kl,el)
+                        hi = psiq(n,iquad)
+
+                        ql(:,iquad) = ql(:,iquad) + hi*qprime_df(:,I,k)
+                    enddo
+
+                    if (er > 0) then
+                        do n = 1, ngl
+
+                            ir = imapr(1,n,1,iface)
+                            jr = imapr(2,n,1,iface)
+                            kr = imapr(3,n,1,iface)
+                            I = intma(ir,jr,kr,er)
+                            hi = psiq(n,iquad)
+
+                            qr(:,iquad) = qr(:,iquad) + hi*qprime_df(:,I,k)
+                        enddo
+                    else 
+                        qr(:,iquad) = ql(:,iquad)
+
+                        if (er == -4) then
+                            un = ql(2,iquad)*nxl + ql(3,iquad)*nyl
+                            qr(2,iquad) = ql(2,iquad) - 2.0*un*nxl
+                            qr(3,iquad) = ql(3,iquad) - 2.0*un*nyl
+                        elseif (er == -2) then
+                            qr(2,iquad) = -ql(2,iquad)
+                            qr(3,iquad) = -ql(3,iquad)
+                        endif
+                    end if
 
                     ! In the following computation of fluxes at element faces,
                     ! flux_edge iface a numerical approximation to the mass flux at element 
                     ! faces (each face has nq quadrature points)
                     ! Here we are using centered fluxes, so we need to compute the fluxes 
                     ! at the left and right edges of each face
-
-                    ql = 0.0; qr = 0.0
-                    do n = 1, ngl
-                        hi = psiq(n,iquad)
-                        ql(:,iquad) = ql(:,iquad) + hi*qprime_df_face(:,1,n,iface,k)
-                        qr(:,iquad) = qr(:,iquad) + hi*qprime_df_face(:,2,n,iface,k)
-                    enddo
 
                     nxl = normal_vector_q(1,iquad,1,iface)
                     nyl = normal_vector_q(2,iquad,1,iface)
