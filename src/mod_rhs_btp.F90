@@ -212,11 +212,8 @@ contains
 
         do iface = 1, nface
 
-            itype = face_type(iface)   !Type of face
             !Skip boundary faces
-            if (itype == 2) then
-                cycle
-            end if
+            if (face_type(iface) == 2) cycle
 
             !Store Left Side Variables
             el = face(7,iface)

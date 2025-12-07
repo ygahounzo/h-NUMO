@@ -211,23 +211,46 @@ module mod_splitting
 
         ! Local variables
         real, dimension(npoin,nlayers) :: dp_advec, dpprime_df
-        real, dimension(2,npoin,nlayers) :: q_df_temp, uv_df
-        real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
+        real, dimension(2,npoin,nlayers) :: uv_df
+        real, dimension(2,npoin,nlayers) :: rhs_stress
         real, dimension(npoin) :: one_plus_eta_temp
         real, dimension(3,npoin_q,nlayers) :: qprime_temp, q
         real, dimension(3,npoin,nlayers) :: q_df3
         real, dimension(2,npoin_q,nlayers) :: uv
         integer :: k, I
         real, dimension(npoin) :: tempu, tempv
+        real, dimension(3,npoin,nlayers) :: rhs, q_df_temp
 
-        q_df_temp = 0.0
+        ! q_df_temp = 0.0
 
         ! =========================================== layer mass ================================
 
-        call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
+        ! call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
 
-        do k = 1, nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+        ! do k = 1, nlayers
+        !     q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+
+        !     ! Check for negative layer thicknesses.  If any are found, stop the program.
+        !     if(any(q_df(1, :, k) < 0.0)) then
+        !         write(*,*) 'Negative mass in thickness at some points'
+        !         stop
+        !     endif
+        ! end do
+
+        ! ! consistency through flux adjustment 
+        ! call apply_consistency(q_df)
+
+        ! ==================================== layer momentum ==========================
+
+        ! call rhs_momentum(rhs_mom, qprime_df, q_df, qprime_df_face)
+
+        call create_rhs_bcl(rhs, qprime_df, q_df, qprime_df_face)
+
+        ! Compute the momentum equation variables for the next time step
+        do k = 1,nlayers
+            q_df_temp(1,:,k) = q_df(1,:,k) + dt*rhs(1,:,k)
+            q_df_temp(2,:,k) = q_df(2,:,k) + dt*rhs(2,:,k)
+            q_df_temp(3,:,k) = q_df(3,:,k) + dt*rhs(3,:,k)
 
             ! Check for negative layer thicknesses.  If any are found, stop the program.
             if(any(q_df(1, :, k) < 0.0)) then
@@ -236,25 +259,12 @@ module mod_splitting
             endif
         end do
 
-        ! consistency through flux adjustment 
-        call apply_consistency(q_df)
-
-        ! ==================================== layer momentum ==========================
-
-        call rhs_momentum(rhs_mom, qprime_df, q_df, qprime_df_face)
-
-        ! Compute the momentum equation variables for the next time step
-        do k = 1,nlayers
-            q_df_temp(1,:,k) = q_df(2,:,k) + dt*rhs_mom(1,:,k)
-            q_df_temp(2,:,k) = q_df(3,:,k) + dt*rhs_mom(2,:,k)
-        end do
-
         ! Compute the shear stress terms
         if(ad_mlswe > 0.0) then 
             do k = 1,nlayers
                 do I = 1,npoin
-                    tempu(I) = q_df_temp(1,I,k) + fdt2_bcl(I)*q_df(3,I,k)
-                    tempv(I) = q_df_temp(2,I,k) - fdt2_bcl(I)*q_df(2,I,k)
+                    tempu(I) = q_df_temp(2,I,k) + fdt2_bcl(I)*q_df(3,I,k)
+                    tempv(I) = q_df_temp(3,I,k) - fdt2_bcl(I)*q_df(2,I,k)
                     q_df3(2,I,k) = a_bcl(I)*tempu(I) + b_bcl(I)*tempv(I)
                     q_df3(3,I,k) = - b_bcl(I)*tempu(I) + a_bcl(I)*tempv(I)
                 end do
@@ -270,21 +280,26 @@ module mod_splitting
             call rhs_layer_shear_stress(rhs_stress,q_df3)
 
             do k = 1,nlayers
-                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*(massinv(:)*rhs_stress(1,:,k))
-                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*(massinv(:)*rhs_stress(2,:,k))
+                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*(massinv(:)*rhs_stress(1,:,k))
+                q_df_temp(3,:,k) = q_df_temp(3,:,k) + dt*(massinv(:)*rhs_stress(2,:,k))
             end do
         end if ! ad_mlswe > 0
         
         ! Add the Coriolis term
         do k = 1,nlayers
 
-            tempu(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-            tempv(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
+            tempu(:) = q_df_temp(2,:,k) + fdt2_bcl(:)*q_df(3,:,k)
+            tempv(:) = q_df_temp(3,:,k) - fdt2_bcl(:)*q_df(2,:,k)
             q_df(2,:,k) = a_bcl(:)*tempu(:) + b_bcl(:)*tempv(:)
             q_df(3,:,k) = - b_bcl(:)*tempu(:) + a_bcl(:)*tempv(:)
+
+            q_df(1,:,k) = q_df_temp(1,:,k)
         end do
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
+
+        ! consistency through flux adjustment 
+        call apply_consistency(q_df)
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
         call extract_velocity(uv_df, q_df, qb_df)
@@ -332,6 +347,41 @@ module mod_splitting
         call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)
 
     end subroutine rhs_momentum
+
+    subroutine create_rhs_bcl(rhs, qprime_df, q_df, qprime_df_face)
+
+        ! =======================================================================================
+        ! This subroutine computes the RHS of the layer momentum equation and viscosity terms
+        ! and stores them in rhs_mom and rhs_visc_bcl
+        ! =======================================================================================
+
+        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
+        use mod_basis, only: nq, ngl
+        use mod_input, only: nlayers, method_visc
+        use mod_create_rhs_mlswe, only: bcl_rhs
+        use mod_laplacian_quad, only: bcl_create_laplacian, bcl_create_laplacian_v2
+
+        implicit none
+
+        ! Input variables
+        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
+        real, dimension(3,npoin,nlayers), intent(out) :: rhs
+
+        real, dimension(2,npoin,nlayers) :: rhs_visc_bcl
+
+        rhs_visc_bcl = 0.0
+
+        if (method_visc == 1) then
+            call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
+        elseif (method_visc > 1) then
+            call bcl_create_laplacian(rhs_visc_bcl)
+        endif 
+
+        ! Compute the RHS of the layer momentum equation
+        call bcl_rhs(rhs, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)
+
+    end subroutine create_rhs_bcl
 
     subroutine apply_consistency(q_df)
 
