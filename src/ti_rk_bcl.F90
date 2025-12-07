@@ -32,51 +32,40 @@ subroutine ti_rk_bcl(q_df, qb_df)
     real, dimension(4,npoin), intent(inout) :: qb_df
     real, dimension(3,npoin,nlayers), intent(inout) :: q_df
     
-    real, dimension(3,2,ngl,nface,nlayers) :: qprime_df_face2, qprime_df_face
     real, dimension(4,npoin) :: qbp_df
     real, dimension(3,npoin,nlayers) :: qprime_df, qprime_df2, q_df2
     integer :: k
     
     ! ==================== Prediction step =================================
 
-    call extract_qprime_df_face(qprime_df_face,qprime_df,q_df,qb_df)
-    ! call bcl_create_communicator(qprime_df_face,3,nlayers,ngl)
+    call extract_qprime_df_face(qprime_df,q_df,qb_df)
 
     qbp_df = qb_df
     dpprime_visc(:,:) = qprime_df(1,:,:)
     if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
-    call btp_bcl_coeffs_qdf(qprime_df_face, qprime_df)
+    call btp_bcl_coeffs_qdf(qprime_df)
     call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
 
     q_df2 = q_df
     qprime_df2 = qprime_df
-    qprime_df_face2 = qprime_df_face
 
-    call momentum_mass(q_df2,qprime_df_face2,qprime_df2,qbp_df)
+    call momentum_mass(q_df2,qprime_df2,qbp_df)
 
     ! ==================== Correction step =================================
 
-    ! Communication of qprime_df_face2 values within the inter-processor boundary
-    ! call bcl_create_communicator(qprime_df_face2,3,nlayers,ngl)
-
     qprime_df2 = 0.5*(qprime_df2 + qprime_df)
-    qprime_df_face2 = 0.5*(qprime_df_face + qprime_df_face2)
     dpprime_visc(:,:) = qprime_df2(1,:,:)
     if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
-    call btp_bcl_coeffs_qdf(qprime_df_face2, qprime_df2)
+    call btp_bcl_coeffs_qdf(qprime_df2)
     call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)
         
     ! Layer continuty equation
-    call thickness(qprime_df2, q_df, qb_df, qprime_df_face2)
-
-    ! Communication of qprime_df_face values within the processor boundary
-    ! call bcl_create_communicator(qprime_df_face2(1,:,:,:,:),1,nlayers,ngl)
+    call thickness(qprime_df2, q_df, qb_df)
 
     qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + qprime_df2(1,:,:))
-    qprime_df_face2(1,:,:,:,:) = 0.5*(qprime_df_face(1,:,:,:,:) + qprime_df_face2(1,:,:,:,:))
       
-    call momentum(q_df,qprime_df2,qb_df,qprime_df_face2)
+    call momentum(q_df,qprime_df2,qb_df)
 
 end subroutine ti_rk_bcl

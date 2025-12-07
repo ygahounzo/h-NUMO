@@ -25,7 +25,7 @@ module mod_create_rhs_mlswe
               
     contains
 
-    subroutine layer_momentum_rhs(rhs_mom, rhs_visc, qprime_df, q_df, qprime_df_face)
+    subroutine layer_momentum_rhs(rhs_mom, rhs_visc, qprime_df, q_df)
 
         use mod_input, only: nlayers
         use mod_metrics, only: massinv
@@ -36,7 +36,6 @@ module mod_create_rhs_mlswe
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
         real, dimension(2,npoin,nlayers), intent(in) :: rhs_visc
         real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
 
         integer :: k,I
 
@@ -55,7 +54,7 @@ module mod_create_rhs_mlswe
 
     end subroutine layer_momentum_rhs
 
-    subroutine layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
+    subroutine layer_mass_rhs(dp_advec, qprime_df)
 
         use mod_metrics, only: massinv
         use mod_input, only: nlayers
@@ -66,7 +65,6 @@ module mod_create_rhs_mlswe
 
         real, dimension(npoin, nlayers), intent(out) :: dp_advec
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         
         integer :: k
 
@@ -85,7 +83,7 @@ module mod_create_rhs_mlswe
         
     end subroutine layer_mass_rhs
 
-    subroutine bcl_rhs(rhs, rhs_visc, qprime_df, q_df, qprime_df_face)
+    subroutine bcl_rhs(rhs, rhs_visc, qprime_df, q_df)
 
         use mod_input, only: nlayers
         use mod_metrics, only: massinv
@@ -96,7 +94,6 @@ module mod_create_rhs_mlswe
         real, dimension(3,npoin,nlayers), intent(out) :: rhs
         real, dimension(2,npoin,nlayers), intent(in) :: rhs_visc
         real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
 
         integer :: k,I
 

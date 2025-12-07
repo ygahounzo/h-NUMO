@@ -115,9 +115,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_constants, only: gravity
    use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
-                                Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
-                                uvb_face_ave, H_bcl_edge, ope2_face_ave
- 
+                                uvb_face_ave, ope2_face_ave
+
    implicit none
  
    !global arrays

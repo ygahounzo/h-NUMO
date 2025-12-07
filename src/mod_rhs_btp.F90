@@ -65,7 +65,6 @@ contains
                                 pbprime_df, coriolis_quad, alpha_mlswe
         use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, &
                                 uvb_ave, btp_mass_flux_ave, ope2_ave
-        use mod_variables, only: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl
         use mod_input, only: nlayers, cd_mlswe, botfr
 
         implicit none
@@ -185,8 +184,7 @@ contains
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
-                                Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, &
-                                uvb_face_ave, H_bcl_edge, ope2_face_ave
+                                uvb_face_ave, ope2_face_ave
         use mod_initial, only: alpha_mlswe, pbprime_df_face, pbprime_df
         use mod_constants, only: gravity
         use mod_input, only: nlayers
@@ -360,7 +358,6 @@ contains
             qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_q(:)
 
             ! Compute pressure forcing H_face at each element face.
-            ! H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_edge(:,iface)
             H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_q(:)
 
             ! Accumulate sums for time averaging

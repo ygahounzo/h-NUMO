@@ -249,7 +249,7 @@ module mod_layer_terms
         
     end subroutine extract_velocity
 
-    subroutine extract_qprime_df_face(qprime_df_face,qprime_df, q_df, qb_df)
+    subroutine extract_qprime_df_face(qprime_df, q_df, qb_df)
 
         ! Interpolate from dofs to quadrature points
 
@@ -261,7 +261,6 @@ module mod_layer_terms
 
         implicit none
 
-        real, dimension(3,2,ngl,nface,nlayers), intent(out) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(out) :: qprime_df
         real, dimension(3,npoin,nlayers), intent(in) :: q_df
         real, dimension(4,npoin), intent(in) :: qb_df
@@ -272,7 +271,6 @@ module mod_layer_terms
         real :: uv_df(2,npoin,nlayers)
 
         qprime_df = 0.0
-        qprime_df_face = 0.0
 
         call extract_velocity(uv_df, q_df, qb_df)
 
@@ -285,47 +283,6 @@ module mod_layer_terms
             qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
             qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
 
-        end do
-
-        do iface = 1, nface
-
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
-
-            do n = 1, ngl
-
-                il = imapl(1,n,1,iface)
-                jl = imapl(2,n,1,iface)
-                kl = imapl(3,n,1,iface)
-                I = intma(il,jl,kl,el)
-
-                qprime_df_face(1:3,1,n,iface,:) = qprime_df(1:3,I,:)
-
-                if(er > 0) then
-
-                    ir = imapr(1,n,1,iface)
-                    jr = imapr(2,n,1,iface)
-                    kr = imapr(3,n,1,iface)
-                    I = intma(ir,jr,kr,er)
-
-                    qprime_df_face(1:3,2,n,iface,:) = qprime_df(1:3,I,:)
-
-                else
-
-                    qprime_df_face(1:3,2,n,iface,:) = qprime_df_face(1:3,1,n,iface,:)
-
-                    if(er == -4) then
-                        nx = normal_vector(1,n,1,iface)
-                        ny = normal_vector(2,n,1,iface)
-                        un = qprime_df(2,I,:)*nx + qprime_df(3,I,:)*ny
-                        qprime_df_face(2,2,n,iface,:) = qprime_df(2,I,:) - 2.0*un*nx
-                        qprime_df_face(3,2,n,iface,:) = qprime_df(3,I,:) - 2.0*un*ny
-                    elseif(er == -2) then
-                        qprime_df_face(2:3,2,n,iface,:) = -qprime_df_face(2:3,1,n,iface,:)
-                    end if
-                end if
-            end do
         end do
 
     end subroutine extract_qprime_df_face

@@ -22,7 +22,7 @@ module mod_splitting
     
     contains
 
-    subroutine thickness(qprime_df, q_df, qb_df, qprime_df_face)
+    subroutine thickness(qprime_df, q_df, qb_df)
 
         ! ========================================================================================
         ! This subroutine is used to predict or correct the layer thickness for the splitting 
@@ -44,7 +44,6 @@ module mod_splitting
     
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
         real, intent(in)    :: qb_df(4,npoin)
     
@@ -57,7 +56,7 @@ module mod_splitting
         ! Compute the mass advection term and RHS for mass equation, 
         ! return the result in array  dp_advec. 
 
-        call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
+        call layer_mass_rhs(dp_advec, qprime_df)
 
         ! Compute the tentative values of the predicted or corrected 
         ! degrees of freedom for  dp (q_df(1,:,:)).  These would be the values at
@@ -85,13 +84,11 @@ module mod_splitting
         do k = 1,nlayers
             qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
         end do
-
-        call extract_dprime_df_face(qprime_df_face(1,:,:,:,:), qprime_df(1,:,:))
         
     end subroutine thickness
 
 
-    subroutine momentum(q_df,qprime_df,qb_df,qprime_df_face)
+    subroutine momentum(q_df,qprime_df,qb_df)
 
         ! ========================================================================================
         ! This subroutine is used to correct the layer momentum for the splitting system 
@@ -111,7 +108,6 @@ module mod_splitting
 
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
@@ -128,7 +124,7 @@ module mod_splitting
         q_df_temp = 0.0
 
         ! ==== layer momentum ====
-        call rhs_momentum(rhs_mom, qprime_df,q_df, qprime_df_face)
+        call rhs_momentum(rhs_mom, qprime_df,q_df)
 
         ! Compute the momentum equation variables for the next time step
         do k = 1,nlayers
@@ -184,7 +180,7 @@ module mod_splitting
 
     end subroutine momentum
 
-    subroutine momentum_mass(q_df,qprime_df_face,qprime_df,qb_df)
+    subroutine momentum_mass(q_df, qprime_df, qb_df)
 
         ! ========================================================================================
         ! This subroutine is used to predict the layer mass and momentum for the splitting system
@@ -196,7 +192,7 @@ module mod_splitting
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, dt, ad_mlswe
         use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df
-        use mod_create_rhs_mlswe, only: rhs_layer_shear_stress, layer_mass_rhs
+        use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
         use mod_layer_terms, only: layer_mom_boundary_df, &
                                     velocity_df, extract_qprime_df_face,extract_velocity
         use mod_metrics, only: massinv
@@ -205,7 +201,6 @@ module mod_splitting
 
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,2,ngl,nface,nlayers), intent(inout) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
@@ -221,30 +216,7 @@ module mod_splitting
         real, dimension(npoin) :: tempu, tempv
         real, dimension(3,npoin,nlayers) :: rhs, q_df_temp
 
-        ! q_df_temp = 0.0
-
-        ! =========================================== layer mass ================================
-
-        ! call layer_mass_rhs(dp_advec, qprime_df, qprime_df_face)
-
-        ! do k = 1, nlayers
-        !     q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
-
-        !     ! Check for negative layer thicknesses.  If any are found, stop the program.
-        !     if(any(q_df(1, :, k) < 0.0)) then
-        !         write(*,*) 'Negative mass in thickness at some points'
-        !         stop
-        !     endif
-        ! end do
-
-        ! ! consistency through flux adjustment 
-        ! call apply_consistency(q_df)
-
-        ! ==================================== layer momentum ==========================
-
-        ! call rhs_momentum(rhs_mom, qprime_df, q_df, qprime_df_face)
-
-        call create_rhs_bcl(rhs, qprime_df, q_df, qprime_df_face)
+        call create_rhs_bcl(rhs, qprime_df, q_df)
 
         ! Compute the momentum equation variables for the next time step
         do k = 1,nlayers
@@ -309,18 +281,18 @@ module mod_splitting
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
 
-        call extract_qprime_df_face(qprime_df_face, qprime_df, q_df, qb_df)
+        call extract_qprime_df_face(qprime_df, q_df, qb_df)
 
     end subroutine momentum_mass
 
-    subroutine rhs_momentum(rhs_mom, qprime_df, q_df, qprime_df_face)
+    subroutine rhs_momentum(rhs_mom, qprime_df, q_df)
 
         ! =======================================================================================
         ! This subroutine computes the RHS of the layer momentum equation and viscosity terms
         ! and stores them in rhs_mom and rhs_visc_bcl
         ! =======================================================================================
 
-        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
+        use mod_grid, only: npoin, npoin_q, nface, face, intma
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs
@@ -329,7 +301,6 @@ module mod_splitting
         implicit none
 
         ! Input variables
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
 
@@ -344,18 +315,18 @@ module mod_splitting
         endif 
 
         ! Compute the RHS of the layer momentum equation
-        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)
+        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df)
 
     end subroutine rhs_momentum
 
-    subroutine create_rhs_bcl(rhs, qprime_df, q_df, qprime_df_face)
+    subroutine create_rhs_bcl(rhs, qprime_df, q_df)
 
         ! =======================================================================================
         ! This subroutine computes the RHS of the layer momentum equation and viscosity terms
         ! and stores them in rhs_mom and rhs_visc_bcl
         ! =======================================================================================
 
-        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
+        use mod_grid, only: npoin, npoin_q, nface, face, intma
         use mod_basis, only: nq, ngl
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: bcl_rhs
@@ -364,7 +335,6 @@ module mod_splitting
         implicit none
 
         ! Input variables
-        real, dimension(3,2,ngl,nface,nlayers), intent(in) :: qprime_df_face
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
         real, dimension(3,npoin,nlayers), intent(out) :: rhs
 
@@ -379,7 +349,7 @@ module mod_splitting
         endif 
 
         ! Compute the RHS of the layer momentum equation
-        call bcl_rhs(rhs, rhs_visc_bcl, qprime_df, q_df, qprime_df_face)
+        call bcl_rhs(rhs, rhs_visc_bcl, qprime_df, q_df)
 
     end subroutine create_rhs_bcl
 
@@ -395,8 +365,6 @@ module mod_splitting
         use mod_basis, only: nq
         use mod_initial, only: pbprime_df
         use mod_create_rhs_mlswe, only: consistency_mass_rhs
-        use mod_layer_terms, only: evaluate_consistency_face
-        use mod_variables, only: btp_mass_flux_face_ave
         use mod_metrics, only: massinv
         
         implicit none
@@ -407,15 +375,11 @@ module mod_splitting
         ! Local variables
         integer :: k
         real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
-        real :: mass_deficit_mass_face(2,2,nq,nface,nlayers)
 
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
         do k = 1,nlayers
             dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
         end do
-
-        ! Consistency flux terms 
-        ! call evaluate_consistency_face(mass_deficit_mass_face,dpprime_df)
 
         ! RHS of the consistency terms
         call consistency_mass_rhs(dp_advec, dpprime_df)
