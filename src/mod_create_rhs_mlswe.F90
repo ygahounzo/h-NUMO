@@ -344,7 +344,7 @@ module mod_create_rhs_mlswe
         real :: p_tmp(nlayers+1), u, v, dp, weightq, one_over_sumuq, one_over_sumvq
         real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,nlayers+1)
         real :: z_elv(npoin,nlayers+1)
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
+        real, parameter :: eps1 = 1.0e-20, eps = 1.0e-10 !  Parameter used to prevent division by zero.
 
         rhs_mom = 0.0
         bot_layer = 0.0
@@ -376,6 +376,12 @@ module mod_create_rhs_mlswe
                     temp_uu(k) = temp_uu(k) + hi*q_df(2,I,k)
                     temp_vv(k) = temp_vv(k) + hi*q_df(3,I,k)
                 enddo
+
+                if (qp(1) <= (gravity/alpha_mlswe(k))*eps) then
+                    qp(1) = (gravity/alpha_mlswe(k))*eps
+                    qp(2:3) = 0.0
+                    temp_uu(k) = 0.0 ; temp_vv(k) = 0.0
+                end if
 
                 qb(1) = ope_ave(Iq)
                 qb(2) = uvb_ave(1,Iq)
@@ -523,7 +529,7 @@ module mod_create_rhs_mlswe
         real :: p_tmp(nlayers+1), u, v, dp, weightq, one_over_sumuq, one_over_sumvq
         real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,nlayers+1)
         real :: z_elv(npoin,nlayers+1)
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
+        real, parameter :: eps1 = 1.0e-20, eps = 1.0e-10 !  Parameter used to prevent division by zero.
 
         rhs = 0.0
         bot_layer = 0.0
@@ -556,6 +562,12 @@ module mod_create_rhs_mlswe
                     temp_uu(k) = temp_uu(k) + hi*q_df(2,I,k)
                     temp_vv(k) = temp_vv(k) + hi*q_df(3,I,k)
                 enddo
+
+                if (qp(1) <= (gravity/alpha_mlswe(k))*eps) then
+                    qp(1) = (gravity/alpha_mlswe(k))*eps
+                    qp(2:3) = 0.0
+                    temp_uu(k) = 0.0 ; temp_vv(k) = 0.0
+                end if
 
                 qb(1) = ope_ave(Iq)
                 qb(2) = uvb_ave(1,Iq)
@@ -715,7 +727,7 @@ module mod_create_rhs_mlswe
         real, dimension(nq,nlayers) :: udpl, udpr, vdpl, vdpr
         real :: one_over_sum_l, one_over_sum_r, uu_dp_flux_deficit, uv_dp_flux_deficit
         real :: vu_dp_flux_deficit, vv_dp_flux_deficit
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
+        real, parameter :: eps1 = 1.0e-20, eps = 1.0e-10 !  Parameter used to prevent division by zero.
         integer :: il, jl, ir, jr, kl, kr, jquad, n, m
         real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, un
         real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux
@@ -774,15 +786,26 @@ module mod_create_rhs_mlswe
                     else 
                         qr(:,iquad,k) = ql(:,iquad,k)
 
-                        if (er == -4) then
-                            un = ql(2,iquad,k)*nxl + ql(3,iquad,k)*nyl
-                            qr(2,iquad,k) = ql(2,iquad,k) - 2.0*un*nxl
-                            qr(3,iquad,k) = ql(3,iquad,k) - 2.0*un*nyl
-                        elseif (er == -2) then
-                            qr(2,iquad,k) = -ql(2,iquad,k)
-                            qr(3,iquad,k) = -ql(3,iquad,k)
-                        endif
+                    endif 
+
+                    if (ql(1,iquad,k) <= (gravity/alpha_mlswe(k))*eps) then
+                        ql(1,iquad,k) = (gravity/alpha_mlswe(k))*eps
+                        ql(2:3,iquad,k) = 0.0
                     end if
+                    if (qr(1,iquad,k) <= (gravity/alpha_mlswe(k))*eps) then
+                        qr(1,iquad,k) = (gravity/alpha_mlswe(k))*eps
+                        qr(2:3,iquad,k) = 0.0
+                    end if
+
+                    ! Apply wall boundary conditions
+                    if (er == -4) then
+                        un = ql(2,iquad,k)*nxl + ql(3,iquad,k)*nyl
+                        qr(2,iquad,k) = ql(2,iquad,k) - 2.0*un*nxl
+                        qr(3,iquad,k) = ql(3,iquad,k) - 2.0*un*nyl
+                    elseif (er == -2) then
+                        qr(2,iquad,k) = -ql(2,iquad,k)
+                        qr(3,iquad,k) = -ql(3,iquad,k)
+                    endif
 
                     ! Left side of the edge
                     dpl = qbl(1,iquad) * ql(1,iquad,k)
@@ -1105,7 +1128,7 @@ module mod_create_rhs_mlswe
         real, dimension(nq,nlayers) :: udpl, udpr, vdpl, vdpr
         real :: one_over_sum_l, one_over_sum_r, uu_dp_flux_deficit, uv_dp_flux_deficit
         real :: vu_dp_flux_deficit, vv_dp_flux_deficit
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
+        real, parameter :: eps1 = 1.0e-20, eps = 1.0e-10 !  Parameter used to prevent division by zero.
         integer :: il, jl, ir, jr, kl, kr, jquad, n, m
         real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux, un
         real, dimension(3,nq,nlayers) :: H_face, udp_flux, vdp_flux
@@ -1163,16 +1186,26 @@ module mod_create_rhs_mlswe
                         enddo
                     else 
                         qr(:,iquad,k) = ql(:,iquad,k)
+                    endif
 
-                        if (er == -4) then
-                            un = ql(2,iquad,k)*nxl + ql(3,iquad,k)*nyl
-                            qr(2,iquad,k) = ql(2,iquad,k) - 2.0*un*nxl
-                            qr(3,iquad,k) = ql(3,iquad,k) - 2.0*un*nyl
-                        elseif (er == -2) then
-                            qr(2,iquad,k) = -ql(2,iquad,k)
-                            qr(3,iquad,k) = -ql(3,iquad,k)
-                        endif
+                    if (ql(1,iquad,k) <= (gravity/alpha_mlswe(k))*eps) then
+                        ql(1,iquad,k) = (gravity/alpha_mlswe(k))*eps
+                        ql(2:3,iquad,k) = 0.0
                     end if
+                    if (qr(1,iquad,k) <= (gravity/alpha_mlswe(k))*eps) then
+                        qr(1,iquad,k) = (gravity/alpha_mlswe(k))*eps
+                        qr(2:3,iquad,k) = 0.0
+                    end if
+
+                    ! Apply wall boundary conditions
+                    if (er == -4) then
+                        un = ql(2,iquad,k)*nxl + ql(3,iquad,k)*nyl
+                        qr(2,iquad,k) = ql(2,iquad,k) - 2.0*un*nxl
+                        qr(3,iquad,k) = ql(3,iquad,k) - 2.0*un*nyl
+                    elseif (er == -2) then
+                        qr(2,iquad,k) = -ql(2,iquad,k)
+                        qr(3,iquad,k) = -ql(3,iquad,k)
+                    endif
 
                     ! Left side of the edge
                     dpl = qbl(1,iquad) * ql(1,iquad,k)
@@ -1479,7 +1512,7 @@ module mod_create_rhs_mlswe
         use mod_basis, only: npts
         use mod_input, only: nlayers
         use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
+        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe
         use mod_variables, only: uvb_ave, ope_ave, sum_layer_mass_flux
 
         implicit none
@@ -1491,6 +1524,7 @@ module mod_create_rhs_mlswe
         integer :: k, I, Iq, ip
         real :: dp_temp, udp, vdp, dp, u, v, opeq
         real, dimension(3) :: qp, qb
+        real, parameter :: eps = 1.0e-10
 
         dp_advec = 0.0
         sum_layer_mass_flux = 0.0
@@ -1510,6 +1544,11 @@ module mod_create_rhs_mlswe
                     hi = psih(ip,Iq)
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
                 enddo
+
+                if (qp(1) <= (gravity/alpha_mlswe(k))*eps) then
+                    qp(1) = (gravity/alpha_mlswe(k))*eps
+                    qp(2:3) = 0.0
+                end if
 
                 dp_temp = qp(1) * qb(1)
                 udp = (qp(2)+qb(2)) * dp_temp
@@ -1536,7 +1575,7 @@ module mod_create_rhs_mlswe
         use mod_basis, only: npts
         use mod_input, only: nlayers
         use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, pbprime_df
+        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, pbprime_df, alpha_mlswe
         use mod_variables, only: sum_layer_mass_flux, btp_mass_flux_ave
 
         implicit none 
@@ -1546,6 +1585,7 @@ module mod_create_rhs_mlswe
 
         integer :: k, I, Iq, ip
         real :: weight, udp, vdp, wq, hi, dp, pbq
+        real, parameter :: eps = 1.0e-10
 
         dp_advec = 0.0
 
@@ -1559,6 +1599,9 @@ module mod_create_rhs_mlswe
                     dp = dp + hi*dprime_df(I,k)
                     pbq = pbq + hi*pbprime_df(I)
                 enddo
+                if (dp <= (gravity/alpha_mlswe(k))*eps) then
+                    dp = (gravity/alpha_mlswe(k))*eps
+                end if
                 weight = dp/pbq
 
                 udp = weight * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
@@ -1581,6 +1624,8 @@ module mod_create_rhs_mlswe
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: sum_layer_mass_flux_face, ope_face_ave, uvb_face_ave
+        use mod_constants, only : gravity
+        use mod_initial, only : alpha_mlswe
 
         implicit none
 
@@ -1593,6 +1638,7 @@ module mod_create_rhs_mlswe
         real, dimension(nq) :: ul,ur,vl,vr, flux_edge_u, flux_edge_v
         real :: dpl, dpr, uu, vv, flux, un
         real, dimension(3,nq) :: ql, qr, qbl, qbr
+        real, parameter :: eps = 1.0e-10
 
         sum_layer_mass_flux_face = 0.0
 
@@ -1641,16 +1687,25 @@ module mod_create_rhs_mlswe
                         enddo
                     else 
                         qr(:,iquad) = ql(:,iquad)
+                    endif
 
-                        if (er == -4) then
-                            un = ql(2,iquad)*nxl + ql(3,iquad)*nyl
-                            qr(2,iquad) = ql(2,iquad) - 2.0*un*nxl
-                            qr(3,iquad) = ql(3,iquad) - 2.0*un*nyl
-                        elseif (er == -2) then
-                            qr(2,iquad) = -ql(2,iquad)
-                            qr(3,iquad) = -ql(3,iquad)
-                        endif
+                    if (ql(1,iquad) <= (gravity/alpha_mlswe(k))*eps) then
+                        ql(1,iquad) = (gravity/alpha_mlswe(k))*eps
+                        ql(2:3,iquad) = 0.0
                     end if
+                    if (qr(1,iquad) <= (gravity/alpha_mlswe(k))*eps) then
+                        qr(1,iquad) = (gravity/alpha_mlswe(k))*eps
+                        qr(2:3,iquad) = 0.0
+                    end if
+
+                    if (er == -4) then
+                        un = ql(2,iquad)*nxl + ql(3,iquad)*nyl
+                        qr(2,iquad) = ql(2,iquad) - 2.0*un*nxl
+                        qr(3,iquad) = ql(3,iquad) - 2.0*un*nyl
+                    elseif (er == -2) then
+                        qr(2,iquad) = -ql(2,iquad)
+                        qr(3,iquad) = -ql(3,iquad)
+                    endif
 
                     ! In the following computation of fluxes at element faces,
                     ! flux_edge iface a numerical approximation to the mass flux at element 
@@ -1726,8 +1781,9 @@ module mod_create_rhs_mlswe
         use mod_grid, only:  npoin_q, intma,  nface, face, face_type
         use mod_input, only: nlayers
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_initial, only: pbprime_df
+        use mod_initial, only: pbprime_df, alpha_mlswe
         use mod_variables, only: btp_mass_flux_face_ave, sum_layer_mass_flux_face
+        use mod_constants, only: gravity
 
         implicit none
 
@@ -1741,6 +1797,7 @@ module mod_create_rhs_mlswe
         real :: qprime_l, qprime_r, pbprime_l, pbprime_r
         real :: weights_face_l, weights_face_r
         real :: mass_deficit_u_l, mass_deficit_v_l, mass_deficit_u_r, mass_deficit_v_r
+        real, parameter :: eps = 1.0e-10
     
         do k = 1, nlayers
             do iface = 1, nface
@@ -1784,7 +1841,10 @@ module mod_create_rhs_mlswe
                         qprime_r = qprime_l
                         pbprime_r = pbprime_l
                     endif
-  
+
+                    if (pbprime_l <= (gravity/alpha_mlswe(k))*eps) pbprime_l = (gravity/alpha_mlswe(k))*eps
+                    if (pbprime_r <= (gravity/alpha_mlswe(k))*eps) pbprime_r = (gravity/alpha_mlswe(k))*eps
+
                     weights_face_l = qprime_l / pbprime_l
                     weights_face_r = qprime_r / pbprime_r
 

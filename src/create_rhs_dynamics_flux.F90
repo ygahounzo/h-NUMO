@@ -147,6 +147,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, dimension(nlayers+1) :: pprime_l, pprime_r
    real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
    real :: ppl, ppr, upl, upr, vpl, vpr
+   real, parameter :: eps = 1.0e-10 ! Small parameter to prevent negative water depth.
 
    jj=1
    kk=1
@@ -185,6 +186,14 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                pbr(iquad) = pbr(iquad) + hi*q_recv(5,n,kk)
             end do
 
+            if (qbl(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
+               qbl(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
+               qbl(2:4,iquad) = 0.0
+            elseif( qbr(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
+               qbr(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
+               qbr(2:4,iquad) = 0.0
+            end if
+
             pprime_l(1) = 0.0; pprime_r(1) = 0.0
             do k = 1, nlayers
                ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
@@ -206,6 +215,15 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   vpl = vpl + hi*q_send(ii+3,n,kk)
                   vpr = vpr + hi*q_recv(ii+3,n,kk)
                enddo
+
+               if (ppl <= (gravity/alpha_mlswe(k))*eps) then
+                  ppl = (gravity/alpha_mlswe(k))*eps
+                  upl = 0.0 ; vpl = 0.0
+               end if
+               if (ppr <= (gravity/alpha_mlswe(k))*eps) then
+                  ppr = (gravity/alpha_mlswe(k))*eps
+                  upr = 0.0 ; vpr = 0.0
+               end if
 
                Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
                Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
@@ -489,6 +507,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(3,nq,nlayers) :: H_face, udp_flux, vdp_flux
+   real, parameter :: eps = 1.0e-10 ! Small value to prevent dry states
 
    jj=1
    kk=1
@@ -533,6 +552,15 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                      qr(ivar,iquad,k) = qr(ivar,iquad,k) + hi*q_recv(index+ivar,n,kk)
                   end do
                enddo
+
+               if (ql(1,iquad,k) <= g_over_alpha(k)*eps) then
+                  ql(1,iquad,k) = g_over_alpha(k)*eps
+                  ql(2:3,iquad,k) = 0.0
+               end if
+               if (qr(1,iquad,k) <= g_over_alpha(k)*eps) then
+                  qr(1,iquad,k) = g_over_alpha(k)*eps
+                  qr(2:3,iquad,k) = 0.0
+               end if
 
                ! Left side of the edge
                dpl = qbl(1,iquad) * ql(1,iquad,k)
@@ -801,6 +829,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                            num_nbh, num_send_recv
    use mod_input, only: nlayers
    use mod_variables, only: ope_face_ave, uvb_face_ave, sum_layer_mass_flux_face
+   use mod_constants, only : gravity
+   use mod_initial, only : alpha_mlswe
  
    implicit none
  
@@ -821,6 +851,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, dimension(nq,nlayers) :: udp_flux, vdp_flux
    real, dimension(3,nq,nlayers) :: ql, qr
    real, dimension(3,nq) :: qbl, qbr
+   real, parameter :: eps = 1.0e-10 ! Small parameter to prevent negative water depth.
 
    jj=1
    kk=1
@@ -860,6 +891,15 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                      qr(ivar,iquad,k) = qr(ivar,iquad,k) + hi*q_recv(index+ivar,n,kk)
                   end do
                enddo
+
+               if (ql(1,iquad,k) < (gravity/alpha_mlswe(k))*eps) then
+                  ql(1,iquad,k) = gravity/alpha_mlswe(k)*eps
+                  ql(2:3,iquad,k) = 0.0
+               end if
+               if (qr(1,iquad,k) < (gravity/alpha_mlswe(k))*eps) then
+                  qr(1,iquad,k) = (gravity/alpha_mlswe(k))*eps
+                  qr(2:3,iquad,k) = 0.0
+               end if
 
                ! Left side of the edge
                dpl = qbl(1,iquad) * ql(1,iquad,k)
@@ -966,6 +1006,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux
+   real, parameter :: eps = 1.0e-10
 
    jj=1
    kk=1
@@ -1010,6 +1051,15 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                      qr(ivar,iquad,k) = qr(ivar,iquad,k) + hi*q_recv(index+ivar,n,kk)
                   end do
                enddo
+
+               if (ql(1,iquad,k) < g_over_alpha(k)*eps) then
+                  ql(1,iquad,k) = g_over_alpha(k)*eps
+                  ql(2:3,iquad,k) = 0.0
+               end if
+               if (qr(1,iquad,k) < g_over_alpha(k)*eps) then
+                  qr(1,iquad,k) = g_over_alpha(k)*eps
+                  qr(2:3,iquad,k) = 0.0
+               end if
 
                ! Left side of the edge
                dpl = qbl(1,iquad) * ql(1,iquad,k)

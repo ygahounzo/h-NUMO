@@ -79,6 +79,7 @@ contains
         real, dimension(nlayers) :: pp, up, vp
         real, dimension(nlayers+1) :: pprime
         integer :: I, Iq, ip, k
+        real, parameter :: eps = 1.0e-6
 
         !speed1 = cd_mlswe/gravity
 
@@ -106,6 +107,11 @@ contains
                 pbq = pbq + hi*pbprime_df(I)
             end do
 
+            if (dp <= (gravity/alpha_mlswe(nlayers))*eps) then
+                dp = (gravity/alpha_mlswe(nlayers))*eps
+                udp = 0.0 ; vdp = 0.0 ; dpp = 0.0
+            end if
+
             do k = 1, nlayers
                 do ip = 1,npts
                     I = indexq(ip,Iq)
@@ -114,6 +120,11 @@ contains
                     up(k) = up(k) + hi*qprime_df(2,I,k)
                     vp(k) = vp(k) + hi*qprime_df(3,I,k)
                 enddo
+
+                if (pp(k) <= (gravity/alpha_mlswe(k))*eps) then
+                    pp(k) = (gravity/alpha_mlswe(k))*eps
+                    up(k) = 0.0 ; vp(k) = 0.0
+                end if
 
                 pprime(k+1) = pprime(k) + pp(k)
                 H_b = H_b + 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
@@ -207,6 +218,7 @@ contains
         real :: ppl, ppr, upl, upr, vpl, vpr
         real, dimension(nlayers+1) :: pprime_l, pprime_r
         integer :: itype, k
+        real, parameter :: eps = 1.0e-10
 
         do iface = 1, nface
 
@@ -252,14 +264,23 @@ contains
                 else
                     qbr(:,iquad) = qbl(:,iquad)
                     pbr(iquad) = pbl(iquad)
+                endif 
 
-                    if(er == -4) then
-                        un = nxl*qbl(3,iquad) + nyl*qbl(4,iquad)
-                        qbr(3,iquad) = qbl(3,iquad) - 2.0*un*nxl
-                        qbr(4,iquad) = qbl(4,iquad) - 2.0*un*nyl
-                    elseif(er == -2) then
-                        qbr(3:4,iquad) = -qbl(3:4,iquad)
-                    end if
+                if (qbl(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
+                    qbl(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
+                    qbl(2:4,iquad) = 0.0
+                elseif( qbr(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
+                    qbr(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
+                    qbr(2:4,iquad) = 0.0
+                end if
+
+                ! Apply boundary conditions
+                if(er == -4) then
+                    un = nxl*qbl(3,iquad) + nyl*qbl(4,iquad)
+                    qbr(3,iquad) = qbl(3,iquad) - 2.0*un*nxl
+                    qbr(4,iquad) = qbl(4,iquad) - 2.0*un*nyl
+                elseif(er == -2) then
+                    qbr(3:4,iquad) = -qbl(3:4,iquad)
                 end if
 
                 pprime_l(1) = 0.0; pprime_r(1) = 0.0
@@ -293,16 +314,24 @@ contains
                         ppr = ppl
                         upr = upl
                         vpr = vpl
+                    endif
 
-                        ! Apply boundary conditions
-                        if(er == -4) then
-                            un = nxl*upl + nyl*vpl
-                            upr = upl - 2.0*un*nxl
+                    if (ppl <= (gravity/alpha_mlswe(k))*eps) then
+                        ppl = (gravity/alpha_mlswe(k))*eps
+                        upl = 0.0 ; vpl = 0.0
+                    end if
+                    if (ppr <= (gravity/alpha_mlswe(k))*eps) then
+                        ppr = (gravity/alpha_mlswe(k))*eps
+                        upr = 0.0 ; vpr = 0.0
+                    end if
+                    ! Apply boundary conditions
+                    if(er == -4) then
+                        un = nxl*upl + nyl*vpl
+                        upr = upl - 2.0*un*nxl
                             vpr = vpl - 2.0*un*nyl
-                        elseif(er == -2) then
-                            upr = -upl
-                            vpr = -vpl
-                        end if
+                    elseif(er == -2) then
+                        upr = -upl
+                        vpr = -vpl
                     end if
 
                     Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))

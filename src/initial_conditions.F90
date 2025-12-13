@@ -191,7 +191,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
             if(y <= 300.0) then
                zbot_df(I1) = H_bot
             else
-               zbot_df(I1) = H_bot - 9.5*(y - 300.0)
+               zbot_df(I1) = H_bot - 10.0*(y - 300.0)
             end if
          else
             if(400.0 <= x .and. x <= 500.0) then
@@ -228,7 +228,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
             x = coord(1,I1)/1.0e3
             y = coord(2,I1)/1.0e3
 
-            if((650.0 <= y .and. y <= Ly) .and. (400.0 <= x .and. x <= 500.0)) then
+            if((650.0 <= y .and. y <= Ly/1.0e3) .and. (400.0 <= x .and. x <= 500.0)) then
                z_interface(I1,k) = max(-100.0, z_interface(I1,k))
             end if
 

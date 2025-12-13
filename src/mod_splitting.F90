@@ -363,9 +363,10 @@ module mod_splitting
         use mod_input, only: nlayers, dt
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq
-        use mod_initial, only: pbprime_df
+        use mod_initial, only: pbprime_df, alpha_mlswe
         use mod_create_rhs_mlswe, only: consistency_mass_rhs
         use mod_metrics, only: massinv
+        use mod_constants, only: gravity
         
         implicit none
     
@@ -373,12 +374,20 @@ module mod_splitting
         real, intent(inout)    :: q_df(3,npoin,nlayers)
     
         ! Local variables
-        integer :: k
+        integer :: k, I
         real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
+        real :: eps = 1.0e-10, dry_cutoff
 
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
         do k = 1,nlayers
-            dpprime_df(:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+            dry_cutoff = (gravity/alpha_mlswe(k))*eps
+            do I = 1,npoin
+                if (one_plus_eta_temp(I) > dry_cutoff) then
+                    dpprime_df(I,k) = q_df(1,I,k) / one_plus_eta_temp(I)
+                else
+                    dpprime_df(I,k) = dry_cutoff
+                end if
+            end do
         end do
 
         ! RHS of the consistency terms

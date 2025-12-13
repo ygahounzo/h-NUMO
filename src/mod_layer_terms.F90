@@ -146,6 +146,8 @@ module mod_layer_terms
         use mod_basis, only : ngl
         use mod_input, only: nlayers
         use mod_face, only: imapl
+        use mod_initial, only: alpha_mlswe
+        use mod_constants, only: gravity
 
         implicit none
         
@@ -155,7 +157,7 @@ module mod_layer_terms
         real, dimension(nlayers) :: a, b, c
         real, dimension(nlayers,2) :: r
         real, dimension(nlayers) :: weight
-        real :: eps = 1.0e-12
+        real :: eps = 1.0e-10
         real :: ubar, vbar, mult, dpbar
         integer :: I, k, el, er, n , iface, il, jl, kl, Iq
         real :: uv_df(2,npoin,nlayers)
@@ -168,23 +170,27 @@ module mod_layer_terms
         end do
 
         do I = 1, npoin
-            ubar = 0.0
-            vbar = 0.0
+            ubar = 0.0 ; vbar = 0.0
             
             do k = 1, nlayers
                 ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
                 vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
             end do
 
-            if(qb_df(1,I) > 0.0) then
-                
+            if(qb_df(1,I) > ((gravity/alpha_mlswe(nlayers))*eps)) then
+
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
 
-                    uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
-                    uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    if (q_df(1,I,k) <= ((gravity/alpha_mlswe(k))*eps)) then
+                        uv_df(1,I,k) = 0.0
+                        uv_df(2,I,k) = 0.0
+                    else
+                        uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
+                        uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    end if
                 end do
 
             else
@@ -205,6 +211,8 @@ module mod_layer_terms
         use mod_basis, only : ngl
         use mod_input, only: nlayers
         use mod_face, only: imapl
+        use mod_initial, only: alpha_mlswe
+        use mod_constants, only: gravity
 
         implicit none
         
@@ -212,7 +220,7 @@ module mod_layer_terms
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(2,npoin,nlayers), intent(out) :: uv_df
         
-        real :: ubar, vbar
+        real :: ubar, vbar, eps = 1.0
         integer :: I, k, el, er, n , iface, il, jl, kl, Iq
 
         uv_df = 0.0
@@ -231,15 +239,20 @@ module mod_layer_terms
                 vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
             end do
 
-            if(qb_df(1,I) > 0.0) then
+            if(qb_df(1,I) > ((gravity/alpha_mlswe(nlayers))*eps)) then
                 
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
 
-                    uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
-                    uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    if (q_df(1,I,k) <= ((gravity/alpha_mlswe(k))*eps)) then
+                        uv_df(1,I,k) = 0.0
+                        uv_df(2,I,k) = 0.0
+                    else
+                        uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
+                        uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    end if
                 end do
 
             else
