@@ -80,6 +80,7 @@ contains
         real, dimension(nlayers+1) :: pprime
         integer :: I, Iq, ip, k
         real, parameter :: eps = 1.0e-6
+        real, dimension(2,3) :: flux
 
         !speed1 = cd_mlswe/gravity
 
@@ -94,7 +95,7 @@ contains
 
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
             pp = 0.0; up = 0.0; vp = 0.0; pbq = 0.0
-            pprime(1) = 0.0 ; H_b = 0.0
+            pprime(:) = 0.0 ; H_b = 0.0
 
             do ip = 1,npts
                 I = indexq(ip,Iq)
@@ -106,11 +107,6 @@ contains
                 vdp = vdp + hi*qb_df(4,I)
                 pbq = pbq + hi*pbprime_df(I)
             end do
-
-            if (dp <= (gravity/alpha_mlswe(nlayers))*eps) then
-                dp = (gravity/alpha_mlswe(nlayers))*eps
-                udp = 0.0 ; vdp = 0.0 ; dpp = 0.0
-            end if
 
             do k = 1, nlayers
                 do ip = 1,npts
@@ -155,19 +151,30 @@ contains
             ope = 1.0 + (dpp / pbq)
             Hq = (ope**2) * H_b
 
-            qu = ub * udp + ope * sum(up(:)*(pp(:) * up(:)))
-            quv = vb * udp + ope * sum(vp(:)*(pp(:) * up(:)))
-            qvu = ub * vdp + ope * sum(up(:)*(pp(:) * vp(:)))
-            qv = vb * vdp + ope * sum(vp(:)*(pp(:) * vp(:)))
+            ! pb flux
+            flux(1,1) = udp
+            flux(2,1) = vdp
 
-            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + qu
-            Qv_ave(Iq) = Qv_ave(Iq) + qv;  Quv_ave(Iq) = Quv_ave(Iq) + quv
+            ! pbu flux
+            flux(1,2) = (ub*udp + ope*sum(up(:)*(pp(:)*up(:))))
+            flux(2,2) = (vb*udp + ope*sum(vp(:)*(pp(:)*up(:))))
+
+            ! pbv flux
+            flux(1,3) = (ub*vdp + ope*sum(up(:)*(pp(:)*vp(:))))
+            flux(2,3) = (vb*vdp + ope*sum(vp(:)*(pp(:)*vp(:))))
+
+            H_ave(Iq) = H_ave(Iq) + Hq
+            btp_mass_flux_ave(:,Iq) = btp_mass_flux_ave(:,Iq) + flux(:,1)
+            Qu_ave(:,Iq) = Qu_ave(:,Iq) + flux(:,2) ; 
+            Qv_ave(:,Iq) = Qv_ave(:,Iq) + flux(:,3) ; 
+
+            flux(1,2) = flux(1,2) + Hq
+            flux(2,3) = flux(2,3) + Hq
+
             tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tb_u
             tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tb_v
             ope_ave(Iq) = ope_ave(Iq) + ope
             ope2_ave(Iq) = ope2_ave(Iq) + ope**2
-            btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + udp
-            btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
             uvb_ave(1,Iq) = uvb_ave(1,Iq) + ub
             uvb_ave(2,Iq) = uvb_ave(2,Iq) + vb
 
@@ -179,9 +186,9 @@ contains
                 !Eta derivatives
                 dhdy = dpsidy(ip,Iq)
 
-                rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
-                rhs(2,I) = rhs(2,I) + wq*(hi*sc_x + dhdx*(Hq + qu) + quv*dhdy)
-                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*qvu + dhdy*(Hq + qv))
+                rhs(1,I) = rhs(1,I) + wq*(dhdx*flux(1,1) + dhdy*flux(2,1))
+                rhs(2,I) = rhs(2,I) + wq*(hi*sc_x + dhdx*flux(1,2) + quv*flux(2,2))
+                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*flux(1,3) + dhdy*flux(2,3))
 
             end do
         end do
@@ -209,16 +216,17 @@ contains
         integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
         real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
         real, dimension(nq) :: quu, quv, qvu, qvv, H_face_tmp, flux_edge_x, flux_edge_y
-        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq, one_plus_eta_edge
+        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq, one_eta
         real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
         real :: qbl(4,nq), qbr(4,nq), lam1, lam2, dispp
         real :: c_minus, c_plus, c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
         real, dimension(nq) :: c_pb_LR
         real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
-        real :: ppl, ppr, upl, upr, vpl, vpr
+        real :: ppl, ppr, upl, upr, vpl, vpr, Hq, H_bcl_ql, H_bcl_qr
         real, dimension(nlayers+1) :: pprime_l, pprime_r
         integer :: itype, k
         real, parameter :: eps = 1.0e-10
+        real, dimension(2,nq) :: flux_pb, flux_u, flux_v, Qu_q, Qv_q
 
         do iface = 1, nface
 
@@ -230,7 +238,7 @@ contains
             er = face(8,iface)
 
             qbl = 0.0; qbr = 0.0 ; pbl = 0.0; pbr = 0.0
-            Q_uu_q = 0.0; Q_uv_q = 0.0; Q_vu_q = 0.0; Q_vv_q = 0.0 ; H_bcl_q = 0.0
+            Qu_q = 0.0; Qv_q = 0.0 ; H_bcl_q = 0.0
 
             do iquad = 1,nq
 
@@ -266,14 +274,6 @@ contains
                     pbr(iquad) = pbl(iquad)
                 endif 
 
-                if (qbl(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-                    qbl(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
-                    qbl(2:4,iquad) = 0.0
-                elseif( qbr(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-                    qbr(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
-                    qbr(2:4,iquad) = 0.0
-                end if
-
                 ! Apply boundary conditions
                 if(er == -4) then
                     un = nxl*qbl(3,iquad) + nyl*qbl(4,iquad)
@@ -283,7 +283,7 @@ contains
                     qbr(3:4,iquad) = -qbl(3:4,iquad)
                 end if
 
-                pprime_l(1) = 0.0; pprime_r(1) = 0.0
+                pprime_l(:) = 0.0; pprime_r(:) = 0.0
                 do k = 1, nlayers
                     ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
                     do n = 1, ngl
@@ -311,9 +311,7 @@ contains
                             vpr = vpr + hi*qprime_df(3,I,k)
                         enddo
                     else
-                        ppr = ppl
-                        upr = upl
-                        vpr = vpl
+                        ppr = ppl ; upr = upl ; vpr = vpl
                     endif
 
                     if (ppl <= (gravity/alpha_mlswe(k))*eps) then
@@ -328,21 +326,24 @@ contains
                     if(er == -4) then
                         un = nxl*upl + nyl*vpl
                         upr = upl - 2.0*un*nxl
-                            vpr = vpl - 2.0*un*nyl
+                        vpr = vpl - 2.0*un*nyl
                     elseif(er == -2) then
                         upr = -upl
                         vpr = -vpl
                     end if
 
-                    Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
-                    Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
-                    Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
-                    Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+                    Qu_q(1,iquad) = Qu_q(1,iquad) + 0.5*((upl*(upl*ppl)) + (upr*(upr*ppr)))
+                    Qu_q(2,iquad) = Qu_q(2,iquad) + 0.5*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
+
+                    Qv_q(1,iquad) = Qv_q(1,iquad) + 0.5*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
+                    Qv_q(2,iquad) = Qv_q(2,iquad) + 0.5*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
 
                     pprime_l(k+1) = pprime_l(k) + ppl
                     pprime_r(k+1) = pprime_r(k) + ppr
 
-                    H_bcl_q(iquad) = H_bcl_q(iquad) + 0.25*alpha_mlswe(k)*((pprime_l(k+1)**2 - pprime_l(k)**2) + (pprime_r(k+1)**2 - pprime_r(k)**2))
+                    H_bcl_ql  = 0.5*alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
+                    H_bcl_qr  = 0.5*alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
+                    H_bcl_q(iquad) = H_bcl_q(iquad) + 0.5*(H_bcl_ql + H_bcl_qr)
                 end do
 
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
@@ -358,7 +359,7 @@ contains
                                             + c_pb_R * qbr(2,iquad) &
                                             + c_pbub_LR * (pU_L + pU_R)
 
-                one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
+                one_eta(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
 
                 ! Compute mass fluxes at each element face.
 
@@ -366,12 +367,12 @@ contains
                 c_pbub_R = c_plus / (c_minus + c_plus)
                 c_pb_LR(iquad) = c_minus * c_plus / (c_minus + c_plus)
 
-                flux_edge_x(iquad) = c_pbub_L * qbl(3,iquad) &
+                flux_pb(1,iquad) = c_pbub_L * qbl(3,iquad) &
                                             + c_pbub_R * qbr(3,iquad) &
                                             + c_pb_LR(iquad) * &
                                             (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
 
-                flux_edge_y(iquad) = c_pbub_L * qbl(4,iquad) &
+                flux_pb(2,iquad) = c_pbub_L * qbl(4,iquad) &
                                             + c_pbub_R * qbr(4,iquad) &
                                             + c_pb_LR(iquad) * &
                                             (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
@@ -381,29 +382,29 @@ contains
             ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
             vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
 
-            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_q(:)
-            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_q(:)
-            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_vu_q(:)
-            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_q(:)
+            flux_u(1,:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_eta(:) * Qu_q(1,:)
+            flux_u(2,:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_eta(:) * Qu_q(2,:)
+
+            flux_v(1,:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_eta(:) * Qv_q(1,:)
+            flux_v(2,:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_eta(:) * Qv_q(2,:)
 
             ! Compute pressure forcing H_face at each element face.
-            H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_q(:)
+            H_face_tmp(:) = (one_eta(:)**2) * H_bcl_q(:)
 
             ! Accumulate sums for time averaging
 
-            btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
-            btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
+            btp_mass_flux_face_ave(1:2,:,iface) = btp_mass_flux_face_ave(1:2,:,iface) + flux_pb(:,:)
             H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_tmp(:)
-            Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:)
-            Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
-            Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:)
-            Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
+
+            Qu_face_ave(:,:,iface) = Qu_face_ave(:,:,iface) + flux_u(:,:)
+            Qv_face_ave(:,:,iface) = Qv_face_ave(:,:,iface) + flux_v(:,:)
+
             ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + (1.0 + (qbl(2,:)/pbl))
             ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + (1.0 + (qbr(2,:)/pbr))
             ope2_face_ave(1,:,iface) = ope2_face_ave(1,:,iface) + (1.0 + (qbl(2,:)/pbl))**2
             ope2_face_ave(2,:,iface) = ope2_face_ave(2,:,iface) + (1.0 + (qbr(2,:)/pbr))**2
             one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) &
-                                                + one_plus_eta_edge(:)**2
+                                                + one_eta(:)**2
             uvb_face_ave(1,1,:,iface) = uvb_face_ave(1,1,:,iface) + ul
             uvb_face_ave(1,2,:,iface) = uvb_face_ave(1,2,:,iface) + ur
             uvb_face_ave(2,1,:,iface) = uvb_face_ave(2,1,:,iface) + vl
@@ -415,18 +416,16 @@ contains
 
                 nxl = normal_vector_q(1,iquad,1,iface)
                 nyl = normal_vector_q(2,iquad,1,iface)
-
-                H_kx = nxl*H_face_tmp(iquad)
-                H_ky = nyl*H_face_tmp(iquad)
-
                 lamb = c_pb_LR(iquad)
 
+                Hq = H_face_tmp(iquad)
+                
                 dispu = 0.5*lamb*(qbr(3,iquad) - qbl(3,iquad))
                 dispv = 0.5*lamb*(qbr(4,iquad) - qbl(4,iquad))
-                flux_x = nxl*quu(iquad) + nyl*quv(iquad) - dispu
-                flux_y = nxl*qvu(iquad) + nyl*qvv(iquad) - dispv
 
-                flux = nxl*flux_edge_x(iquad) + nyl*flux_edge_y(iquad) 
+                flux = nxl*flux_pb(1,iquad) + nyl*flux_pb(2,iquad)
+                flux_x = nxl*(flux_u(1,iquad) + Hq) + nyl*flux_u(2,iquad) - dispu
+                flux_y = nxl*flux_v(1,iquad) + nyl*(flux_v(2,iquad) + Hq) - dispv
 
                 do n = 1, ngl
 
@@ -437,8 +436,8 @@ contains
                     I = intma(il,jl,kl,el)
 
                     rhs(1,I) = rhs(1,I) - wq*hi*flux
-                    rhs(2,I) = rhs(2,I) - wq*hi*(H_kx + flux_x)
-                    rhs(3,I) = rhs(3,I) - wq*hi*(H_ky + flux_y)
+                    rhs(2,I) = rhs(2,I) - wq*hi*flux_x
+                    rhs(3,I) = rhs(3,I) - wq*hi*flux_y
 
                     if(er > 0) then
                         ir = imapr(1,n,1,iface)
@@ -447,8 +446,8 @@ contains
                         I = intma(ir,jr,kr,er)
 
                         rhs(1,I) = rhs(1,I) + wq*hi*flux
-                        rhs(2,I) = rhs(2,I) + wq*hi*(H_kx + flux_x)
-                        rhs(3,I) = rhs(3,I) + wq*hi*(H_ky + flux_y)
+                        rhs(2,I) = rhs(2,I) + wq*hi*flux_x
+                        rhs(3,I) = rhs(3,I) + wq*hi*flux_y
 
                     end if
                 end do

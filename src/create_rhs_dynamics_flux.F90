@@ -194,7 +194,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                qbr(2:4,iquad) = 0.0
             end if
 
-            pprime_l(1) = 0.0; pprime_r(1) = 0.0
+            pprime_l(:) = 0.0; pprime_r(:) = 0.0
             do k = 1, nlayers
                ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
 
@@ -225,10 +225,10 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   upr = 0.0 ; vpr = 0.0
                end if
 
-               Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
-               Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
-               Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
-               Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+               Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*((upl*(upl*ppl)) + (upr*(upr*ppr)))
+               Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
+               Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
+               Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
 
                pprime_l(k+1) = pprime_l(k) + ppl
                pprime_r(k+1) = pprime_r(k) + ppr

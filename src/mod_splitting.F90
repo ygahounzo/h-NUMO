@@ -18,7 +18,7 @@ module mod_splitting
         
     implicit none
 
-    public :: thickness, momentum, momentum_mass
+    public :: thickness, momentum, momentum_mass, create_rhs_bcl
     
     contains
 
@@ -75,9 +75,6 @@ module mod_splitting
                 stop
             endif
         end do
-
-        ! consistency through flux adjustment 
-        call apply_consistency(q_df) 
 
         ! Store the degree of freedom (nodal points) values of dpprime_df
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
@@ -270,9 +267,6 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
-        ! consistency through flux adjustment 
-        call apply_consistency(q_df)
-
         ! Compute dpprime, uprime and vprime at the quad and nodal points
         call extract_velocity(uv_df, q_df, qb_df)
 
@@ -342,9 +336,7 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc == 1) then
-            call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
-        elseif (method_visc > 1) then
+        if (method_visc > 0) then
             call bcl_create_laplacian(rhs_visc_bcl)
         endif 
 
@@ -353,51 +345,51 @@ module mod_splitting
 
     end subroutine create_rhs_bcl
 
-    subroutine apply_consistency(q_df)
+    ! subroutine apply_consistency(q_df)
 
-        ! ========================================================================================
-        ! This subroutine enforce consistency between the layer masses and the barotropic mass
-        ! through flux adjustment (see Higdon (2015)).
-        ! ========================================================================================
+    !     ! ========================================================================================
+    !     ! This subroutine enforce consistency between the layer masses and the barotropic mass
+    !     ! through flux adjustment (see Higdon (2015)).
+    !     ! ========================================================================================
 
-        use mod_input, only: nlayers, dt
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-        use mod_initial, only: pbprime_df, alpha_mlswe
-        use mod_create_rhs_mlswe, only: consistency_mass_rhs
-        use mod_metrics, only: massinv
-        use mod_constants, only: gravity
+    !     use mod_input, only: nlayers, dt
+    !     use mod_grid, only: npoin, npoin_q, nface
+    !     use mod_basis, only: nq
+    !     use mod_initial, only: pbprime_df, alpha_mlswe
+    !     use mod_create_rhs_mlswe, only: consistency_mass_rhs
+    !     use mod_metrics, only: massinv
+    !     use mod_constants, only: gravity
         
-        implicit none
+    !     implicit none
     
-        ! Input variables
-        real, intent(inout)    :: q_df(3,npoin,nlayers)
+    !     ! Input variables
+    !     real, intent(inout)    :: q_df(3,npoin,nlayers)
     
-        ! Local variables
-        integer :: k, I
-        real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
-        real :: eps = 1.0e-10, dry_cutoff
+    !     ! Local variables
+    !     integer :: k, I
+    !     real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
+    !     real :: eps = 1.0e-10, dry_cutoff
 
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-        do k = 1,nlayers
-            dry_cutoff = (gravity/alpha_mlswe(k))*eps
-            do I = 1,npoin
-                if (one_plus_eta_temp(I) > dry_cutoff) then
-                    dpprime_df(I,k) = q_df(1,I,k) / one_plus_eta_temp(I)
-                else
-                    dpprime_df(I,k) = dry_cutoff
-                end if
-            end do
-        end do
+    !     one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+    !     do k = 1,nlayers
+    !         dry_cutoff = (gravity/alpha_mlswe(k))*eps
+    !         do I = 1,npoin
+    !             if (one_plus_eta_temp(I) > dry_cutoff) then
+    !                 dpprime_df(I,k) = q_df(1,I,k) / one_plus_eta_temp(I)
+    !             else
+    !                 dpprime_df(I,k) = dry_cutoff
+    !             end if
+    !         end do
+    !     end do
 
-        ! RHS of the consistency terms
-        call consistency_mass_rhs(dp_advec, dpprime_df)
+    !     ! RHS of the consistency terms
+    !     call consistency_mass_rhs(dp_advec, dpprime_df)
 
-        ! Apply consistency to the thickness
-        do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*massinv(:)*dp_advec(:,k)
-        end do
+    !     ! Apply consistency to the thickness
+    !     do k = 1,nlayers
+    !         q_df(1,:,k) = q_df(1,:,k) + dt*massinv(:)*dp_advec(:,k)
+    !     end do
         
-    end subroutine apply_consistency
+    ! end subroutine apply_consistency
 
 end module mod_splitting

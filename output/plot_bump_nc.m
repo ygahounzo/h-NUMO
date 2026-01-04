@@ -68,7 +68,7 @@ for ifile = file_num_start:delta_file_num:file_num_end
 
     C0 = zeros([size(qi),3]);
     C0(:,:,1) = zeros(size(qi));
-    C0(:,:,2) = 0.5*ones(size(qi)) + 1e4*qi; 
+    C0(:,:,2) = 0.5*ones(size(qi)) + 1e5*qi; 
     C0(:,:,3) = ones(size(qi));
 
     surf(xi,yi,qi,C0,'FaceColor', 'interp','EdgeColor','none',FaceAlpha=0.7); hold on
