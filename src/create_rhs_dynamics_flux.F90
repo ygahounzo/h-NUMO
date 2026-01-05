@@ -111,7 +111,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                            num_nbh, num_send_recv
  
    use mod_ref, only: nbtp_var
-   use mod_input, only: nlayers
+   use mod_input, only: nlayers, dry_cutoff
    use mod_constants, only: gravity
    use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
@@ -146,12 +146,13 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real :: hi, H_kx, H_ky
    real, dimension(nlayers+1) :: pprime_l, pprime_r
    real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
-   real :: ppl, ppr, upl, upr, vpl, vpr
-   real, parameter :: eps = 1.0e-10 ! Small parameter to prevent negative water depth.
+   real :: ppl, ppr, upl, upr, vpl, vpr, pb_cutoff
 
    jj=1
    kk=1
    imm = 0
+
+   pb_cutoff = (gravity/alpha_mlswe(nlayers))*dry_cutoff
 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
@@ -186,11 +187,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                pbr(iquad) = pbr(iquad) + hi*q_recv(5,n,kk)
             end do
 
-            if (qbl(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-               qbl(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
+            if (qbl(1,iquad) <= pb_cutoff) then
+               qbl(1,iquad) = pb_cutoff
                qbl(2:4,iquad) = 0.0
-            elseif( qbr(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-               qbr(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
+            elseif( qbr(1,iquad) <= pb_cutoff) then
+               qbr(1,iquad) = pb_cutoff
                qbr(2:4,iquad) = 0.0
             end if
 
@@ -216,19 +217,19 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   vpr = vpr + hi*q_recv(ii+3,n,kk)
                enddo
 
-               if (ppl <= (gravity/alpha_mlswe(k))*eps) then
-                  ppl = (gravity/alpha_mlswe(k))*eps
+               if (ppl <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                  ppl = (gravity/alpha_mlswe(k))*dry_cutoff
                   upl = 0.0 ; vpl = 0.0
                end if
-               if (ppr <= (gravity/alpha_mlswe(k))*eps) then
-                  ppr = (gravity/alpha_mlswe(k))*eps
+               if (ppr <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                  ppr = (gravity/alpha_mlswe(k))*dry_cutoff
                   upr = 0.0 ; vpr = 0.0
                end if
 
-               Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
-               Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
-               Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
-               Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+               Q_uu_q(iquad) = Q_uu_q(iquad) + 0.25*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
+               Q_uv_q(iquad) = Q_uv_q(iquad) + 0.25*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
+               Q_vu_q(iquad) = Q_vu_q(iquad) + 0.25*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
+               Q_vv_q(iquad) = Q_vv_q(iquad) + 0.25*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
 
                pprime_l(k+1) = pprime_l(k) + ppl
                pprime_r(k+1) = pprime_r(k) + ppr
@@ -470,7 +471,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_metrics, only: jac, massinv
    use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
                            num_nbh, num_send_recv
-   use mod_input, only: nlayers
+   use mod_input, only: nlayers, dry_cutoff
    use mod_constants, only : gravity
    use mod_initial, only : alpha_mlswe, zbot_face
    use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
@@ -507,7 +508,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(3,nq,nlayers) :: H_face, udp_flux, vdp_flux
-   real, parameter :: eps = 1.0e-10 ! Small value to prevent dry states
 
    jj=1
    kk=1
@@ -553,12 +553,12 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   end do
                enddo
 
-               if (ql(1,iquad,k) <= g_over_alpha(k)*eps) then
-                  ql(1,iquad,k) = g_over_alpha(k)*eps
+               if (ql(1,iquad,k) <= g_over_alpha(k)*dry_cutoff) then
+                  ql(1,iquad,k) = g_over_alpha(k)*dry_cutoff
                   ql(2:3,iquad,k) = 0.0
                end if
-               if (qr(1,iquad,k) <= g_over_alpha(k)*eps) then
-                  qr(1,iquad,k) = g_over_alpha(k)*eps
+               if (qr(1,iquad,k) <= g_over_alpha(k)*dry_cutoff) then
+                  qr(1,iquad,k) = g_over_alpha(k)*dry_cutoff
                   qr(2:3,iquad,k) = 0.0
                end if
 
@@ -827,7 +827,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
    use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
                            num_nbh, num_send_recv
-   use mod_input, only: nlayers
+   use mod_input, only: nlayers, dry_cutoff
    use mod_variables, only: ope_face_ave, uvb_face_ave, sum_layer_mass_flux_face
    use mod_constants, only : gravity
    use mod_initial, only : alpha_mlswe
@@ -851,7 +851,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, dimension(nq,nlayers) :: udp_flux, vdp_flux
    real, dimension(3,nq,nlayers) :: ql, qr
    real, dimension(3,nq) :: qbl, qbr
-   real, parameter :: eps = 1.0e-10 ! Small parameter to prevent negative water depth.
 
    jj=1
    kk=1
@@ -892,12 +891,12 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   end do
                enddo
 
-               if (ql(1,iquad,k) < (gravity/alpha_mlswe(k))*eps) then
-                  ql(1,iquad,k) = gravity/alpha_mlswe(k)*eps
+               if (ql(1,iquad,k) < (gravity/alpha_mlswe(k))*dry_cutoff) then
+                  ql(1,iquad,k) = gravity/alpha_mlswe(k)*dry_cutoff
                   ql(2:3,iquad,k) = 0.0
                end if
-               if (qr(1,iquad,k) < (gravity/alpha_mlswe(k))*eps) then
-                  qr(1,iquad,k) = (gravity/alpha_mlswe(k))*eps
+               if (qr(1,iquad,k) < (gravity/alpha_mlswe(k))*dry_cutoff) then
+                  qr(1,iquad,k) = (gravity/alpha_mlswe(k))*dry_cutoff
                   qr(2:3,iquad,k) = 0.0
                end if
 
@@ -970,7 +969,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    use mod_metrics, only: jac, massinv
    use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
                            num_nbh, num_send_recv
-   use mod_input, only: nlayers
+   use mod_input, only: nlayers, dry_cutoff
    use mod_constants, only : gravity
    use mod_initial, only : alpha_mlswe, zbot_face
    use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
@@ -1006,7 +1005,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux
-   real, parameter :: eps = 1.0e-10
 
    jj=1
    kk=1
@@ -1052,12 +1050,12 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   end do
                enddo
 
-               if (ql(1,iquad,k) < g_over_alpha(k)*eps) then
-                  ql(1,iquad,k) = g_over_alpha(k)*eps
+               if (ql(1,iquad,k) < g_over_alpha(k)*dry_cutoff) then
+                  ql(1,iquad,k) = g_over_alpha(k)*dry_cutoff
                   ql(2:3,iquad,k) = 0.0
                end if
-               if (qr(1,iquad,k) < g_over_alpha(k)*eps) then
-                  qr(1,iquad,k) = g_over_alpha(k)*eps
+               if (qr(1,iquad,k) < g_over_alpha(k)*dry_cutoff) then
+                  qr(1,iquad,k) = g_over_alpha(k)*dry_cutoff
                   qr(2:3,iquad,k) = 0.0
                end if
 

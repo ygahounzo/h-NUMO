@@ -343,7 +343,9 @@ module mod_laplacian_quad
     subroutine bcl_compute_laplacian(lap_q)
 
         use mod_variables, only: dpprime_visc, graduvb_ave, dpp_graduv
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, dry_cutoff
+        use mod_constants, only: gravity
+        use mod_initial, only: alpha_mlswe
 
         implicit none
 
@@ -365,6 +367,8 @@ module mod_laplacian_quad
                 qq(3) = dpprime_visc(Iq,k)*graduvb_ave(3,Iq) + dpp_graduv(3,Iq,k)
                 qq(4) = dpprime_visc(Iq,k)*graduvb_ave(4,Iq) + dpp_graduv(4,Iq,k)
 
+                ! if (dpprime_visc(Iq,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) qq(:) = 0.0
+                
                 do ip = 1,npts
 
                     I = index_df(ip,Iq)
@@ -380,7 +384,7 @@ module mod_laplacian_quad
     subroutine create_rhs_laplacian_flux(rhs,gradq)
 
         use mod_basis, only: nq, psi
-        use mod_variables, only: btp_graduv_dpp_face, graduvb_face_ave
+        use mod_variables, only: btp_dpp_graduv, graduvb_face_ave, pbprime_visc
         use mod_grid, only: face_type
     
         implicit none
@@ -399,6 +403,7 @@ module mod_laplacian_quad
         integer iquad, jquad, ivar
         real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
         real, dimension(4,ngl) :: ql, qr
+        real, dimension(5,ngl) :: btp_ql, btp_qr
 
         beta = 0.5
         alpha = 1.0 - beta
@@ -423,6 +428,8 @@ module mod_laplacian_quad
                 ip = intma(il,jl,kl,iel)
 
                 ql(:,iquad) = gradq(:,ip)
+                btp_ql(1:4,iquad) = btp_dpp_graduv(1:4,ip)
+                btp_ql(5,iquad) = pbprime_visc(ip)
 
                 if (ier > 0) then
 
@@ -432,9 +439,12 @@ module mod_laplacian_quad
                     ip = intma(ir,jr,kr,ier)
 
                     qr(:,iquad) = gradq(:,ip)
+                    btp_qr(1:4,iquad) = btp_dpp_graduv(1:4,ip)
+                    btp_qr(5,iquad) = pbprime_visc(ip)
 
                 else
                     qr(:,iquad) = ql(:,iquad)
+                    btp_qr(:,iquad) = btp_ql(:,iquad)
                     if(ier == -4) then 
 
                         un = ql(1,iquad)*nx + ql(2,iquad)*ny
@@ -444,6 +454,14 @@ module mod_laplacian_quad
                         un = ql(3,iquad)*nx + ql(4,iquad)*ny
                         qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
                         qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
+
+                        un = btp_ql(1,iquad)*nx + btp_ql(2,iquad)*ny
+                        btp_qr(1,iquad) = btp_ql(1,iquad) - 2.0*un*nx
+                        btp_qr(2,iquad) = btp_ql(2,iquad) - 2.0*un*ny
+
+                        un = btp_ql(3,iquad)*nx + btp_ql(4,iquad)*ny
+                        btp_qr(3,iquad) = btp_ql(3,iquad) - 2.0*un*nx
+                        btp_qr(4,iquad) = btp_ql(4,iquad) - 2.0*un*ny
                     end if
                 end if
 
@@ -451,13 +469,13 @@ module mod_laplacian_quad
                 graduvb_face_ave(:,2,iquad,iface) = graduvb_face_ave(:,2,iquad,iface) + qr(:,iquad)
 
                 do ivar = 1,4
-                    flux_uv_visc_face(ivar,1) = btp_graduv_dpp_face(5,1,iquad,iface)* &
+                    flux_uv_visc_face(ivar,1) = btp_ql(5,iquad)* &
                                                 ql(ivar,iquad) + &
-                                                btp_graduv_dpp_face(ivar,1,iquad,iface)
-                                            
-                    flux_uv_visc_face(ivar,2) = btp_graduv_dpp_face(5,2,iquad,iface)* &
+                                                btp_ql(ivar,iquad)
+
+                    flux_uv_visc_face(ivar,2) = btp_qr(5,iquad)* &
                                                 qr(ivar,iquad) + &
-                                                btp_graduv_dpp_face(ivar,2,iquad,iface)
+                                                btp_qr(ivar,iquad)
 
                 end do 
 
@@ -512,8 +530,10 @@ module mod_laplacian_quad
     subroutine bcl_create_rhs_laplacian_flux(rhs)
 
         use mod_basis, only: nq, psi
-        use mod_variables, only: graduv_dpp_face, graduvb_face_ave
-        use mod_input, only: nlayers
+        use mod_variables, only: graduv_dpp_face, graduvb_face_ave, dpp_graduv, dpprime_visc
+        use mod_input, only: nlayers, dry_cutoff
+        use mod_constants, only: gravity
+        use mod_initial, only: alpha_mlswe
         use mod_grid, only: face_type
     
         implicit none
@@ -530,6 +550,7 @@ module mod_laplacian_quad
         integer iel, ier, ilocl, ilocr, ip
         integer iquad, jquad, ivar, k
         real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
+        real, dimension(5,ngl) :: ql, qr
 
         beta = 0.5
         alpha = 1.0 - beta
@@ -547,16 +568,71 @@ module mod_laplacian_quad
                 !----------------------------Left Element
                 do iquad = 1,ngl
 
+                    nx = normal_vector(1,iquad,1,iface)
+                    ny = normal_vector(2,iquad,1,iface)
+
+                    il = imapl(1,iquad,1,iface)
+                    jl = imapl(2,iquad,1,iface)
+                    kl = imapl(3,iquad,1,iface)
+                    ip = intma(il,jl,kl,iel)
+
+                    ql(1:4,iquad) = dpp_graduv(:,ip,k)
+                    ql(5,iquad) = dpprime_visc(ip,k)
+
+                    if (ier > 0) then
+
+                        ir = imapr(1,iquad,1,iface)
+                        jr = imapr(2,iquad,1,iface)
+                        kr = imapr(3,iquad,1,iface)
+                        ip = intma(ir,jr,kr,ier)
+
+                        qr(1:4,iquad) = dpp_graduv(:,ip,k)
+                        qr(5,iquad) = dpprime_visc(ip,k)
+
+                    else
+                        qr(:,iquad) = ql(:,iquad)
+                    endif 
+
+                    ! if (ql(5,iquad) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    !     ! ql(5,iquad) = (gravity/alpha_mlswe(k))*dry_cutoff
+                    !     ql(1:4,iquad) = 0.0
+                    !     graduvb_face_ave(:,1,iquad,iface) = 0.0
+                    ! end if
+
+                    ! if (qr(5,iquad) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    !     ! qr(5,iquad) = (gravity/alpha_mlswe(k))*dry_cutoff
+                    !     qr(1:4,iquad) = 0.0
+                    !     graduvb_face_ave(:,2,iquad,iface) = 0.0
+                    ! end if
+
+                    if(ier == -4) then 
+
+                        un = ql(1,iquad)*nx + ql(2,iquad)*ny
+                        qr(1,iquad) = ql(1,iquad) - 2.0*un*nx
+                        qr(2,iquad) = ql(2,iquad) - 2.0*un*ny
+
+                        un = ql(3,iquad)*nx + ql(4,iquad)*ny
+                        qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
+                        qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
+                    end if
+
+                    
+
                     do ivar = 1,4
-                        flux_uv_visc_face(ivar,1) = graduv_dpp_face(5,1,iquad,iface,k)* &
+                        flux_uv_visc_face(ivar,1) = ql(5,iquad)* &
                                                     graduvb_face_ave(ivar,1,iquad,iface) + &
-                                                    graduv_dpp_face(ivar,1,iquad,iface,k)
-                                                
-                        flux_uv_visc_face(ivar,2) = graduv_dpp_face(5,2,iquad,iface,k)* &
+                                                    ql(ivar,iquad)
+
+                        flux_uv_visc_face(ivar,2) = qr(5,iquad)* &
                                                     graduvb_face_ave(ivar,2,iquad,iface) + &
-                                                    graduv_dpp_face(ivar,2,iquad,iface,k)
+                                                    qr(ivar,iquad)
 
                     end do 
+
+                    ! if (dpprime_visc(ip,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    !     flux_uv_visc_face(:,1) = 0.0
+                    !     flux_uv_visc_face(:,2) = 0.0
+                    ! end if
 
                     nx = normal_vector(1,iquad,1,iface)
                     ny = normal_vector(2,iquad,1,iface)

@@ -144,7 +144,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, dry_cutoff
         use mod_face, only: imapl
         use mod_initial, only: alpha_mlswe
         use mod_constants, only: gravity
@@ -177,20 +177,20 @@ module mod_layer_terms
                 vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
             end do
 
-            if(qb_df(1,I) > ((gravity/alpha_mlswe(nlayers))*eps)) then
+            if(qb_df(1,I) > 0.0) then
 
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
 
-                    if (q_df(1,I,k) <= ((gravity/alpha_mlswe(k))*eps)) then
-                        uv_df(1,I,k) = 0.0
-                        uv_df(2,I,k) = 0.0
-                    else
+                    ! if (q_df(1,I,k) <= ((gravity/alpha_mlswe(k))*dry_cutoff)) then
+                    !     uv_df(1,I,k) = 0.0
+                    !     uv_df(2,I,k) = 0.0
+                    ! else
                         uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
                         uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
-                    end if
+                    ! end if
                 end do
 
             else
@@ -209,7 +209,7 @@ module mod_layer_terms
 
         use mod_grid, only : npoin, intma, face, nface 
         use mod_basis, only : ngl
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, dry_cutoff
         use mod_face, only: imapl
         use mod_initial, only: alpha_mlswe
         use mod_constants, only: gravity
@@ -220,7 +220,7 @@ module mod_layer_terms
         real, dimension(4,npoin), intent(in) :: qb_df
         real, dimension(2,npoin,nlayers), intent(out) :: uv_df
         
-        real :: ubar, vbar, eps = 1.0
+        real :: ubar, vbar
         integer :: I, k, el, er, n , iface, il, jl, kl, Iq
 
         uv_df = 0.0
@@ -239,20 +239,20 @@ module mod_layer_terms
                 vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
             end do
 
-            if(qb_df(1,I) > ((gravity/alpha_mlswe(nlayers))*eps)) then
+            if(qb_df(1,I) > 0.0) then
                 
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
 
                 do k = 1, nlayers
 
-                    if (q_df(1,I,k) <= ((gravity/alpha_mlswe(k))*eps)) then
-                        uv_df(1,I,k) = 0.0
-                        uv_df(2,I,k) = 0.0
-                    else
+                    ! if (q_df(1,I,k) <= ((gravity/alpha_mlswe(k))*dry_cutoff)) then
+                    !     uv_df(1,I,k) = 0.0
+                    !     uv_df(2,I,k) = 0.0
+                    ! else
                         uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
                         uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
-                    end if
+                    ! end if
                 end do
 
             else

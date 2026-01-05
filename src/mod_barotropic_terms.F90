@@ -221,18 +221,19 @@ module mod_barotropic_terms
         ! and in the barotropic pressure forcing.
 
         use mod_grid, only: npoin_q, nface, npoin, face, intma
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, dry_cutoff
         use mod_basis, only: nqx, nqy, nqz, nq, ngl, npts, psiq
         use mod_initial, only: alpha_mlswe, indexq, psih
         use mod_variables, only: dpprime_visc, pbprime_visc, &
                                 btp_dpp_graduv, dpp_uvp, dpp_graduv
+        use mod_constants, only: gravity
 
         implicit none
 
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(4, npoin) :: graduv
-        integer :: k
+        integer :: k, I
 
         btp_dpp_graduv = 0.0
         pbprime_visc = 0.0
@@ -242,17 +243,24 @@ module mod_barotropic_terms
             ! For viscosity terms
 
             call compute_gradient_uv(graduv, qprime_df(2:3,:,k))
+            
+            do I = 1, npoin
 
-            dpp_graduv(1,:,k) = dpprime_visc(:,k)*graduv(1,:)
-            dpp_graduv(2,:,k) = dpprime_visc(:,k)*graduv(2,:)
-            dpp_graduv(3,:,k) = dpprime_visc(:,k)*graduv(3,:)
-            dpp_graduv(4,:,k) = dpprime_visc(:,k)*graduv(4,:)
+                dpp_graduv(1,I,k) = dpprime_visc(I,k)*graduv(1,I)
+                dpp_graduv(2,I,k) = dpprime_visc(I,k)*graduv(2,I)
+                dpp_graduv(3,I,k) = dpprime_visc(I,k)*graduv(3,I)
+                dpp_graduv(4,I,k) = dpprime_visc(I,k)*graduv(4,I)
 
-            dpp_uvp(1,:,k) =  dpprime_visc(:,k)*qprime_df(2,:,k)
-            dpp_uvp(2,:,k) =  dpprime_visc(:,k)*qprime_df(3,:,k)
+                if (dpprime_visc(I,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    dpp_graduv(:,I,k) = 0.0
+                end if
 
-            btp_dpp_graduv(:,:) = btp_dpp_graduv(:,:) + dpp_graduv(:,:,k)
-            pbprime_visc(:) =  pbprime_visc(:) + dpprime_visc(:,k)
+                dpp_uvp(1,I,k) =  dpprime_visc(I,k)*qprime_df(2,I,k)
+                dpp_uvp(2,I,k) =  dpprime_visc(I,k)*qprime_df(3,I,k)
+
+                btp_dpp_graduv(:,I) = btp_dpp_graduv(:,I) + dpp_graduv(:,I,k)
+                pbprime_visc(I) =  pbprime_visc(I) + dpprime_visc(I,k)
+            enddo
 
         end do
 

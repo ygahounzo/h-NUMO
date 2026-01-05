@@ -10,12 +10,12 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
 
    use mod_grid, only: nelem, nface, npoin_q, npoin, coord, intma_dg_quad, face
    use mod_constants, only: gravity, pi, tol, omega, earth_radius
-   use mod_initial_mlswe, only: interpolate_from_dof_to_quad_uv_init, interpolate_pbprime_init
+   use mod_initial_mlswe, only: interpolate_from_dof_to_quad_uv_init, interpolate_pbprime_init, poslimiter
    use mod_basis, only: ngl, nq
    use mod_initial, only: kvector
    use mod_input, only: gravity_in, &
                         nelx, nelz, eqn_set, &
-                        xdims, ydims,nlayers, test_case
+                        xdims, ydims,nlayers, test_case, dry_cutoff
    use mod_types, only : r8
    use mpi
    use mod_mpi_utilities, only: MPI_PRECISION
@@ -42,7 +42,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
    integer :: ierr, iface, ilr, k,ip, il, jl, kl, el
    real :: xmax, xmin, ymax, ymin, zmin, zmax, yl, xm
    real :: xmax_l, xmin_l, ymax_l, ymin_l, zmin_l, zmax_l, Ly
-   real :: delta
+   real :: delta, dp_dry
    
    xmin_l=minval(coord(1,:)); xmax_l=maxval(coord(1,:))
    ymin_l=minval(coord(2,:)); ymax_l=maxval(coord(2,:))
@@ -178,7 +178,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
    case ("dam") ! dam-break test
 
       gravity = 9.806
-      H_bot = 3600.0 ! total depth
+      H_bot = 2000.0 ! total depth
 
       ! Bottom topography
       do I1 = 1, npoin
@@ -186,18 +186,20 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
          x = coord(1,I1)/1.0e3
          y = coord(2,I1)/1.0e3
 
-         if(y <= 600.0) then
+         ! if(y <= 600.0) then
 
-            if(y <= 300.0) then
-               zbot_df(I1) = H_bot
-            else
-               zbot_df(I1) = H_bot - 10.0*(y - 300.0)
-            end if
-         else
-            if(400.0 <= x .and. x <= 500.0) then
-               zbot_df(I1) = 600.0
-            end if
-         end if
+         !    if(y <= 300.0) then
+         !       zbot_df(I1) = H_bot
+         !    else
+         !       zbot_df(I1) = H_bot - 10.0*(y - 300.0)
+         !    end if
+         ! else
+         !    if(400.0 <= x .and. x <= 500.0) then
+         !       zbot_df(I1) = 600.0
+         !    end if
+         ! end if
+
+         zbot_df(I1) = 500.0 + 0.5*(H_bot - 500.0)*(1.0 + tanh((x - 201.0)/60.0))
 
          zbot_df(I1) = - zbot_df(I1)
       end do
@@ -205,6 +207,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       do k = 2, nlayers
         indep(k) = H_bot*(real(k-1)-0.5)/real(nlayers-1)
         !print*, 'k = ', k, indep(k)
+        !indep(k) = 200.0
       enddo
 
       ! Layer interface
@@ -213,14 +216,14 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       enddo
       z_interface(:,nlayers+1) = zbot_df(:)
 
-      do k = 1, nlayers
-          do I1 = 1,npoin
-             !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
-             !   z_interface(I1,k) = zbot_df(I1)
-             !endif
-             z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
-          end do
-      end do
+      ! do k = 1, nlayers
+      !     do I1 = 1,npoin
+      !        !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
+      !        !   z_interface(I1,k) = zbot_df(I1)
+      !        !endif
+      !        z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
+      !     end do
+      ! end do
 
       do k = 2, nlayers
          do I1 = 1,npoin
@@ -228,8 +231,10 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
             x = coord(1,I1)/1.0e3
             y = coord(2,I1)/1.0e3
 
-            if((650.0 <= y .and. y <= Ly/1.0e3) .and. (400.0 <= x .and. x <= 500.0)) then
-               z_interface(I1,k) = max(-100.0, z_interface(I1,k))
+            ! if((650.0 <= y .and. y <= Ly/1.0e3) .and. (400.0 <= x .and. x <= 500.0)) then
+            if(x <= 20.0) then
+               ! print*, x
+               z_interface(I1,k) = -200.0 !max(-100.0, z_interface(I1,k))
             end if
 
          end do
@@ -326,6 +331,8 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       q_df(2,:,k) = u_df(:,k)*q_df(1,:,k)
       q_df(3,:,k) = v_df(:,k)*q_df(1,:,k)
    end do
+
+   call poslimiter(q_df,alpha)
 
    ! === Barotropic variables ===
 

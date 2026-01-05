@@ -65,7 +65,7 @@ contains
                                 pbprime_df, coriolis_quad, alpha_mlswe
         use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, &
                                 uvb_ave, btp_mass_flux_ave, ope2_ave
-        use mod_input, only: nlayers, cd_mlswe, botfr
+        use mod_input, only: nlayers, cd_mlswe, botfr, dry_cutoff
 
         implicit none
 
@@ -73,13 +73,12 @@ contains
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(3,npoin), intent(out) :: rhs
 
-        real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b
+        real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b, pb_cutoff, pk, uk, vk
         real :: wq, hi, dhdx, dhdy, coef_fric, tb_u, tb_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd, pbq
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd, pbq, H_bclq
         real, dimension(nlayers) :: pp, up, vp
         real, dimension(nlayers+1) :: pprime
         integer :: I, Iq, ip, k
-        real, parameter :: eps = 1.0e-6
 
         !speed1 = cd_mlswe/gravity
 
@@ -90,11 +89,13 @@ contains
         Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth
                                                          ! at which bottom stress is reduced to 0
 
+        pb_cutoff = (gravity/alpha_mlswe(nlayers))*dry_cutoff
+
         do Iq = 1, npoin_q
 
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
             pp = 0.0; up = 0.0; vp = 0.0; pbq = 0.0
-            pprime(1) = 0.0 ; H_b = 0.0
+            pprime(:) = 0.0 ; H_b = 0.0
 
             do ip = 1,npts
                 I = indexq(ip,Iq)
@@ -107,10 +108,10 @@ contains
                 pbq = pbq + hi*pbprime_df(I)
             end do
 
-            if (dp <= (gravity/alpha_mlswe(nlayers))*eps) then
-                dp = (gravity/alpha_mlswe(nlayers))*eps
-                udp = 0.0 ; vdp = 0.0 ; dpp = 0.0
-            end if
+            ! if (dp <= pb_cutoff) then
+            !     dp = pb_cutoff
+            !     udp = 0.0 ; vdp = 0.0 ; dpp = 0.0
+            ! end if
 
             do k = 1, nlayers
                 do ip = 1,npts
@@ -121,14 +122,18 @@ contains
                     vp(k) = vp(k) + hi*qprime_df(3,I,k)
                 enddo
 
-                if (pp(k) <= (gravity/alpha_mlswe(k))*eps) then
-                    pp(k) = (gravity/alpha_mlswe(k))*eps
+                if (pp(k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    pp(k) = (gravity/alpha_mlswe(k))*dry_cutoff
                     up(k) = 0.0 ; vp(k) = 0.0
                 end if
 
                 pprime(k+1) = pprime(k) + pp(k)
-                H_b = H_b + 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
-            enddo 
+                H_bclq = 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
+                if (abs(pprime(k+1) - pprime(k)) <= (gravity/alpha_mlswe(k))*dry_cutoff) H_bclq = 0.0
+                
+                H_b = H_b + H_bclq
+
+            enddo
 
             wq = wjac(Iq)
             ub = udp/dp; vb = vdp/dp
@@ -198,7 +203,7 @@ contains
                                 uvb_face_ave, ope2_face_ave
         use mod_initial, only: alpha_mlswe, pbprime_df_face, pbprime_df
         use mod_constants, only: gravity
-        use mod_input, only: nlayers
+        use mod_input, only: nlayers, dry_cutoff
 
         implicit none
 
@@ -215,10 +220,12 @@ contains
         real :: c_minus, c_plus, c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
         real, dimension(nq) :: c_pb_LR
         real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
-        real :: ppl, ppr, upl, upr, vpl, vpr
+        real :: ppl, ppr, upl, upr, vpl, vpr, pb_cutoff
         real, dimension(nlayers+1) :: pprime_l, pprime_r
         integer :: itype, k
-        real, parameter :: eps = 1.0e-10
+        real :: pkl, pkr, ukl, ukr, vkl, vkr, H_bcl_ql, H_bcl_qr
+
+        pb_cutoff = (gravity/alpha_mlswe(nlayers))*dry_cutoff
 
         do iface = 1, nface
 
@@ -266,14 +273,6 @@ contains
                     pbr(iquad) = pbl(iquad)
                 endif 
 
-                if (qbl(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-                    qbl(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
-                    qbl(2:4,iquad) = 0.0
-                elseif( qbr(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-                    qbr(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
-                    qbr(2:4,iquad) = 0.0
-                end if
-
                 ! Apply boundary conditions
                 if(er == -4) then
                     un = nxl*qbl(3,iquad) + nyl*qbl(4,iquad)
@@ -283,7 +282,15 @@ contains
                     qbr(3:4,iquad) = -qbl(3:4,iquad)
                 end if
 
-                pprime_l(1) = 0.0; pprime_r(1) = 0.0
+                ! if (qbl(1,iquad) <= pb_cutoff) then
+                !     qbl(1,iquad) = pb_cutoff
+                !     qbl(2:4,iquad) = 0.0
+                ! elseif( qbr(1,iquad) <= pb_cutoff) then
+                !     qbr(1,iquad) = pb_cutoff
+                !     qbr(2:4,iquad) = 0.0
+                ! end if
+
+                pprime_l(:) = 0.0; pprime_r(:) = 0.0
                 do k = 1, nlayers
                     ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
                     do n = 1, ngl
@@ -316,14 +323,6 @@ contains
                         vpr = vpl
                     endif
 
-                    if (ppl <= (gravity/alpha_mlswe(k))*eps) then
-                        ppl = (gravity/alpha_mlswe(k))*eps
-                        upl = 0.0 ; vpl = 0.0
-                    end if
-                    if (ppr <= (gravity/alpha_mlswe(k))*eps) then
-                        ppr = (gravity/alpha_mlswe(k))*eps
-                        upr = 0.0 ; vpr = 0.0
-                    end if
                     ! Apply boundary conditions
                     if(er == -4) then
                         un = nxl*upl + nyl*vpl
@@ -334,15 +333,36 @@ contains
                         vpr = -vpl
                     end if
 
-                    Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
-                    Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
-                    Q_vu_q(iquad) = Q_vu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
-                    Q_vv_q(iquad) = Q_vv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+                    ! if (ppl <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    !     ppl = (gravity/alpha_mlswe(k))*dry_cutoff
+                    !     upl = 0.0 ; vpl = 0.0
+                    ! end if
+                    ! if (ppr <= (gravity/alpha_mlswe(k))*dry_cutoff) then
+                    !     ppr = (gravity/alpha_mlswe(k))*dry_cutoff
+                    !     upr = 0.0 ; vpr = 0.0
+                    ! end if
+
+                    if ((ppl <= (gravity/alpha_mlswe(k))*dry_cutoff) .or. (ppr <= (gravity/alpha_mlswe(k))*dry_cutoff)) then
+                        ppl = (gravity/alpha_mlswe(k))*dry_cutoff
+                        upl = 0.0 ; vpl = 0.0
+                        ppr = (gravity/alpha_mlswe(k))*dry_cutoff
+                        upr = 0.0 ; vpr = 0.0
+                    end if
+
+                    Q_uu_q(iquad) = Q_uu_q(iquad) + 0.25*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
+                    Q_uv_q(iquad) = Q_uv_q(iquad) + 0.25*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
+                    Q_vu_q(iquad) = Q_vu_q(iquad) + 0.25*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
+                    Q_vv_q(iquad) = Q_vv_q(iquad) + 0.25*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
 
                     pprime_l(k+1) = pprime_l(k) + ppl
                     pprime_r(k+1) = pprime_r(k) + ppr
 
-                    H_bcl_q(iquad) = H_bcl_q(iquad) + 0.25*alpha_mlswe(k)*((pprime_l(k+1)**2 - pprime_l(k)**2) + (pprime_r(k+1)**2 - pprime_r(k)**2))
+                    H_bcl_ql  = 0.5*alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
+                    H_bcl_qr  = 0.5*alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
+                    ! if (abs(pprime_l(k+1) - pprime_l(k)) <= (gravity/alpha_mlswe(k))*dry_cutoff) H_bcl_ql = 0.0
+                    ! if (abs(pprime_r(k+1) - pprime_r(k)) <= (gravity/alpha_mlswe(k))*dry_cutoff) H_bcl_qr = 0
+
+                    H_bcl_q(iquad) = H_bcl_q(iquad) + 0.5*(H_bcl_ql + H_bcl_qr)
                 end do
 
                 pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
