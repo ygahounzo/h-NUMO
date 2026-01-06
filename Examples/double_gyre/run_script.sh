@@ -1,18 +1,14 @@
 #!/bin/bash
 ###
 ###
-#SBATCH --time=24:00:00
-#SBATCH -n 48
-#SBATCH --partition=bsudfq
-#SBATCH --job-name=sc
-#SBATCH --output=output.o%j
+#SBATCH --time=12:00:00
+#SBATCH -n 40
+#SBATCH --partition=coaps_q
+#SBATCH --job-name=gyre
+#SBATCH --output=output_log.o%j
 #SBATCH -N 1
 #SBATCH --exclusive
 
-cp ~/h-NUMO/bin/numo3d .
+cp $(pwd)/../../bin/numo3d .
 
-mpirun -np 48 ./numo3d
-
-
-
-
+mpirun -np 40 ./numo3d

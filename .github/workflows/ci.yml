@@ -2,7 +2,7 @@ name: hnumo CI
 
 on:
   push:
-    branches: [dev]
+    branches: ["dev", "dev_review"]
   pull_request:
     branches: [main]
 

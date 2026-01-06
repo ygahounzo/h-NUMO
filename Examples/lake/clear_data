@@ -1,0 +1,1 @@
+"rm" -rf *.nc mlswe0* numo3d time.csv mass_mlswe.cons mlswe_FIN.txt
