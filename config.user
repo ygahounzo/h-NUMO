@@ -88,7 +88,7 @@ hnumo-brew-dbg:
 	"FC=${OMPI_COMPILE_BREW}/mpif90" \
 	"LD=${OMPI_COMPILE_BREW}/mpif90" \
 	"CC=${OMPI_COMPILE_BREW}/mpicc" \
-	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -Og -g -fcheck=all,no-mem,no-pointer -fbacktrace -ffpe-trap=invalid,zero,overflow,underflow" \
+	"FFLAGS=-O0 -fdefault-real-8 -finit-real=zero -fbacktrace -fbounds-check -ffpe-trap=invalid,zero,overflow -g -ffree-line-length-none -Wall" \
 	"CFLAGS=-O0 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99" \
 	"INCLUDE=-I${NETCDF_DIR_BREW}/include -I${P4EST_DIR_BREW}/include -I$(NUMO_DIR)/include" \
 	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR_BREW}/lib -L${P4EST_DIR_BREW}/lib -L/usr/local/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \

@@ -39,7 +39,6 @@ module mod_splitting
         use mod_initial, only: pbprime_df, alpha_mlswe
         use mod_layer_terms, only: extract_dprime_df_face
         use mod_create_rhs_mlswe, only: layer_mass_rhs
-        use mod_initial_mlswe, only: poslimiter
 
         implicit none
     
@@ -80,9 +79,7 @@ module mod_splitting
         ! call poslimiter(q_df,alpha_mlswe)
 
         ! consistency through flux adjustment 
-        call apply_consistency(q_df) 
-
-        call poslimiter(q_df,alpha_mlswe)
+        ! call apply_consistency(q_df) 
 
         ! Store the degree of freedom (nodal points) values of dpprime_df
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
@@ -108,7 +105,6 @@ module mod_splitting
         use mod_layer_terms, only: layer_mom_boundary_df, &
                                     velocity_df, extract_velocity
         use mod_metrics, only: massinv
-        use mod_initial_mlswe, only: poslimiter
 
         implicit none
 
@@ -176,8 +172,6 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df(2:3,:,:))
 
-        call poslimiter(q_df,alpha_mlswe)
-
         ! Compute dpprime, uprime and vprime at the nodal points
         call extract_velocity(uv_df, q_df, qb_df)
 
@@ -204,7 +198,6 @@ module mod_splitting
         use mod_layer_terms, only: layer_mom_boundary_df, &
                                     velocity_df, extract_qprime_df_face,extract_velocity
         use mod_metrics, only: massinv
-        use mod_initial_mlswe, only: poslimiter
 
         implicit none
 
@@ -282,9 +275,7 @@ module mod_splitting
         ! call poslimiter(q_df,alpha_mlswe)
 
         ! consistency through flux adjustment 
-        call apply_consistency(q_df)
-
-        call poslimiter(q_df,alpha_mlswe)
+        ! call apply_consistency(q_df)
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
         call extract_velocity(uv_df, q_df, qb_df)
@@ -321,9 +312,7 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc == 1) then
-            call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
-        elseif (method_visc > 1) then
+        if (method_visc > 0) then
             call bcl_create_laplacian(rhs_visc_bcl)
         endif 
 
@@ -355,9 +344,7 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc == 1) then
-            call bcl_create_laplacian_v2(rhs_visc_bcl, qprime_df)
-        elseif (method_visc > 1) then
+        if (method_visc > 0) then
             call bcl_create_laplacian(rhs_visc_bcl)
         endif 
 

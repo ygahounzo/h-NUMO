@@ -105,7 +105,7 @@ module mod_rk_mlswe
 
                 qb_df(1,:) = qb_df(2,:) + pbprime_df(:)
 
-                call btp_mom_boundary_df(qb_df(3:4,:))
+                call btp_mom_boundary_df(qb_df)
 
                 !Update
                 qb1_df = qb_df
