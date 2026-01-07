@@ -170,7 +170,7 @@ module mod_barotropic_terms
 
         implicit none
 
-        real, intent(inout) :: qb(2,npoin)
+        real, intent(inout) :: qb(4,npoin)
 
         integer :: iface, ilr, m, il, jl, el, er, ilocl, ilocr, I, kl
         integer :: bcflag, n
@@ -193,9 +193,9 @@ module mod_barotropic_terms
                     nx = normal_vector(1,n,1,iface)
                     ny = normal_vector(2,n,1,iface)
 
-                    unl = qb(1,I)*nx + qb(2,I)*ny
-                    qb(1,I) = qb(1,I) - unl*nx
-                    qb(2,I) = qb(2,I) - unl*ny
+                    unl = qb(3,I)*nx + qb(4,I)*ny
+                    qb(3,I) = qb(3,I) - unl*nx
+                    qb(4,I) = qb(4,I) - unl*ny
                 end do
 
             elseif(er == -2) then
@@ -206,8 +206,8 @@ module mod_barotropic_terms
                     kl=imapl(3,n,1,iface)
                     I=intma(il,jl,kl,el)
 
-                    qb(1,I) = 0.0
-                    qb(2,I) = 0.0
+                    qb(3,I) = 0.0
+                    qb(4,I) = 0.0
 
                 enddo
             end if
@@ -233,6 +233,7 @@ module mod_barotropic_terms
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         real, dimension(4, npoin) :: graduv
+        real, dimension(2,npoin) :: uv
         integer :: k, I
 
         btp_dpp_graduv = 0.0
@@ -242,7 +243,8 @@ module mod_barotropic_terms
 
             ! For viscosity terms
 
-            call compute_gradient_uv(graduv, qprime_df(2:3,:,k))
+            uv = qprime_df(2:3,:,k)
+            call compute_gradient_uv(graduv, uv)
             
             do I = 1, npoin
 
@@ -250,10 +252,6 @@ module mod_barotropic_terms
                 dpp_graduv(2,I,k) = dpprime_visc(I,k)*graduv(2,I)
                 dpp_graduv(3,I,k) = dpprime_visc(I,k)*graduv(3,I)
                 dpp_graduv(4,I,k) = dpprime_visc(I,k)*graduv(4,I)
-
-                if (dpprime_visc(I,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    dpp_graduv(:,I,k) = 0.0
-                end if
 
                 dpp_uvp(1,I,k) =  dpprime_visc(I,k)*qprime_df(2,I,k)
                 dpp_uvp(2,I,k) =  dpprime_visc(I,k)*qprime_df(3,I,k)

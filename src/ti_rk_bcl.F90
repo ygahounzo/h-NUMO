@@ -40,12 +40,9 @@ subroutine ti_rk_bcl(q_df, qb_df)
     ! ==================== Prediction step =================================
 
     call extract_qprime_df_face(qprime_df,q_df,qb_df)
-    call poslimiter(q_df,alpha_mlswe)
-    call poslimiter(qprime_df,alpha_mlswe)
 
     qbp_df = qb_df
     dpprime_visc(:,:) = qprime_df(1,:,:)
-    if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
     call btp_bcl_coeffs_qdf(qprime_df)
     call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
@@ -58,9 +55,7 @@ subroutine ti_rk_bcl(q_df, qb_df)
     ! ==================== Correction step =================================
 
     qprime_df2 = 0.5*(qprime_df2 + qprime_df)
-    call poslimiter(qprime_df2,alpha_mlswe)
     dpprime_visc(:,:) = qprime_df2(1,:,:)
-    if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
 
     call btp_bcl_coeffs_qdf(qprime_df2)
     call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)
@@ -69,8 +64,6 @@ subroutine ti_rk_bcl(q_df, qb_df)
     call thickness(qprime_df2, q_df, qb_df)
 
     qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + qprime_df2(1,:,:))
-
-    call poslimiter(qprime_df2,alpha_mlswe)
       
     call momentum(q_df,qprime_df2,qb_df)
 

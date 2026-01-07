@@ -73,9 +73,9 @@ contains
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(3,npoin), intent(out) :: rhs
 
-        real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b, pb_cutoff, pk, uk, vk
-        real :: wq, hi, dhdx, dhdy, coef_fric, tb_u, tb_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd, pbq, H_bclq
+        real :: sc_x, sc_y, Hq, Qu(2), Qv(2)
+        real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, &
+                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd, pbq
         real, dimension(nlayers) :: pp, up, vp
         real, dimension(nlayers+1) :: pprime
         integer :: I, Iq, ip, k
@@ -89,13 +89,9 @@ contains
         Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth
                                                          ! at which bottom stress is reduced to 0
 
-        pb_cutoff = (gravity/alpha_mlswe(nlayers))*dry_cutoff
-
         do Iq = 1, npoin_q
 
-            dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0
-            pp = 0.0; up = 0.0; vp = 0.0; pbq = 0.0
-            pprime(:) = 0.0 ; H_b = 0.0
+            dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0; pbq = 0.0
 
             do ip = 1,npts
                 I = indexq(ip,Iq)
@@ -108,11 +104,9 @@ contains
                 pbq = pbq + hi*pbprime_df(I)
             end do
 
-            ! if (dp <= pb_cutoff) then
-            !     dp = pb_cutoff
-            !     udp = 0.0 ; vdp = 0.0 ; dpp = 0.0
-            ! end if
-
+            Hq = 0.0 ; pprime(:) = 0.0
+            pp = 0.0; up = 0.0; vp = 0.0
+            
             do k = 1, nlayers
                 do ip = 1,npts
                     I = indexq(ip,Iq)
@@ -122,16 +116,8 @@ contains
                     vp(k) = vp(k) + hi*qprime_df(3,I,k)
                 enddo
 
-                if (pp(k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    pp(k) = (gravity/alpha_mlswe(k))*dry_cutoff
-                    up(k) = 0.0 ; vp(k) = 0.0
-                end if
-
                 pprime(k+1) = pprime(k) + pp(k)
-                H_bclq = 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
-                if (abs(pprime(k+1) - pprime(k)) <= (gravity/alpha_mlswe(k))*dry_cutoff) H_bclq = 0.0
-                
-                H_b = H_b + H_bclq
+                Hq = Hq + 0.5*alpha_mlswe(k)*(pprime(k+1)**2 - pprime(k)**2)
 
             enddo
 
@@ -158,15 +144,15 @@ contains
                         gravity*dp*grad_zbot_quad(2,Iq)
 
             ope = 1.0 + (dpp / pbq)
-            Hq = (ope**2) * H_b
+            Hq = (ope**2) * Hq
 
-            qu = ub * udp + ope * sum(up(:)*(pp(:) * up(:)))
-            quv = vb * udp + ope * sum(vp(:)*(pp(:) * up(:)))
-            qvu = ub * vdp + ope * sum(up(:)*(pp(:) * vp(:)))
-            qv = vb * vdp + ope * sum(vp(:)*(pp(:) * vp(:)))
+            Qu(1) = ub * udp + ope * sum(up(:)*(pp(:) * up(:)))
+            Qu(2) = vb * udp + ope * sum(vp(:)*(pp(:) * up(:)))
+            Qv(1) = ub * vdp + ope * sum(up(:)*(pp(:) * vp(:)))
+            Qv(2) = vb * vdp + ope * sum(vp(:)*(pp(:) * vp(:)))
 
-            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + qu
-            Qv_ave(Iq) = Qv_ave(Iq) + qv;  Quv_ave(Iq) = Quv_ave(Iq) + quv
+            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + Qu(1)
+            Qv_ave(Iq) = Qv_ave(Iq) + Qv(1);  Quv_ave(Iq) = Quv_ave(Iq) + Qu(2)
             tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tb_u
             tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tb_v
             ope_ave(Iq) = ope_ave(Iq) + ope
@@ -175,6 +161,9 @@ contains
             btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
             uvb_ave(1,Iq) = uvb_ave(1,Iq) + ub
             uvb_ave(2,Iq) = uvb_ave(2,Iq) + vb
+
+            Qu(1) = Qu(1) + Hq
+            Qv(2) = Qv(2) + Hq
 
             do ip = 1,npts
                 I = indexq(ip,Iq)
@@ -185,8 +174,8 @@ contains
                 dhdy = dpsidy(ip,Iq)
 
                 rhs(1,I) = rhs(1,I) + wq*(dhdx*udp + dhdy*vdp)
-                rhs(2,I) = rhs(2,I) + wq*(hi*sc_x + dhdx*(Hq + qu) + quv*dhdy)
-                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*qvu + dhdy*(Hq + qv))
+                rhs(2,I) = rhs(2,I) + wq*(hi*sc_x + dhdx*Qu(1) + dhdy*Qu(2))
+                rhs(3,I) = rhs(3,I) + wq*(hi*sc_y + dhdx*Qv(1) + dhdy*Qv(2))
 
             end do
         end do
@@ -212,20 +201,20 @@ contains
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
         integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
-        real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_x, flux_y, flux, nxr, nyr, un
-        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_tmp, flux_edge_x, flux_edge_y
-        real, dimension(nq) :: ul, ur, vl, vr, pbl, pbr, lambq, one_plus_eta_edge
+        real :: wq, hi, nxl, nyl, H_kx, H_ky, flux_u, flux_v, flux_pb, nxr, nyr, un
+        real, dimension(nq) :: quu, quv, qvu, qvv, H_face_tmp
+        real :: pbl, pbr, lambq, one_eta
         real :: pU_L, pU_R, lamb, dispu, dispv, pbpert_edge
-        real :: qbl(4,nq), qbr(4,nq), lam1, lam2, dispp
+        real :: qbl(4), qbr(4), lam1, lam2, dispp
         real :: c_minus, c_plus, c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
         real, dimension(nq) :: c_pb_LR
-        real, dimension(nq) :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, H_bcl_q
+        real :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q
         real :: ppl, ppr, upl, upr, vpl, vpr, pb_cutoff
         real, dimension(nlayers+1) :: pprime_l, pprime_r
         integer :: itype, k
-        real :: pkl, pkr, ukl, ukr, vkl, vkr, H_bcl_ql, H_bcl_qr
-
-        pb_cutoff = (gravity/alpha_mlswe(nlayers))*dry_cutoff
+        real :: pkl, pkr, ukl, ukr, vkl, vkr, H_bcl_ql, H_bcl_qr, ul, ur, vl, vr, H_bcl_q, clam
+        real, dimension(2) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr
+        real :: flux(3,nq), fxl, fxr, flux_edge_x, flux_edge_y
 
         do iface = 1, nface
 
@@ -236,9 +225,6 @@ contains
             el = face(7,iface)
             er = face(8,iface)
 
-            qbl = 0.0; qbr = 0.0 ; pbl = 0.0; pbr = 0.0
-            Q_uu_q = 0.0; Q_uv_q = 0.0; Q_vu_q = 0.0; Q_vv_q = 0.0 ; H_bcl_q = 0.0
-
             do iquad = 1,nq
 
                 nxl = normal_vector_q(1,iquad,1,iface)
@@ -246,6 +232,7 @@ contains
 
                 nxr = -nxl; nyr = -nyl
 
+                qbl = 0.0; qbr = 0.0 ; pbl = 0.0; pbr = 0.0
                 do n = 1, ngl
                     il = imapl(1,n,1,iface)
                     jl = imapl(2,n,1,iface)
@@ -253,8 +240,8 @@ contains
                     I = intma(il,jl,kl,el)
 
                     hi = psiq(n,iquad)
-                    qbl(:,iquad) = qbl(:,iquad) + hi*qb(:,I)
-                    pbl(iquad) = pbl(iquad) + hi*pbprime_df(I)
+                    qbl(:) = qbl(:) + hi*qb(:,I)
+                    pbl = pbl + hi*pbprime_df(I)
                 end do
 
                 if (er > 0) then
@@ -265,32 +252,44 @@ contains
                         I = intma(ir,jr,kr,er)
 
                         hi = psiq(n,iquad)
-                        qbr(:,iquad) = qbr(:,iquad) + hi*qb(:,I)
-                        pbr(iquad) = pbr(iquad) + hi*pbprime_df(I)
+                        qbr(:) = qbr(:) + hi*qb(:,I)
+                        pbr = pbr + hi*pbprime_df(I)
                     end do
                 else
-                    qbr(:,iquad) = qbl(:,iquad)
-                    pbr(iquad) = pbl(iquad)
+                    qbr(:) = qbl(:)
+                    pbr = pbl
+
+                    ! Apply boundary conditions
+                    if(er == -4) then
+                        un = nxl*qbl(3) + nyl*qbl(4)
+                        qbr(3) = qbl(3) - 2.0*un*nxl
+                        qbr(4) = qbl(4) - 2.0*un*nyl
+                    elseif(er == -2) then
+                        qbr(3:4) = -qbl(3:4)
+                    end if
                 endif 
 
-                ! Apply boundary conditions
-                if(er == -4) then
-                    un = nxl*qbl(3,iquad) + nyl*qbl(4,iquad)
-                    qbr(3,iquad) = qbl(3,iquad) - 2.0*un*nxl
-                    qbr(4,iquad) = qbl(4,iquad) - 2.0*un*nyl
-                elseif(er == -2) then
-                    qbr(3:4,iquad) = -qbl(3:4,iquad)
-                end if
+                pU_L = nxl * qbl(3) + nyl * qbl(4)
+                pU_R = nxr * qbr(3) + nyr * qbr(4)
 
-                ! if (qbl(1,iquad) <= pb_cutoff) then
-                !     qbl(1,iquad) = pb_cutoff
-                !     qbl(2:4,iquad) = 0.0
-                ! elseif( qbr(1,iquad) <= pb_cutoff) then
-                !     qbr(1,iquad) = pb_cutoff
-                !     qbr(2:4,iquad) = 0.0
-                ! end if
+                c_minus = sqrt(alpha_mlswe(nlayers) * pbr)
+                c_plus  = sqrt(alpha_mlswe(nlayers) * pbl)
+                clam = max(c_minus, c_plus)
 
-                pprime_l(:) = 0.0; pprime_r(:) = 0.0
+                pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam) * (pU_L + pU_R)
+                one_eta = 1.0 + (pbpert_edge/pbl)
+
+                ul = qbl(3)/qbl(1); ur = qbr(3)/qbr(1)
+                vl = qbl(4)/qbl(1); vr = qbr(4)/qbr(1)
+
+                Qu_ql(1) = ul*qbl(3) ; Qu_ql(2) = vl*qbl(3)
+                Qu_qr(1) = ur*qbr(3) ; Qu_qr(2) = vr*qbr(3)
+
+                Qv_ql(1) = ul*qbl(4) ; Qv_ql(2) = vl*qbl(4)
+                Qv_qr(1) = ur*qbr(4) ; Qv_qr(2) = vr*qbr(4)
+
+                pprime_l(:) = 0.0; pprime_r(:) = 0.0 ; H_bcl_q = 0.0
+                H_bcl_ql = 0.0 ; H_bcl_qr = 0.0
                 do k = 1, nlayers
                     ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
                     do n = 1, ngl
@@ -333,120 +332,86 @@ contains
                         vpr = -vpl
                     end if
 
-                    ! if (ppl <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    !     ppl = (gravity/alpha_mlswe(k))*dry_cutoff
-                    !     upl = 0.0 ; vpl = 0.0
-                    ! end if
-                    ! if (ppr <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    !     ppr = (gravity/alpha_mlswe(k))*dry_cutoff
-                    !     upr = 0.0 ; vpr = 0.0
-                    ! end if
+                    Qu_ql(1) = Qu_ql(1) + (upl*(upl*(one_eta*ppl)))
+                    Qu_ql(2) = Qu_ql(2) + (vpl*(upl*(one_eta*ppl)))
+                    Qu_qr(1) = Qu_qr(1) + (upr*(upr*(one_eta*ppr)))
+                    Qu_qr(2) = Qu_qr(2) + (vpr*(upr*(one_eta*ppr)))
 
-                    if ((ppl <= (gravity/alpha_mlswe(k))*dry_cutoff) .or. (ppr <= (gravity/alpha_mlswe(k))*dry_cutoff)) then
-                        ppl = (gravity/alpha_mlswe(k))*dry_cutoff
-                        upl = 0.0 ; vpl = 0.0
-                        ppr = (gravity/alpha_mlswe(k))*dry_cutoff
-                        upr = 0.0 ; vpr = 0.0
-                    end if
-
-                    Q_uu_q(iquad) = Q_uu_q(iquad) + 0.25*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
-                    Q_uv_q(iquad) = Q_uv_q(iquad) + 0.25*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))
-                    Q_vu_q(iquad) = Q_vu_q(iquad) + 0.25*alpha_mlswe(k)*((upl*(vpl*ppl)) + (upr*(vpr*ppr)))
-                    Q_vv_q(iquad) = Q_vv_q(iquad) + 0.25*alpha_mlswe(k)*((vpl*(vpl*ppl)) + (vpr*(vpr*ppr)))
+                    Qv_ql(1) = Qv_ql(1) + (upl*(vpl*(one_eta*ppl)))
+                    Qv_ql(2) = Qv_ql(2) + (vpl*(vpl*(one_eta*ppl)))
+                    Qv_qr(1) = Qv_qr(1) + (upr*(vpr*(one_eta*ppr)))
+                    Qv_qr(2) = Qv_qr(2) + (vpr*(vpr*(one_eta*ppr)))
 
                     pprime_l(k+1) = pprime_l(k) + ppl
                     pprime_r(k+1) = pprime_r(k) + ppr
 
-                    H_bcl_ql  = 0.5*alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
-                    H_bcl_qr  = 0.5*alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
-                    ! if (abs(pprime_l(k+1) - pprime_l(k)) <= (gravity/alpha_mlswe(k))*dry_cutoff) H_bcl_ql = 0.0
-                    ! if (abs(pprime_r(k+1) - pprime_r(k)) <= (gravity/alpha_mlswe(k))*dry_cutoff) H_bcl_qr = 0
-
-                    H_bcl_q(iquad) = H_bcl_q(iquad) + 0.5*(H_bcl_ql + H_bcl_qr)
+                    H_bcl_ql  = H_bcl_ql + 0.5*alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
+                    H_bcl_qr  = H_bcl_qr + 0.5*alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
+                    
                 end do
 
-                pU_L = nxl * qbl(3,iquad) + nyl * qbl(4,iquad)
-                pU_R = nxr * qbr(3,iquad) + nyr * qbr(4,iquad)
-
-                c_minus = sqrt(alpha_mlswe(nlayers) * pbr(iquad))
-                c_plus  = sqrt(alpha_mlswe(nlayers) * pbl(iquad))
-                c_pb_L = c_minus / (c_minus + c_plus)
-                c_pb_R = c_plus / (c_minus + c_plus)
-                c_pbub_LR  = 1.0 / (c_minus + c_plus)
-
-                pbpert_edge = c_pb_L * qbl(2,iquad) &
-                                            + c_pb_R * qbr(2,iquad) &
-                                            + c_pbub_LR * (pU_L + pU_R)
-
-                one_plus_eta_edge(iquad) = 1.0 + (pbpert_edge/pbl(iquad))
+                H_bcl_q = 0.5*(H_bcl_ql + H_bcl_qr)
 
                 ! Compute mass fluxes at each element face.
 
-                c_pbub_L = c_minus / (c_minus + c_plus)
-                c_pbub_R = c_plus / (c_minus + c_plus)
-                c_pb_LR(iquad) = c_minus * c_plus / (c_minus + c_plus)
+                flux_edge_x = 0.5*(qbl(3) + qbr(3)) + (0.5*clam)*(nxl * qbl(2) + nxr * qbr(2))
+                flux_edge_y = 0.5*(qbl(4) + qbr(4)) + (0.5*clam)*(nyl * qbl(2) + nyr * qbr(2))
+                ! flux(1,iquad) = nxl*flux_edge_x(iquad) + nyl*flux_edge_y(iquad)
 
-                flux_edge_x(iquad) = c_pbub_L * qbl(3,iquad) &
-                                            + c_pbub_R * qbr(3,iquad) &
-                                            + c_pb_LR(iquad) * &
-                                            (nxl * qbl(2,iquad) + nxr * qbr(2,iquad))
+                fxl = nxl*qbl(3) + nyl*qbl(4)
+                fxr = nxr*qbr(3) + nyr*qbr(4)
+                flux(1,iquad) = 0.5*(fxl - fxr) - 0.5*clam*(qbr(2) - qbl(2))
 
-                flux_edge_y(iquad) = c_pbub_L * qbl(4,iquad) &
-                                            + c_pbub_R * qbr(4,iquad) &
-                                            + c_pb_LR(iquad) * &
-                                            (nyl * qbl(2,iquad) + nyr * qbr(2,iquad))
+                ! Compute pressure forcing H_face at each element face.
+                H_bcl_q = (one_eta**2) * H_bcl_q
+
+                btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+                btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
+                ! btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux(1,iquad)
+                ! btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux(1,iquad)
+
+                H_face_ave(iquad,iface) = H_face_ave(iquad,iface) + H_bcl_q
+                Qu_face_ave(1,iquad,iface) = Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1) + Qu_qr(1))
+                Qu_face_ave(2,iquad,iface) = Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql(2) + Qu_qr(2))
+                Qv_face_ave(1,iquad,iface) = Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql(1) + Qv_qr(1))
+                Qv_face_ave(2,iquad,iface) = Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql(2) + Qv_qr(2))
+                ope_face_ave(1,iquad,iface) = ope_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))
+                ope_face_ave(2,iquad,iface) = ope_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))
+                ope2_face_ave(1,iquad,iface) = ope2_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))**2
+                ope2_face_ave(2,iquad,iface) = ope2_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))**2
+                one_plus_eta_edge_2_ave(iquad,iface) = one_plus_eta_edge_2_ave(iquad,iface) &
+                                                    + one_eta**2
+                uvb_face_ave(1,1,iquad,iface) = uvb_face_ave(1,1,iquad,iface) + ul
+                uvb_face_ave(1,2,iquad,iface) = uvb_face_ave(1,2,iquad,iface) + ur
+                uvb_face_ave(2,1,iquad,iface) = uvb_face_ave(2,1,iquad,iface) + vl
+                uvb_face_ave(2,2,iquad,iface) = uvb_face_ave(2,2,iquad,iface) + vr
+
+                Qu_ql(1) = Qu_ql(1) + (one_eta**2)*H_bcl_ql
+                Qu_qr(1) = Qu_qr(1) + (one_eta**2)*H_bcl_qr
+
+                fxl = nxl*Qu_ql(1) + nyl*Qu_ql(2)
+                fxr = nxr*Qu_qr(1) + nyr*Qu_qr(2)
+
+                flux(2,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(3) - qbl(3))
+
+                Qv_ql(2) = Qv_ql(2) + (one_eta**2)*H_bcl_ql
+                Qv_qr(2) = Qv_qr(2) + (one_eta**2)*H_bcl_qr
+
+                fxl = nxl*Qv_ql(1) + nyl*Qv_ql(2)
+                fxr = nxr*Qv_qr(1) + nyr*Qv_qr(2)
+
+                flux(3,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(4) - qbl(4))
 
             end do
-
-            ul = qbl(3,:)/qbl(1,:); ur = qbr(3,:)/qbr(1,:)
-            vl = qbl(4,:)/qbl(1,:); vr = qbr(4,:)/qbr(1,:)
-
-            quu(:) = 0.5*(ul*qbl(3,:) + ur*qbr(3,:)) + one_plus_eta_edge(:) * Q_uu_q(:)
-            quv(:) = 0.5*(vl*qbl(3,:) + vr*qbr(3,:)) + one_plus_eta_edge(:) * Q_uv_q(:)
-            qvu(:) = 0.5*(ul*qbl(4,:) + ur*qbr(4,:)) + one_plus_eta_edge(:) * Q_vu_q(:)
-            qvv(:) = 0.5*(vl*qbl(4,:) + vr*qbr(4,:)) + one_plus_eta_edge(:) * Q_vv_q(:)
-
-            ! Compute pressure forcing H_face at each element face.
-            H_face_tmp(:) = (one_plus_eta_edge(:)**2) * H_bcl_q(:)
-
-            ! Accumulate sums for time averaging
-
-            btp_mass_flux_face_ave(1,:,iface) = btp_mass_flux_face_ave(1,:,iface) + flux_edge_x(:)
-            btp_mass_flux_face_ave(2,:,iface) = btp_mass_flux_face_ave(2,:,iface) + flux_edge_y(:)
-            H_face_ave(:,iface) = H_face_ave(:,iface) + H_face_tmp(:)
-            Qu_face_ave(1,:,iface) = Qu_face_ave(1,:,iface) + quu(:)
-            Qu_face_ave(2,:,iface) = Qu_face_ave(2,:,iface) + quv(:)
-            Qv_face_ave(1,:,iface) = Qv_face_ave(1,:,iface) + qvu(:)
-            Qv_face_ave(2,:,iface) = Qv_face_ave(2,:,iface) + qvv(:)
-            ope_face_ave(1,:,iface) = ope_face_ave(1,:,iface) + (1.0 + (qbl(2,:)/pbl))
-            ope_face_ave(2,:,iface) = ope_face_ave(2,:,iface) + (1.0 + (qbr(2,:)/pbr))
-            ope2_face_ave(1,:,iface) = ope2_face_ave(1,:,iface) + (1.0 + (qbl(2,:)/pbl))**2
-            ope2_face_ave(2,:,iface) = ope2_face_ave(2,:,iface) + (1.0 + (qbr(2,:)/pbr))**2
-            one_plus_eta_edge_2_ave(:,iface) = one_plus_eta_edge_2_ave(:,iface) &
-                                                + one_plus_eta_edge(:)**2
-            uvb_face_ave(1,1,:,iface) = uvb_face_ave(1,1,:,iface) + ul
-            uvb_face_ave(1,2,:,iface) = uvb_face_ave(1,2,:,iface) + ur
-            uvb_face_ave(2,1,:,iface) = uvb_face_ave(2,1,:,iface) + vl
-            uvb_face_ave(2,2,:,iface) = uvb_face_ave(2,2,:,iface) + vr
+          
 
             do iquad = 1, nq
 
                 wq = jac_faceq(iquad,1,iface)
 
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
-
-                H_kx = nxl*H_face_tmp(iquad)
-                H_ky = nyl*H_face_tmp(iquad)
-
-                lamb = c_pb_LR(iquad)
-
-                dispu = 0.5*lamb*(qbr(3,iquad) - qbl(3,iquad))
-                dispv = 0.5*lamb*(qbr(4,iquad) - qbl(4,iquad))
-                flux_x = nxl*quu(iquad) + nyl*quv(iquad) - dispu
-                flux_y = nxl*qvu(iquad) + nyl*qvv(iquad) - dispv
-
-                flux = nxl*flux_edge_x(iquad) + nyl*flux_edge_y(iquad) 
+                flux_pb = flux(1,iquad)
+                flux_u = flux(2,iquad)
+                flux_v = flux(3,iquad)
 
                 do n = 1, ngl
 
@@ -456,9 +421,9 @@ contains
                     kl = imapl(3,n,1,iface)
                     I = intma(il,jl,kl,el)
 
-                    rhs(1,I) = rhs(1,I) - wq*hi*flux
-                    rhs(2,I) = rhs(2,I) - wq*hi*(H_kx + flux_x)
-                    rhs(3,I) = rhs(3,I) - wq*hi*(H_ky + flux_y)
+                    rhs(1,I) = rhs(1,I) - wq*hi*flux_pb
+                    rhs(2,I) = rhs(2,I) - wq*hi*flux_u
+                    rhs(3,I) = rhs(3,I) - wq*hi*flux_v
 
                     if(er > 0) then
                         ir = imapr(1,n,1,iface)
@@ -466,9 +431,9 @@ contains
                         kr = imapr(3,n,1,iface)
                         I = intma(ir,jr,kr,er)
 
-                        rhs(1,I) = rhs(1,I) + wq*hi*flux
-                        rhs(2,I) = rhs(2,I) + wq*hi*(H_kx + flux_x)
-                        rhs(3,I) = rhs(3,I) + wq*hi*(H_ky + flux_y)
+                        rhs(1,I) = rhs(1,I) + wq*hi*flux_pb
+                        rhs(2,I) = rhs(2,I) + wq*hi*flux_u
+                        rhs(3,I) = rhs(3,I) + wq*hi*flux_v
 
                     end if
                 end do
