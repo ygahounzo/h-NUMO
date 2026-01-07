@@ -343,46 +343,4 @@ module mod_splitting
 
     end subroutine create_rhs_bcl
 
-    subroutine apply_consistency(q_df)
-
-        ! ========================================================================================
-        ! This subroutine enforce consistency between the layer masses and the barotropic mass
-        ! through flux adjustment (see Higdon (2015)).
-        ! ========================================================================================
-
-        use mod_input, only: nlayers, dt
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-        use mod_initial, only: pbprime_df, alpha_mlswe
-        use mod_create_rhs_mlswe, only: consistency_mass_rhs
-        use mod_metrics, only: massinv
-        use mod_constants, only: gravity
-        
-        implicit none
-    
-        ! Input variables
-        real, intent(inout)    :: q_df(3,npoin,nlayers)
-    
-        ! Local variables
-        integer :: k, I
-        real :: one_plus_eta_temp(npoin), dpprime_df(npoin,nlayers), dp_advec(npoin,nlayers)
-        real :: eps = 1.0e-10
-
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-        do k = 1,nlayers
-            do I = 1,npoin
-                dpprime_df(I,k) = q_df(1,I,k) / one_plus_eta_temp(I)
-            end do
-        end do
-
-        ! RHS of the consistency terms
-        call consistency_mass_rhs(dp_advec, dpprime_df)
-
-        ! Apply consistency to the thickness
-        do k = 1,nlayers
-            q_df(1,:,k) = q_df(1,:,k) + dt*massinv(:)*dp_advec(:,k)
-        end do
-        
-    end subroutine apply_consistency
-
 end module mod_splitting

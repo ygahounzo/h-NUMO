@@ -277,41 +277,6 @@ subroutine bcl_lap_create_precommunicator(dpp_graduv,dpprime_visc)
 
 end subroutine bcl_lap_create_precommunicator
 
-subroutine create_consistency_precommunicator(dprime_df)
-
-    use mod_basis, only: ngl
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only:  npoin, intma, nelem,nface,nboun
-
-    use mod_initial, only: nvar
-
-    use mod_metrics, only: massinv
-
-    use mod_p4est, only: plist
-
-    use mod_ref, only: q_send_csty, q_recv_csty, recv_data_csty, send_data_csty
-
-    use mod_input, only: nlayers
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(npoin,nlayers), intent(in) :: dprime_df
-
-    integer :: multirate
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_consistency(send_data_csty,dprime_df,nlayers)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_consistency(send_data_csty,recv_data_csty,nlayers,nreq,ireq,status)
-
-end subroutine create_consistency_precommunicator
-
 subroutine btp_create_postcommunicator(rhs, nvarb)
 
     use mod_basis, only: ngl
@@ -527,43 +492,6 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(rhs)
     call create_nbhs_face_df_lap_bcl(rhs,q_send_lap_bcl,q_recv_lap_bcl,nlayers,0)
 
 end subroutine bcl_create_rhs_lap_postcommunicator_df
-
-subroutine create_postcommunicator_consistency(rhs)
-
-    use mod_basis, only: ngl
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only:  npoin, intma, nelem,nface,nboun
-
-    use mod_initial, only: nvar
-
-    use mod_metrics, only: massinv
-
-    use mod_p4est, only: plist
-
-    use mod_ref, only: q_send_csty, q_recv_csty, recv_data_csty, send_data_csty
-    use mod_input, only: nlayers
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(npoin,nlayers), intent(inout) :: rhs
-
-    integer :: multirate
-
-    ! DG - Discontinuous communicator
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_consistency(q_send_csty,q_recv_csty,send_data_csty,recv_data_csty,nlayers)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_consistency(rhs,q_send_csty,q_recv_csty,0)
-
-end subroutine create_postcommunicator_consistency
 
 subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
 

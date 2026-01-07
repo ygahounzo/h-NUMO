@@ -21,7 +21,7 @@ module mod_create_rhs_mlswe
 
     public :: layer_momentum_rhs, &
               interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, layer_mass_rhs, &
-              consistency_mass_rhs, bcl_rhs
+              bcl_rhs
               
     contains
 
@@ -111,32 +111,6 @@ module mod_create_rhs_mlswe
         end do
 
     end subroutine bcl_rhs
-
-    subroutine consistency_mass_rhs(dp_advec, dprime_df)
-
-        use mod_metrics, only: massinv
-        use mod_input, only: nlayers
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq
-
-        implicit none
-
-        real, dimension(npoin, nlayers), intent(out) :: dp_advec
-        real, dimension(npoin, nlayers), intent(in) :: dprime_df
-        
-        integer :: k
-
-        call create_consistency_precommunicator(dprime_df)
-
-        ! Compute the mass advection term for the degree of freedom for dp in each layer
-        call create_consistency_volume_mass(dp_advec, dprime_df)
-
-        ! Compute the mass flux term 
-        call create_consistency_mass_flux(dp_advec, dprime_df)
-
-        call create_postcommunicator_consistency(dp_advec)
-
-    end subroutine consistency_mass_rhs
 
     subroutine interpolate_layer_from_quad_to_node(q_df,q)
 
@@ -339,7 +313,7 @@ module mod_create_rhs_mlswe
         real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
         real :: weight, acceleration, pbq
         real, dimension(3) :: qp, qb
-        real, dimension(nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp, udp, vdp
+        real, dimension(nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp
         real, dimension(2,nlayers) :: u_vdp
         real :: p_tmp(nlayers+1), u, v, dp, weightq, one_over_sumuq, one_over_sumvq
         real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,nlayers+1)
@@ -386,10 +360,10 @@ module mod_create_rhs_mlswe
                 u = qp(2) + qb(2)
                 v = qp(3) + qb(3)
 
-                u_udp(k) = u*udp(k)
-                v_vdp(k) = v*vdp(k)
-                u_vdp(1,k) = v * udp(k)
-                u_vdp(2,k) = u * vdp(k)
+                u_udp(k) = dp * u*u
+                v_vdp(k) = dp * v*v
+                u_vdp(1,k) = u * v * dp
+                u_vdp(2,k) = v * u * dp
 
                 temp_uu(k) = abs(dp*u) + eps1
                 temp_vv(k) = abs(dp*v) + eps1
@@ -523,6 +497,7 @@ module mod_create_rhs_mlswe
         rhs = 0.0
         bot_layer = 0.0
         pprime_temp = 0.0
+        sum_layer_mass_flux = 0.0
 
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
                                                   ! at which wind stress is reduced to 0
@@ -587,6 +562,9 @@ module mod_create_rhs_mlswe
             uv_dp_deficitq = Quv_ave(Iq) - sum(u_vdp(1,:))
             vv_dp_deficitq = Qv_ave(Iq) - sum(v_vdp(:))
 
+            one_over_sumuq = 1.0/sum(temp_uu(:))
+            one_over_sumvq = 1.0/sum(temp_vv(:))
+
             wq = wjac(Iq)
             pprime_temp = 0.0
 
@@ -594,11 +572,11 @@ module mod_create_rhs_mlswe
 
                 pprime_temp(k+1) = pprime_temp(k) + qp(k)
 
-                weightq = temp_uu(k) / sum(temp_uu(:))
+                weightq = temp_uu(k) * one_over_sumuq
                 u_udp(k) = u_udp(k) + weightq * uu_dp_deficitq
                 u_vdp(1,k) = u_vdp(1,k) + weightq * uv_dp_deficitq
 
-                weightq = temp_vv(k) / sum(temp_vv(:))
+                weightq = temp_vv(k) * one_over_sumvq
                 u_vdp(2,k) = u_vdp(2,k) + weightq * uv_dp_deficitq
                 v_vdp(k) = v_vdp(k) + weightq * vv_dp_deficitq
 
@@ -1040,7 +1018,7 @@ module mod_create_rhs_mlswe
         ! This routine computes the layer momentum pressure terms
 
         use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe, zbot_face, pbprime_df
+        use mod_initial, only : alpha_mlswe, zbot_face
         use mod_grid, only : nface, npoin, npoin_q, face, intma, face_type
         use mod_basis, only : nq, psiq, ngl
         use mod_input, only : nlayers, dry_cutoff
@@ -1054,7 +1032,7 @@ module mod_create_rhs_mlswe
         real, dimension(3, npoin, nlayers), intent(inout) :: rhs
         real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
 
-        real, dimension(nlayers) :: alpha_over_g, g_over_alpha, weight_dp, dpp
+        real, dimension(nlayers) :: alpha_over_g, g_over_alpha
         real, dimension(2,nlayers+1) :: p_face, z_face
         real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
         real, dimension(3, nlayers) :: ql, qr
@@ -1173,8 +1151,6 @@ module mod_create_rhs_mlswe
                         udp_flux(2,iquad,k) = vv * (ur*dpr)
                         vdp_flux(2,iquad,k) = vv * (vr*dpr)
                     endif
-
-                    flux_dp(iquad,k) = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
 
                 enddo
 
@@ -1450,6 +1426,7 @@ module mod_create_rhs_mlswe
         real, dimension(nlayers) :: dpp, udp, vdp
 
         dp_advec = 0.0
+        sum_layer_mass_flux = 0.0
 
         do Iq = 1, npoin_q
 
@@ -1460,7 +1437,7 @@ module mod_create_rhs_mlswe
 
             do k=1,nlayers
 
-                qp = 0.0 ; pbq = 0.0
+                qp = 0.0
                 do ip = 1,npts
                     I = indexq(ip,Iq)
                     hi = psih(ip,Iq)
@@ -1471,9 +1448,6 @@ module mod_create_rhs_mlswe
                 dp_temp = qp(1) * qb(1)
                 udp(k) = (qp(2) + qb(2)) * dp_temp
                 vdp(k) = (qp(3) + qb(3)) * dp_temp
-
-                ! sum_layer_mass_flux(1,Iq) = sum_layer_mass_flux(1,Iq) + udp(k)
-                ! sum_layer_mass_flux(2,Iq) = sum_layer_mass_flux(2,Iq) + vdp(k)
             enddo
 
             do k = 1, nlayers
@@ -1493,54 +1467,6 @@ module mod_create_rhs_mlswe
 
     end subroutine create_layers_volume_mass
 
-    subroutine create_consistency_volume_mass(dp_advec, dprime_df)
-
-        use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma
-        use mod_basis, only: npts
-        use mod_input, only: nlayers, dry_cutoff
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, pbprime_df, alpha_mlswe
-        use mod_variables, only: sum_layer_mass_flux, btp_mass_flux_ave
-
-        implicit none 
-
-        real, dimension(npoin,nlayers), intent(in) :: dprime_df
-        real, dimension(npoin,nlayers), intent(out) :: dp_advec
-
-        integer :: k, I, Iq, ip
-        real :: weight, udp, vdp, wq, hi, dp, pbq
-        real, parameter :: eps = 1.0e-10
-
-        dp_advec = 0.0
-
-        do k=1,nlayers
-
-            do Iq = 1, npoin_q
-                dp = 0.0 ; pbq = 0.0
-                do ip = 1,npts
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
-                    dp = dp + hi*dprime_df(I,k)
-                    pbq = pbq + hi*pbprime_df(I)
-                enddo
-                if (dp <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    dp = (gravity/alpha_mlswe(k))*dry_cutoff
-                end if
-                weight = dp/pbq
-
-                udp = weight * (btp_mass_flux_ave(1,Iq) - sum_layer_mass_flux(1,Iq))
-                vdp = weight * (btp_mass_flux_ave(2,Iq) - sum_layer_mass_flux(2,Iq)) 
-                wq = wjac(Iq)
-
-                do ip = 1, npts
-                    I = indexq(ip,Iq)
-                    dp_advec(I,k) = dp_advec(I,k) + wq*(dpsidx(ip,Iq)*udp + dpsidy(ip,Iq)*vdp)
-                end do
-            end do
-        end do !k
-
-    end subroutine create_consistency_volume_mass
-
     subroutine create_layer_mass_flux(dp_advec, qprime_df)
 
         use mod_basis, only: nq, psiq, ngl
@@ -1549,7 +1475,7 @@ module mod_create_rhs_mlswe
         use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
         use mod_variables, only: sum_layer_mass_flux_face, ope_face_ave, uvb_face_ave, btp_mass_flux_face_ave
         use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe, pbprime_df
+        use mod_initial, only : alpha_mlswe
 
         implicit none
 
@@ -1606,8 +1532,9 @@ module mod_create_rhs_mlswe
 
                             ir = imapr(1,n,1,iface)
                             jr = imapr(2,n,1,iface)
-                            kl = imapr(3,n,1,iface)
-                            I = intma(ir,jr,kl,er)
+                            kr = imapr(3,n,1,iface)
+                            I = intma(ir,jr,kr,er)
+                            hi = psiq(n,iquad)
 
                             qr(:) = qr(:) + hi*qprime_df(:,I,k)
                         enddo
@@ -1703,150 +1630,9 @@ module mod_create_rhs_mlswe
                         end if
                     end do
                 end do
-            end do ! k
+            end do
         end do
 
     end subroutine create_layer_mass_flux
-
-    subroutine create_consistency_mass_flux(dp_advec, dprime_df)
-
-        use mod_basis, only: nq, psiq, ngl
-        use mod_grid, only:  npoin_q, intma,  nface, face, face_type
-        use mod_input, only: nlayers, dry_cutoff
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_initial, only: pbprime_df, alpha_mlswe
-        use mod_variables, only: btp_mass_flux_face_ave, sum_layer_mass_flux_face
-        use mod_constants, only: gravity
-
-        implicit none
-
-        real, dimension(npoin, nlayers), intent(inout) :: dp_advec
-        real, dimension(npoin,nlayers), intent(in)  :: dprime_df
-    
-        integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
-        integer :: kl, kr, jquad, n, m
-        real :: wq, nxl, nyl, hi, flux
-        real, dimension(nq) :: flux_edge_u, flux_edge_v
-        real :: qprime_l, qprime_r, pbprime_l, pbprime_r
-        real :: weights_face_l, weights_face_r
-        real :: mass_deficit_u_l, mass_deficit_v_l, mass_deficit_u_r, mass_deficit_v_r
-    
-        do k = 1, nlayers
-            do iface = 1, nface
-
-                if (face_type(iface) == 2) cycle
-
-                el = face(7,iface)
-                er = face(8,iface)
-
-                do iquad = 1,nq 
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    qprime_l = 0.0; qprime_r = 0.0
-                    pbprime_l = 0.0; pbprime_r = 0.0
-
-                    do n = 1,ngl
-                        hi = psiq(n,iquad)
-
-                        il = imapl(1,n,1,iface)
-                        jl = imapl(2,n,1,iface)
-                        kl = imapl(3,n,1,iface)
-
-                        I = intma(il,jl,kl,el)
-                        qprime_l = qprime_l + hi*dprime_df(I,k)
-                        pbprime_l = pbprime_l + hi*pbprime_df(I)
-                    enddo
-
-                    if(er > 0) then
-                        do n = 1,ngl
-                            hi = psiq(n,iquad)
-                            ir = imapr(1,n,1,iface)
-                            jr = imapr(2,n,1,iface)
-                            kr = imapr(3,n,1,iface)
-                            I = intma(ir,jr,kr,er)
-                            qprime_r = qprime_r + hi*dprime_df(I,k)
-                            pbprime_r = pbprime_r + hi*pbprime_df(I)
-                        enddo
-                    else
-                        qprime_r = qprime_l
-                        pbprime_r = pbprime_l
-                    endif
-
-                    if (qprime_l <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                        qprime_l = (gravity/alpha_mlswe(k))*dry_cutoff
-                    end if
-                    if (qprime_r <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                        qprime_r = (gravity/alpha_mlswe(k))*dry_cutoff
-                    end if
-
-                    weights_face_l = qprime_l / pbprime_l
-                    weights_face_r = qprime_r / pbprime_r
-
-                    mass_deficit_u_l = weights_face_l* &
-                                                        (btp_mass_flux_face_ave(1,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(1,iquad,iface))
-                    mass_deficit_v_l = weights_face_l* &
-                                                        (btp_mass_flux_face_ave(2,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(2,iquad,iface))
-
-                    mass_deficit_u_r = weights_face_r* &
-                                                        (btp_mass_flux_face_ave(1,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(1,iquad,iface))
-                    mass_deficit_v_r = weights_face_r* &
-                                                        (btp_mass_flux_face_ave(2,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(2,iquad,iface))
-
-                    if(mass_deficit_u_l*nxl > 0.0) then
-
-                        flux_edge_u(iquad) = mass_deficit_u_l
-                    else
-                        flux_edge_u(iquad) = mass_deficit_u_r
-                    end if
-
-                    if(mass_deficit_v_l*nyl > 0.0) then
-                        flux_edge_v(iquad) = mass_deficit_v_l
-                    else
-                        flux_edge_v(iquad) = mass_deficit_v_r
-                    end if 
-                enddo 
-
-                do iquad = 1, nq
-
-                    wq = jac_faceq(iquad,1,iface)
-
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
-
-                    flux = nxl*flux_edge_u(iquad) + nyl*flux_edge_v(iquad)
-
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-                        
-                        il = imapl(1,n,1,iface)
-                        jl = imapl(2,n,1,iface)
-                        kl = imapl(3,n,1,iface)
-                        I = intma(il,jl,kl,el)
-
-                        dp_advec(I,k) = dp_advec(I,k) - wq*hi*flux
-
-                        if(er > 0) then
-
-                            ir = imapr(1,n,1,iface)
-                            jr = imapr(2,n,1,iface)
-                            kr = imapr(3,n,1,iface)
-                            I = intma(ir,jr,kr,er)
-
-                            dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
-
-                        end if
-                    end do
-                end do
-            end do
-        end do
-    
-    end subroutine create_consistency_mass_flux
 
 end module mod_create_rhs_mlswe

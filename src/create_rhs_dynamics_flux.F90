@@ -468,7 +468,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar, imulti
    integer :: multirate
    
-   real, dimension(nlayers) :: alpha_over_g, g_over_alpha, dpp
+   real, dimension(nlayers) :: alpha_over_g, g_over_alpha
    real, dimension(2,nlayers+1) :: p_face, z_face
    real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
    real, dimension(3,nlayers) :: ql, qr
@@ -484,8 +484,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
-   real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux, dp_flux
-   real :: dp_lr(2,nlayers), dp_deficit(2)
+   real, dimension(2,nq,nlayers) :: udp_flux, vdp_flux, dp_flux
+   real :: dp_lr(2,nlayers), dp_deficit(2), H_face(nq,nlayers)
 
    jj=1
    kk=1
@@ -540,7 +540,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                vl = ql(3,k) + qbl(3,iquad)
                vr = qr(3,k) + qbr(3,iquad)
 
-               dpp(k) = 0.5*(dpl + dpr)
                uu = 0.5*(ul+ur)
                vv = 0.5*(vl+vr)
                udpl(k) = ul*dpl
@@ -567,14 +566,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   vdp_flux(2,iquad,k) = vv * (vr*dpr)
                endif
 
-               flux_dp(iquad,k) = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
-
             enddo !k
-
-            ! sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface)  + &
-            !                                           sum(udp_flux(1,iquad,:))
-            ! sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface)  + &
-            !                                           sum(vdp_flux(1,iquad,:))
 
             uu_dp_flux_deficit(1) = Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,iquad,:))
             uu_dp_flux_deficit(2) = Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,iquad,:))
@@ -714,10 +706,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                nxl = normal_vector_q(1,iquad,1,iface)
                nyl = normal_vector_q(2,iquad,1,iface)
 
-               hlx_k = nxl*H_face(1,iquad,k)
-               hrx_k = nxl*H_face(2,iquad,k)
-               hly_k = nyl*H_face(1,iquad,k)
-               hry_k = nyl*H_face(2,iquad,k)
+               hlx_k = nxl*H_face(iquad,k)
+               hly_k = nyl*H_face(iquad,k)
                flux = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
                flux_x = nxl*udp_flux(1,iquad,k) + nyl*udp_flux(2,iquad,k)
                flux_y = nxl*vdp_flux(1,iquad,k) + nyl*vdp_flux(2,iquad,k)
@@ -930,7 +920,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real ::  ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv
    real, dimension(nlayers) :: udpl, udpr, vdpl, vdpr
    real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
-   real, parameter :: eps1 = 1.0e-10 !  Parameter used to prevent division by zero.
+   real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(2,nq,nlayers) :: udp_flux, vdp_flux
@@ -966,6 +956,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             nyl = normal_vector_q(2,iquad,1,iface)
 
             ql = 0.0; qr = 0.0
+
             do k = 1,nlayers
 
                index = 3*(k-1)
@@ -980,7 +971,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   end do
                enddo
 
-               ! Left side of the edge
+               ! Compute the fluxes
                dpl = qbl(1,iquad) * ql(1,k)
                dpr = qbr(1,iquad) * qr(1,k)
                ul = ql(2,k) + qbl(2,iquad)
@@ -1074,8 +1065,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                                                    (one_plus_eta_edge * qr(1,k))
             end do
 
-            p_edge_plus(2) = one_plus_eta_edge * ql(1,k)
-            p_edge_minus(2) = one_plus_eta_edge * qr(1,k)
+            p_edge_plus(2) = one_plus_eta_edge * ql(1,1)
+            p_edge_minus(2) = one_plus_eta_edge * qr(1,1)
             do k = 2,nlayers
                p_edge_plus(k+1) = p_edge_plus(k) + one_plus_eta_edge * ql(1,k)
                p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,k)
@@ -1105,13 +1096,14 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   end if
                end do
                H_face(iquad,k) = 0.5*(H_r_plus + H_r_minus) !computation of H_r for the left side
-         
+               
             end do !k
 
             do k = 1, nlayers-1          ! interface at the bottom of layer k
                ! Corrections at the left side of a face.
-               p_inc1 = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-               H_corr1 = 0.5 * alpha_mlswe(k) * (p_inc1**2 - p_face(1,k+1)**2)
+               p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+               H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,k+1) &
+                           + p_inc1)**2 - p_face(1,k+1)**2)
                H_face(iquad,k) = H_face(iquad,k) - H_corr1
                H_face(iquad,k+1) = H_face(iquad,k+1) + H_corr1
 
@@ -1282,143 +1274,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    end do !iface
  
  end subroutine create_nbhs_face_df_lap_bcl
-
- subroutine create_nbhs_face_consistency(rhs,q_send,q_recv,multirate)
-
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psiq
-   use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
-   use mod_initial, only: nvar, alpha_mlswe
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
-                           num_nbh, num_send_recv
- 
-   use mod_input, only: nlayers
-   use mod_constants, only: gravity
-   use mod_variables, only: btp_mass_flux_face_ave, sum_layer_mass_flux_face
- 
-   implicit none
- 
-   !global arrays
-   real, intent(inout) :: rhs(npoin,nlayers)
-   real,intent(in):: q_send(nlayers+1,ngl,nboun)
-   real,intent(in):: q_recv(nlayers+1,ngl,nboun)
- 
-   !local variables
- 
-   real :: wq
-   integer :: iface, k
- 
-   integer :: jj, imm, inbh, ib, kk, ivar, ii
-   integer :: imulti
-   integer :: multirate
-   real :: nxl, nyl, nxr, nyr
-   integer :: el, iquad, n, I, il, jl, kl, er, itype
-   real, dimension(nlayers) :: qpl, qpr
-   real, dimension(nq,nlayers) :: flux_edge_u, flux_edge_v
-   real :: mass_deficit_u_l, mass_deficit_v_l
-   real :: mass_deficit_u_r, mass_deficit_v_r
-   real :: weight, flux, pbl, pbr, hi
-
-   jj=1
-   kk=1
-   imm = 0
-
-   do inbh = 1, num_nbh
-      do ib=1,num_send_recv(inbh)
-         iface = nbh_send_recv(jj)
-         imulti = nbh_send_recv_multi(jj)
-
-         el=face(7,iface)
-         er=face(8,iface)
- 
-         !-------------------------------------
-         !Store Left Side Variables
-         !-------------------------------------
-
-         do iquad = 1, nq
-
-            nxl = normal_vector_q(1,iquad,1,iface)
-            nyl = normal_vector_q(2,iquad,1,iface)
-
-            qpl = 0.0 ; qpr = 0.0 ; pbl = 0.0 ; pbr = 0.0
-            do n = 1, ngl
-               il = imapl(1,n,1,iface)
-               jl = imapl(2,n,1,iface)
-               kl = imapl(3,n,1,iface)
-               I = intma(il,jl,kl,el)
-
-               hi = psiq(n,iquad)
-
-               do k = 1,nlayers
-                  qpl(k) = qpl(k) + hi*q_send(k,n,kk)
-                  qpr(k) = qpr(k) + hi*q_recv(k,n,kk)
-               end do
-               pbl = pbl + hi*q_send(nlayers+1,n,kk)
-               pbr = pbr + hi*q_recv(nlayers+1,n,kk)
-            enddo
-
-            do k = 1, nlayers
-
-               weight = qpl(k) / pbl
-               mass_deficit_u_l = weight * (btp_mass_flux_face_ave(1,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(1,iquad,iface))
-
-               mass_deficit_v_l = weight * (btp_mass_flux_face_ave(2,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(2,iquad,iface))
-
-               weight = qpr(k) / pbr
-               mass_deficit_u_r = weight * (btp_mass_flux_face_ave(1,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(1,iquad,iface))
-               mass_deficit_v_r = weight * (btp_mass_flux_face_ave(2,iquad,iface) &
-                                                        - sum_layer_mass_flux_face(2,iquad,iface))
-
-               if(mass_deficit_u_l*nxl > 0.0) then 
-
-                  flux_edge_u(iquad,k) = mass_deficit_u_l
-               else 
-                  flux_edge_u(iquad,k) = mass_deficit_u_r
-               end if 
-
-               if(mass_deficit_v_l*nyl > 0.0) then 
-                  flux_edge_v(iquad,k) = mass_deficit_v_l
-               else 
-                  flux_edge_v(iquad,k) = mass_deficit_v_r
-               end if 
-            enddo
-
-         end do !iquad
-
-         do k = 1, nlayers
-
-            do iquad = 1, nq
-
-               wq = jac_faceq(iquad,1,iface)
-
-               nxl = normal_vector_q(1,iquad,1,iface)
-               nyl = normal_vector_q(2,iquad,1,iface)
-
-               flux = nxl*flux_edge_u(iquad,k) + nyl*flux_edge_v(iquad,k)
-
-               do n = 1, ngl
-
-                  hi = psiq(n,iquad)
-                  il = imapl(1,n,1,iface)
-                  jl = imapl(2,n,1,iface)
-                  kl = imapl(3,n,1,iface)
-                  I = intma(il,jl,kl,el)
-
-                  rhs(I,k) = rhs(I,k) - wq*hi*flux
-               end do
-            end do !iquad
-         end do !klayers
-
-         kk=kk+1
-         jj=jj+1
-      end do
- 
-   end do !iface
- 
- end subroutine create_nbhs_face_consistency
 
  subroutine create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send,q_recv,nvarb,multirate)
 
