@@ -253,10 +253,6 @@ module mod_barotropic_terms
                 dpp_graduv(3,I,k) = dpprime_visc(I,k)*graduv(3,I)
                 dpp_graduv(4,I,k) = dpprime_visc(I,k)*graduv(4,I)
 
-                if (dpprime_visc(I,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    dpp_graduv(:,I,k) = 0.0
-                end if
-
                 dpp_uvp(1,I,k) =  dpprime_visc(I,k)*qprime_df(2,I,k)
                 dpp_uvp(2,I,k) =  dpprime_visc(I,k)*qprime_df(3,I,k)
 

@@ -76,11 +76,6 @@ module mod_splitting
             ! endif
         end do
 
-        ! call poslimiter(q_df,alpha_mlswe)
-
-        ! consistency through flux adjustment 
-        ! call apply_consistency(q_df) 
-
         ! Store the degree of freedom (nodal points) values of dpprime_df
         one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
         do k = 1,nlayers
@@ -147,7 +142,7 @@ module mod_splitting
                 q_df3(1,:,k) = q_df(1,:,k)
             end do
 
-            !call layer_mom_boundary_df(q_df3(2:3,:,:))
+            !call layer_mom_boundary_df(q_df3)
 
             ! Velocity smoothing from the momentum
             call velocity_df(q_df3, qb_df)
@@ -170,7 +165,7 @@ module mod_splitting
             q_df(3,:,k) = - b_bcl(:)*tempu(:) + a_bcl(:)*tempv(:)
         end do
 
-        call layer_mom_boundary_df(q_df(2:3,:,:))
+        call layer_mom_boundary_df(q_df)
 
         ! Compute dpprime, uprime and vprime at the nodal points
         call extract_velocity(uv_df, q_df, qb_df)
@@ -245,7 +240,7 @@ module mod_splitting
                 q_df3(1,:,k) = q_df(1,:,k)
             end do
 
-            !call layer_mom_boundary_df(q_df3(2:3,:,:))
+            !call layer_mom_boundary_df(q_df3)
 
             ! Velocity smoothing from the momentum
             call velocity_df(q_df3, qb_df)
@@ -270,12 +265,7 @@ module mod_splitting
             q_df(1,:,k) = q_df_temp(1,:,k)
         end do
 
-        call layer_mom_boundary_df(q_df(2:3,:,:))
-
-        ! call poslimiter(q_df,alpha_mlswe)
-
-        ! consistency through flux adjustment 
-        ! call apply_consistency(q_df)
+        call layer_mom_boundary_df(q_df)
 
         ! Compute dpprime, uprime and vprime at the quad and nodal points
         call extract_velocity(uv_df, q_df, qb_df)
@@ -312,7 +302,7 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc > 0) then
+        if (method_visc > 1) then
             call bcl_create_laplacian(rhs_visc_bcl)
         endif 
 
@@ -344,7 +334,7 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc > 0) then
+        if (method_visc > 1) then
             call bcl_create_laplacian(rhs_visc_bcl)
         endif 
 

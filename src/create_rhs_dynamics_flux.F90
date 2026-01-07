@@ -101,7 +101,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_quad
 
-  subroutine create_nbhs_face_df(rhs,q_send,q_recv,nvarb,multirate)
+ subroutine create_nbhs_face_df(rhs,q_send,q_recv,nvarb,multirate)
 
    use mod_basis, only: ngl, FACE_CHILDREN,nq, psiq
    use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
@@ -250,11 +250,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
             ! Accumulate sums for time averaging
 
-            ! btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
-            ! btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
+            btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+            btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
 
-            btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux(1,iquad)
-            btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux(1,iquad)
+            ! btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux(1,iquad)
+            ! btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux(1,iquad)
 
             H_face_ave(iquad,iface) = H_face_ave(iquad,iface) + H_bcl_q
             Qu_face_ave(1,iquad,iface) = Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1) + Qu_qr(1))
@@ -481,11 +481,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real ::  ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv
    real, dimension(nlayers) :: udpl, udpr, vdpl, vdpr
    real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
-   real, parameter :: eps1 = 1.0e-10 !  Parameter used to prevent division by zero.
+   real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
-   real, dimension(2,nq,nlayers) :: dp_flux, udp_flux, vdp_flux
-   real :: dp_deficit, flux_dp(nq,nlayers), H_face(nq,nlayers)
+   real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux, dp_flux
+   real :: dp_lr(2,nlayers), dp_deficit(2)
 
    jj=1
    kk=1
@@ -535,10 +535,10 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                ! Left side of the edge
                dpl = qbl(1,iquad) * ql(1,k)
                dpr = qbr(1,iquad) * qr(1,k)
-               ul = ql(2,k)+qbl(2,iquad)
-               ur = qr(2,k)+qbr(2,iquad)
-               vl = ql(3,k)+qbl(3,iquad)
-               vr = qr(3,k)+qbr(3,iquad)
+               ul = ql(2,k) + qbl(2,iquad)
+               ur = qr(2,k) + qbr(2,iquad)
+               vl = ql(3,k) + qbl(3,iquad)
+               vr = qr(3,k) + qbr(3,iquad)
 
                dpp(k) = 0.5*(dpl + dpr)
                uu = 0.5*(ul+ur)
@@ -571,20 +571,33 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
             enddo !k
 
-            dp_deficit = btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_dp(iquad,:))
+            ! sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface)  + &
+            !                                           sum(udp_flux(1,iquad,:))
+            ! sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface)  + &
+            !                                           sum(vdp_flux(1,iquad,:))
 
             uu_dp_flux_deficit(1) = Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,iquad,:))
             uu_dp_flux_deficit(2) = Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,iquad,:))
             vv_dp_flux_deficit(1) = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,iquad,:))
             vv_dp_flux_deficit(2) = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,iquad,:))
 
+            dp_deficit(1) = btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,iquad,:))
+            dp_deficit(2) = btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,iquad,:))
+
             do k = 1,nlayers
 
-               weight = dpp(k) / (sum(dpp(:))+eps1)
-               flux_dp(iquad,k) = flux_dp(iquad,k) + weight * dp_deficit
+               weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
+               if (dp_deficit(1)*nxl < 0.0) &
+                  weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
+               dp_flux(1,iquad,k) = dp_flux(1,iquad,k) + weight * dp_deficit(1)
+
+               weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
+               if (dp_deficit(2)*nyl < 0.0) &
+                  weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
+               dp_flux(2,iquad,k) = dp_flux(2,iquad,k) + weight * dp_deficit(2)
 
                ! Adjust the fluxes for the u-momentum equation
-               !x-direction
+               ! x-direction
                weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                if(uu_dp_flux_deficit(1)*nxl < 0.0) &
                   weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
@@ -701,10 +714,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                nxl = normal_vector_q(1,iquad,1,iface)
                nyl = normal_vector_q(2,iquad,1,iface)
 
-               hlx_k = nxl*H_face(iquad,k)
-               hly_k = nyl*H_face(iquad,k)
-
-               flux = flux_dp(iquad,k)
+               hlx_k = nxl*H_face(1,iquad,k)
+               hrx_k = nxl*H_face(2,iquad,k)
+               hly_k = nyl*H_face(1,iquad,k)
+               hry_k = nyl*H_face(2,iquad,k)
+               flux = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
                flux_x = nxl*udp_flux(1,iquad,k) + nyl*udp_flux(2,iquad,k)
                flux_y = nxl*vdp_flux(1,iquad,k) + nyl*vdp_flux(2,iquad,k)
 
@@ -758,12 +772,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
    integer :: kl, kr, jquad, n, m, index
    real :: wq, nxl, nyl, hi
-   real :: dpl, dpr, uu, vv, flux, ul, ur, vl, vr
-   real, dimension(nq,nlayers) :: udp_flux, vdp_flux, dpp
+   real :: dpl, dpr, uu, vv, flux, ul, ur, vl, vr, weight, dp_lr(2,nlayers), dp_deficit(2)
+   real, dimension(nq,nlayers) :: flux_edge_u, flux_edge_v
    real, dimension(3) :: ql, qr
    real, dimension(3,nq) :: qbl, qbr
    real, parameter :: eps = 1.0e-10
-   real :: flux_dp(nq,nlayers), dp_deficit, weight
 
    jj=1
    kk=1
@@ -804,32 +817,47 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   end do
                enddo
 
-               ! Left side of the edge
                dpl = qbl(1,iquad) * ql(1)
                dpr = qbr(1,iquad) * qr(1)
+
                ul = ql(2) + qbl(2,iquad)
                ur = qr(2) + qbr(2,iquad)
                vl = ql(3) + qbl(3,iquad)
                vr = qr(3) + qbr(3,iquad)
 
-               dpp(iquad,k) = 0.5*(dpl + dpr)
-               uu = 0.5*(ul+ur)
-               vv = 0.5*(vl+vr)
+               uu = 0.5*(ul + ur)
+               vv = 0.5*(vl + vr)
 
                if(uu*nxl > 0.0) then
-                  udp_flux(iquad,k) = uu * dpl
+                  flux_edge_u(iquad,k) = uu * dpl
                else
-                  udp_flux(iquad,k) = uu * dpr
+                  flux_edge_u(iquad,k) = uu * dpr
                endif
-               if(vv*nyl > 0.0) then
-                  vdp_flux(iquad,k) = vv * dpl
-               else
-                  vdp_flux(iquad,k) = vv * dpr
-               endif
-            enddo
 
-            flux_dp(iquad,k) = nxl*udp_flux(iquad,k) + nyl*vdp_flux(iquad,k)
-         end do ! iquad
+               if(vv*nyl > 0.0) then
+                  flux_edge_v(iquad,k) = vv * dpl
+               else
+                  flux_edge_v(iquad,k) = vv * dpr
+               endif
+            end do ! k
+
+            dp_deficit(1) = btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_edge_u(iquad,:))
+            dp_deficit(2) = btp_mass_flux_face_ave(2,iquad,iface) - sum(flux_edge_v(iquad,:))
+
+            do k = 1, nlayers
+
+               weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps))
+               if (dp_deficit(1)*nxl < 0.0) &
+                  weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps))
+               flux_edge_u(iquad,k) = flux_edge_u(iquad,k) + weight*dp_deficit(1)
+
+               weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps))
+               if (dp_deficit(1)*nxl < 0.0) &
+                  weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps))
+               flux_edge_v(iquad,k) = flux_edge_v(iquad,k) + weight*dp_deficit(2)
+
+            end do ! k
+         end do ! iquad 
 
          ! Do Gauss-Lobatto Integration
          do k = 1,nlayers
@@ -837,9 +865,10 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             do iquad = 1, nq
 
                wq = jac_faceq(iquad,1,iface)
-               dp_deficit = btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_dp(iquad,:))
-               weight = dpp(iquad,k) / (sum(dpp(iquad,:))+eps)
-               flux = flux_dp(iquad,k) + weight*dp_deficit
+               nxl = normal_vector_q(1,iquad,1,iface)
+               nyl = normal_vector_q(2,iquad,1,iface)
+
+               flux = nxl*flux_edge_u(iquad,k) + nyl*flux_edge_v(iquad,k)
 
                do n = 1, ngl
 
