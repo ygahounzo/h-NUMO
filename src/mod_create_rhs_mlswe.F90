@@ -684,6 +684,8 @@ module mod_create_rhs_mlswe
         integer :: il, jl, ir, jr, kl, kr, jquad, n, m
         real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, un
         real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux
+        real, dimension(nq,nlayers) :: flux_ul, flux_ur, flux_vl, flux_vr
+        real :: flux_xl, flux_xr, flux_yl, flux_yr
 
         do k=1,nlayers
             alpha_over_g(k) = alpha_mlswe(k)/gravity
@@ -965,6 +967,14 @@ module mod_create_rhs_mlswe
                 end if
                 H_face(2,iquad,:) = H_face(2,iquad,:) * weight
 
+                do k = 1,nlayers
+                    flux_ul(iquad,k) = nxl*(udp_flux(1,iquad,k) + H_face(1,iquad,k)) + nyl*udp_flux(2,iquad,k)
+                    flux_ur(iquad,k) = nxl*(udp_flux(1,iquad,k) + H_face(2,iquad,k)) + nyl*udp_flux(2,iquad,k)
+
+                    flux_vl(iquad,k) = nxl*vdp_flux(1,iquad,k) + nyl*(vdp_flux(2,iquad,k) + H_face(1,iquad,k))
+                    flux_vr(iquad,k) = nxl*vdp_flux(1,iquad,k) + nyl*(vdp_flux(2,iquad,k) + H_face(2,iquad,k))
+                enddo
+
             end do ! iquad
             
             ! Do Gauss-Lobatto Integration
@@ -973,15 +983,12 @@ module mod_create_rhs_mlswe
                 do iquad = 1, nq
 
                     wq = jac_faceq(iquad,1,iface)
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
 
-                    hlx_k = nxl*H_face(1,iquad,k)
-                    hrx_k = nxl*H_face(2,iquad,k)
-                    hly_k = nyl*H_face(1,iquad,k)
-                    hry_k = nyl*H_face(2,iquad,k)
-                    flux_x = nxl*udp_flux(1,iquad,k) + nyl*udp_flux(2,iquad,k)
-                    flux_y = nxl*vdp_flux(1,iquad,k) + nyl*vdp_flux(2,iquad,k)
+                    flux_xl = flux_ul(iquad,k)
+                    flux_yl = flux_vl(iquad,k)
+
+                    flux_xr = flux_ur(iquad,k)
+                    flux_yr = flux_vr(iquad,k)
 
                     do n = 1, ngl
 
@@ -991,8 +998,8 @@ module mod_create_rhs_mlswe
                         kl = imapl(3,n,1,iface)
                         I = intma(il,jl,kl,el)
 
-                        rhs_mom(1,I,k) = rhs_mom(1,I,k) - wq*hi*(hlx_k + flux_x)
-                        rhs_mom(2,I,k) = rhs_mom(2,I,k) - wq*hi*(hly_k + flux_y)
+                        rhs_mom(1,I,k) = rhs_mom(1,I,k) - wq*hi*flux_xl
+                        rhs_mom(2,I,k) = rhs_mom(2,I,k) - wq*hi*flux_yl
 
                         if(er > 0) then
 
@@ -1001,8 +1008,8 @@ module mod_create_rhs_mlswe
                             kr = imapr(3,n,1,iface)
                             I = intma(ir,jr,kr,er)
 
-                            rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*hi*(hrx_k + flux_x)
-                            rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*hi*(hry_k + flux_y)
+                            rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*hi*flux_xr
+                            rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*hi*flux_yr
 
                         end if
                     end do
@@ -1050,6 +1057,8 @@ module mod_create_rhs_mlswe
         real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux, un
         real, dimension(2,nq,nlayers) :: H_face, udp_flux, vdp_flux, dp_flux
         real :: dp_lr(2,nlayers), dp_deficit(2)
+        real, dimension(nq,nlayers) :: flux_ul, flux_ur, flux_vl, flux_vr, flux_dp
+        real :: flux_xl, flux_xr, flux_yl, flux_yr
 
         do k=1,nlayers
             alpha_over_g(k) = alpha_mlswe(k)/gravity
@@ -1153,11 +1162,6 @@ module mod_create_rhs_mlswe
                     endif
 
                 enddo
-
-                ! sum_layer_mass_flux_face(1,iquad,iface) = sum_layer_mass_flux_face(1,iquad,iface)  + &
-                !                                       sum(dp_flux(1,iquad,:))
-                ! sum_layer_mass_flux_face(2,iquad,iface) = sum_layer_mass_flux_face(2,iquad,iface)  + &
-                !                                       sum(dp_flux(2,iquad,:))
 
                 uu_dp_flux_deficit(1) = Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,iquad,:))
                 uu_dp_flux_deficit(2) = Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,iquad,:))
@@ -1354,6 +1358,17 @@ module mod_create_rhs_mlswe
                 end if
                 H_face(2,iquad,:) = H_face(2,iquad,:) * weight
 
+                do k = 1,nlayers
+
+                    flux_dp(iquad,k) = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
+
+                    flux_ul(iquad,k) = nxl*(udp_flux(1,iquad,k) + H_face(1,iquad,k)) + nyl*udp_flux(2,iquad,k)
+                    flux_ur(iquad,k) = nxl*(udp_flux(1,iquad,k) + H_face(2,iquad,k)) + nyl*udp_flux(2,iquad,k)
+
+                    flux_vl(iquad,k) = nxl*vdp_flux(1,iquad,k) + nyl*(vdp_flux(2,iquad,k) + H_face(1,iquad,k))
+                    flux_vr(iquad,k) = nxl*vdp_flux(1,iquad,k) + nyl*(vdp_flux(2,iquad,k) + H_face(2,iquad,k))
+                enddo
+
             end do ! iquad
             
             ! Do Gauss-Lobatto Integration
@@ -1362,16 +1377,13 @@ module mod_create_rhs_mlswe
                 do iquad = 1, nq
 
                     wq = jac_faceq(iquad,1,iface)
-                    nxl = normal_vector_q(1,iquad,1,iface)
-                    nyl = normal_vector_q(2,iquad,1,iface)
 
-                    hlx_k = nxl*H_face(1,iquad,k)
-                    hrx_k = nxl*H_face(2,iquad,k)
-                    hly_k = nyl*H_face(1,iquad,k)
-                    hry_k = nyl*H_face(2,iquad,k)
-                    flux = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
-                    flux_x = nxl*udp_flux(1,iquad,k) + nyl*udp_flux(2,iquad,k)
-                    flux_y = nxl*vdp_flux(1,iquad,k) + nyl*vdp_flux(2,iquad,k)
+                    flux = flux_dp(iquad,k)
+                    flux_xl = flux_ul(iquad,k)
+                    flux_yl = flux_vl(iquad,k)
+
+                    flux_xr = flux_ur(iquad,k)
+                    flux_yr = flux_vr(iquad,k)
 
                     do n = 1, ngl
 
@@ -1382,8 +1394,8 @@ module mod_create_rhs_mlswe
                         I = intma(il,jl,kl,el)
 
                         rhs(1,I,k) = rhs(1,I,k) - wq*hi*flux
-                        rhs(2,I,k) = rhs(2,I,k) - wq*hi*(hlx_k + flux_x)
-                        rhs(3,I,k) = rhs(3,I,k) - wq*hi*(hly_k + flux_y)
+                        rhs(2,I,k) = rhs(2,I,k) - wq*hi*flux_xl
+                        rhs(3,I,k) = rhs(3,I,k) - wq*hi*flux_yl
 
                         if(er > 0) then
 
@@ -1393,8 +1405,8 @@ module mod_create_rhs_mlswe
                             I = intma(ir,jr,kr,er)
 
                             rhs(1,I,k) = rhs(1,I,k) + wq*hi*flux
-                            rhs(2,I,k) = rhs(2,I,k) + wq*hi*(hrx_k + flux_x)
-                            rhs(3,I,k) = rhs(3,I,k) + wq*hi*(hry_k + flux_y)
+                            rhs(2,I,k) = rhs(2,I,k) + wq*hi*flux_xr
+                            rhs(3,I,k) = rhs(3,I,k) + wq*hi*flux_yr
 
                         end if
                     end do

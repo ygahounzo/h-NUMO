@@ -485,7 +485,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(2,nq,nlayers) :: udp_flux, vdp_flux, dp_flux
-   real :: dp_lr(2,nlayers), dp_deficit(2), H_face(nq,nlayers)
+   real :: dp_lr(2,nlayers), dp_deficit(2)
+   real, dimension(nq,nlayers) :: H_face, flux_ul, flux_vl, flux_dp
 
    jj=1
    kk=1
@@ -695,6 +696,12 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             end if
             H_face(iquad,:) = H_face(iquad,:) * weight
 
+            do k = 1,nlayers
+               flux_dp(iquad,k) = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
+               flux_ul(iquad,k) = nxl*(udp_flux(1,iquad,k) + H_face(iquad,k)) + nyl*udp_flux(2,iquad,k)
+               flux_vl(iquad,k) = nxl*vdp_flux(1,iquad,k) + nyl*(vdp_flux(2,iquad,k) + H_face(iquad,k))
+            enddo
+
          end do ! iquad
          
          ! Do Gauss-Lobatto Integration
@@ -703,14 +710,10 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             do iquad = 1, nq
 
                wq = jac_faceq(iquad,1,iface)
-               nxl = normal_vector_q(1,iquad,1,iface)
-               nyl = normal_vector_q(2,iquad,1,iface)
 
-               hlx_k = nxl*H_face(iquad,k)
-               hly_k = nyl*H_face(iquad,k)
-               flux = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
-               flux_x = nxl*udp_flux(1,iquad,k) + nyl*udp_flux(2,iquad,k)
-               flux_y = nxl*vdp_flux(1,iquad,k) + nyl*vdp_flux(2,iquad,k)
+               flux = flux_dp(iquad,k)
+               flux_x = flux_ul(iquad,k)
+               flux_y = flux_vl(iquad,k)
 
                do n = 1, ngl
 
@@ -721,8 +724,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   I = intma(il,jl,kl,el)
 
                   rhs(1,I,k) = rhs(1,I,k) - wq*hi*flux
-                  rhs(2,I,k) = rhs(2,I,k) - wq*hi*(hlx_k + flux_x)
-                  rhs(3,I,k) = rhs(3,I,k) - wq*hi*(hly_k + flux_y)
+                  rhs(2,I,k) = rhs(2,I,k) - wq*hi*flux_x
+                  rhs(3,I,k) = rhs(3,I,k) - wq*hi*flux_y
                end do
             end do
          end do
@@ -924,7 +927,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
    real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
    real, dimension(2,nq,nlayers) :: udp_flux, vdp_flux
-   real :: H_face(nq,nlayers)
+   real, dimension(nq,nlayers) :: H_face, flux_ul, flux_vl
 
    jj=1
    kk=1
@@ -1117,6 +1120,11 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             end if
             H_face(iquad,:) = H_face(iquad,:) * weight
 
+            do k = 1,nlayers
+               flux_ul(iquad,k) = nxl*(udp_flux(1,iquad,k) + H_face(iquad,k)) + nyl*udp_flux(2,iquad,k)
+               flux_vl(iquad,k) = nxl*vdp_flux(1,iquad,k) + nyl*(vdp_flux(2,iquad,k) + H_face(iquad,k))
+            enddo
+
          end do ! iquad
          
          ! Do Gauss-Lobatto Integration
@@ -1125,13 +1133,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             do iquad = 1, nq
 
                wq = jac_faceq(iquad,1,iface)
-               nxl = normal_vector_q(1,iquad,1,iface)
-               nyl = normal_vector_q(2,iquad,1,iface)
-
-               hlx_k = nxl*H_face(iquad,k)
-               hly_k = nyl*H_face(iquad,k)
-               flux_x = nxl*udp_flux(1,iquad,k) + nyl*udp_flux(2,iquad,k)
-               flux_y = nxl*vdp_flux(1,iquad,k) + nyl*vdp_flux(2,iquad,k)
+   
+               flux_x = flux_ul(iquad,k)
+               flux_y = flux_vl(iquad,k)
 
                do n = 1, ngl
 
@@ -1141,8 +1145,8 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   kl = imapl(3,n,1,iface)
                   I = intma(il,jl,kl,el)
 
-                  rhs(1,I,k) = rhs(1,I,k) - wq*hi*(hlx_k + flux_x)
-                  rhs(2,I,k) = rhs(2,I,k) - wq*hi*(hly_k + flux_y)
+                  rhs(1,I,k) = rhs(1,I,k) - wq*hi*flux_x
+                  rhs(2,I,k) = rhs(2,I,k) - wq*hi*flux_y
                end do
             end do
          end do
