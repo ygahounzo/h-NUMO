@@ -1,8 +1,8 @@
 &gridnl
-nelx  = 10,
-nely  = 10,
-nopx  = 4,
-nopy  = 4,
+nelx  = 5,
+nely  = 5,
+nopx  = 2,
+nopy  = 2,
 xdims = 0.0,2e3,
 ydims = 0.0,2e3,
 nlayers = 2,

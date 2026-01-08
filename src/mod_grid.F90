@@ -92,7 +92,7 @@ module mod_grid
     !>@brief Interface for various intmas
     !-----------------------------------------
     abstract interface
-        function intma_interface(i,j,k,e) result(r)
+        pure function intma_interface(i,j,k,e) result(r)
             integer,intent(in)::i,j,k,e
             integer::r
         end function intma_interface
@@ -220,14 +220,14 @@ contains
     !------------------------------------------
     !>@brief intma for CG indexing
     !------------------------------------------
-    function intma_cg(i,j,k,e)
+    pure function intma_cg(i,j,k,e)
         integer,intent(in)::i,j,k,e
         intma_cg = intma_table(i,j,k,e)
     end function intma_cg
     !------------------------------------------
     !>@brief intma for DG indexing
     !------------------------------------------
-    function intma_dg(i,j,k,e)
+    pure function intma_dg(i,j,k,e)
         integer,intent(in)::i,j,k,e
         intma_dg = (e-1) * nglz * ngly * nglx + &
             (k-1) * ngly * nglx + &
