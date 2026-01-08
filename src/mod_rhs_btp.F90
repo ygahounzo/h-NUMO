@@ -151,16 +151,18 @@ contains
             Qv(1) = ub * vdp + ope * sum(up(:)*(pp(:) * vp(:)))
             Qv(2) = vb * vdp + ope * sum(vp(:)*(pp(:) * vp(:)))
 
-            H_ave(Iq) = H_ave(Iq) + Hq;  Qu_ave(Iq) = Qu_ave(Iq) + Qu(1)
-            Qv_ave(Iq) = Qv_ave(Iq) + Qv(1);  Quv_ave(Iq) = Quv_ave(Iq) + Qu(2)
-            tau_bot_ave(1,Iq) = tau_bot_ave(1,Iq) + tb_u
-            tau_bot_ave(2,Iq) = tau_bot_ave(2,Iq) + tb_v
-            ope_ave(Iq) = ope_ave(Iq) + ope
-            ope2_ave(Iq) = ope2_ave(Iq) + ope**2
-            btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + udp
-            btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
-            uvb_ave(1,Iq) = uvb_ave(1,Iq) + ub
-            uvb_ave(2,Iq) = uvb_ave(2,Iq) + vb
+            H_ave(Iq)              = H_ave(Iq)              + Hq
+            Qu_ave(Iq)             = Qu_ave(Iq)             + Qu(1)
+            Qv_ave(Iq)             = Qv_ave(Iq)             + Qv(1)
+            Quv_ave(Iq)            = Quv_ave(Iq)            + Qu(2)
+            tau_bot_ave(1,Iq)      = tau_bot_ave(1,Iq)      + tb_u
+            tau_bot_ave(2,Iq)      = tau_bot_ave(2,Iq)      + tb_v
+            ope_ave(Iq)            = ope_ave(Iq)            + ope
+            ope2_ave(Iq)           = ope2_ave(Iq)           + ope**2
+            btp_mass_flux_ave(1,Iq)= btp_mass_flux_ave(1,Iq)+ udp
+            btp_mass_flux_ave(2,Iq)= btp_mass_flux_ave(2,Iq)+ vdp
+            uvb_ave(1,Iq)          = uvb_ave(1,Iq)          + ub
+            uvb_ave(2,Iq)          = uvb_ave(2,Iq)          + vb
 
             Qu(1) = Qu(1) + Hq
             Qv(2) = Qv(2) + Hq
@@ -356,19 +358,13 @@ contains
 
                 flux_edge_x = 0.5*(qbl(3) + qbr(3)) + (0.5*clam)*(nxl * qbl(2) + nxr * qbr(2))
                 flux_edge_y = 0.5*(qbl(4) + qbr(4)) + (0.5*clam)*(nyl * qbl(2) + nyr * qbr(2))
-                ! flux(1,iquad) = nxl*flux_edge_x(iquad) + nyl*flux_edge_y(iquad)
-
-                fxl = nxl*qbl(3) + nyl*qbl(4)
-                fxr = nxr*qbr(3) + nyr*qbr(4)
-                flux(1,iquad) = 0.5*(fxl - fxr) - 0.5*clam*(qbr(2) - qbl(2))
+                flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y
 
                 ! Compute pressure forcing H_face at each element face.
                 H_bcl_q = (one_eta**2) * H_bcl_q
 
-                ! btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
-                ! btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
-                btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux(1,iquad)
-                btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux(1,iquad)
+                btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+                btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
 
                 H_face_ave(iquad,iface) = H_face_ave(iquad,iface) + H_bcl_q
                 Qu_face_ave(1,iquad,iface) = Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1) + Qu_qr(1))
