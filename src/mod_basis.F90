@@ -88,7 +88,7 @@ module mod_basis
         else 
             nqx = 2*nopx - 1
             nqy = 2*nopy - 1
-            nqz = 2*nopz + 1
+            nqz = 1
         end if
 
         if(is_mlswe) nqz = 1

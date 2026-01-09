@@ -23,7 +23,6 @@ module mod_laplacian_quad
     implicit none
 
     public :: bcl_create_laplacian, btp_create_laplacian
-    public :: bcl_create_laplacian_v2, btp_create_laplacian_v2
 
     contains 
 
@@ -68,108 +67,6 @@ module mod_laplacian_quad
 
     end subroutine btp_create_laplacian
 
-    ! Compute the Laplacian barotropic horizontal viscosity term using the LDG method and
-    ! using quadrature points
-    subroutine btp_create_laplacian_v2(rhs_lap,qprime_df,qb_df)
-
-        ! Barotropic horizontal viscosity
-
-        real, dimension(2,npoin), intent(out) :: rhs_lap
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(4,npoin), intent(in) :: qb_df
-        real, dimension(2,npoin) :: Uk
-        real, dimension(4,npoin_q) :: flux_uv_visc
-        real :: flux_uv_visc_face(4,2,nq,nface)
-        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k
-        real, dimension(2,2, npoin_q) :: graduv
-        real :: rhs_temp(2,npoin), un, nx, ny, ul, ur, vl, vr, dpp
-
-        rhs_lap = 0.0
-        flux_uv_visc = 0.0
-
-        do k = 1,nlayers
-
-            Uk(1,:) = qprime_df(2,:,k) + qb_df(3,:)/qb_df(1,:)
-            Uk(2,:) = qprime_df(3,:,k) + qb_df(4,:)/qb_df(1,:)
-
-            ! Compute the auxilary LDG variable graduv
-            call compute_gradient_uv_q(graduv, Uk)
-
-            flux_uv_visc(1,:) = flux_uv_visc(1,:) + dpprime_visc_q(:,k)*graduv(1,1,:)
-            flux_uv_visc(2,:) = flux_uv_visc(2,:) + dpprime_visc_q(:,k)*graduv(1,2,:)
-            flux_uv_visc(3,:) = flux_uv_visc(3,:) + dpprime_visc_q(:,k)*graduv(2,1,:)
-            flux_uv_visc(4,:) = flux_uv_visc(4,:) + dpprime_visc_q(:,k)*graduv(2,2,:)
-
-        end do
-
-        ! Get the auxilary LDG variable graduv at the elements faces
-        do iface=1,nface
-
-            !Store Left and Right Side Variables
-            iel=face(7,iface)
-            ier=face(8,iface)
-
-            !----------------------------Left Element
-            do iquad = 1,nq
-
-                il=imapl_q(1,iquad,1,iface)
-                jl=imapl_q(2,iquad,1,iface)
-                kl=imapl_q(3,iquad,1,iface)
-                Iq = intma_dg_quad(il,jl,kl,iel)
-
-                flux_uv_visc_face(1,1,iquad,iface) = flux_uv_visc(1,Iq)
-                flux_uv_visc_face(2,1,iquad,iface) = flux_uv_visc(2,Iq)
-                flux_uv_visc_face(3,1,iquad,iface) = flux_uv_visc(3,Iq)
-                flux_uv_visc_face(4,1,iquad,iface) = flux_uv_visc(4,Iq)
-
-                if (ier > 0 ) then
-
-                    ir=imapr_q(1,iquad,1,iface)
-                    jr=imapr_q(2,iquad,1,iface)
-                    kr=imapr_q(3,iquad,1,iface)
-                    Iq=intma_dg_quad(ir,jr,kr,ier)
-
-                    flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq)
-                    flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq)
-                    flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq)
-                    flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq)
-
-                else
-
-                    flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc_face(1,1,iquad,iface)
-                    flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc_face(2,1,iquad,iface)
-                    flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc_face(3,1,iquad,iface)
-                    flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc_face(4,1,iquad,iface)
-
-                    if(ier == -4) then
-                        nx = normal_vector_q(1,iquad,1,iface)
-                        ny = normal_vector_q(2,iquad,1,iface)
-
-                        un = flux_uv_visc(1,Iq)*nx + flux_uv_visc(2,Iq)*ny
-                        flux_uv_visc_face(1,2,iquad,iface) = flux_uv_visc(1,Iq) - 2.0*un*nx
-                        flux_uv_visc_face(2,2,iquad,iface) = flux_uv_visc(2,Iq) - 2.0*un*ny
-
-                        un = flux_uv_visc(3,Iq)*nx + flux_uv_visc(4,Iq)*ny
-                        flux_uv_visc_face(3,2,iquad,iface) = flux_uv_visc(3,Iq) - 2.0*un*nx
-                        flux_uv_visc_face(4,2,iquad,iface) = flux_uv_visc(4,Iq) - 2.0*un*ny
-
-                    end if
-                end if
-            end do
-        end do
-
-        ! Communicate within processors
-        call create_communicator_quad(flux_uv_visc_face,4)
-        ! Compute volume integral 
-        call compute_laplacian_quad(rhs_temp,flux_uv_visc)
-        ! Compute interface integral 
-        call create_rhs_laplacian_flux_quad(rhs_temp,flux_uv_visc_face)
-        !RHS of the viscosity 
-        rhs_lap(1,:) = visc_mlswe*massinv(:)*rhs_temp(1,:)
-        rhs_lap(2,:) = visc_mlswe*massinv(:)*rhs_temp(2,:)
-
-    end subroutine btp_create_laplacian_v2
-
     ! Compute the Laplacian baroclinic horizontal viscosity term using the LDG method and
     ! using nodal points
     subroutine bcl_create_laplacian(rhs_lap)
@@ -179,8 +76,6 @@ module mod_laplacian_quad
         real, intent (out) :: rhs_lap(2,npoin,nlayers)
 
         integer :: k
-
-        ! do k = 1,nlayers
 
         call bcl_lap_create_precommunicator(dpp_graduv,dpprime_visc)
 
@@ -194,116 +89,7 @@ module mod_laplacian_quad
             rhs_lap(2,:,k) = visc_mlswe*massinv(:)*rhs_lap(2,:,k)
         end do
 
-        ! end do
-
     end subroutine bcl_create_laplacian
-
-    ! Compute the Laplacian baroclinic horizontal viscosity term using the LDG method and
-    ! using quadrature points
-    subroutine bcl_create_laplacian_v2(rhs_lap,qprime_df)
-
-        ! Baroclinic horizontal viscosity
-
-        use mod_variables, only: uvb_ave_df
-
-        implicit none
-
-        real, intent (out) :: rhs_lap(2,npoin,nlayers)
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-
-        real, dimension(2,npoin) :: Uk
-        real, dimension(4,npoin_q,nlayers) :: flux_uv_visc
-        real, dimension(2,2,nq,nface) :: Uk_face
-        real :: flux_uv_visc_face(4,2,nq,nface,nlayers)
-        integer :: iface, il, jl, kl, ir, jr, kr, iel, ier, iquad, Iq, c_jump,k
-        real, dimension(2,2, npoin_q) :: graduv
-        real :: rhs_temp(2,npoin), un(nlayers), nx, ny, ul, ur, vl, vr, dpp
-
-        rhs_lap = 0.0
-
-        do k = 1,nlayers
-            Uk(:,:) = qprime_df(2:3,:,k) + uvb_ave_df(:,:)
-
-            ! Compute the auxilary LDG variable graduv
-            call compute_gradient_uv_q(graduv, Uk)
-
-            flux_uv_visc(1,:,k) = dpprime_visc_q(:,k)*graduv(1,1,:)
-            flux_uv_visc(2,:,k) = dpprime_visc_q(:,k)*graduv(1,2,:)
-            flux_uv_visc(3,:,k) = dpprime_visc_q(:,k)*graduv(2,1,:)
-            flux_uv_visc(4,:,k) = dpprime_visc_q(:,k)*graduv(2,2,:)
-
-        end do
-
-        ! Get the auxilary LDG variable graduv at the elements faces
-        do iface=1,nface
-
-            !Store Left and Right Side Variables
-            iel=face(7,iface)
-            ier=face(8,iface)
-
-            ! Left Element
-            do iquad = 1,nq
-
-                il=imapl_q(1,iquad,1,iface)
-                jl=imapl_q(2,iquad,1,iface)
-                kl=imapl_q(3,iquad,1,iface)
-                Iq = intma_dg_quad(il,jl,kl,iel)
-
-                flux_uv_visc_face(1,1,iquad,iface,:) = flux_uv_visc(1,Iq,:)
-                flux_uv_visc_face(2,1,iquad,iface,:) = flux_uv_visc(2,Iq,:)
-                flux_uv_visc_face(3,1,iquad,iface,:) = flux_uv_visc(3,Iq,:)
-                flux_uv_visc_face(4,1,iquad,iface,:) = flux_uv_visc(4,Iq,:)
-
-                if (ier > 0 ) then
-
-                    ir=imapr_q(1,iquad,1,iface)
-                    jr=imapr_q(2,iquad,1,iface)
-                    kr=imapr_q(3,iquad,1,iface)
-                    Iq=intma_dg_quad(ir,jr,kr,ier)
-
-                    flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc(1,Iq,:)
-                    flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc(2,Iq,:)
-                    flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc(3,Iq,:)
-                    flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc(4,Iq,:)
-
-                else
-                    flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc_face(1,1,iquad,iface,:)
-                    flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc_face(2,1,iquad,iface,:)
-                    flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc_face(3,1,iquad,iface,:)
-                    flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc_face(4,1,iquad,iface,:)
-
-                    if(ier == -4) then
-                        nx = normal_vector_q(1,iquad,1,iface)
-                        ny = normal_vector_q(2,iquad,1,iface)
-
-                        un = flux_uv_visc(1,Iq,:)*nx + flux_uv_visc(2,Iq,:)*ny
-                        flux_uv_visc_face(1,2,iquad,iface,:) = flux_uv_visc(1,Iq,:) - 2.0*un*nx
-                        flux_uv_visc_face(2,2,iquad,iface,:) = flux_uv_visc(2,Iq,:) - 2.0*un*ny
-
-                        un = flux_uv_visc(3,Iq,:)*nx + flux_uv_visc(4,Iq,:)*ny
-                        flux_uv_visc_face(3,2,iquad,iface,:) = flux_uv_visc(3,Iq,:) - 2.0*un*nx
-                        flux_uv_visc_face(4,2,iquad,iface,:) = flux_uv_visc(4,Iq,:) - 2.0*un*ny
-
-                    end if
-                end if
-            end do
-        end do
-
-        ! Communication within processors
-        call bcl_create_communicator(flux_uv_visc_face,4,nlayers,nq)
-
-        ! Commpute bcl viscosity
-        do k = 1,nlayers
-
-            call compute_laplacian_quad(rhs_temp,flux_uv_visc(:,:,k))
-            call create_rhs_laplacian_flux_quad(rhs_temp,flux_uv_visc_face(:,:,:,:,k))
-
-            !Store Solution
-            rhs_lap(1,:,k) = visc_mlswe*massinv(:)*rhs_temp(1,:)
-            rhs_lap(2,:,k) = visc_mlswe*massinv(:)*rhs_temp(2,:)
-        end do
-
-    end subroutine bcl_create_laplacian_v2
 
     subroutine btp_compute_laplacian(lap_q,grad_dpuvp)
 
@@ -320,7 +106,7 @@ module mod_laplacian_quad
         lap_q = 0.0
 
         ! Compute the gradient of q
-        do Iq = 1,npoin
+        do concurrent(Iq = 1:npoin)
 
             wq = wjac_df(Iq)
 
@@ -356,26 +142,21 @@ module mod_laplacian_quad
 
         lap_q = 0.0
 
-        do k = 1,nlayers
+        do concurrent(k = 1:nlayers, Iq = 1:npoin)
             ! Compute the gradient of q
-            do Iq = 1,npoin
+            wq = wjac_df(Iq)
 
-                wq = wjac_df(Iq)
+            qq(1) = dpprime_visc(Iq,k)*graduvb_ave(1,Iq) + dpp_graduv(1,Iq,k)
+            qq(2) = dpprime_visc(Iq,k)*graduvb_ave(2,Iq) + dpp_graduv(2,Iq,k)
+            qq(3) = dpprime_visc(Iq,k)*graduvb_ave(3,Iq) + dpp_graduv(3,Iq,k)
+            qq(4) = dpprime_visc(Iq,k)*graduvb_ave(4,Iq) + dpp_graduv(4,Iq,k)
+            
+            do ip = 1,npts
 
-                qq(1) = dpprime_visc(Iq,k)*graduvb_ave(1,Iq) + dpp_graduv(1,Iq,k)
-                qq(2) = dpprime_visc(Iq,k)*graduvb_ave(2,Iq) + dpp_graduv(2,Iq,k)
-                qq(3) = dpprime_visc(Iq,k)*graduvb_ave(3,Iq) + dpp_graduv(3,Iq,k)
-                qq(4) = dpprime_visc(Iq,k)*graduvb_ave(4,Iq) + dpp_graduv(4,Iq,k)
+                I = index_df(ip,Iq)
+                lap_q(1,I,k) = lap_q(1,I,k) - wq*(dpsidx_df(ip,Iq)*qq(1) + dpsidy_df(ip,Iq)*qq(2))
+                lap_q(2,I,k) = lap_q(2,I,k) - wq*(dpsidx_df(ip,Iq)*qq(3) + dpsidy_df(ip,Iq)*qq(4))
 
-                ! if (dpprime_visc(Iq,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) qq(:) = 0.0
-                
-                do ip = 1,npts
-
-                    I = index_df(ip,Iq)
-                    lap_q(1,I,k) = lap_q(1,I,k) - wq*(dpsidx_df(ip,Iq)*qq(1) + dpsidy_df(ip,Iq)*qq(2))
-                    lap_q(2,I,k) = lap_q(2,I,k) - wq*(dpsidx_df(ip,Iq)*qq(3) + dpsidy_df(ip,Iq)*qq(4))
-
-                end do
             end do
         end do
 
@@ -401,130 +182,173 @@ module mod_laplacian_quad
         integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er
         integer iel, ier, ilocl, ilocr, ip
         integer iquad, jquad, ivar
-        real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
+        real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta, iflux
         real, dimension(4,ngl) :: ql, qr
         real, dimension(5,ngl) :: btp_ql, btp_qr
 
         beta = 0.5
         alpha = 1.0 - beta
+
+        iflux = 0.0
       
         !Construct FVM-type Operators
-        do iface=1,nface
+        do concurrent(iface=1:nface, iquad=1:ngl)
 
             !Skip boundary faces
             if (face_type(iface) == 2) cycle
             
             iel=face(7,iface)
             ier=face(8,iface)
-    
-            do iquad = 1,ngl
 
-                nx = normal_vector(1,iquad,1,iface)
-                ny = normal_vector(2,iquad,1,iface)
+            nx = normal_vector(1,iquad,1,iface)
+            ny = normal_vector(2,iquad,1,iface)
 
-                il = imapl(1,iquad,1,iface)
-                jl = imapl(2,iquad,1,iface)
-                kl = imapl(3,iquad,1,iface)
-                ip = intma(il,jl,kl,iel)
+            il = imapl(1,iquad,1,iface)
+            jl = imapl(2,iquad,1,iface)
+            kl = imapl(3,iquad,1,iface)
+            ip = intma(il,jl,kl,iel)
 
-                ql(:,iquad) = gradq(:,ip)
-                btp_ql(1:4,iquad) = btp_dpp_graduv(1:4,ip)
-                btp_ql(5,iquad) = pbprime_visc(ip)
+            ! ql(:,iquad) = gradq(:,ip)
+            ! btp_ql(1:4,iquad) = btp_dpp_graduv(1:4,ip)
+            ! btp_ql(5,iquad) = pbprime_visc(ip)
+            ql(1,iquad) = gradq(1,ip)
+            ql(2,iquad) = gradq(2,ip)
+            ql(3,iquad) = gradq(3,ip)
+            ql(4,iquad) = gradq(4,ip)
 
-                if (ier > 0) then
+            btp_ql(1,iquad) = btp_dpp_graduv(1,ip)
+            btp_ql(2,iquad) = btp_dpp_graduv(2,ip)
+            btp_ql(3,iquad) = btp_dpp_graduv(3,ip)
+            btp_ql(4,iquad) = btp_dpp_graduv(4,ip)
+            btp_ql(5,iquad) = pbprime_visc(ip)
 
-                    ir = imapr(1,iquad,1,iface)
-                    jr = imapr(2,iquad,1,iface)
-                    kr = imapr(3,iquad,1,iface)
-                    ip = intma(ir,jr,kr,ier)
+            if (ier > 0) then
 
-                    qr(:,iquad) = gradq(:,ip)
-                    btp_qr(1:4,iquad) = btp_dpp_graduv(1:4,ip)
-                    btp_qr(5,iquad) = pbprime_visc(ip)
+                ir = imapr(1,iquad,1,iface)
+                jr = imapr(2,iquad,1,iface)
+                kr = imapr(3,iquad,1,iface)
+                ip = intma(ir,jr,kr,ier)
 
-                else
-                    qr(:,iquad) = ql(:,iquad)
-                    btp_qr(:,iquad) = btp_ql(:,iquad)
-                    if(ier == -4) then 
+                ! qr(:,iquad) = gradq(:,ip)
+                ! btp_qr(1:4,iquad) = btp_dpp_graduv(1:4,ip)
+                ! btp_qr(5,iquad) = pbprime_visc(ip)
+                qr(1,iquad) = gradq(1,ip)
+                qr(2,iquad) = gradq(2,ip)
+                qr(3,iquad) = gradq(3,ip)
+                qr(4,iquad) = gradq(4,ip)
 
-                        un = ql(1,iquad)*nx + ql(2,iquad)*ny
-                        qr(1,iquad) = ql(1,iquad) - 2.0*un*nx
-                        qr(2,iquad) = ql(2,iquad) - 2.0*un*ny
+                btp_qr(1,iquad) = btp_dpp_graduv(1,ip)
+                btp_qr(2,iquad) = btp_dpp_graduv(2,ip)
+                btp_qr(3,iquad) = btp_dpp_graduv(3,ip)
+                btp_qr(4,iquad) = btp_dpp_graduv(4,ip)
+                btp_qr(5,iquad) = pbprime_visc(ip)
 
-                        un = ql(3,iquad)*nx + ql(4,iquad)*ny
-                        qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
-                        qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
+            else
+                ! qr(:,iquad) = ql(:,iquad)
+                ! btp_qr(:,iquad) = btp_ql(:,iquad)
+                qr(1,iquad) = ql(1,iquad)
+                qr(2,iquad) = ql(2,iquad)
+                qr(3,iquad) = ql(3,iquad)
+                qr(4,iquad) = ql(4,iquad)
 
-                        un = btp_ql(1,iquad)*nx + btp_ql(2,iquad)*ny
-                        btp_qr(1,iquad) = btp_ql(1,iquad) - 2.0*un*nx
-                        btp_qr(2,iquad) = btp_ql(2,iquad) - 2.0*un*ny
+                if(ier == -4) then
 
-                        un = btp_ql(3,iquad)*nx + btp_ql(4,iquad)*ny
-                        btp_qr(3,iquad) = btp_ql(3,iquad) - 2.0*un*nx
-                        btp_qr(4,iquad) = btp_ql(4,iquad) - 2.0*un*ny
-                    end if
+                    un = ql(1,iquad)*nx + ql(2,iquad)*ny
+                    qr(1,iquad) = ql(1,iquad) - 2.0*un*nx
+                    qr(2,iquad) = ql(2,iquad) - 2.0*un*ny
+
+                    un = ql(3,iquad)*nx + ql(4,iquad)*ny
+                    qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
+                    qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
+
+                    un = btp_ql(1,iquad)*nx + btp_ql(2,iquad)*ny
+                    btp_qr(1,iquad) = btp_ql(1,iquad) - 2.0*un*nx
+                    btp_qr(2,iquad) = btp_ql(2,iquad) - 2.0*un*ny
+
+                    un = btp_ql(3,iquad)*nx + btp_ql(4,iquad)*ny
+                    btp_qr(3,iquad) = btp_ql(3,iquad) - 2.0*un*nx
+                    btp_qr(4,iquad) = btp_ql(4,iquad) - 2.0*un*ny
                 end if
+            end if
 
-                graduvb_face_ave(:,1,iquad,iface) = graduvb_face_ave(:,1,iquad,iface) + ql(:,iquad)
-                graduvb_face_ave(:,2,iquad,iface) = graduvb_face_ave(:,2,iquad,iface) + qr(:,iquad)
+            ! graduvb_face_ave(:,1,iquad,iface) = graduvb_face_ave(:,1,iquad,iface) + ql(:,iquad)
+            graduvb_face_ave(1,1,iquad,iface) = graduvb_face_ave(1,1,iquad,iface) + ql(1,iquad)
+            graduvb_face_ave(2,1,iquad,iface) = graduvb_face_ave(2,1,iquad,iface) + ql(2,iquad)
+            graduvb_face_ave(3,1,iquad,iface) = graduvb_face_ave(3,1,iquad,iface) + ql(3,iquad)
+            graduvb_face_ave(4,1,iquad,iface) = graduvb_face_ave(4,1,iquad,iface) + ql(4,iquad)
 
-                do ivar = 1,4
-                    flux_uv_visc_face(ivar,1) = btp_ql(5,iquad)* &
-                                                ql(ivar,iquad) + &
-                                                btp_ql(ivar,iquad)
+            ! graduvb_face_ave(:,2,iquad,iface) = graduvb_face_ave(:,2,iquad,iface) + qr(:,iquad)
+            graduvb_face_ave(1,2,iquad,iface) = graduvb_face_ave(1,2,iquad,iface) + qr(1,iquad)
+            graduvb_face_ave(2,2,iquad,iface) = graduvb_face_ave(2,2,iquad,iface) + qr(2,iquad)
+            graduvb_face_ave(3,2,iquad,iface) = graduvb_face_ave(3,2,iquad,iface) + qr(3,iquad)
+            graduvb_face_ave(4,2,iquad,iface) = graduvb_face_ave(4,2,iquad,iface) + qr(4,iquad)
 
-                    flux_uv_visc_face(ivar,2) = btp_qr(5,iquad)* &
-                                                qr(ivar,iquad) + &
-                                                btp_qr(ivar,iquad)
+            do ivar = 1,4
+                flux_uv_visc_face(ivar,1) = btp_ql(5,iquad)* &
+                                            ql(ivar,iquad) + &
+                                            btp_ql(ivar,iquad)
 
-                end do 
+                flux_uv_visc_face(ivar,2) = btp_qr(5,iquad)* &
+                                            qr(ivar,iquad) + &
+                                            btp_qr(ivar,iquad)
 
-                qul(:) = flux_uv_visc_face(1:2,1)
-                qvl(:) = flux_uv_visc_face(3:4,1)
-                qur(:) = flux_uv_visc_face(1:2,2)
-                qvr(:) = flux_uv_visc_face(3:4,2)
+            end do 
 
-                ! The Flip-Flop flux of Cockburn & Shu 
-                ! NOTE: beta=0.5 is the central flux
-                qu_mean(:) = alpha*qul(:) + beta*qur(:)
-                qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
+            qul(1) = flux_uv_visc_face(1,1)
+            qul(2) = flux_uv_visc_face(2,1)
+            qvl(1) = flux_uv_visc_face(3,1)
+            qvl(2) = flux_uv_visc_face(4,1)
 
-                wq=jac_face(iquad,1,iface)
+            qur(1) = flux_uv_visc_face(1,2)
+            qur(2) = flux_uv_visc_face(2,2)
+            qvr(1) = flux_uv_visc_face(3,2)
+            qvr(2) = flux_uv_visc_face(4,2)
 
-                flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
-                flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
+            ! The Flip-Flop flux of Cockburn & Shu 
+            ! NOTE: beta=0.5 is the central flux
+            qu_mean(1) = alpha*qul(1) + beta*qur(1)
+            qu_mean(2) = alpha*qul(2) + beta*qur(2)
+            qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
+            qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
 
-                !  Do Gauss-Lobatto Integration
+            wq=jac_face(iquad,1,iface)
+
+            flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny
+            flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny
+
+            !  Do Gauss-Lobatto Integration
+            do i=1,ngl
+
+                hi = psi(i,iquad)
+
+                il=imapl(1,i,1,iface)
+                jl=imapl(2,i,1,iface)
+                kl=imapl(3,i,1,iface)
+                ip=intma(il,jl,kl,iel)
+                
+                !Update Flux
+                rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
+                rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
+            enddo
+
+            if (ier > 0) then
                 do i=1,ngl
 
                     hi = psi(i,iquad)
+                    ir=imapr(1,i,1,iface)
+                    jr=imapr(2,i,1,iface)
+                    kr=imapr(3,i,1,iface)
 
-                    il=imapl(1,i,1,iface)
-                    jl=imapl(2,i,1,iface)
-                    kl=imapl(3,i,1,iface)
-                    ip=intma(il,jl,kl,iel)
-                    
+                    ip=intma(ir,jr,kr,ier)
+
                     !Update Flux
-                    rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
-                    rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
+                    rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
+                    rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
 
-                    if (ier > 0) then
+                end do
+            end if
+        end do !iface, iquad
 
-                        ir=imapr(1,i,1,iface)
-                        jr=imapr(2,i,1,iface)
-                        kr=imapr(3,i,1,iface)
-
-                        ip=intma(ir,jr,kr,ier)
-
-                        !Update Flux
-                        rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
-                        rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
-
-                    end if !ier
-                end do !i
-            end do !iquad
-        end do !iface
-    
     end subroutine create_rhs_laplacian_flux
 
     subroutine bcl_create_rhs_laplacian_flux(rhs)
@@ -549,249 +373,130 @@ module mod_laplacian_quad
         integer iface, i, j, il, jl, kl, ir, jr, kr, el, er
         integer iel, ier, ilocl, ilocr, ip
         integer iquad, jquad, ivar, k
-        real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
+        real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta, iflux
         real, dimension(5,ngl) :: ql, qr
 
         beta = 0.5
         alpha = 1.0 - beta
-      
-        do k = 1,nlayers
-            !Construct FVM-type Operators
-            do iface=1,nface
+        iflux = 0.0
 
-                !Skip boundary faces
-                if (face_type(iface) == 2) cycle
+        do concurrent(k = 1:nlayers, iface=1:nface, iquad=1:ngl)
 
-                iel=face(7,iface)
-                ier=face(8,iface)
-        
-                !----------------------------Left Element
-                do iquad = 1,ngl
+            !Skip boundary faces
+            if (face_type(iface) == 2) cycle
 
-                    nx = normal_vector(1,iquad,1,iface)
-                    ny = normal_vector(2,iquad,1,iface)
-
-                    il = imapl(1,iquad,1,iface)
-                    jl = imapl(2,iquad,1,iface)
-                    kl = imapl(3,iquad,1,iface)
-                    ip = intma(il,jl,kl,iel)
-
-                    ql(1:4,iquad) = dpp_graduv(:,ip,k)
-                    ql(5,iquad) = dpprime_visc(ip,k)
-
-                    if (ier > 0) then
-
-                        ir = imapr(1,iquad,1,iface)
-                        jr = imapr(2,iquad,1,iface)
-                        kr = imapr(3,iquad,1,iface)
-                        ip = intma(ir,jr,kr,ier)
-
-                        qr(1:4,iquad) = dpp_graduv(:,ip,k)
-                        qr(5,iquad) = dpprime_visc(ip,k)
-
-                    else
-                        qr(:,iquad) = ql(:,iquad)
-                    endif 
-
-                    ! if (ql(5,iquad) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    !     ! ql(5,iquad) = (gravity/alpha_mlswe(k))*dry_cutoff
-                    !     ql(1:4,iquad) = 0.0
-                    !     graduvb_face_ave(:,1,iquad,iface) = 0.0
-                    ! end if
-
-                    ! if (qr(5,iquad) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    !     ! qr(5,iquad) = (gravity/alpha_mlswe(k))*dry_cutoff
-                    !     qr(1:4,iquad) = 0.0
-                    !     graduvb_face_ave(:,2,iquad,iface) = 0.0
-                    ! end if
-
-                    if(ier == -4) then 
-
-                        un = ql(1,iquad)*nx + ql(2,iquad)*ny
-                        qr(1,iquad) = ql(1,iquad) - 2.0*un*nx
-                        qr(2,iquad) = ql(2,iquad) - 2.0*un*ny
-
-                        un = ql(3,iquad)*nx + ql(4,iquad)*ny
-                        qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
-                        qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
-                    end if
-
-                    
-
-                    do ivar = 1,4
-                        flux_uv_visc_face(ivar,1) = ql(5,iquad)* &
-                                                    graduvb_face_ave(ivar,1,iquad,iface) + &
-                                                    ql(ivar,iquad)
-
-                        flux_uv_visc_face(ivar,2) = qr(5,iquad)* &
-                                                    graduvb_face_ave(ivar,2,iquad,iface) + &
-                                                    qr(ivar,iquad)
-
-                    end do 
-
-                    ! if (dpprime_visc(ip,k) <= (gravity/alpha_mlswe(k))*dry_cutoff) then
-                    !     flux_uv_visc_face(:,1) = 0.0
-                    !     flux_uv_visc_face(:,2) = 0.0
-                    ! end if
-
-                    nx = normal_vector(1,iquad,1,iface)
-                    ny = normal_vector(2,iquad,1,iface)
-
-                    qul(:) = flux_uv_visc_face(1:2,1)
-                    qvl(:) = flux_uv_visc_face(3:4,1)
-                    qur(:) = flux_uv_visc_face(1:2,2)
-                    qvr(:) = flux_uv_visc_face(3:4,2)
-
-                    ! The Flip-Flop flux of Cockburn & Shu 
-                    ! NOTE: beta=0.5 is the central flux
-                    qu_mean(:) = alpha*qul(:) + beta*qur(:)
-                    qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
-
-                    wq = jac_face(iquad,1,iface)
-
-                    flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
-                    flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
-
-                    do i=1,ngl
-
-                        hi = psi(i,iquad)
-
-                        il=imapl(1,i,1,iface)
-                        jl=imapl(2,i,1,iface)
-                        kl=imapl(3,i,1,iface)
-                        ip=intma(il,jl,kl,iel)
-                        
-                        !Update Flux
-                        rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
-                        rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
-
-                        if (ier > 0) then
-
-                            ir=imapr(1,i,1,iface)
-                            jr=imapr(2,i,1,iface)
-                            kr=imapr(3,i,1,iface)
-                            ip=intma(ir,jr,kr,ier)
-
-                            !Update Flux
-                            rhs(1,ip,k) = rhs(1,ip,k) - wq*hi*flux_qu
-                            rhs(2,ip,k) = rhs(2,ip,k) - wq*hi*flux_qv
-                        end if !ier
-                    end do !i
-                end do !iquad
-            end do !iface
-        end do !k
-
-    end subroutine bcl_create_rhs_laplacian_flux
-
-    subroutine compute_laplacian_quad(lap_q,grad_dpuvp)
-
-        implicit none
-
-        real, intent(out) :: lap_q(2,npoin)
-        real, dimension(4,npoin_q), intent(in) :: grad_dpuvp
-
-        integer :: Iq, I, ip
-        real :: wq, u_visc, v_visc
-
-        lap_q = 0.0
-
-        ! Compute the gradient of q
-        do Iq = 1,npoin_q
-
-            wq = wjac(Iq)
-
-            do ip = 1,npts
-
-                I = indexq(ip,Iq)
-                u_visc = dpsidx(ip,Iq)*grad_dpuvp(1,Iq) + dpsidy(ip,Iq)*grad_dpuvp(2,Iq)
-                v_visc = dpsidx(ip,Iq)*grad_dpuvp(3,Iq) + dpsidy(ip,Iq)*grad_dpuvp(4,Iq)
-
-                lap_q(1,I) = lap_q(1,I) - wq*u_visc
-                lap_q(2,I) = lap_q(2,I) - wq*v_visc
-
-            end do
-        end do
-
-    end subroutine compute_laplacian_quad
-
-    subroutine create_rhs_laplacian_flux_quad(rhs,gradq_face)
-
-        implicit none
-
-        real, intent(inout) :: rhs(2,npoin)
-        real, intent(in)    :: gradq_face(4,2,nq,nface)
-
-        real, dimension(2) :: qu_mean, qv_mean
-        real, dimension(2) :: qul,qur
-        real, dimension(2) :: qvl,qvr
-        real nx, ny, nz
-        real wq
-        integer iface, i, j, k, il, jl, kl, ir, jr, kr, el, er
-        integer iel, ier, ilocl, ilocr, ip
-        integer iquad, jquad
-        real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
-
-        beta = 0.5
-        alpha = 1.0 - beta
-
-        !Construct FVM-type Operators
-        do iface=1,nface
-            !Store Left and Right Side Variables
-            ilocl=face(5,iface)
             iel=face(7,iface)
             ier=face(8,iface)
 
-            !----------------------------Left Element
-            do iquad = 1,nq
+            nx = normal_vector(1,iquad,1,iface)
+            ny = normal_vector(2,iquad,1,iface)
 
-                qul(:) = gradq_face(1:2,1,iquad,iface)
-                qvl(:) = gradq_face(3:4,1,iquad,iface)
-                qur(:) = gradq_face(1:2,2,iquad,iface)
-                qvr(:) = gradq_face(3:4,2,iquad,iface)
+            il = imapl(1,iquad,1,iface)
+            jl = imapl(2,iquad,1,iface)
+            kl = imapl(3,iquad,1,iface)
+            ip = intma(il,jl,kl,iel)
 
-                ! The Flip-Flop flux of Cockburn & Shu 
-                ! NOTE: beta=0.5 is the central flux
-                qu_mean(:) = alpha*qul(:) + beta*qur(:)
-                qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
+            ql(1,iquad) = dpp_graduv(1,ip,k)
+            ql(2,iquad) = dpp_graduv(2,ip,k)
+            ql(3,iquad) = dpp_graduv(3,ip,k)
+            ql(4,iquad) = dpp_graduv(4,ip,k)
+            ql(5,iquad) = dpprime_visc(ip,k)
 
-                wq=jac_faceq(iquad,1,iface)
+            if (ier > 0) then
 
-                !Store normals
-                nx = normal_vector_q(1,iquad,1,iface)
-                ny = normal_vector_q(2,iquad,1,iface)
+                ir = imapr(1,iquad,1,iface)
+                jr = imapr(2,iquad,1,iface)
+                kr = imapr(3,iquad,1,iface)
+                ip = intma(ir,jr,kr,ier)
 
-                flux_qu = (qu_mean(1) - qul(1)*nx) + (qu_mean(2) - qul(2)*ny)
-                flux_qv = (qv_mean(1) - qvl(1)*nx) + (qv_mean(2) - qvl(2)*ny)
+                qr(1,iquad) = dpp_graduv(1,ip,k)
+                qr(2,iquad) = dpp_graduv(2,ip,k)
+                qr(3,iquad) = dpp_graduv(3,ip,k)
+                qr(4,iquad) = dpp_graduv(4,ip,k)
+                qr(5,iquad) = dpprime_visc(ip,k)
 
-                !  Do Gauss-Lobatto Integration
+            else
+                qr(1,iquad) = ql(1,iquad)
+                qr(2,iquad) = ql(2,iquad)
+                qr(3,iquad) = ql(3,iquad)
+                qr(4,iquad) = ql(4,iquad)
+                qr(5,iquad) = ql(5,iquad)
+
+                if(ier == -4) then 
+
+                    un = ql(1,iquad)*nx + ql(2,iquad)*ny
+                    qr(1,iquad) = ql(1,iquad) - 2.0*un*nx
+                    qr(2,iquad) = ql(2,iquad) - 2.0*un*ny
+
+                    un = ql(3,iquad)*nx + ql(4,iquad)*ny
+                    qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
+                    qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
+                end if
+            endif 
+
+            do ivar = 1,4
+                flux_uv_visc_face(ivar,1) = ql(5,iquad)* &
+                                            graduvb_face_ave(ivar,1,iquad,iface) + &
+                                            ql(ivar,iquad)
+
+                flux_uv_visc_face(ivar,2) = qr(5,iquad)* &
+                                            graduvb_face_ave(ivar,2,iquad,iface) + &
+                                            qr(ivar,iquad)
+
+            end do 
+
+            qul(1) = flux_uv_visc_face(1,1)
+            qul(2) = flux_uv_visc_face(2,1)
+            qvl(1) = flux_uv_visc_face(3,1)
+            qvl(2) = flux_uv_visc_face(4,1)
+
+            qur(1) = flux_uv_visc_face(1,2)
+            qur(2) = flux_uv_visc_face(2,2)
+            qvr(1) = flux_uv_visc_face(3,2)
+            qvr(2) = flux_uv_visc_face(4,2)
+
+            ! The Flip-Flop flux of Cockburn & Shu 
+            ! NOTE: beta=0.5 is the central flux
+            qu_mean(1) = alpha*qul(1) + beta*qur(1)
+            qu_mean(2) = alpha*qul(2) + beta*qur(2)
+            qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
+            qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
+
+            wq = jac_face(iquad,1,iface)
+
+            flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny
+            flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny
+
+            do i=1,ngl
+
+                hi = psi(i,iquad)
+
+                il=imapl(1,i,1,iface)
+                jl=imapl(2,i,1,iface)
+                kl=imapl(3,i,1,iface)
+                ip=intma(il,jl,kl,iel)
+                
+                !Update Flux
+                rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
+                rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
+            end do !i
+
+            if (ier > 0) then
                 do i=1,ngl
 
-                    hi = psiq(i,iquad)
-
-                    il=imapl(1,i,1,iface)
-                    jl=imapl(2,i,1,iface)
-                    kl=imapl(3,i,1,iface)
-                    ip=intma(il,jl,kl,iel)
+                    hi = psi(i,iquad)
+                    ir=imapr(1,i,1,iface)
+                    jr=imapr(2,i,1,iface)
+                    kr=imapr(3,i,1,iface)
+                    ip=intma(ir,jr,kr,ier)
 
                     !Update Flux
-                    rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
-                    rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
-
-                    if (ier > 0) then
-
-                        ir=imapr(1,i,1,iface)
-                        jr=imapr(2,i,1,iface)
-                        kr=imapr(3,i,1,iface)
-                        ip=intma(ir,jr,kr,ier)
-
-                        !Update Flux
-                        rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
-                        rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
-                    end if !ier
+                    rhs(1,ip,k) = rhs(1,ip,k) - wq*hi*flux_qu
+                    rhs(2,ip,k) = rhs(2,ip,k) - wq*hi*flux_qv
                 end do !i
-            end do !iquad
-        end do !iface
+            end if ! ier
+        end do !k, iface, iquad
 
-    end subroutine create_rhs_laplacian_flux_quad
+    end subroutine bcl_create_rhs_laplacian_flux
 
 end module mod_laplacian_quad

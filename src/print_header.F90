@@ -19,7 +19,7 @@ subroutine print_header(flag,numproc)
         test_case, space_method, ti_method_btp, kstages, &
         fname_root, out_type, visc_mlswe, &
         lprint_diagnostics, time_scale, &
-        refinement_levels_h, nel_root_h, nlayers
+        refinement_levels_h, nel_root_h, nlayers, method_visc
 
     implicit none
 
@@ -59,7 +59,7 @@ subroutine print_header(flag,numproc)
     write(*,'("fname_root = ",a)')fname_root
     write(*,'("out_type = ",a)')out_type
 
-    write(*,'("viscosity = ",f6.3)')visc_mlswe
+    if (method_visc > 0) write(*,'("viscosity = ",f6.3)')visc_mlswe
 
     write(*,'("nlayers npoin nelem nboun = ",5(i9,1x))') nlayers,npoin_g, &
         nelem_g,nboun_g

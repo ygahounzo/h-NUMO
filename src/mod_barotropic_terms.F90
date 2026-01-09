@@ -280,7 +280,7 @@ module mod_barotropic_terms
         grad_uv = 0.0
         
         !Construct Volume Integral Contributions
-        do Iq = 1, npoin
+        do concurrent(Iq = 1:npoin)
 
             do ip = 1,npts
 

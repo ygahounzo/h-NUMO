@@ -253,39 +253,31 @@ module mod_initial_mlswe
         
         Ly = ydims(2)
         ym = 0.5*Ly
-        
-        do I = 1, npoin
-            y = coord(2,I)
 
+        do concurrent(I = 1:npoin)
+            y = coord(2,I)
             coriolis_df(I) = f0 + beta*(y - ym)
         end do
 
 
-        do e = 1, nelem
-            do kquad = 1, nqz
-                do jquad = 1, nqy
-                    do iquad = 1, nqx
+        do  concurrent (e = 1:nelem, kquad = 1:nqz, jquad = 1:nqy, iquad = 1:nqx)
                     
-                        Iq = intma_dg_quad(iquad, jquad, kquad, e)
+            Iq = intma_dg_quad(iquad, jquad, kquad, e)
+            
+            do l = 1, nglz
+                do m = 1, ngly
+                    do n = 1, nglx
                         
-                        do l = 1, nglz
-                            do m = 1, ngly
-                                do n = 1, nglx
-                                    
-                                    I = intma(n, m, l, e)
-                                    
-                                    hi = psiqx(n, iquad) * psiqy(m, jquad)
-                                    
-                                    coriolis_quad(Iq) = coriolis_quad(Iq) + coriolis_df(I) * hi
-                                    
-                                    tau_wind(1,Iq) = tau_wind(1,Iq) + tau_wind_df(1,I) * hi
-                                    tau_wind(2,Iq) = tau_wind(2,Iq) + tau_wind_df(2,I) * hi
-                                    
-                                end do
-                            end do
-                        end do
+                        I = intma(n, m, l, e)
+                        
+                        hi = psiqx(n, iquad) * psiqy(m, jquad)
+                        
+                        coriolis_quad(Iq) = coriolis_quad(Iq) + coriolis_df(I) * hi
+                        
+                        tau_wind(1,Iq) = tau_wind(1,Iq) + tau_wind_df(1,I) * hi
+                        tau_wind(2,Iq) = tau_wind(2,Iq) + tau_wind_df(2,I) * hi
+                        
                     end do
-                    
                 end do
             end do
         end do

@@ -362,6 +362,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
    beta = 0.5
    alpha = 1.0 - beta
+   iflux = 0.0
 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
@@ -393,20 +394,27 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             nxl = normal_vector(1,iquad,1,iface)
             nyl = normal_vector(2,iquad,1,iface)
 
-            qul(:) = flux_uv_visc_face(1:2,1)
-            qvl(:) = flux_uv_visc_face(3:4,1)
-            qur(:) = flux_uv_visc_face(1:2,2)
-            qvr(:) = flux_uv_visc_face(3:4,2)
+            qul(1) = flux_uv_visc_face(1,1)
+            qul(2) = flux_uv_visc_face(2,1)
+            qvl(1) = flux_uv_visc_face(3,1)
+            qvl(2) = flux_uv_visc_face(4,1)
+
+            qur(1) = flux_uv_visc_face(1,2)
+            qur(2) = flux_uv_visc_face(2,2)
+            qvr(1) = flux_uv_visc_face(3,2)
+            qvr(2) = flux_uv_visc_face(4,2)
 
             ! The Flip-Flop flux of Cockburn & Shu 
             ! NOTE: beta=0.5 is the central flux
-            qu_mean(:) = alpha*qul(:) + beta*qur(:)
-            qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
+            qu_mean(1) = alpha*qul(1) + beta*qur(1)
+            qu_mean(2) = alpha*qul(2) + beta*qur(2)
+            qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
+            qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
 
             wq=jac_face(iquad,1,iface)
 
-            flux_qu = (qu_mean(1) - qul(1)*nxl) + (qu_mean(2) - qul(2)*nyl)
-            flux_qv = (qv_mean(1) - qvl(1)*nxl) + (qv_mean(2) - qvl(2)*nyl)
+            flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl
+            flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl
 
             !  Do Gauss-Lobatto Integration
             do i=1,ngl
@@ -425,8 +433,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             end do !i
          end do !iquad
 
-            kk=kk+1
-         ! end do
+         kk=kk+1
          jj=jj+1
       end do
  
@@ -1208,6 +1215,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
    beta = 0.5
    alpha = 1.0 - beta
+   iflux = 0.0
 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
@@ -1237,20 +1245,27 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                nxl = normal_vector(1,iquad,1,iface)
                nyl = normal_vector(2,iquad,1,iface)
 
-               qul(:) = flux_uv_visc_face(1:2,1)
-               qvl(:) = flux_uv_visc_face(3:4,1)
-               qur(:) = flux_uv_visc_face(1:2,2)
-               qvr(:) = flux_uv_visc_face(3:4,2)
+               qul(1) = flux_uv_visc_face(1,1)
+               qul(2) = flux_uv_visc_face(2,1)
+               qvl(1) = flux_uv_visc_face(3,1)
+               qvl(2) = flux_uv_visc_face(4,1)
+
+               qur(1) = flux_uv_visc_face(1,2)
+               qur(2) = flux_uv_visc_face(2,2)
+               qvr(1) = flux_uv_visc_face(3,2)
+               qvr(2) = flux_uv_visc_face(4,2)
 
                ! The Flip-Flop flux of Cockburn & Shu 
                ! NOTE: beta=0.5 is the central flux
-               qu_mean(:) = alpha*qul(:) + beta*qur(:)
-               qv_mean(:) = alpha*qvl(:) + beta*qvr(:)
+               qu_mean(1) = alpha*qul(1) + beta*qur(1)
+               qu_mean(2) = alpha*qul(2) + beta*qur(2)
+               qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
+               qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
 
                wq=jac_face(iquad,1,iface)
 
-               flux_qu = (qu_mean(1) - qul(1)*nxl) + (qu_mean(2) - qul(2)*nyl)
-               flux_qv = (qv_mean(1) - qvl(1)*nxl) + (qv_mean(2) - qvl(2)*nyl)
+               flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl
+               flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl
 
                !  Do Gauss-Lobatto Integration
                do i=1,ngl
@@ -1270,8 +1285,7 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
             end do !iquad
          enddo !klayers
 
-            kk=kk+1
-         ! end do
+         kk=kk+1
          jj=jj+1
       end do
  

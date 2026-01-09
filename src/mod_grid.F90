@@ -239,7 +239,7 @@ contains
     !------------------------------------------
     !>@brief intma for DG indexing on quads
     !------------------------------------------
-    function intma_dg_quad(i,j,k,e)
+    pure function intma_dg_quad(i,j,k,e)
         integer,intent(in)::i,j,k,e
         intma_dg_quad = (e-1) * nqz * nqy * nqx + &
             (k-1) * nqy * nqx + &
