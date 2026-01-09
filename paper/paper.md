@@ -22,17 +22,17 @@ bibliography: paper.bib
 
 # Summary
 
-hNUMO is a high-order isopycnal ocean circulation model that uses barotropic–baroclinic splitting to separate fast and slow motions into coupled subsystems. Extending the work of [@higdon2015multiple] to two horizontal dimensions, hNUMO applies this methodology to two horizontal dimensions using an arbitrary-order, nodal discontinuous Galerkin (DG) discretization. 
+hNUMO is a high-order discontinuous-Galerkin (DG) isopycnal ocean circulation model that uses barotropic–baroclinic splitting to separate fast and slow motions into coupled subsystems. Extending the work of [@higdon2015multiple] to two horizontal dimensions, hNUMO applies this methodology to two horizontal dimensions using an arbitrary-order, nodal discontinuous Galerkin discretization. 
 
 As an isopycnal model, hNUMO represents the ocean as a stack of constant-density layers. In contrast to traditional $z$-level and terrain-following ($\sigma$) coordinates [@griffies2000developments,@chassignet2006generalized], hybrid-coordinate models such as Hybrid Coordinate Ocean Model ([HYCOM](https://github.com/HYCOM)) and Modular Ocean Model version 6 ([MOM6](https://github.com/NOAA-GFDL/MOM6)) combine multiple vertical coordinates across different regions.
 
-The model's performance is assessed through a series of numerical experiments, including a double-gyre circulation test case, with results benchmarked against those from the HYbrid Coordinate Ocean Model (HYCOM). While hNUMO incurs a higher computational cost per degree of freedom, it attains comparable resolved kinetic energy in substantially less wall-clock time, achieving an order-of-magnitude speedup and requiring fewer computational resources. Additionally, hNUMO exhibits strong parallel scalability and sustains high efficiency even when operated with a limited number of grid elements per computational core. A detailed description of the model and its numerical discretization as well as model performance is provided in [@GAHOUNZO2026114496].
+The model's accuracy and performance is assessed through a series of numerical experiments, including a double-gyre circulation test case, with results benchmarked against those from the HYCOM model. While hNUMO incurs a higher computational cost per degree of freedom, it attains comparable resolved kinetic energy in substantially less wall-clock time, achieving an order-of-magnitude speedup and requiring fewer computational resources. Additionally, hNUMO exhibits strong parallel scalability and sustains high efficiency even when run with a fewer number of grid elements per computational core. A detailed description of the model and its numerical discretization as well as model performance is provided in [@GAHOUNZO2026114496].
 
 # Statement of need
 
-The separation of barotropic and baroclinic motions into subsystems using barotropic–baroclinic splitting is a standard practice in layered ocean circulation models. Most existing models utilize finite-difference or finite-volume methods alongside this splitting strategy. Nevertheless, these methods exhibit inherent limitations regarding accuracy, geometric adaptability and implementing high-order finite volume methods is particularly complicated on unstructured meshes due to the need for large reconstruction stencils.
+Barotropic–baroclinic splitting is commonly used in layered ocean circulation models, which are typically discretized using finite-difference or finite-volume methods. Although these methods are effective, they exhibit limitations in both accuracy and geometric flexibility. Specifically, implementing high-order finite-volume schemes on unstructured meshes is challenging because they require wide reconstruction stencils.
 
-High-order element-based discontinuous Galerkin (DG) methods offer advantages, including high-order accuracy, low artificial dissipation, and efficient resolution of localized flow features [@escobar2012high]. The hNUMO model implements an arbitrary-order nodal discontinuous Galerkin method for the split subsystems, thereby establishing a flexible and accurate framework for ocean circulation modeling.
+High-order element-based discontinuous Galerkin (DG) methods represent a promising alternative, as they deliver high-order accuracy, reduced numerical dissipation, and efficient resolution of localized flow features [@escobar2012high]. Nevertheless, the application of DG methods to barotropic–baroclinic splitting in ocean circulation models has been limited. The hNUMO implements an arbitrary-order nodal discontinuous Galerkin discretization for both split subsystems. This approach provides a flexible and accurate framework for ocean circulation modeling, facilitating high-order simulations using non-uniform grids while maintaining the efficiency of barotropic–baroclinic coupling.
 
 # h-NUMO features
 
@@ -44,6 +44,6 @@ h-NUMO provides two boundary condition types: free-slip and no-slip. The user is
 
 # Acknowledgements
 
-This code was based on Prof. Robert L. Higdon's 2D code, for which we are grateful to him for sharing it. We are thankful to Prof. Frank X. Giraldo for reviewing this code. The Office of Naval Research supports this work through Grant N00014-20-1-2038.
+This code was based on Prof. Robert L. Higdon's 2D (one horizantal and a vertical dimension) code, for which we are grateful to him for sharing it. We are thankful to Prof. Frank X. Giraldo for reviewing this code. The Office of Naval Research supports this work through Grant N00014-20-1-2038.
 
 # References
