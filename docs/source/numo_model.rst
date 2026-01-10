@@ -5,9 +5,9 @@ The h-NUMO Model
 Governing Equations
 -------------------------
 
-We follow the derivation of the split equations from primitive equations by Higdon, 2015, and here, we only outline the final formulation for both baroclinic (layered) and barotropic equations for completeness. 
+We follow the derivation of the split equations from primitive equations by Higdon (2015), and here, we only outline the final formulation for both baroclinic (layered) and barotropic equations for completeness.
 
-We assume the fluid is in hydrostatic balance, and shallow water equations govern each layer. :numref:`MLSWE` shows a schematic of the fluid domain diviied into :math:`N_l` layers of constant density :math:`\rho_k`, where :math:`k=1,\ldots, N_l` is the layer index increasing downward.
+We assume the fluid is in hydrostatic balance, and shallow water equations govern each layer. :numref:`MLSWE` shows a schematic of the fluid domain divided into :math:`N_l` layers of constant density :math:`\rho_k`, where :math:`k=1,\ldots, N_l` is the layer index increasing downward.
 
 .. figure:: ../figs/MLSWE.png
    :alt: Illustration of the isopycnal layered shallow water system.
@@ -22,7 +22,7 @@ We assume the fluid is in hydrostatic balance, and shallow water equations gover
 
 Baroclinic equations
 ----------------------------
-The two-dimensional MLSWE for the :math:`k`-th layer is given by
+The two-dimensional multilayer shallow water equations (MLSWE) for the :math:`k`-th layer is given by
 
 .. math::
    :nowrap:
@@ -152,7 +152,7 @@ We introduce a 2D reference element :math:`I = [-1, 1]^2` so that the coordinate
 Numerical algorithm
 =====================
 
-h-NUMO solves for barotropic mementum and thickness as well baroclinic mementum and mass field (thickness) in an arbitrary number of layers.
+h-NUMO solves for barotropic momentum and thickness as well baroclinic momentum and mass field (thickness) in an arbitrary number of layers. For more detail on the numerical algorithm and discontinuous Galerkin discretisation, please refer to :cite:p:`GAHOUNZO2026114496`.
 
 
 

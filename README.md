@@ -17,3 +17,12 @@ h-NUMO is
 - Tested on idealized [test cases](https://ygahounzo.github.io/h-NUMO/test.html).
 
 - Verified: The model was succesfully compared with HYCOM model.
+
+
+# Contribute
+
+- Please report any bugs you encounter via the [Github issue tracker](https://github.com/ygahounzo/h-NUMO/issues)
+
+- Feature requests should also be submitted through the [Github issue tracker](https://github.com/ygahounzo/h-NUMO/issues)
+
+- Contributions are welcome! Feel free to submit pull requests for bug fixes or new features. You may also browse the [open issues](https://github.com/ygahounzo/h-NUMO/issues) to see tasks that need attention.

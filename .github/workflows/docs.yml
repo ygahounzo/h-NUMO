@@ -2,7 +2,7 @@ name: Documentation
 
 on:
   push:
-    branches: ["dev"]  # Runs on push to main branch
+    branches: ["dev", "dev_review"]  # Runs on push to main branch
   workflow_dispatch:  # Allows manual triggering
 
 permissions:

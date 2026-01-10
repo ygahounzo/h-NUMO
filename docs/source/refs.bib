@@ -1,31 +1,45 @@
 
-@ARTICLE{BursteddeWilcoxGhattas11,
-  author = {Carsten Burstedde and Lucas C. Wilcox and Omar Ghattas},
-  title = {{\texttt{p4est}}: Scalable Algorithms for Parallel Adaptive Mesh
-           Refinement on Forests of Octrees},
+@article{BursteddeWilcoxGhattas11,
+  author  = {Carsten Burstedde and Lucas C. Wilcox and Omar Ghattas},
+  title   = {{\texttt{p4est}}: Scalable Algorithms for Parallel Adaptive Mesh
+             Refinement on Forests of Octrees},
   journal = {SIAM Journal on Scientific Computing},
-  volume = {33},
-  number = {3},
-  pages = {1103-1133},
-  year = {2011},
-  doi = {10.1137/100791634}
+  volume  = {33},
+  number  = {3},
+  pages   = {1103-1133},
+  year    = {2011},
+  doi     = {10.1137/100791634}
 }
 
 @book{giraldo2020introduction,
-  title={An introduction to element-based Galerkin methods on tensor-product bases: Analysis, algorithms, and applications},
-  author={Giraldo, Francis X},
-  volume={24},
-  year={2020},
-  publisher={Springer Nature}
+  title     = {An introduction to element-based Galerkin methods on tensor-product bases: Analysis, algorithms, and applications},
+  author    = {Giraldo, Francis X},
+  volume    = {24},
+  year      = {2020},
+  publisher = {Springer Nature}
 }
 
 @article{bleck1986wind,
-  title={Wind-driven spin-up in eddy-resolving ocean models formulated in isopycnic and isobaric coordinates},
-  author={Bleck, Rainer and Boudra, Douglas},
-  journal={Journal of Geophysical Research: Oceans},
-  volume={91},
-  number={C6},
-  pages={7611--7621},
-  year={1986},
-  publisher={Wiley Online Library}
+  title     = {Wind-driven spin-up in eddy-resolving ocean models formulated in isopycnic and isobaric coordinates},
+  author    = {Bleck, Rainer and Boudra, Douglas},
+  journal   = {Journal of Geophysical Research: Oceans},
+  volume    = {91},
+  number    = {C6},
+  pages     = {7611--7621},
+  year      = {1986},
+  publisher = {Wiley Online Library}
+}
+
+@article{GAHOUNZO2026114496,
+  title    = {High-order discontinuous Galerkin schemes for the barotropic-baroclinic splitting in two-dimensional layered shallow water equations},
+  journal  = {Journal of Computational Physics},
+  volume   = {545},
+  pages    = {114496},
+  year     = {2026},
+  issn     = {0021-9991},
+  doi      = {https://doi.org/10.1016/j.jcp.2025.114496},
+  url      = {https://www.sciencedirect.com/science/article/pii/S0021999125007788},
+  author   = {Yao Gahounzo and Michal Kopera and Robert L. Higdon and Eric P. Chassignet and Alan Wallcraft and Alexandra Bozec},
+  keywords = {Multilayer shallow water equations, DG method, Double-gyre circulation, Ocean modeling},
+  abstract = {The separation of fast (barotropic) and slow (baroclinic) motions into subsystems through barotropic-baroclinic splitting has been widely adopted in layered ocean circulation models. To date, the majority of models use finite difference or finite volume methods alongside this splitting technique. In this paper, we present an extension of the work in Higdon (2015) to two horizontal dimensions using an arbitrary high-order, nodal discontinuous Galerkin (DG) method for the resulting split subsystems to develop an ocean model. We carry out numerical tests to demonstrate the performance of the proposed schemes, and the numerical results of the double-gyre test are compared with those of the HYbrid Coordinate Ocean Model (HYCOM). The parallel performance shows that the new model has a larger per-degree-of-freedom computational cost compared to HYCOM, but achieves the same result in terms of resolved kinetic energy in an order of magnitude faster time, with fewer computational resources, and maintains good parallel efficiency even with very few grid elements per computational core.}
 }

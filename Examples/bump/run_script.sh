@@ -9,6 +9,9 @@
 #SBATCH -N 1
 #SBATCH --exclusive
 
+# NB: Adjust number of processes (-np) according to the number of cores allocated by SLURM on your system.
+
 cp $(pwd)/../../bin/numo3d .
 
-mpirun -np 36 ./numo3d
+# mpirun -np 36 ./numo3d
+./numo3d

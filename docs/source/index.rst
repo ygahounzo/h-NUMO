@@ -10,13 +10,13 @@ h-NUMO
 
 .. note::
 
-   This project is under active development.
+   This project is under active development. To contribute, please feel free to submit pull requests for bug fixes or new features. You may also browse the `open issues <https://github.com/ygahounzo/h-NUMO/issues>`_ to see tasks that need attention. Please report any bugs you encounter via the `Github issue tracker <https://github.com/ygahounzo/h-NUMO/issues>`_.
 
 h-NUMO is
 
 - `Easy to install and configure <installation.html>`_ on a compute node.
 
-- Easy to learn with [online documentation](https://ygahounzo.github.io/h-NUMO/index.html), including a complete description of `the physisc and the numerics <numo_model.html>`_.
+- Easy to learn with `online documentation <https://ygahounzo.github.io/h-NUMO/index.html>`_, including a complete description of `the physics and the numerics <numo_model.html>`_.
 
 - Verified with a suites of `test cases <test.html>`_.
 

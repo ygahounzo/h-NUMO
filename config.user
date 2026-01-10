@@ -47,7 +47,7 @@ hnumo-prof:
 	"FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none -pg" \
 	"CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include -pg" \
 	"INCLUDE= -I${NUMO_P4EST_DIR}/include  -I${NUMO_DIR}/include" \
-	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -lz" \
 	"AR=ar rv"
 
 #--------------------------------------------------------------------------------
@@ -61,7 +61,7 @@ hnumo-CI:
         "FFLAGS=-O2 -fdefault-real-8 -finit-real=zero -ffree-line-length-none" \
         "CFLAGS=-O2 -Wconversion -Wno-sign-conversion -Wcast-align -Wchar-subscripts -Wall -W -Wpointer-arith -Wwrite-strings -Wformat-security -pedantic -Wextra -Wno-unused-parameter -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
         "INCLUDE= -I/usr/include -I${NUMO_P4EST_DIR}/include -I${NUMO_DIR}/include" \
-        "LIBS=$(NUMOLIBS) -L/usr/lib/x86_64-linux-gnu -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lnetcdff -lnetcdf -lp4est -lsc -llapack -lblas -lz" \
+        "LIBS=$(NUMOLIBS) -L/usr/lib/x86_64-linux-gnu -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lnetcdff -lnetcdf -lp4est -lsc -lz" \
         "AR=ar rv"
 
 #------------------------------------------------------------------------------

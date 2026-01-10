@@ -5,9 +5,9 @@ file_num_end = 720;       % end animating with this file number
 delta_file_num = 10;      % what is the skip between the file numbers
                           % (must match the actual file numbers)
 
-name_root = './';     % path to the output files
+name_root = './'; % path to the output files
 
-save_folder = './BB86'; % path to where to save the plots
+save_folder = './PNG'; % path to where to save the plots
 
 if ~exist(save_folder, 'dir')
     mkdir(save_folder);
