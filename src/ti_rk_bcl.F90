@@ -43,16 +43,15 @@ subroutine ti_rk_bcl(q_df, qb_df)
 
     qbp_df = qb_df
     dpprime_visc(:,:) = qprime_df(1,:,:)
+    q_df2 = q_df
 
     call btp_bcl_coeffs_qdf(qprime_df)
     call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
-
-    q_df2 = q_df
-    qprime_df2 = qprime_df
-
-    call momentum_mass(q_df2,qprime_df2,qbp_df)
+    call momentum_mass(q_df2,qprime_df,qbp_df)
 
     ! ==================== Correction step =================================
+
+    call extract_qprime_df_face(qprime_df2,q_df2,qbp_df)
 
     qprime_df2 = 0.5*(qprime_df2 + qprime_df)
     dpprime_visc(:,:) = qprime_df2(1,:,:)

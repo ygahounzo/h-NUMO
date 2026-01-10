@@ -83,16 +83,14 @@ module mod_create_rhs_mlswe
         
     end subroutine layer_mass_rhs
 
-    subroutine bcl_rhs(rhs, rhs_visc, qprime_df, q_df)
+    subroutine bcl_rhs(rhs, qprime_df, q_df)
 
         use mod_input, only: nlayers
-        use mod_metrics, only: massinv
         use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad, nface
         use mod_basis, only: nq, ngl
 
         implicit none
         real, dimension(3,npoin,nlayers), intent(out) :: rhs
-        real, dimension(2,npoin,nlayers), intent(in) :: rhs_visc
         real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
 
         integer :: k,I
@@ -103,12 +101,6 @@ module mod_create_rhs_mlswe
         call Apply_bcl_fluxes(rhs, qprime_df)
 
         call bcl_create_postcommunicator(rhs)
-
-        do k = 1, nlayers
-            rhs(1,:,k) = massinv(:)*rhs(1,:,k)
-            rhs(2,:,k) = massinv(:)*rhs(2,:,k) + rhs_visc(1,:,k)
-            rhs(3,:,k) = massinv(:)*rhs(3,:,k) + rhs_visc(2,:,k)
-        end do
 
     end subroutine bcl_rhs
 
@@ -501,7 +493,7 @@ module mod_create_rhs_mlswe
             qb(2) = uvb_ave(1,Iq)
             qb(3) = uvb_ave(2,Iq)
 
-            p_tmp(1)     = 0.0
+            p_tmp(:) = 0.0
 
             ! ---- build layer quantities ----
             do k = 1, nlayers
@@ -1012,7 +1004,7 @@ module mod_create_rhs_mlswe
         real, dimension(2,nlayers,nq) :: H_face, udp_flux, vdp_flux, dp_flux
         real :: dp_lr(2,nlayers), dp_deficit(2)
         real, dimension(nlayers,nq) :: flux_ul, flux_ur, flux_vl, flux_vr, flux_dp
-        real :: flux_xl, flux_xr, flux_yl, flux_yr
+        real :: flux_xl, flux_xr, flux_yl, flux_yr, hl, hr
 
         do k=1,nlayers
             alpha_over_g(k) = alpha_mlswe(k)/gravity
@@ -1265,16 +1257,14 @@ module mod_create_rhs_mlswe
             if(er /= -4) then
                 do k = 1, nlayers-1          ! interface at the bottom of layer k
                     ! Corrections at the left side of a face.
-                    p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-                    H_corr1 = 0.5 * alpha_mlswe(k) * ((p_face(1,k+1) &
-                                + p_inc1)**2 - p_face(1,k+1)**2)
+                    p_inc1 = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+                    H_corr1 = 0.5 * alpha_mlswe(k) * (p_inc1**2 - p_face(1,k+1)**2)
                     H_face(1,k,iquad) = H_face(1,k,iquad) - H_corr1
                     H_face(1,k+1,iquad) = H_face(1,k+1,iquad) + H_corr1
 
                     ! Corrections at the right side of a face.
-                    p_inc2 = g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
-                    H_corr2 = 0.5 * alpha_mlswe(k) * ((p_face(2,k+1) &
-                                + p_inc2)**2 - p_face(2,k+1)**2)
+                    p_inc2 = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
+                    H_corr2 = 0.5 * alpha_mlswe(k) * (p_inc2**2 - p_face(2,k+1)**2)
                     H_face(2,k,iquad) = H_face(2,k,iquad) - H_corr2
                     H_face(2,k+1,iquad) = H_face(2,k+1,iquad) + H_corr2
 
@@ -1322,12 +1312,14 @@ module mod_create_rhs_mlswe
             do k = 1,nlayers
 
                 flux = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k)
+                hl = H_face(1,k,iquad)
+                hr = H_face(2,k,iquad)
 
-                flux_xl = nxl*(udp_flux(1,k,iquad) + H_face(1,k,iquad)) + nyl*udp_flux(2,k,iquad)
-                flux_xr = nxl*(udp_flux(1,k,iquad) + H_face(2,k,iquad)) + nyl*udp_flux(2,k,iquad)
+                flux_xl = nxl*(udp_flux(1,k,iquad) + hl) + nyl*udp_flux(2,k,iquad)
+                flux_xr = nxl*(udp_flux(1,k,iquad) + hr) + nyl*udp_flux(2,k,iquad)
 
-                flux_yl = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + H_face(1,k,iquad))
-                flux_yr = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + H_face(2,k,iquad))
+                flux_yl = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + hl)
+                flux_yr = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + hr)
 
                 do n = 1, ngl
 

@@ -18,7 +18,7 @@ module mod_splitting
         
     implicit none
 
-    public :: thickness, momentum, momentum_mass
+    public :: thickness, momentum, momentum_mass, create_rhs_bcl
     
     contains
 
@@ -48,8 +48,8 @@ module mod_splitting
         real, intent(in)    :: qb_df(4,npoin)
     
         ! Other variables
-        real :: one_plus_eta_temp(npoin), dp_advec(npoin,nlayers)
-        integer :: k
+        real :: one_plus_eta_temp(npoin), dp_advec(npoin,nlayers), ope
+        integer :: k, I
 
         ! =========================================== layer mass =================================
     
@@ -77,9 +77,16 @@ module mod_splitting
         end do
 
         ! Store the degree of freedom (nodal points) values of dpprime_df
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+        ! one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
+        ! do k = 1,nlayers
+        !     qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+        ! end do
+
         do k = 1,nlayers
-            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
+            do I = 1, npoin
+                ope = sum(q_df(1,I,:)) / pbprime_df(I)
+                qprime_df(1,I,k) = q_df(1,I,k) / ope
+            enddo 
         end do
         
     end subroutine thickness
@@ -198,7 +205,7 @@ module mod_splitting
 
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
         ! Local variables
@@ -275,7 +282,7 @@ module mod_splitting
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
 
-        call extract_qprime_df_face(qprime_df, q_df, qb_df)
+        ! call extract_qprime_df_face(qprime_df, q_df, qb_df)
 
     end subroutine momentum_mass
 
@@ -321,6 +328,7 @@ module mod_splitting
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: bcl_rhs
         use mod_laplacian_quad, only: bcl_create_laplacian
+        use mod_metrics, only: massinv
 
         implicit none
 
@@ -329,13 +337,20 @@ module mod_splitting
         real, dimension(3,npoin,nlayers), intent(out) :: rhs
 
         real, dimension(2,npoin,nlayers) :: rhs_visc_bcl
+        integer :: k
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
+        ! if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
 
         ! Compute the RHS of the layer momentum equation
-        call bcl_rhs(rhs, rhs_visc_bcl, qprime_df, q_df)
+        call bcl_rhs(rhs, qprime_df, q_df)
+
+        do k = 1, nlayers
+            rhs(1,:,k) = massinv(:)*rhs(1,:,k)
+            rhs(2,:,k) = massinv(:)*rhs(2,:,k) + rhs_visc_bcl(1,:,k)
+            rhs(3,:,k) = massinv(:)*rhs(3,:,k) + rhs_visc_bcl(2,:,k)
+        end do
 
     end subroutine create_rhs_bcl
 

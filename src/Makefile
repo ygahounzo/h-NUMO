@@ -79,6 +79,7 @@ SOURCEF += mod_splitting.F90
 SOURCEF += mod_rhs_btp.F90
 SOURCEF += mod_create_rhs_mlswe.F90
 SOURCEF += ti_rk_bcl.F90
+SOURCEF += ti_rk3_bcl.F90
 #SOURCEF += mod_variables.F90
 SOURCEF += compute_conserved.F90
 

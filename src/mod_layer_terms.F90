@@ -267,7 +267,7 @@ module mod_layer_terms
         real, dimension(4,npoin), intent(in) :: qb_df
 
         integer :: k, Iq, I, ip, iface, iquad, el, er, il, jl, ir, jr, kl, kr, n
-        real :: hi, nx, ny, un(nlayers)
+        real :: hi, nx, ny, un(nlayers), ope
         real, dimension(npoin) :: one_plus_eta_temp
         real :: uv_df(2,npoin,nlayers)
 
@@ -276,14 +276,16 @@ module mod_layer_terms
         call extract_velocity(uv_df, q_df, qb_df)
 
         ! Prime variables at the dofs (nodal points) and quadrature points
-        one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-
         do k = 1,nlayers
 
-            qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-            qprime_df(2,:,k) = uv_df(1,:,k) - qb_df(3,:)/qb_df(1,:)
-            qprime_df(3,:,k) = uv_df(2,:,k) - qb_df(4,:)/qb_df(1,:)
+            do I = 1, npoin
 
+                ope = sum(q_df(1,I,:)) / pbprime_df(I)
+
+                qprime_df(1,I,k) = q_df(1,I,k) / ope
+                qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
+                qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
+            end do !I
         end do
 
     end subroutine extract_qprime_df_face
