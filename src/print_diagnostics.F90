@@ -128,12 +128,12 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
       mpi_min,0,mpi_comm_world,ierr)
 
    if (irank == 0 .and. idone == 0) then
-      print*,'==============================================================='
+      print*,'======================================================================='
       write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime, &
                time/time_scale, dt, dt_btp
       write(*,'("CFL_B = ",e11.4," CFL = ",e11.4)')cfl_vector_g(1), cfl_vector_g(2)
       write(*,'("dx_min = ",e11.4," dy_min = ",e11.4)')min_dx_vec_g(1),min_dx_vec_g(2)
-      print*,'---------------------------------------------------------------'
+      print*,'-----------------------------------------------------------------------'
       do ll = 1,nlayers
          write(*,'("Layer = ",i8)')ll
          write(*,'("Mass Loss   = ",1(e22.8,1x))') xm1(ll)
@@ -141,22 +141,22 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
             write(*,'("Q: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qmax_layers(i,ll), &
                      qmin_layers(i,ll)
          end do !i
-         print*,'---------------------------------------------------------------'
+         print*,'---------------------------------------------------------------------'
       end do
-      print*,'---------------------------------------------------------------'
+      print*,'------------------------------------------------------------------------'
       write(*,*)'Barotropic'
       do i=1,4
          write(*,'("Qb: i    Max/Min = ",i3,1x,2(e24.12,1x))')i,qbmax_g(i), qbmin_g(i)
       end do !i
         
-      print*,'==============================================================='
+      print*,'========================================================================'
    else if (irank == 0 .and. idone == 1) then
-      print*,'---------------------------------------------------------------'
+      print*,'------------------------------------------------------------------------'
       write(*,'(" **Simulation Finished**")')
       write(*,'("itime time dt dt_btp = ",i8,1x,2(es13.5,1x),2(es13.5,1x))')itime, &
                time/time_scale,dt, dt_btp
       write(*,'("CFL_B = ",e11.4," CFL = ",e11.4)')cfl_vector_g(1), cfl_vector_g(2)
-      print*,'---------------------------------------------------------------'
+      print*,'------------------------------------------------------------------------'
 
       fileds(1) = "h"
       fileds(2) = "u"
@@ -179,7 +179,7 @@ subroutine print_diagnostics_mlswe(q_mlswe,qb,time,itime,dt,idone,&
                   qmax_layers(i,ll), qmin_layers(i,ll)
             end if 
          end do !i
-         print*,'---------------------------------------------------------------'
+         print*,'---------------------------------------------------------------------'
       end do
       close(100)
 

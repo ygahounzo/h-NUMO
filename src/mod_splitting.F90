@@ -298,6 +298,7 @@ module mod_splitting
         use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs
         use mod_laplacian_quad, only: bcl_create_laplacian
+        use mod_metrics, only: massinv
 
         implicit none
 
@@ -306,13 +307,19 @@ module mod_splitting
         real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
 
         real, dimension(2,npoin,nlayers) :: rhs_visc_bcl
+        integer :: k
 
         rhs_visc_bcl = 0.0
 
         if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl) 
 
         ! Compute the RHS of the layer momentum equation
-        call layer_momentum_rhs(rhs_mom, rhs_visc_bcl, qprime_df, q_df)
+        call layer_momentum_rhs(rhs_mom, qprime_df, q_df)
+
+        do k = 1, nlayers
+            rhs_mom(1,:,k) = massinv(:)*rhs_mom(1,:,k) + rhs_visc_bcl(1,:,k)
+            rhs_mom(2,:,k) = massinv(:)*rhs_mom(2,:,k) + rhs_visc_bcl(2,:,k)
+        end do
 
     end subroutine rhs_momentum
 
@@ -341,7 +348,7 @@ module mod_splitting
 
         rhs_visc_bcl = 0.0
 
-        ! if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
+        if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
 
         ! Compute the RHS of the layer momentum equation
         call bcl_rhs(rhs, qprime_df, q_df)

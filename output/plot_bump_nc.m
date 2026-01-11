@@ -5,7 +5,7 @@ clear all
 fig = figure('Position',[1 1 1600 1200]);
 
 file_num_start = 0;     % start animating with this file number
-file_num_end = 1;       % end animating with this file number
+file_num_end = 108;       % end animating with this file number
 delta_file_num = 1;      % what is the skip between the file numbers
                           % (must match the actual file numbers)
 

@@ -48,8 +48,6 @@ subroutine ti_rk3_bcl(q_df, qb_df)
 
     do ik = 1, 3
 
-        ! qb_df = qbp_df
-
         call extract_qprime_df_face(qprime_df,q1_df,qb_df)
         dpprime_visc(:,:) = qprime_df(1,:,:)
 
@@ -82,36 +80,5 @@ subroutine ti_rk3_bcl(q_df, qb_df)
         if(ik == 5 .and. k == 2) q2_df = q_df
 
     end do
-
-    
-    ! ! ==================== Prediction step =================================
-
-    ! call extract_qprime_df_face(qprime_df,q_df,qb_df)
-
-    ! qbp_df = qb_df
-    ! dpprime_visc(:,:) = qprime_df(1,:,:)
-    ! q_df2 = q_df
-
-    ! call btp_bcl_coeffs_qdf(qprime_df)
-    ! call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
-    ! call momentum_mass(q_df2,qprime_df,qbp_df)
-
-    ! ! ==================== Correction step =================================
-
-    ! call extract_qprime_df_face(qprime_df2,q_df2,qbp_df)
-
-    ! qprime_df2 = 0.5*(qprime_df2 + qprime_df)
-    ! dpprime_visc(:,:) = qprime_df2(1,:,:)
-
-    ! call btp_bcl_coeffs_qdf(qprime_df2)
-    ! call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)
-        
-    ! ! Layer continuty equation
-    ! call thickness(qprime_df2, q_df, qb_df)
-
-    ! qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + qprime_df2(1,:,:))
-      
-    ! call momentum(q_df,qprime_df2,qb_df)
-
 
 end subroutine ti_rk3_bcl
