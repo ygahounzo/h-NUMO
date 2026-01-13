@@ -597,9 +597,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                udp_flux(1,iquad,k) = udp_flux(1,iquad,k) + weight * uu_dp_flux_deficit(1)
 
                !y-direction
-               weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
+               weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                if(uu_dp_flux_deficit(2)*nyl < 0.0) &
-                  weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
+                  weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + weight * uu_dp_flux_deficit(2)
 
                ! Adjust the fluxes for the v-momentum equation
@@ -1025,9 +1025,9 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                udp_flux(1,iquad,k) = udp_flux(1,iquad,k) + weight * uu_dp_flux_deficit(1)
 
                !y-direction
-               weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
+               weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                if(uu_dp_flux_deficit(2)*nyl < 0.0) &
-                  weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
+                  weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + weight * uu_dp_flux_deficit(2)
 
                ! Adjust the fluxes for the v-momentum equation

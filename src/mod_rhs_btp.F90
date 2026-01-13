@@ -102,11 +102,8 @@ contains
             end do
 
             ! 2) Layer projections + hydrostatic-like Hq
-            Hq       = 0.0
-            pprime(:)= 0.0
-            pp(:)    = 0.0
-            up(:)    = 0.0
-            vp(:)    = 0.0
+            Hq = 0.0 ; pprime(:)= 0.0
+            pp(:) = 0.0 ; up(:) = 0.0 ; vp(:) = 0.0
 
             do k = 1, nlayers
                 do ip = 1, npts
@@ -218,7 +215,7 @@ contains
         integer :: itype, k
         real :: pkl, pkr, ukl, ukr, vkl, vkr, H_bcl_ql, H_bcl_qr, ul, ur, vl, vr, H_bcl_q, clam
         real, dimension(2) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr
-        real :: flux(3,nq), fxl, fxr, flux_edge_x, flux_edge_y
+        real :: flux(3,nq), fxl, fxr, flux_edge_x, flux_edge_y, ope_ppl, ope_ppr
 
         do concurrent (iface = 1:nface, iquad = 1:nq)
 
@@ -268,7 +265,7 @@ contains
                 end do
             else
                 qbr(:) = qbl(:)
-                pbr    = pbl
+                pbr = pbl
 
                 if (er == -4) then
                     un = nxl*qbl(3) + nyl*qbl(4)
