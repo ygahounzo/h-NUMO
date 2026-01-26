@@ -8,12 +8,11 @@
 module mod_rhs_btp
 
     use mod_constants, only: gravity
-    use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad
+    use mod_grid, only : npoin_q, npoin, nelem
     use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
                          psiqx, psiqy, psiqz, nq, ngl
     use mod_grid, only: intma, npoin_q, npoin, nface
     use mod_laplacian_quad, only: btp_create_laplacian
-    use mod_barotropic_terms, only: btp_extract_df
     use mod_input, only: nlayers, method_visc
     use mod_metrics, only: ksiq_x, ksiq_y, ksiq_z, &
                            etaq_x, etaq_y, etaq_z, &
@@ -54,14 +53,14 @@ contains
 
     subroutine create_rhs_btp_volume_qdf(rhs, qb_df, qprime_df)
 
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
+        use mod_grid, only : npoin_q, npoin, nelem
         use mod_basis, only: npts
         use mod_constants, only: gravity
         use mod_initial, only: grad_zbot_quad, tau_wind, psih, dpsidx,dpsidy, indexq, wjac, &
                                 pbprime_df, coriolis_quad, alpha_mlswe
         use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, &
                                 uvb_ave, btp_mass_flux_ave, ope2_ave
-        use mod_input, only: nlayers, cd_mlswe, botfr, dry_cutoff
+        use mod_input, only: nlayers, cd_mlswe, botfr
 
         implicit none
 
@@ -71,25 +70,32 @@ contains
 
         real :: sc_x, sc_y, Hq, Qu(2), Qv(2)
         real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, &
-                dp, dpp, udp, vdp, ub, vb, Pstress, Pbstress, ubot, vbot, spd, pbq
+                dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq
         real, dimension(nlayers) :: pp, up, vp
         real, dimension(nlayers+1) :: pprime
-        integer :: I, Iq, ip, k
+        integer :: I, Iq, ip, k, m
 
-        !speed1 = cd_mlswe/gravity
+        !$acc data present(rhs, qb_df, qprime_df, grad_zbot_quad, tau_wind, psih, dpsidx, &
+        !$acc           dpsidy, indexq, wjac, pbprime_df, coriolis_quad, alpha_mlswe, &
+        !$acc           tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave, uvb_ave, &
+        !$acc           btp_mass_flux_ave, ope2_ave)
 
-        rhs = 0.0
-        tb_u = 0.0 ; tb_v = 0.0
-        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
-                                                  ! at which wind stress is reduced to 0
-        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth
-                                                         ! at which bottom stress is reduced to 0
+        !$acc parallel loop gang vector collapse(2) present(rhs)
+        do I = 1, npoin
+            do m = 1, 3
+                rhs(m,I) = 0.0
+            end do
+        end do
 
-        do concurrent (Iq = 1:npoin_q)
+        !$acc parallel loop gang &
+        !$acc   private(dp,dpp,udp,vdp,pbq,ip,I,hi,k,Hq,wq,ub,vb,ubot,vbot,spd,tb_u,tb_v,sc_x,sc_y,ope, &
+        !$acc           pp,up,vp,pprime,Qu,Qv,dhdx,dhdy)
+        do Iq = 1, npoin_q
 
-            ! 1) Quadrature-projected barotropic quantities
-            dp  = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0; pbq = 0.0
+            ! Quadrature-projected barotropic quantities
+            dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0; pbq = 0.0
 
+            !$acc loop seq
             do ip = 1, npts
                 I  = indexq(ip,Iq)
                 hi = psih(ip,Iq)
@@ -101,11 +107,14 @@ contains
                 pbq = pbq + hi * pbprime_df(I)
             end do
 
-            ! 2) Layer projections + hydrostatic-like Hq
+            ! Layer projections + hydrostatic-like Hq
             Hq = 0.0 ; pprime(:)= 0.0
             pp(:) = 0.0 ; up(:) = 0.0 ; vp(:) = 0.0
 
+            !$acc loop seq
             do k = 1, nlayers
+
+                !$acc loop seq
                 do ip = 1, npts
                     I  = indexq(ip,Iq)
                     hi = psih(ip,Iq)
@@ -118,11 +127,12 @@ contains
                 Hq = Hq + 0.5 * alpha_mlswe(k) * (pprime(k+1)**2 - pprime(k)**2)
             end do
 
-            ! 3) Local derived quantities
+            ! Local quantities
             wq = wjac(Iq)
             ub = udp / dp
             vb = vdp / dp
 
+            tb_u = 0.0 ; tb_v = 0.0
             if (botfr == 1) then
                 ubot = up(nlayers) + ub
                 vbot = vp(nlayers) + vb
@@ -143,13 +153,13 @@ contains
             ope = 1.0 + (dpp / pbq)
             Hq  = (ope**2) * Hq
 
-            ! 4) Quadratic flux-like terms
+            ! Quadratic flux-like terms
             Qu(1) = ub * udp + ope * sum( up(:) * (pp(:) * up(:)) )
             Qu(2) = vb * udp + ope * sum( vp(:) * (pp(:) * up(:)) )
             Qv(1) = ub * vdp + ope * sum( up(:) * (pp(:) * vp(:)) )
             Qv(2) = vb * vdp + ope * sum( vp(:) * (pp(:) * vp(:)) )
 
-            ! 5) Averages
+            ! Averages
             H_ave(Iq)              = H_ave(Iq)              + Hq
             Qu_ave(Iq)             = Qu_ave(Iq)             + Qu(1)
             Qv_ave(Iq)             = Qv_ave(Iq)             + Qv(1)
@@ -166,7 +176,8 @@ contains
             Qu(1) = Qu(1) + Hq
             Qv(2) = Qv(2) + Hq
 
-            ! 6) Scatter to rhs
+            ! Store RHS
+            !$acc loop seq
             do ip = 1, npts
                 I  = indexq(ip,Iq)
                 hi = psih(ip,Iq)
@@ -180,6 +191,8 @@ contains
             end do
 
         end do
+
+        !$acc end data
 
     end subroutine create_rhs_btp_volume_qdf
 
