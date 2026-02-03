@@ -284,7 +284,7 @@ module mod_create_rhs_mlswe
         use mod_input, only: nlayers, dry_cutoff
         use mod_constants, only: gravity
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
-                                tau_wind, pbprime_df, zbot_df
+                                tau_wind, pbprime_df, zbot_df, grad_zbot_quad
         use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
                                     Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope2_ave_df, ope2_ave
 
@@ -296,7 +296,7 @@ module mod_create_rhs_mlswe
         real :: wq, hi, dhdx, dhdy, bot_layer, tau_wind_u, tau_wind_v, temp1
         real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y, Pstress
         integer :: k, I, Iq, ip
-        real, dimension(nlayers+1) :: pprime_temp
+        real, dimension(nlayers+1) :: pprime_temp, z
         real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
         real :: weight, acceleration, pbq
         real, dimension(3) :: qp, qb
@@ -309,20 +309,12 @@ module mod_create_rhs_mlswe
         real :: flux(2,2)
 
         rhs_mom = 0.0
-        bot_layer = 0.0
         pprime_temp = 0.0
 
         Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
                                                   ! at which wind stress is reduced to 0
         Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth 
                                                          ! at which bottom stress is reduced to 0
-
-        ! Find layer interfaces
-        z_elv(:,nlayers+1) = zbot_df(:)
-        do k = nlayers,1,-1
-            z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
-                                        (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
-        end do
 
         do concurrent(Iq = 1:npoin_q)
 
@@ -360,13 +352,22 @@ module mod_create_rhs_mlswe
                 pprime_temp(k+1) = pprime_temp(k) + qp(1)
             end do
 
-            gradz = 0.0 ; pbq = 0.0
-            do ip = 1,npts
+            gradz(:,:) = 0.0 ; pbq = 0.0
+            do ip = 1, npts
                 I = indexq(ip,Iq)
-                gradz(1,:) = gradz(1,:) + dpsidx(ip,Iq)*z_elv(I,:)
-                gradz(2,:) = gradz(2,:) + dpsidy(ip,Iq)*z_elv(I,:)
-                pbq = pbq + psih(ip,Iq)*pbprime_df(I)
-            enddo
+                z(nlayers+1) = zbot_df(I)
+                do k = nlayers,1,-1
+                    z(k) = z(k+1) + (alpha_mlswe(k)/gravity)*(sqrt(ope2_ave_df(I))*qprime_df(1,I,k))
+
+                    gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z(k)
+                    gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z(k)
+                end do
+
+                gradz(1,nlayers+1) = grad_zbot_quad(1,Iq)
+                gradz(2,nlayers+1) = grad_zbot_quad(2,Iq)
+
+                pbq = pbq + psih(ip,Iq)  * pbprime_df(I)
+            end do
 
             ! Consistency
             uu_dp_deficitq = Qu_ave(Iq) - sum(u_udp(:))
@@ -455,7 +456,7 @@ module mod_create_rhs_mlswe
         use mod_input, only: nlayers, dry_cutoff
         use mod_constants, only: gravity
         use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
-                                tau_wind, pbprime_df, zbot_df
+                                tau_wind, pbprime_df, zbot_df, grad_zbot_quad
         use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
                                     Qu_ave, Qv_ave, Quv_ave, uvb_ave, &
                                     ope2_ave_df, ope2_ave, sum_layer_mass_flux, btp_mass_flux_ave
@@ -468,7 +469,7 @@ module mod_create_rhs_mlswe
         real :: wq, hi, dhdx, dhdy, bot_layer, tau_wind_u, tau_wind_v, temp1
         real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y, Pstress
         integer :: k, I, Iq, ip
-        real, dimension(nlayers+1) :: pprime_temp
+        real, dimension(nlayers+1) :: pprime_temp, z
         real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
         real :: weight, acceleration, pbq
         real, dimension(3) :: qp, qb
@@ -491,11 +492,11 @@ module mod_create_rhs_mlswe
                                                          ! at which bottom stress is reduced to 0
 
         ! Find layer interfaces
-        z_elv(:,nlayers+1) = zbot_df(:)
-        do k = nlayers,1,-1
-            z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
-                                        (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
-        end do
+        ! z_elv(:,nlayers+1) = zbot_df(:)
+        ! do k = nlayers,1,-1
+        !     z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
+        !                                 (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
+        ! end do
 
         do concurrent(Iq = 1:npoin_q)
 
@@ -539,13 +540,22 @@ module mod_create_rhs_mlswe
                 pprime_temp(k+1) = pprime_temp(k) + qp(1)
             end do
 
-            gradz = 0.0 ; pbq = 0.0
-            do ip = 1,npts
+            gradz(:,:) = 0.0 ; pbq = 0.0
+            do ip = 1, npts
                 I = indexq(ip,Iq)
-                gradz(1,:) = gradz(1,:) + dpsidx(ip,Iq)*z_elv(I,:)
-                gradz(2,:) = gradz(2,:) + dpsidy(ip,Iq)*z_elv(I,:)
-                pbq = pbq + psih(ip,Iq)*pbprime_df(I)
-            enddo
+                z(nlayers+1) = zbot_df(I)
+                do k = nlayers,1,-1
+                    z(k) = z(k+1) + (alpha_mlswe(k)/gravity)*(sqrt(ope2_ave_df(I))*qprime_df(1,I,k))
+
+                    gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z(k)
+                    gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z(k)
+                end do
+
+                gradz(1,nlayers+1) = grad_zbot_quad(1,Iq)
+                gradz(2,nlayers+1) = grad_zbot_quad(2,Iq)
+
+                pbq = pbq + psih(ip,Iq)  * pbprime_df(I)
+            end do
 
             ! Consistency
             uu_dp_deficitq = Qu_ave(Iq) - sum(u_udp(:))
@@ -783,9 +793,9 @@ module mod_create_rhs_mlswe
                 udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + weight * uu_dp_flux_deficit(1)
 
                 !y-direction
-                weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
+                weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                 if(uu_dp_flux_deficit(2)*nyl < 0.0) &
-                    weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
+                    weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + weight * uu_dp_flux_deficit(2)
 
                 ! Adjust the fluxes for the v-momentum equation
@@ -1161,9 +1171,9 @@ module mod_create_rhs_mlswe
                 udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + weight * uu_dp_flux_deficit(1)
 
                 !y-direction
-                weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
+                weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                 if(uu_dp_flux_deficit(2)*nyl < 0.0) &
-                    weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
+                    weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + weight * uu_dp_flux_deficit(2)
 
                 ! Adjust the fluxes for the v-momentum equation
@@ -1568,7 +1578,7 @@ module mod_create_rhs_mlswe
                 flux_u = flux_edge_u(iquad,k) + weight*dp_deficit(1)
 
                 weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps))
-                if (dp_deficit(1)*nxl < 0.0) &
+                if (dp_deficit(2)*nyl < 0.0) &
                     weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps))
                 flux_v = flux_edge_v(iquad,k) + weight*dp_deficit(2)
 

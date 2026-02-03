@@ -49,7 +49,6 @@ subroutine ti_rk3_bcl(q_df, qb_df)
     do ik = 1, 3
 
         call extract_qprime_df_face(qprime_df,q1_df,qb_df)
-        dpprime_visc(:,:) = qprime_df(1,:,:)
 
         call btp_bcl_coeffs_qdf(qprime_df)
         call ti_barotropic_ssprk_mlswe(qb_df, qprime_df)

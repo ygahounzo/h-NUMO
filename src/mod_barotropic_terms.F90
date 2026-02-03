@@ -239,6 +239,8 @@ module mod_barotropic_terms
         btp_dpp_graduv = 0.0
         pbprime_visc = 0.0
 
+        dpprime_visc(:,:) = qprime_df(1,:,:)
+
         do k = 1,nlayers
 
             ! For viscosity terms

@@ -189,7 +189,7 @@ module mod_laplacian_quad
         beta = 0.5
         alpha = 1.0 - beta
 
-        iflux = 0.0
+        iflux = 1.0
       
         !Construct FVM-type Operators
         do concurrent(iface=1:nface, iquad=1:ngl)
@@ -378,7 +378,7 @@ module mod_laplacian_quad
 
         beta = 0.5
         alpha = 1.0 - beta
-        iflux = 0.0
+        iflux = 1.0
 
         do concurrent(k = 1:nlayers, iface=1:nface, iquad=1:ngl)
 

@@ -8,12 +8,11 @@
 module mod_rhs_btp
 
     use mod_constants, only: gravity
-    use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad
+    use mod_grid, only : npoin_q, npoin, nelem
     use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
                          psiqx, psiqy, psiqz, nq, ngl
     use mod_grid, only: intma, npoin_q, npoin, nface
     use mod_laplacian_quad, only: btp_create_laplacian
-    use mod_barotropic_terms, only: btp_extract_df
     use mod_input, only: nlayers, method_visc
     use mod_metrics, only: ksiq_x, ksiq_y, ksiq_z, &
                            etaq_x, etaq_y, etaq_z, &
@@ -93,8 +92,6 @@ contains
         !$acc           pp,up,vp,pprime,Qu,Qv,dhdx,dhdy)
         do Iq = 1, npoin_q
 
-            wq = wjac(Iq)
-
             ! Quadrature-projected barotropic quantities
             dp = 0.0; dpp = 0.0; udp = 0.0; vdp = 0.0; pbq = 0.0
 
@@ -109,9 +106,6 @@ contains
                 vdp = vdp + hi * qb_df(4,I)
                 pbq = pbq + hi * pbprime_df(I)
             end do
-
-            ub = udp / dp
-            vb = vdp / dp
 
             ! Layer projections + hydrostatic-like Hq
             Hq = 0.0 ; pprime(:)= 0.0
@@ -132,6 +126,11 @@ contains
                 pprime(k+1) = pprime(k) + pp(k)
                 Hq = Hq + 0.5 * alpha_mlswe(k) * (pprime(k+1)**2 - pprime(k)**2)
             end do
+
+            ! Local quantities
+            wq = wjac(Iq)
+            ub = udp / dp
+            vb = vdp / dp
 
             tb_u = 0.0 ; tb_v = 0.0
             if (botfr == 1) then
@@ -223,207 +222,219 @@ contains
         real :: qbl(4), qbr(4), lam1, lam2, dispp
         real :: c_minus, c_plus, c_pb_L, c_pb_R, c_pbub_LR, c_pbub_L, c_pbub_R
         real, dimension(nq) :: c_pb_LR
-        real :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q, pb_cutoff
-        real, dimension(nlayers) :: ppl, ppr, upl, upr, vpl, vpr
+        real :: Q_uu_q, Q_uv_q, Q_vu_q, Q_vv_q
+        real :: ppl, ppr, upl, upr, vpl, vpr, pb_cutoff
         real, dimension(nlayers+1) :: pprime_l, pprime_r
         integer :: itype, k
         real :: pkl, pkr, ukl, ukr, vkl, vkr, H_bcl_ql, H_bcl_qr, ul, ur, vl, vr, H_bcl_q, clam
         real, dimension(2) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr
         real :: flux(3,nq), fxl, fxr, flux_edge_x, flux_edge_y, ope_ppl, ope_ppr
 
-        do iface = 1, nface
+        do concurrent (iface = 1:nface, iquad = 1:nq)
 
             ! Skip boundary faces
             if (face_type(iface) == 2) cycle
 
-            do iquad = 1, nq
+            el = face(7,iface)
+            er = face(8,iface)
 
-                el = face(7,iface)
-                er = face(8,iface)
+            !------------------------------------------------------------
+            ! 1) Build flux(:,iquad) and face averages
+            !------------------------------------------------------------
 
-                ! Build flux
+            nxl = normal_vector_q(1,iquad,1,iface)
+            nyl = normal_vector_q(2,iquad,1,iface)
+            nxr = -nxl
+            nyr = -nyl
 
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
-                nxr = -nxl
-                nyr = -nyl
+            qbl = 0.0; qbr = 0.0
+            pbl = 0.0; pbr = 0.0
 
-                qbl = 0.0; qbr = 0.0
-                pbl = 0.0; pbr = 0.0
+            ! left trace
+            do n = 1, ngl
+                il = imapl(1,n,1,iface); jl = imapl(2,n,1,iface); kl = imapl(3,n,1,iface)
+                I  = intma(il,jl,kl,el)
+
+                hi = psiq(n,iquad)
+                qbl(1) = qbl(1) + hi*qb(1,I)
+                qbl(2) = qbl(2) + hi*qb(2,I)
+                qbl(3) = qbl(3) + hi*qb(3,I)
+                qbl(4) = qbl(4) + hi*qb(4,I)
+                pbl    = pbl    + hi*pbprime_df(I)
+            end do
+
+            ! right trace / BC
+            if (er > 0) then
+                do n = 1, ngl
+                    ir = imapr(1,n,1,iface); jr = imapr(2,n,1,iface); kr = imapr(3,n,1,iface)
+                    I  = intma(ir,jr,kr,er)
+
+                    hi = psiq(n,iquad)
+                    qbr(1) = qbr(1) + hi*qb(1,I)
+                    qbr(2) = qbr(2) + hi*qb(2,I)
+                    qbr(3) = qbr(3) + hi*qb(3,I)
+                    qbr(4) = qbr(4) + hi*qb(4,I)
+                    pbr    = pbr    + hi*pbprime_df(I)
+                end do
+            else
+                qbr(:) = qbl(:)
+                pbr = pbl
+
+                if (er == -4) then
+                    un = nxl*qbl(3) + nyl*qbl(4)
+                    qbr(3) = qbl(3) - 2.0*un*nxl
+                    qbr(4) = qbl(4) - 2.0*un*nyl
+                else if (er == -2) then
+                    qbr(3:4) = -qbl(3:4)
+                end if
+            end if
+
+            pU_L = nxl*qbl(3) + nyl*qbl(4)
+            pU_R = nxr*qbr(3) + nyr*qbr(4)
+
+            c_minus = sqrt(alpha_mlswe(nlayers) * pbr)
+            c_plus  = sqrt(alpha_mlswe(nlayers) * pbl)
+            clam    = max(c_minus, c_plus)
+
+            pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam) * (pU_L + pU_R)
+            one_eta     = 1.0 + (pbpert_edge/pbl)
+
+            ul = qbl(3)/qbl(1); ur = qbr(3)/qbr(1)
+            vl = qbl(4)/qbl(1); vr = qbr(4)/qbr(1)
+
+            Qu_ql(1) = ul*qbl(3); Qu_ql(2) = vl*qbl(3)
+            Qu_qr(1) = ur*qbr(3); Qu_qr(2) = vr*qbr(3)
+
+            Qv_ql(1) = ul*qbl(4); Qv_ql(2) = vl*qbl(4)
+            Qv_qr(1) = ur*qbr(4); Qv_qr(2) = vr*qbr(4)
+
+            pprime_l(:) = 0.0; pprime_r(:) = 0.0
+            H_bcl_ql = 0.0; H_bcl_qr = 0.0
+
+            do k = 1, nlayers
                 ppl = 0.0; upl = 0.0; vpl = 0.0
                 ppr = 0.0; upr = 0.0; vpr = 0.0
 
-                ! left trace
                 do n = 1, ngl
                     il = imapl(1,n,1,iface); jl = imapl(2,n,1,iface); kl = imapl(3,n,1,iface)
                     I  = intma(il,jl,kl,el)
-
                     hi = psiq(n,iquad)
-                    qbl(1) = qbl(1) + hi*qb(1,I)
-                    qbl(2) = qbl(2) + hi*qb(2,I)
-                    qbl(3) = qbl(3) + hi*qb(3,I)
-                    qbl(4) = qbl(4) + hi*qb(4,I)
-                    pbl    = pbl    + hi*pbprime_df(I)
 
-                    do k = 1, nlayers
-                        ppl(k) = ppl(k) + hi*qprime_df(1,I,k)
-                        upl(k) = upl(k) + hi*qprime_df(2,I,k)
-                        vpl(k) = vpl(k) + hi*qprime_df(3,I,k)
-                    end do
+                    ppl = ppl + hi*qprime_df(1,I,k)
+                    upl = upl + hi*qprime_df(2,I,k)
+                    vpl = vpl + hi*qprime_df(3,I,k)
                 end do
 
-                ! right trace / BC
                 if (er > 0) then
                     do n = 1, ngl
                         ir = imapr(1,n,1,iface); jr = imapr(2,n,1,iface); kr = imapr(3,n,1,iface)
                         I  = intma(ir,jr,kr,er)
-
                         hi = psiq(n,iquad)
-                        qbr(1) = qbr(1) + hi*qb(1,I)
-                        qbr(2) = qbr(2) + hi*qb(2,I)
-                        qbr(3) = qbr(3) + hi*qb(3,I)
-                        qbr(4) = qbr(4) + hi*qb(4,I)
-                        pbr    = pbr    + hi*pbprime_df(I)
 
-                        do k = 1, nlayers
-                            ppr(k) = ppr(k) + hi*qprime_df(1,I,k)
-                            upr(k) = upr(k) + hi*qprime_df(2,I,k)
-                            vpr(k) = vpr(k) + hi*qprime_df(3,I,k)
-                        end do
+                        ppr = ppr + hi*qprime_df(1,I,k)
+                        upr = upr + hi*qprime_df(2,I,k)
+                        vpr = vpr + hi*qprime_df(3,I,k)
                     end do
                 else
-                    qbr(:) = qbl(:) ; pbr = pbl
                     ppr = ppl; upr = upl; vpr = vpl
-
-                    if (er == -4) then
-                        un = nxl*qbl(3) + nyl*qbl(4)
-                        qbr(3) = qbl(3) - 2.0*un*nxl
-                        qbr(4) = qbl(4) - 2.0*un*nyl
-
-                        do k = 1, nlayers
-                            un = nxl*upl(k) + nyl*vpl(k)
-                            upr(k) = upl(k) - 2.0*un*nxl
-                            vpr(k) = vpl(k) - 2.0*un*nyl
-                        end do
-                    else if (er == -2) then
-                        qbr(3:4) = -qbl(3:4)
-                        upr = -upl
-                        vpr = -vpl
-                    end if
                 end if
 
-                pU_L = nxl*qbl(3) + nyl*qbl(4)
-                pU_R = nxr*qbr(3) + nyr*qbr(4)
+                if (er == -4) then
+                    un  = nxl*upl + nyl*vpl
+                    upr = upl - 2.0*un*nxl
+                    vpr = vpl - 2.0*un*nyl
+                else if (er == -2) then
+                    upr = -upl
+                    vpr = -vpl
+                end if
 
-                c_minus = sqrt(alpha_mlswe(nlayers) * pbr)
-                c_plus  = sqrt(alpha_mlswe(nlayers) * pbl)
-                clam    = max(c_minus, c_plus)
+                Qu_ql(1) = Qu_ql(1) + upl*(upl*(one_eta*ppl))
+                Qu_ql(2) = Qu_ql(2) + vpl*(upl*(one_eta*ppl))
+                Qu_qr(1) = Qu_qr(1) + upr*(upr*(one_eta*ppr))
+                Qu_qr(2) = Qu_qr(2) + vpr*(upr*(one_eta*ppr))
 
-                pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam) * (pU_L + pU_R)
-                one_eta     = 1.0 + (pbpert_edge/pbl)
+                Qv_ql(1) = Qv_ql(1) + upl*(vpl*(one_eta*ppl))
+                Qv_ql(2) = Qv_ql(2) + vpl*(vpl*(one_eta*ppl))
+                Qv_qr(1) = Qv_qr(1) + upr*(vpr*(one_eta*ppr))
+                Qv_qr(2) = Qv_qr(2) + vpr*(vpr*(one_eta*ppr))
 
-                ul = qbl(3)/qbl(1); ur = qbr(3)/qbr(1)
-                vl = qbl(4)/qbl(1); vr = qbr(4)/qbr(1)
+                pprime_l(k+1) = pprime_l(k) + ppl
+                pprime_r(k+1) = pprime_r(k) + ppr
 
-                Qu_ql(1) = ul*qbl(3); Qu_ql(2) = vl*qbl(3)
-                Qu_qr(1) = ur*qbr(3); Qu_qr(2) = vr*qbr(3)
+                H_bcl_ql = H_bcl_ql + 0.5*alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
+                H_bcl_qr = H_bcl_qr + 0.5*alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
+            end do
 
-                Qv_ql(1) = ul*qbl(4); Qv_ql(2) = vl*qbl(4)
-                Qv_qr(1) = ur*qbr(4); Qv_qr(2) = vr*qbr(4)
+            H_bcl_q = 0.5*(H_bcl_ql + H_bcl_qr)
 
-                pprime_l(:) = 0.0; pprime_r(:) = 0.0
-                H_bcl_ql = 0.0; H_bcl_qr = 0.0
+            flux_edge_x   = 0.5*(qbl(3) + qbr(3)) + (0.5*clam)*(nxl*qbl(2) + nxr*qbr(2))
+            flux_edge_y   = 0.5*(qbl(4) + qbr(4)) + (0.5*clam)*(nyl*qbl(2) + nyr*qbr(2))
+            flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y
 
-                do k = 1, nlayers
+            H_bcl_q = (one_eta**2) * H_bcl_q
 
-                    Qu_ql(1) = Qu_ql(1) + upl(k)*(upl(k)*(one_eta*ppl(k)))
-                    Qu_ql(2) = Qu_ql(2) + vpl(k)*(upl(k)*(one_eta*ppl(k)))
-                    Qu_qr(1) = Qu_qr(1) + upr(k)*(upr(k)*(one_eta*ppr(k)))
-                    Qu_qr(2) = Qu_qr(2) + vpr(k)*(upr(k)*(one_eta*ppr(k)))
+            btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+            btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
 
-                    Qv_ql(1) = Qv_ql(1) + upl(k)*(vpl(k)*(one_eta*ppl(k)))
-                    Qv_ql(2) = Qv_ql(2) + vpl(k)*(vpl(k)*(one_eta*ppl(k)))
-                    Qv_qr(1) = Qv_qr(1) + upr(k)*(vpr(k)*(one_eta*ppr(k)))
-                    Qv_qr(2) = Qv_qr(2) + vpr(k)*(vpr(k)*(one_eta*ppr(k)))
+            H_face_ave(iquad,iface)        = H_face_ave(iquad,iface) + H_bcl_q
+            Qu_face_ave(1,iquad,iface)     = Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1) + Qu_qr(1))
+            Qu_face_ave(2,iquad,iface)     = Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql(2) + Qu_qr(2))
+            Qv_face_ave(1,iquad,iface)     = Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql(1) + Qv_qr(1))
+            Qv_face_ave(2,iquad,iface)     = Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql(2) + Qv_qr(2))
+            ope_face_ave(1,iquad,iface)    = ope_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))
+            ope_face_ave(2,iquad,iface)    = ope_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))
+            ope2_face_ave(1,iquad,iface)   = ope2_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))**2
+            ope2_face_ave(2,iquad,iface)   = ope2_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))**2
+            one_plus_eta_edge_2_ave(iquad,iface) = one_plus_eta_edge_2_ave(iquad,iface) + one_eta**2
 
-                    pprime_l(k+1) = pprime_l(k) + ppl(k)
-                    pprime_r(k+1) = pprime_r(k) + ppr(k)
+            uvb_face_ave(1,1,iquad,iface) = uvb_face_ave(1,1,iquad,iface) + ul
+            uvb_face_ave(1,2,iquad,iface) = uvb_face_ave(1,2,iquad,iface) + ur
+            uvb_face_ave(2,1,iquad,iface) = uvb_face_ave(2,1,iquad,iface) + vl
+            uvb_face_ave(2,2,iquad,iface) = uvb_face_ave(2,2,iquad,iface) + vr
 
-                    H_bcl_ql = H_bcl_ql + 0.5*alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
-                    H_bcl_qr = H_bcl_qr + 0.5*alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
-                end do
+            Qu_ql(1) = Qu_ql(1) + (one_eta**2)*H_bcl_ql
+            Qu_qr(1) = Qu_qr(1) + (one_eta**2)*H_bcl_qr
+            fxl = nxl*Qu_ql(1) + nyl*Qu_ql(2)
+            fxr = nxr*Qu_qr(1) + nyr*Qu_qr(2)
+            flux(2,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(3) - qbl(3))
 
-                H_bcl_q = 0.5*(H_bcl_ql + H_bcl_qr)
+            Qv_ql(2) = Qv_ql(2) + (one_eta**2)*H_bcl_ql
+            Qv_qr(2) = Qv_qr(2) + (one_eta**2)*H_bcl_qr
+            fxl = nxl*Qv_ql(1) + nyl*Qv_ql(2)
+            fxr = nxr*Qv_qr(1) + nyr*Qv_qr(2)
+            flux(3,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(4) - qbl(4))
 
-                flux_edge_x   = 0.5*(qbl(3) + qbr(3)) + (0.5*clam)*(nxl*qbl(2) + nxr*qbr(2))
-                flux_edge_y   = 0.5*(qbl(4) + qbr(4)) + (0.5*clam)*(nyl*qbl(2) + nyr*qbr(2))
-                flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y
+            !------------------------------------------------------------
+            ! 2) Update rhs (race if faces share I!)
+            !------------------------------------------------------------
 
-                H_bcl_q = (one_eta**2) * H_bcl_q
+            wq = jac_faceq(iquad,1,iface)
 
-                btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
-                btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
+            flux_pb = flux(1,iquad)
+            flux_u  = flux(2,iquad)
+            flux_v  = flux(3,iquad)
 
-                H_face_ave(iquad,iface)        = H_face_ave(iquad,iface) + H_bcl_q
-                Qu_face_ave(1,iquad,iface)     = Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1) + Qu_qr(1))
-                Qu_face_ave(2,iquad,iface)     = Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql(2) + Qu_qr(2))
-                Qv_face_ave(1,iquad,iface)     = Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql(1) + Qv_qr(1))
-                Qv_face_ave(2,iquad,iface)     = Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql(2) + Qv_qr(2))
-                ope_face_ave(1,iquad,iface)    = ope_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))
-                ope_face_ave(2,iquad,iface)    = ope_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))
-                ope2_face_ave(1,iquad,iface)   = ope2_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))**2
-                ope2_face_ave(2,iquad,iface)   = ope2_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))**2
-                one_plus_eta_edge_2_ave(iquad,iface) = one_plus_eta_edge_2_ave(iquad,iface) + one_eta**2
+            do n = 1, ngl
+                hi = psiq(n,iquad)
+                il = imapl(1,n,1,iface); jl = imapl(2,n,1,iface); kl = imapl(3,n,1,iface)
+                I  = intma(il,jl,kl,el)
 
-                uvb_face_ave(1,1,iquad,iface) = uvb_face_ave(1,1,iquad,iface) + ul
-                uvb_face_ave(1,2,iquad,iface) = uvb_face_ave(1,2,iquad,iface) + ur
-                uvb_face_ave(2,1,iquad,iface) = uvb_face_ave(2,1,iquad,iface) + vl
-                uvb_face_ave(2,2,iquad,iface) = uvb_face_ave(2,2,iquad,iface) + vr
+                rhs(1,I) = rhs(1,I) - wq*hi*flux_pb
+                rhs(2,I) = rhs(2,I) - wq*hi*flux_u
+                rhs(3,I) = rhs(3,I) - wq*hi*flux_v
+            end do
 
-                Qu_ql(1) = Qu_ql(1) + (one_eta**2)*H_bcl_ql
-                Qu_qr(1) = Qu_qr(1) + (one_eta**2)*H_bcl_qr
-                fxl = nxl*Qu_ql(1) + nyl*Qu_ql(2)
-                fxr = nxr*Qu_qr(1) + nyr*Qu_qr(2)
-                flux(2,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(3) - qbl(3))
-
-                Qv_ql(2) = Qv_ql(2) + (one_eta**2)*H_bcl_ql
-                Qv_qr(2) = Qv_qr(2) + (one_eta**2)*H_bcl_qr
-                fxl = nxl*Qv_ql(1) + nyl*Qv_ql(2)
-                fxr = nxr*Qv_qr(1) + nyr*Qv_qr(2)
-                flux(3,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(4) - qbl(4))
-            ! enddo
-
-            ! Update rhs
-
-            ! do iquad = 1, nq
-                wq = jac_faceq(iquad,1,iface)
-
-                flux_pb = flux(1,iquad)
-                flux_u  = flux(2,iquad)
-                flux_v  = flux(3,iquad)
-
+            if (er > 0) then
                 do n = 1, ngl
                     hi = psiq(n,iquad)
-                    il = imapl(1,n,1,iface); jl = imapl(2,n,1,iface); kl = imapl(3,n,1,iface)
-                    I  = intma(il,jl,kl,el)
+                    ir = imapr(1,n,1,iface); jr = imapr(2,n,1,iface); kr = imapr(3,n,1,iface)
+                    I  = intma(ir,jr,kr,er)
 
-                    rhs(1,I) = rhs(1,I) - wq*hi*flux_pb
-                    rhs(2,I) = rhs(2,I) - wq*hi*flux_u
-                    rhs(3,I) = rhs(3,I) - wq*hi*flux_v
+                    rhs(1,I) = rhs(1,I) + wq*hi*flux_pb
+                    rhs(2,I) = rhs(2,I) + wq*hi*flux_u
+                    rhs(3,I) = rhs(3,I) + wq*hi*flux_v
                 end do
-
-                if (er > 0) then
-                    do n = 1, ngl
-                        hi = psiq(n,iquad)
-                        ir = imapr(1,n,1,iface); jr = imapr(2,n,1,iface); kr = imapr(3,n,1,iface)
-                        I  = intma(ir,jr,kr,er)
-
-                        rhs(1,I) = rhs(1,I) + wq*hi*flux_pb
-                        rhs(2,I) = rhs(2,I) + wq*hi*flux_u
-                        rhs(3,I) = rhs(3,I) + wq*hi*flux_v
-                    end do
-                end if
-            end do
+            end if
 
         end do
 
