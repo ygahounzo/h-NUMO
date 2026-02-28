@@ -3,8 +3,8 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-h-NUMO
-==================================
+h-NUMO: A high-performance discontinuous-Galerkin code for hydrostatic ocean modelling
+=======================================================================================
 
 **h-NUMO** is an isopycnal ocean circulation model developed  in the Galerkin Numerical Modeling Environment(GNuME) framework (Giraldo, 2016). The GNuME framework uses an arbitrary polynomial basis function expansion and offers a choice of continuous Galerkin (CG) and discontinuous Galerkin (DG) methods Abdi and Giraldo (2016). The framework was previously used to construct the Non-Hydrostatic Unified Model of the Ocean Kopera et al. (2023). The h-NUMO model use arbitrary number of layers. We are thankful to Prof. Robert L. Higdon for sharing his 2D code, which h-NUMO is based on.
 
