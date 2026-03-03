@@ -159,17 +159,3 @@
   abstract = {The separation of fast (barotropic) and slow (baroclinic) motions into subsystems through barotropic-baroclinic splitting has been widely adopted in layered ocean circulation models. To date, the majority of models use finite difference or finite volume methods alongside this splitting technique. In this paper, we present an extension of the work in Higdon (2015) to two horizontal dimensions using an arbitrary high-order, nodal discontinuous Galerkin (DG) method for the resulting split subsystems to develop an ocean model. We carry out numerical tests to demonstrate the performance of the proposed schemes, and the numerical results of the double-gyre test are compared with those of the HYbrid Coordinate Ocean Model (HYCOM). The parallel performance shows that the new model has a larger per-degree-of-freedom computational cost compared to HYCOM, but achieves the same result in terms of resolved kinetic energy in an order of magnitude faster time, with fewer computational resources, and maintains good parallel efficiency even with very few grid elements per computational core.}
 }
 
-@article{higdon2015multiple,
-  title = {Multiple time scales and pressure forcing in discontinuous {Galerkin} approximations to layered ocean models},
-  journal = {Journal of Computational Physics},
-  volume = {295},
-  pages = {230-260},
-  year = {2015},
-  issn = {0021-9991},
-  doi = {10.1016/j.jcp.2015.04.010},
-  url = {https://www.sciencedirect.com/science/article/pii/S0021999115002569},
-  author = {Robert L. Higdon},
-  keywords = {Ocean modeling, Multi-layer ocean models, Discontinuous Galerkin, Barotropic–baroclinic splitting, Geostrophic adjustment},
-  abstract = {This paper addresses some issues involving the application of discontinuous Galerkin (DG) methods to ocean circulation models having a generalized vertical coordinate. These issues include the following. (1) Determine the pressure forcing at cell edges, where the dependent variables can be discontinuous. In principle, this could be accomplished by solving a Riemann problem for the full system, but some ideas related to barotropic–baroclinic time splitting can be used to reduce the Riemann problem to a much simpler system of lower dimension. Such splittings were originally developed in order to address the multiple time scales that are present in the system. (2) Adapt the general idea of barotropic–baroclinic splitting to a DG implementation. A significant step is enforcing consistency between the numerical solution of the layer equations and the numerical solution of the vertically-integrated barotropic equations. The method used here has the effect of introducing a type of time filtering into the forcing for the layer equations, which are solved with a long time step. (3) Test these ideas in a model problem involving geostrophic adjustment in a multi-layer fluid. In certain situations, the DG formulation can give significantly better results than those obtained with a standard finite difference formulation.}
-}
-
