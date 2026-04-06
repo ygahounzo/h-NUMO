@@ -18,7 +18,7 @@ module mod_splitting
         
     implicit none
 
-    public :: thickness, momentum, momentum_mass
+    public :: thickness, momentum, momentum_mass, create_rhs_bcl
     
     contains
 
@@ -33,12 +33,13 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ========================================================================================
 
-        use mod_input, only: nlayers, dt
+        use mod_input, only: nlayers, dt, dry_cutoff
         use mod_grid, only: npoin, npoin_q, nface
         use mod_basis, only: nq, ngl
         use mod_initial, only: pbprime_df, alpha_mlswe
         use mod_layer_terms, only: extract_dprime_df_face
         use mod_create_rhs_mlswe, only: layer_mass_rhs
+        use mod_constants, only: gravity
 
         implicit none
     
@@ -49,7 +50,7 @@ module mod_splitting
     
         ! Other variables
         real :: one_plus_eta_temp(npoin), dp_advec(npoin,nlayers)
-        integer :: k
+        integer :: k, I
 
         ! =========================================== layer mass =================================
     
@@ -67,7 +68,13 @@ module mod_splitting
         
         do k = 1, nlayers
 
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
+            do I = 1, npoin
+                q_df(1,I,k) = q_df(1,I,k) + dt*dp_advec(I,k)
+
+                if (q_df(1,I,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    q_df(1,I,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                end if
+            end do
 
             ! Check for negative layer thicknesses.  If any are found, stop the program.
             ! if(any(q_df(1, :, k) < 0.0)) then
@@ -100,6 +107,7 @@ module mod_splitting
         use mod_layer_terms, only: layer_mom_boundary_df, &
                                     velocity_df, extract_velocity
         use mod_metrics, only: massinv
+        use mod_initial_mlswe, only: poslimiter
 
         implicit none
 
@@ -167,6 +175,8 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df)
 
+        call poslimiter(q_df, alpha_mlswe)
+
         ! Compute dpprime, uprime and vprime at the nodal points
         call extract_velocity(uv_df, q_df, qb_df)
 
@@ -174,6 +184,8 @@ module mod_splitting
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
+
+        call poslimiter(q_df, alpha_mlswe)
 
     end subroutine momentum
 
@@ -193,12 +205,13 @@ module mod_splitting
         use mod_layer_terms, only: layer_mom_boundary_df, &
                                     velocity_df, extract_qprime_df_face,extract_velocity
         use mod_metrics, only: massinv
+        use mod_initial_mlswe, only: poslimiter
 
         implicit none
 
         ! Input variables
         real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
+        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
         real, dimension(4,npoin), intent(in) :: qb_df
 
         ! Local variables
@@ -267,6 +280,8 @@ module mod_splitting
 
         call layer_mom_boundary_df(q_df)
 
+        call poslimiter(q_df, alpha_mlswe)
+
         ! Compute dpprime, uprime and vprime at the quad and nodal points
         call extract_velocity(uv_df, q_df, qb_df)
 
@@ -275,7 +290,9 @@ module mod_splitting
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
 
-        call extract_qprime_df_face(qprime_df, q_df, qb_df)
+        call poslimiter(q_df, alpha_mlswe)
+
+        ! call extract_qprime_df_face(qprime_df, q_df, qb_df)
 
     end subroutine momentum_mass
 

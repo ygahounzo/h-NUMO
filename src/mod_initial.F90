@@ -24,6 +24,7 @@ module mod_initial
         wind_stress_coriolis, ssprk_coefficients
     
     use mod_Tensorproduct, only: compute_gradient_quad, compute_gradient_df
+    use mod_variables, only: zbot_df_init
 
     public :: &
         mod_initial_create, &
@@ -145,6 +146,8 @@ module mod_initial
             call initial_conditions(q_df_mlswe_init, pbprime_df, &
                 qb_df_mlswe_init, alpha_mlswe, pbprime_df_face, &
                 zbot_df,tau_wind_df, z_interface)
+
+            zbot_df_init = zbot_df
                 
             call bot_topo_derivatives(zbot,zbot_face,zbot_df)
 

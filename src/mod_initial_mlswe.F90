@@ -298,18 +298,22 @@ module mod_initial_mlswe
         use mod_input, only: gravity_in, &
             nelx, nelz, &
             xdims, ydims, nlayers, dry_cutoff
+        use mod_variables, only: zbot_df_init
 
         implicit none
 
         !global arrays
-        real, dimension(3,npoin,nlayers) :: q
-        real, dimension(nlayers) :: alpha
+        real, dimension(3,npoin,nlayers), intent(inout) :: q
+        real, dimension(nlayers), intent(in) :: alpha
 
+        real :: h(npoin,nlayers), z(npoin,nlayers+1)
         real :: pmin, pavg, uavg, vavg, ds
-        real :: theta
+        real :: theta, eps
 
         !local filter arrays
         integer :: I, k, n, m, e
+
+        eps = 1.0e-10
 
         !loop thru the elements
 
@@ -317,30 +321,24 @@ module mod_initial_mlswe
 
             do e = 1,nelem
 
-                pmin = 1.0e20
+                pmin = 1.0e40
                 pavg = 0.0
                 uavg = 0.0
                 vavg = 0.0
-                ds = 0.0
                 do m = 1, ngly
                     do n = 1, nglx
                         I = intma(n,m,1,e)
                         if (q(1,I,k) < pmin) pmin = q(1,I,k)
-                        ds = ds + jac(n,m,1,e)
-                        ! pavg = pavg + jac(n,m,1,e)*q(1,I,k)
-                        ! uavg = uavg + jac(n,m,1,e)*q(2,I,k)
-                        ! vavg = vavg + jac(n,m,1,e)*q(3,I,k)
-                        pavg = pavg + wglx(n)*wgly(m)*q(1,I,k)
-                        uavg = uavg + wglx(n)*wgly(m)*q(2,I,k)
-                        vavg = vavg + wglx(n)*wgly(m)*q(3,I,k)
+                        
+                        pavg = pavg + q(1,I,k)
+                        uavg = uavg + q(2,I,k)
+                        vavg = vavg + q(3,I,k)
+
                     end do
                 end do
-                ! pavg = pavg / ds
-                ! uavg = uavg / ds
-                ! vavg = vavg / ds
-                pavg = pavg / 4.0
-                uavg = uavg / 4.0
-                vavg = vavg / 4.0
+                pavg = pavg / npts
+                uavg = uavg / npts
+                vavg = vavg / npts
 
                 !This is basically cheating but as it hurts conservation but
                 !it doesn't affect the solution too much, since integration is inexact anyway
@@ -354,7 +352,8 @@ module mod_initial_mlswe
                         end do
                     end do
                 else if (pmin <= (gravity/alpha(k)) * dry_cutoff) then
-                    theta = safe_div(pavg, pavg-pmin, 0.0)
+                    ! theta = safe_div(pavg, pavg-pmin, 0.0)
+                    theta = min(1.0, pavg / (abs(pavg - pmin) + eps))
                     do m=1,ngly
                         do n=1,nglx
                             I = intma(n,m,1,e)
@@ -366,18 +365,44 @@ module mod_initial_mlswe
                 end if
                 
                 !perform stabilization by resetting the velocity to 0 if below the threshold
-                do m=1,ngly
-                    do n=1,nglx
-                        I = intma(n,m,1,e)
-                        if (q(1,I,k) <= (gravity/alpha(k)) * dry_cutoff) then
-                            q(1,I,k) = (gravity/alpha(k)) * dry_cutoff
-                            q(2,I,k) = 0.0
-                            q(3,I,k) = 0.0
-                        end if
-                    end do !n
-                end do !m
+                ! do m=1,ngly
+                !     do n=1,nglx
+                !         I = intma(n,m,1,e)
+                !         if (q(1,I,k) <= (gravity/alpha(k)) * dry_cutoff) then
+                !             q(1,I,k) = (gravity/alpha(k)) * dry_cutoff
+                !             q(2,I,k) = 0.0
+                !             q(3,I,k) = 0.0
+                !         end if
+                !     end do !n
+                ! end do !m
             end do !e
         end do !k
+
+        ! do k = 1,nlayers
+        !     h(:,k) = (alpha(k)/gravity)*q(1,:,k)
+        ! end do
+
+        z(:,nlayers+1) = zbot_df_init(:)
+        do k = nlayers,1,-1
+            z(:,k) = z(:,k+1) + (alpha(k)/gravity)*q(1,:,k)
+        end do
+
+        ! Making sure the layer interface is not beyond the bottom depth
+        do I = 1,npoin
+            do k = 1, nlayers+1
+                z(I,k) = max(zbot_df_init(I), z(I,k))
+            end do
+        end do 
+
+        do I = 1,npoin
+            do k = nlayers, 1, -1
+                z(I,k) = max(z(I,k), z(I,k+1) + dry_cutoff)
+            end do
+        end do
+
+        do k = 1,nlayers
+            q(1,:,k) = (gravity/alpha(k))*(z(:,k) - z(:,k+1))
+        end do
 
         !print *, 'limiting succesfull !'
 

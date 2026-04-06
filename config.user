@@ -50,6 +50,17 @@ hnumo-prof:
 	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib  -L/usr/lib -lp4est -lsc -llapack -lblas -lz" \
 	"AR=ar rv"
 
+hnumo-acc:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90" \
+	"LD=mpif90" \
+	"CC=mpicc" \
+	"FFLAGS=-O2 -acc -Minfo=accel -gpu=cc70 -fdefault-real-8 -Mfree -Mextend" \
+	"CFLAGS=-O2 -acc -Minfo=accel -gpu=cc70 -std=c99 -I${NUMO_P4EST_DIR}/local/include" \
+	"INCLUDE= -I${NETCDF_DIR}/include -I${NUMO_P4EST_DIR}/include -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NETCDF_DIR}/lib64 -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lnetcdff -lp4est -lsc -lz" \
+	"AR=ar rv"
+
 #--------------------------------------------------------------------------------
 # This is used to compile the code on GitHub servers for continuous integration
 #--------------------------------------------------------------------------------

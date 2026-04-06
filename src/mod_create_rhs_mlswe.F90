@@ -331,16 +331,16 @@ module mod_create_rhs_mlswe
                                                          ! at which bottom stress is reduced to 0
 
         ! Find layer interfaces
-        z_elv(:,nlayers+1) = zbot_df(:)
-        do k = nlayers,1,-1
-            z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
-                                        (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
-        end do
+        ! z_elv(:,nlayers+1) = zbot_df(:)
+        ! do k = nlayers,1,-1
+        !     z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
+        !                                 (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
+        ! end do
 
-        do concurrent (Iq = 1:npoin_q)
+        do Iq = 1, npoin_q
 
             ! init
-            p_tmp(1)      = 0.0
+            p_tmp(1) = 0.0
 
             qb(1) = ope_ave(Iq)
             qb(2) = uvb_ave(1,Iq)
@@ -358,17 +358,24 @@ module mod_create_rhs_mlswe
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
                 end do
 
-                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
-                H_tmp(k)   = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
-
                 dp = qp(1) * qb(1)
                 u  = qp(2) + qb(2)
                 v  = qp(3) + qb(3)
 
-                u_udp(k)    = dp * u*u
-                v_vdp(k)    = dp * v*v
-                u_vdp(1,k)  = u*v*dp
-                u_vdp(2,k)  = v*u*dp
+                if (qp(1) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    qp(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dp = qp(1) * qb(1)
+                    u = 0.0
+                    v = 0.0
+                end if
+
+                u_udp(k)    = u*(u*dp)
+                v_vdp(k)    = v*(v*dp)
+                u_vdp(1,k)  = v*(u*dp)
+                u_vdp(2,k)  = u*(v*dp)
+
+                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
+                H_tmp(k)   = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
 
                 temp_uu(k)  = abs(dp*u) + eps1
                 temp_vv(k)  = abs(dp*v) + eps1
@@ -389,17 +396,12 @@ module mod_create_rhs_mlswe
 
                     gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z(k)
                     gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z(k)
+
+                    ! if (abs(z(k) - z(k+1)) <= dry_cutoff) then
+                    !     gradz(1,k) = 0.0
+                    !     gradz(2,k) = 0.0
+                    ! end if
                 enddo 
-
-                ! do k = 1, nlayers
-                !     gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z_tmp(k)
-                !     gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z_tmp(k)
-                ! end do
-
-                ! do k = 1, nlayers
-                !     gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z_elv(I,k)
-                !     gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z_elv(I,k)
-                ! end do
 
                 gradz(1,nlayers+1) = grad_zbot_quad(1,Iq)
                 gradz(2,nlayers+1) = grad_zbot_quad(2,Iq)
@@ -496,7 +498,7 @@ module mod_create_rhs_mlswe
         real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,nlayers+1)
         real :: z_elv(npoin,nlayers+1)
         real, parameter :: eps1 = 1.0e-10 !  Parameter used to prevent division by zero.
-        real :: flux(3,3)
+        real :: flux(3,3), cst_dp(nlayers)
 
         rhs = 0.0
         bot_layer = 0.0
@@ -508,20 +510,14 @@ module mod_create_rhs_mlswe
         Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth 
                                                          ! at which bottom stress is reduced to 0
 
-        ! Find layer interfaces
-        ! z_elv(:,nlayers+1) = zbot_df(:)
-        ! do k = nlayers,1,-1
-        !     z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
-        !                                 (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
-        ! end do
-
-        do concurrent (Iq = 1:npoin_q)
+        do Iq = 1, npoin_q
 
             qb(1) = ope_ave(Iq)
             qb(2) = uvb_ave(1,Iq)
             qb(3) = uvb_ave(2,Iq)
 
-            p_tmp(1)     = 0.0
+            p_tmp(1) = 0.0
+            cst_dp(:) = 1.0
 
             ! ---- build layer quantities ----
             do k = 1, nlayers
@@ -535,12 +531,17 @@ module mod_create_rhs_mlswe
                     qp(3) = qp(3) + hi * qprime_df(3, I, k)   ! (3)=v'
                 end do
 
-                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
-                H_tmp(k)   = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
-
                 dp(k) = qp(1) * qb(1)
                 u     = qp(2) + qb(2)
                 v     = qp(3) + qb(3)
+
+                if (qp(1) < (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    qp(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dp(k) = qp(1) * qb(1)
+                    u = 0.0
+                    v = 0.0
+                    cst_dp(k) = 0.0
+                end if
 
                 udp(k) = u * dp(k)
                 vdp(k) = v * dp(k)
@@ -551,8 +552,11 @@ module mod_create_rhs_mlswe
                 u_vdp(1,k) = v * udp(k)
                 u_vdp(2,k) = u * vdp(k)
 
-                temp_uu(k) = abs(udp(k)) + eps1
-                temp_vv(k) = abs(vdp(k)) + eps1
+                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
+                H_tmp(k)   = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
+
+                temp_uu(k) = abs(udp(k)) !+ eps1
+                temp_vv(k) = abs(vdp(k)) !+ eps1
 
             end do
 
@@ -568,11 +572,6 @@ module mod_create_rhs_mlswe
                     gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z(k)
                 end do
 
-                ! do k = 1, nlayers
-                !     gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z_elv(I,k)
-                !     gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z_elv(I,k)
-                ! end do
-
                 gradz(1,nlayers+1) = grad_zbot_quad(1,Iq)
                 gradz(2,nlayers+1) = grad_zbot_quad(2,Iq)
 
@@ -584,14 +583,17 @@ module mod_create_rhs_mlswe
             uv_dp_deficitq = Quv_ave(Iq) - sum(u_vdp(1,:))
             vv_dp_deficitq = Qv_ave(Iq)  - sum(v_vdp(:))
 
-            one_over_sumuq = 1.0 / sum(temp_uu(:))
-            one_over_sumvq = 1.0 / sum(temp_vv(:))
+            one_over_sumuq = 1.0 / sum(temp_uu(:) + eps1)
+            one_over_sumvq = 1.0 / sum(temp_vv(:) + eps1)
 
             wq = wjac(Iq)
 
             do k = 1, nlayers
 
+                
+
                 weightq  = temp_uu(k) * one_over_sumuq
+                
                 u_udp(k)  = u_udp(k)     + weightq * uu_dp_deficitq
                 u_vdp(1,k)= u_vdp(1,k)   + weightq * uv_dp_deficitq
 
@@ -606,8 +608,8 @@ module mod_create_rhs_mlswe
                 if (acceleration > 0.0) weight = H_ave(Iq) / acceleration
                 Hq = Hq * weight
 
-                flux(1,1) = udp(k) + (dp(k)/sum(dp(:))) * (btp_mass_flux_ave(1,Iq) - sum(udp(:)))
-                flux(2,1) = vdp(k) + (dp(k)/sum(dp(:))) * (btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
+                flux(1,1) = udp(k) + cst_dp(k) * (dp(k)/sum(dp(:))) * (btp_mass_flux_ave(1,Iq) - sum(udp(:)))
+                flux(2,1) = vdp(k) + cst_dp(k) * (dp(k)/sum(dp(:))) * (btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
 
                 flux(1,2) = u_udp(k) + Hq
                 flux(2,2) = u_vdp(1,k)
@@ -621,8 +623,8 @@ module mod_create_rhs_mlswe
                 tempbot = min(Pbstress, pbq - p_tmp(k+1)) - min(Pbstress, pbq - p_tmp(k))
                 tempbot = tempbot / Pbstress
 
-                source_x = gravity*( tau_wind_u - tempbot*tau_bot_ave(1,Iq) + p_tmp(k)*gradz(1,k)   - p_tmp(k+1)*gradz(1,k+1) )
-                source_y = gravity*( tau_wind_v - tempbot*tau_bot_ave(2,Iq) + p_tmp(k)*gradz(2,k)   - p_tmp(k+1)*gradz(2,k+1) )
+                source_x = gravity*( tau_wind_u - tempbot*tau_bot_ave(1,Iq) + p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1) )
+                source_y = gravity*( tau_wind_v - tempbot*tau_bot_ave(2,Iq) + p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1) )
 
                 do ip = 1, npts
                     I  = indexq(ip,Iq)
@@ -755,6 +757,20 @@ module mod_create_rhs_mlswe
                 ur = qr(2,k) + qbr(2,iquad)
                 vl = ql(3,k) + qbl(3,iquad)
                 vr = qr(3,k) + qbr(3,iquad)
+
+                if (ql(1,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    ql(1,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dpl = qbl(1,iquad) * ql(1,k)
+                    ul = 0.0
+                    vl = 0.0
+                end if
+
+                if (qr(1,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    qr(1,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dpr = qbr(1,iquad) * qr(1,k)
+                    ur = 0.0
+                    vr = 0.0
+                end if
 
                 uu = 0.5*(ul+ur)
                 vv = 0.5*(vl+vr)
@@ -1118,6 +1134,32 @@ module mod_create_rhs_mlswe
                 vl = ql(3,k) + qbl(3)
                 vr = qr(3,k) + qbr(3)
 
+                if (ql(1,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    ql(1,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dpl = qbl(1) * ql(1,k)
+                    ul = 0.0
+                    vl = 0.0
+                end if
+
+                if (qr(1,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    qr(1,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dpr = qbr(1) * qr(1,k)
+                    ur = 0.0
+                    vr = 0.0
+                end if
+
+                ! if ((ql(1,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff) .or. (qr(1,k) <= (gravity/alpha_mlswe(k)) * dry_cutoff)) then
+                !     ql(1,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                !     dpl = qbl(1) * ql(1,k)
+                !     ul = 0.0
+                !     vl = 0.0
+
+                !     qr(1,k) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                !     dpr = qbr(1) * qr(1,k)
+                !     ur = 0.0
+                !     vr = 0.0
+                ! end if
+
                 dp_lr(1,k) = dpl
                 dp_lr(2,k) = dpr
 
@@ -1431,6 +1473,14 @@ module mod_create_rhs_mlswe
                 udp(k)  = (qp(2) + qb(2)) * dp_temp
                 vdp(k)  = (qp(3) + qb(3)) * dp_temp
 
+                if (qp(1) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    qp(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dp_temp = qp(1) * qb(1)
+                    dpp(k)  = dp_temp
+                    udp(k)  = 0.0
+                    vdp(k)  = 0.0
+                end if
+
             end do
 
             ! 2) Precompute sums once
@@ -1542,6 +1592,36 @@ module mod_create_rhs_mlswe
                 ur = qr(2) + qbr(2,iquad)
                 vl = ql(3) + qbl(3,iquad)
                 vr = qr(3) + qbr(3,iquad)
+
+                if (ql(1) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    ql(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dpl = qbl(1,iquad) * ql(1)
+                    dp_lr(1,k) = dpl
+                    ul = 0.0
+                    vl = 0.0
+                end if
+
+                if (qr(1) <= (gravity/alpha_mlswe(k)) * dry_cutoff) then
+                    qr(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                    dpr = qbr(1,iquad) * qr(1)
+                    dp_lr(2,k) = dpr
+                    ur = 0.0
+                    vr = 0.0
+                end if
+
+                ! if ((ql(1) <= (gravity/alpha_mlswe(k)) * dry_cutoff) .or. (qr(1) <= (gravity/alpha_mlswe(k)) * dry_cutoff)) then
+                !     ql(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                !     dpl = qbl(1,iquad) * ql(1)
+                !     dp_lr(1,k) = dpl
+                !     ul = 0.0
+                !     vl = 0.0
+
+                !     qr(1) = (gravity/alpha_mlswe(k)) * dry_cutoff
+                !     dpr = qbr(1,iquad) * qr(1)
+                !     dp_lr(2,k) = dpr
+                !     ur = 0.0
+                !     vr = 0.0
+                ! end if
 
                 uu = 0.5*(ul + ur)
                 vv = 0.5*(vl + vr)

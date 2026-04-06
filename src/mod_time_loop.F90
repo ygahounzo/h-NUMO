@@ -205,7 +205,8 @@ contains
             !time1 = wtime()
             call cpu_time(time1)
 
-            call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe)
+            ! call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe)
+            call ti_rk3_bcl(q0_df_mlswe, qb0_df_mlswe)
 
             call cpu_time(time2)
 

@@ -2,7 +2,7 @@ module mod_variables
 
     ! This routine contains pre-allocation variable for barotropic equations terms 
 
-    use mod_grid, only: npoin_q, nface, npoin, face
+    use mod_grid, only: npoin_q, nface, npoin, face, nelem
     use mod_basis, only: nq, ngl
     use mod_input, only: nlayers
 
@@ -19,7 +19,8 @@ module mod_variables
 
     public :: sum_layer_mass_flux, sum_layer_mass_flux_face
         
-    public :: z_elevation
+    public :: z_interface_initial, z_init_flag, z_init_flag_elem, zbot_df_init
+    public :: frac_zdiff1, frac_zdiff2
 
     private 
     ! module variable and parameters 
@@ -45,6 +46,11 @@ module mod_variables
     ! bcl variables 
     real, dimension(:,:), allocatable :: sum_layer_mass_flux
     real, dimension(:,:,:), allocatable :: sum_layer_mass_flux_face
+
+    ! initial conditions variables
+    real, dimension(:,:), allocatable :: z_init_flag, z_interface_initial, z_init_flag_elem
+    real :: frac_zdiff1, frac_zdiff2
+    real, dimension(:), allocatable :: zbot_df_init
 
     contains
 
@@ -103,6 +109,16 @@ module mod_variables
         sum_layer_mass_flux_face(2,nq,nface), &
         stat=AllocateStatus)
     if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables" 
+
+    !======== initial conditions variables ========
+
+    if (allocated(z_init_flag)) then 
+        deallocate(z_init_flag, z_interface_initial, z_init_flag_elem, zbot_df_init)
+    endif
+
+    allocate(z_init_flag(npoin, nlayers), z_interface_initial(npoin, nlayers+1), &
+        z_init_flag_elem(nelem, nlayers), zbot_df_init(npoin), stat=AllocateStatus)
+    if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables"
         
     end subroutine mod_allocate_mlswe
 
