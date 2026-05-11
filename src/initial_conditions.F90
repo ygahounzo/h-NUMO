@@ -6,7 +6,7 @@
 
 subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, zbot_df, &
    tau_wind_df, z_interface)
-    
+
 
    use mod_grid, only: nelem, nface, npoin_q, npoin, coord, intma_dg_quad, face
    use mod_constants, only: gravity, pi, tol, omega, earth_radius
@@ -14,15 +14,15 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
    use mod_basis, only: ngl, nq
    use mod_initial, only: kvector
    use mod_input, only: gravity_in, &
-                        nelx, nelz, eqn_set, &
-                        xdims, ydims,nlayers, test_case
+      nelx, nelz, eqn_set, &
+      xdims, ydims,nlayers, test_case
    use mod_types, only : r8
    use mpi
    use mod_mpi_utilities, only: MPI_PRECISION
    use mod_face, only: imapl_q
 
    implicit none
-   
+
    real, dimension(3,npoin, nlayers) :: q_df
    real, dimension(npoin) :: pbprime_df
    real, dimension(2,ngl,nface) :: pbprime_df_face
@@ -43,7 +43,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
    real :: xmax, xmin, ymax, ymin, zmin, zmax, yl, xm
    real :: xmax_l, xmin_l, ymax_l, ymin_l, zmin_l, zmax_l, Ly
    real :: delta
-   
+
    xmin_l=minval(coord(1,:)); xmax_l=maxval(coord(1,:))
    ymin_l=minval(coord(2,:)); ymax_l=maxval(coord(2,:))
    zmin_l=minval(coord(3,:)); zmax_l=maxval(coord(3,:))
@@ -76,8 +76,8 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
    ! The motion is mostly internal.
 
    select case (trim(test_case))
-      
-   case ("bump") ! bump test (wave propagation)
+
+    case ("bump") ! bump test (wave propagation)
 
       gravity = 9.806
       H_bot = 40.0   ! total depth
@@ -112,7 +112,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       alpha(1) = 0.9737e-3
       alpha(2) = 0.9735e-3
 
-   case("lakeAtrest") ! lake at rest (well-balanced) test 
+    case("lakeAtrest") ! lake at rest (well-balanced) test
 
       gravity = 9.806
       H_bot = 40.0   ! total depth
@@ -124,7 +124,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       yl=0.5*(ydims(1)+ydims(2))
       L = 250.0
 
-      do I1 = 1,npoin 
+      do I1 = 1,npoin
 
          x = coord(1,I1)
          y = coord(2,I1)
@@ -133,7 +133,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
          if (r < L) then
             zbot_df(I1) = zbot_df(I1) + 3.0*(1.0 + cos(pi*r/L))
          end if
-      end do  
+      end do
 
       ! Layer interface
       do k = 1, nlayers+1
@@ -153,7 +153,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
          alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
       end do
 
-   case ("double-gyre") ! double-gyre 
+    case ("double-gyre") ! double-gyre
 
       gravity = 9.806
       H_bot = 9928.0  ! total depth
@@ -175,14 +175,14 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
          tau_wind_df(1,I1) = -0.1*cos(2.0*pi*y/Ly)
       end do
 
-   case ("dam") ! dam-break test
+    case ("dam") ! dam-break test
 
       gravity = 9.806
       H_bot = 3600.0 ! total depth
 
       ! Bottom topography
       do I1 = 1, npoin
-        
+
          x = coord(1,I1)/1.0e3
          y = coord(2,I1)/1.0e3
 
@@ -201,25 +201,25 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
 
          zbot_df(I1) = - zbot_df(I1)
       end do
-        
+
       do k = 2, nlayers
-        indep(k) = H_bot*(real(k-1)-0.5)/real(nlayers-1)
-        !print*, 'k = ', k, indep(k)
+         indep(k) = H_bot*(real(k-1)-0.5)/real(nlayers-1)
+         !print*, 'k = ', k, indep(k)
       enddo
 
       ! Layer interface
       do k = 1, nlayers
-        z_interface(:,k) = -indep(k)
+         z_interface(:,k) = -indep(k)
       enddo
       z_interface(:,nlayers+1) = zbot_df(:)
 
       do k = 1, nlayers
-          do I1 = 1,npoin
-             !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
-             !   z_interface(I1,k) = zbot_df(I1)
-             !endif
-             z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
-          end do
+         do I1 = 1,npoin
+            !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
+            !   z_interface(I1,k) = zbot_df(I1)
+            !endif
+            z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
+         end do
       end do
 
       do k = 2, nlayers
@@ -233,7 +233,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
             end if
 
          end do
-      end do 
+      end do
 
       ! Layer densities reciprocal (1/rho)
       rho_0 = 1027.01037
@@ -243,7 +243,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
          alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
       end do
 
-   case("seamount") ! lake at rest (well-balanced) test 
+    case("seamount") ! lake at rest (well-balanced) test
 
       gravity = 9.806
       H_bot = 4000.0   ! total depth
@@ -267,7 +267,7 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
 
       ! Layer interface
       do k = 1, nlayers+1
-          z_interface(:,k) = -(k-1)*H_bot/real(nlayers)
+         z_interface(:,k) = -(k-1)*H_bot/real(nlayers)
       end do
       z_interface(:,nlayers+1) = zbot_df(:)
 
@@ -278,11 +278,52 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       do k = 2,nlayers
          alpha(k) = 1.0/(rho_0 + k*0.2110/real(nlayers))
       end do
-   case default
+
+    case ("sl_double_gyre") ! double-gyre
+
+      gravity = 9.806
+      H_bot = 1000  ! total depth
+
+      ! Bottom topography (flat)
+      zbot_df(:) = - H_bot
+
+      ! Layer interface
+      z_interface(:,2) = -H_bot
+
+      ! Layer densities reciprocal (1/rho)
+      alpha(1) = 9.7370e-04
+
+      ! wind stress
+      do I1 = 1, npoin
+         y = coord(2,I1)
+         tau_wind_df(1,I1) = -0.1*cos(2.0*pi*y/Ly)
+      end do
+    case ("stommel") ! double-gyre
+
+      gravity = 10.0
+      H_bot = 1000  ! total depth
+
+      ! Bottom topography (flat)
+      zbot_df(:) = - H_bot
+
+      ! Layer interface
+      z_interface(:,2) = -500
+      z_interface(:,3) = - H_bot
+
+      ! Layer densities reciprocal (1/rho)
+      alpha(1) = 1.0e-3
+      alpha(2) = 9.9800e-04
+
+      ! wind stress
+      do I1 = 1, npoin
+         y = coord(2,I1)
+         tau_wind_df(1,I1) = -0.2*cos(2.0*pi*y/Ly)
+      end do
+    case default
       print*, "Unknown test case in cube initialization ", test_case
       stop
-      
-   end select 
+
+   end select
 
    ! Making sure the layer interface is not beyond the bottom depth
 
@@ -290,10 +331,10 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       do k = 1, nlayers+1
          !if(abs(z_interface(I1,k)) >= abs(zbot_df(I1))) then
          !    z_interface(I1,k) = zbot_df(I1)
-         !endif 
+         !endif
          z_interface(I1,k) = max(zbot_df(I1), z_interface(I1,k))
       end do
-   end do 
+   end do
 
    !print*, minval(zbot_df(:)), maxval(zbot_df(:))
    !do k = 1, nlayers+1
@@ -308,8 +349,8 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
       pbprime_df(:) = pbprime_df(:) + (gravity/alpha(k))*(z_interface(:,k) - z_interface(:,k+1))
    end do
 
-   ! Compute  p'_b  at the faces and quadrature points 
-   ! in each cell.  This is the value of  
+   ! Compute  p'_b  at the faces and quadrature points
+   ! in each cell.  This is the value of
    ! pb = vertical sum of  Delta p  over all layers
    ! at the reference state.
 
@@ -330,19 +371,19 @@ subroutine initial_conditions(q_df, pbprime_df, qb_df, alpha, pbprime_df_face, z
    ! === Barotropic variables ===
 
    qb_df = 0.0
-   
+
    ! Compute degrees of freedom for the barotropic mass and momentum
    ! dependent variables. These are the vertical sums of the
    ! degrees of freedom for the corresponding layer variables.
    ! Also compute degrees of freedom for pbpert = pb - pbprime_init.
-   
+
    do k = 1, nlayers
       qb_df(1,:) = qb_df(1,:) + q_df(1,:,k)
       qb_df(3,:) = qb_df(3,:) + q_df(2,:,k)
       qb_df(4,:) = qb_df(4,:) + q_df(3,:,k)
    end do
    qb_df(2,:) = qb_df(1,:) - pbprime_df(:)
-   
+
 end subroutine initial_conditions
 
 !--------------------------------------------------
@@ -350,17 +391,17 @@ end subroutine initial_conditions
 !--------------------------------------------------
 subroutine initial_grid_coord()
 
-    use mod_input, only: xdims, ydims, x_boundary, y_boundary, z_boundary
+   use mod_input, only: xdims, ydims, x_boundary, y_boundary, z_boundary
 
-    implicit none
-    
-    integer iboundary(6)
-    real :: xmin, xmax, ymin, ymax
+   implicit none
 
-    iboundary(1:2)=y_boundary(1:2)
-    iboundary(3:4)=x_boundary(1:2)
+   integer iboundary(6)
+   real :: xmin, xmax, ymin, ymax
 
-    xmin=xdims(1) ;  xmax=xdims(2)
-    ymin=ydims(1) ;  ymax=ydims(2)
+   iboundary(1:2)=y_boundary(1:2)
+   iboundary(3:4)=x_boundary(1:2)
+
+   xmin=xdims(1) ;  xmax=xdims(2)
+   ymin=ydims(1) ;  ymax=ydims(2)
 
 end subroutine initial_grid_coord

@@ -73,12 +73,14 @@ SOURCEF += create_normals_quad.F90
 SOURCEF += initial_conditions.F90
 SOURCEF += diagnostics.F90
 SOURCEF += diagnostics_nc.F90
+SOURCEF += diagnostics_btp_nc.F90
 SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90
 SOURCEF += mod_splitting.F90
 SOURCEF += mod_rhs_btp.F90
 SOURCEF += mod_create_rhs_mlswe.F90
 SOURCEF += ti_rk_bcl.F90
+SOURCEF += ti_rk_btp.F90
 #SOURCEF += mod_variables.F90
 SOURCEF += compute_conserved.F90
 

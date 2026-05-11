@@ -5,92 +5,92 @@
 !> Naval Postgraduate School
 !> Monterey, CA 93943-5216
 !>
-!>@ modified by Yao Gahounzo 
-!>      Computing PhD 
+!>@ modified by Yao Gahounzo
+!>      Computing PhD
 !       Boise State University
 !       Date: April 03, 2024
 !----------------------------------------------------------------------!
 module mod_input
 
    use mod_types, only : r8
- 
+
    use mod_utilities, only : get_unit, lowercase, uppercase
- 
+
    use iso_c_binding, only: C_INT32_T
- 
+
    implicit none
- 
+
    public :: namelist_input, &
-        mod_input_create, &
-        dt, dt0, dt1, dt2, &
-        restoring_time, &
-        lrestoring_sponge, &
-        time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,  &
-        test_case, &
-        ti_method_btp, & ! Added by YaoG
-        filter_mux, filter_muy, filter_muz, &
-        ifilter, kstages, &
-        filter_weight_type, filter_basis_type, &
-        fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
-        write_mesh, &
-        filter_tracers_flg, &
-        ladapt_timestep, lprint_diagnostics, iprint_diagnostics, &
-        bcast_type, &
-        space_method, &
-        imass, &
-        ad_mlswe, cd_mlswe, &
-        dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe, max_shear_dz, &
-        adjust_H_vertical_sum, botfr, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-        f0, beta
- 
+      mod_input_create, &
+      dt, dt0, dt1, dt2, &
+      restoring_time, &
+      lrestoring_sponge, &
+      time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,  &
+      test_case, &
+      ti_method_btp, & ! Added by YaoG
+      filter_mux, filter_muy, filter_muz, &
+      ifilter, kstages, &
+      filter_weight_type, filter_basis_type, &
+      fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
+      write_mesh, &
+      filter_tracers_flg, &
+      ladapt_timestep, lprint_diagnostics, iprint_diagnostics, &
+      bcast_type, &
+      space_method, &
+      imass, &
+      ad_mlswe, cd_mlswe, &
+      dp_tau_bot, dp_tau_wind, dt_btp, method_visc,visc_mlswe, max_shear_dz, &
+      adjust_H_vertical_sum, botfr, dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
+      f0, beta
+
    public :: eqn_set, is_mlswe
- 
+
    public :: nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
-        nlayers, & !shallow water layers
-        x_boundary, y_boundary, z_boundary, &
-        x_periodic, y_periodic, z_periodic, &
-        nproc_z, &
-        bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
-        sponge_type, sponge_top_coe, sponge_lateralx_coe, sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
-        lsommerfeld, &
-        lgrid_only, &
-        lserial_grid_creation, lparallel_grid_creation, lwrite_grid_ascii, fname_initial, &
-        restart_path, & ! Added by Yao G.
-        nel_root_h, refinement_levels_h, &
-        xstretch_coe, ystretch_coe, zstretch_coe, &
-        lxstretch, lystretch, lzstretch, &
-        xstretch_type, ystretch_type, zstretch_type, &
-        lread_external_grid, read_external_grid_flg, is_non_conforming_flg, &
-        max_mesh_lvl, &
-        nc_box_invert, &
-        p4est_log_level, &
-        xlim_min, xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, &
-        amr_indicator_variables, &
-        amr_smoothness_limits, &
-        amr_max_min_lim, &
-        amr_threshold_lim, &
-        amr_smoothness_qL2_limit, &
-        amr_mark_max_min, &
-        amr_mark_random, &
-        amr_mark_threshold, &
-        amr_mark_modes, &
-        amr_mark_modes_use_baseline_decay, &
-        amr_num_neigh_iter, &
-        amr_mark_set2nc, &
-        lread_bc,lgpu, numaocca_dir, threads_per_process, cpus_per_node, gpus_per_node, &
-        platform, platformID, deviceID, platformWeight, &
-        platform2, platformID2, deviceID2, platformWeight2, &
-        luse_hybrid_cpu_gpu, Nelems, Nslices, NslicesV, &
-        CudaCompilerFlags, OpenCLCompilerFlags, OpenMPCompilerFlags, &
-        SerialCompilerFlags, PthreadsCompilerFlags, COICompilerFlags, &
-        vectorization
- 
+      nlayers, & !shallow water layers
+      x_boundary, y_boundary, z_boundary, &
+      x_periodic, y_periodic, z_periodic, &
+      nproc_z, &
+      bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
+      sponge_type, sponge_top_coe, sponge_lateralx_coe, sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
+      lsommerfeld, &
+      lgrid_only, &
+      lserial_grid_creation, lparallel_grid_creation, lwrite_grid_ascii, fname_initial, &
+      restart_path, & ! Added by Yao G.
+      nel_root_h, refinement_levels_h, &
+      xstretch_coe, ystretch_coe, zstretch_coe, &
+      lxstretch, lystretch, lzstretch, &
+      xstretch_type, ystretch_type, zstretch_type, &
+      lread_external_grid, read_external_grid_flg, is_non_conforming_flg, &
+      max_mesh_lvl, &
+      nc_box_invert, &
+      p4est_log_level, &
+      xlim_min, xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, &
+      amr_indicator_variables, &
+      amr_smoothness_limits, &
+      amr_max_min_lim, &
+      amr_threshold_lim, &
+      amr_smoothness_qL2_limit, &
+      amr_mark_max_min, &
+      amr_mark_random, &
+      amr_mark_threshold, &
+      amr_mark_modes, &
+      amr_mark_modes_use_baseline_decay, &
+      amr_num_neigh_iter, &
+      amr_mark_set2nc, &
+      lread_bc,lgpu, numaocca_dir, threads_per_process, cpus_per_node, gpus_per_node, &
+      platform, platformID, deviceID, platformWeight, &
+      platform2, platformID2, deviceID2, platformWeight2, &
+      luse_hybrid_cpu_gpu, Nelems, Nslices, NslicesV, &
+      CudaCompilerFlags, OpenCLCompilerFlags, OpenMPCompilerFlags, &
+      SerialCompilerFlags, PthreadsCompilerFlags, COICompilerFlags, &
+      vectorization
+
    !!-- Shallow water inputs
    public :: gravity_in, &
-        mesh_file, limit_threshold
-         
+      mesh_file, limit_threshold
+
    private
- 
+
    !-----------------------------------------------------------------------
    ! Namelist Variables
    !-----------------------------------------------------------------------
@@ -111,10 +111,10 @@ module mod_input
    character     :: ti_method_btp*14, test_case*20
    logical       :: lprint_diagnostics
    integer       :: iprint_diagnostics = 1 !every how many iterations to print diagnostics
- 
+
    character     :: space_method*3, real_string*9
- 
- 
+
+
    real(kind=r8) :: ad_mlswe = 0.0
    real(kind=r8) :: cd_mlswe = 0.0
    real(kind=r8) :: dp_tau_bot = 0.0
@@ -127,7 +127,7 @@ module mod_input
    real(kind=r8) :: max_shear_dz = 0.0
    real(kind=r8) :: f0 = 0.0
    real(kind=r8) :: beta = 0.0
- 
+
    !-----------------------------------------------------------------------
    ! Namelist Variables
    !-----------------------------------------------------------------------
@@ -147,7 +147,7 @@ module mod_input
    character(len=8)  :: format_vtk  = 'BINARY' !can be ascii, binary
    character(len=8)  :: vtk_cell_type  = 'standard' !can be standard, lagrange
    integer           :: nvtk_files = 1 !number of files written in parallel (must be less than nproc)
- 
+
    character(len=24) :: xstretch_type
    character(len=24) :: ystretch_type
    character(len=24) :: zstretch_type
@@ -155,7 +155,7 @@ module mod_input
    character(len=24) :: platform2 = 'OpenMP'
    character(len=6)  :: vectorization = 'float4'
    character(len=150):: numaocca_dir = './numaocca/'
- 
+
    character(len=512) :: OpenCLCompilerFlags = ' -cl-denorms-are-zero -cl-fast-relaxed-math -cl-finite-math-only -cl-mad-enable -cl-no-signed-zeros'
    character(len=512) :: CudaCompilerFlags = '--compiler-options -O2 --use_fast_math'
    character(len=512) :: OpenMPCompilerFlags = '-D__extern_always_inline=inline -O2'
@@ -164,10 +164,10 @@ module mod_input
    character(len=512) :: COICompilerFlags = '-D__extern_always_inline=inline -O2'
    !Vectorization OpenMP flags ===>>>  "-mavx"
    !Endevor OpenMP flags       ===>>>  "-xCOMMON-AVX512 -qopt-report=5 -qopt-report-file=stdout"
- 
-  
+
+
    !real :: dt_btp
- 
+
    !-----------------------------------------------------------------------
    ! Default Namelist Values: Default Values
    !-----------------------------------------------------------------------
@@ -180,9 +180,9 @@ module mod_input
    real(kind=r8)         :: sponge_lateralx_coe_east = -1
    real(kind=r8)         :: sponge_lateralx_coe_west = -1
    real(kind=r8)         :: sponge_lateraly_coe = -1
- 
+
    real(kind=r8)         :: SIPG_constant = 0
- 
+
    integer, dimension(2)  :: x_boundary = 4
    integer, dimension(2)  :: y_boundary = 4
    integer, dimension(2)  :: z_boundary = 0
@@ -217,10 +217,10 @@ module mod_input
    logical                :: amr_mark_threshold=.false.
    integer(C_INT32_T)     :: amr_num_neigh_iter = 3
    logical                :: amr_mark_set2nc = .false.
- 
+
    integer               :: nel_root_h = 0
    integer               :: filter_tracers_flg = 0 !This flag activates the filter computation for the tracers equations (INactive by default)
-   
+
    integer               :: platformID = 0
    integer               :: deviceID = 0
    integer               :: platformID2 = 1
@@ -233,15 +233,15 @@ module mod_input
    integer               :: threads_per_process = 0
    integer               :: platformWeight = 1
    integer               :: platformWeight2 = 1
- 
+
    integer               :: imass = 1
 
    real(kind=r8)         :: time_scale = 1.0_r8
 
- 
+
    character(len=4)      :: bcast_type = 'mpi'
    character(len=12)     :: eqn_set    = 'set2nc'
- 
+
    logical :: lrestart_file  = .false. !obsolete
    logical :: lsommerfeld    = .false.
    logical :: lxstretch      = .false.
@@ -258,66 +258,66 @@ module mod_input
    logical :: lcompute_barycenter = .false.
    logical :: luse_min_element_length = .false.
    logical :: lrotating_flow = .false.
- 
+
    logical :: ladapt_timestep = .false.
- 
+
    !Input parameters to write a spherical shell (1 level) to a netcdf file:
    logical :: lgpu = .false.
    logical :: luse_hybrid_cpu_gpu = .false.
-   
-   logical :: is_mlswe = .true.  
-   logical :: dg_integ_exact = .true. 
-   logical :: dump_data = .true. 
-   logical :: lcheck_conserved = .false. 
 
- 
+   logical :: is_mlswe = .true.
+   logical :: dg_integ_exact = .true.
+   logical :: dump_data = .true.
+   logical :: lcheck_conserved = .false.
+
+
    !-----------------------------------------------------------------------
    ! Parameters
    !-----------------------------------------------------------------------
    character(len=*), parameter :: namelist_input='numo3d.in'
- 
+
    real time_scale_in
- 
+
    real dam_depth_in
    real, dimension(2) :: dam_xlimit_in, dam_ylimit_in
- 
+
    real bathymetry_shift
    integer hump_config
    integer ibathymetry
    integer nonlinear, balance_flag, output_flag, warp_grid
    character mesh_file*100, bathymetry_file*100
- 
+
    logical lout_tree
    logical lout_shoreline
    logical lread_external_bathy
    real gravity_in
    real xdam_min, xdam_max
    real ydam_min, ydam_max
- 
+
    real :: limit_threshold = 1e-3
- 
+
    logical llinear_pert
- 
+
    !-----------------------------------
-   ! End shallow water variables 
+   ! End shallow water variables
    !-----------------------------------
- 
- contains
- 
+
+contains
+
    !-----------------------------------------------------------------------
    subroutine mod_input_create(irank)
- 
-     implicit none
- 
-     integer irank, icheck
- 
-     integer :: funit
- 
-     !Namelist Input
- 
-     namelist /eqnset/ eqn_set, is_mlswe
- 
-     namelist /input/ dt, &
+
+      implicit none
+
+      integer irank, icheck
+
+      integer :: funit
+
+      !Namelist Input
+
+      namelist /eqnset/ eqn_set, is_mlswe
+
+      namelist /input/ dt, &
          restoring_time, &
          lrestoring_sponge, &
          time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,&
@@ -328,7 +328,7 @@ module mod_input
          filter_weight_type, filter_basis_type, fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
          write_mesh, &
          fname_initial, &
-         restart_path, & 
+         restart_path, &
          filter_tracers_flg, &
          ladapt_timestep,lprint_diagnostics,iprint_diagnostics, &
          bcast_type, &
@@ -336,7 +336,7 @@ module mod_input
          lgpu, numaocca_dir, Nelems, Nslices, NslicesV, vectorization, &
          platform, platformID, deviceID, platformWeight, platform2, platformID2, deviceID2, platformWeight2, &
          cpus_per_node, gpus_per_node, threads_per_process, luse_hybrid_cpu_gpu, &
-                              !!--Shallow
+      !!--Shallow
          ibathymetry, bathymetry_file, &
          gravity_in, limit_threshold, &
          mesh_file, &
@@ -347,137 +347,137 @@ module mod_input
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta
- 
-     namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
-          nlayers, &
-          nproc_z, &
-          x_boundary, y_boundary, z_boundary, &
-          x_periodic, y_periodic, z_periodic, &
-          bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
-          sponge_type, sponge_top_coe, sponge_lateralx_coe,sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
-          lsommerfeld, &
-          lgrid_only, &
-          lread_external_grid, &
-          is_non_conforming_flg, &
-          p4est_log_level, &
-          xlim_min, xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, &
-          amr_indicator_variables, &
-          amr_smoothness_limits, &
-          amr_max_min_lim, &
-          amr_threshold_lim, &
-          amr_smoothness_qL2_limit, &
-          amr_mark_max_min, &
-          amr_mark_random, &
-          amr_mark_threshold, &
-          amr_mark_modes, &
-          amr_mark_modes_use_baseline_decay, &
-          amr_num_neigh_iter, &
-          amr_mark_set2nc, &
-          lread_bc, &
-          lserial_grid_creation, lparallel_grid_creation, lwrite_grid_ascii,&
-          refinement_levels_h, nel_root_h,&
-          xstretch_coe, ystretch_coe, zstretch_coe, &
-          lxstretch, lystretch, lzstretch
- 
-     amr_indicator_variables(1) = 1
- 
-     !Read input namelist
-     funit = get_unit()
-     print*,"File:",namelist_input, funit
-     open(funit,file=namelist_input)
-     read(funit,input)
-     close(funit)
- 
-     !Read eqnset namelist
-     !funit = get_unit()
-     !open(funit,file=namelist_input)
-     !read(funit,eqnset)
-     !close(funit)
- 
-     !Read gridnl namelist
-     funit = get_unit()
-     open(funit,file=namelist_input)
-     read(funit,gridnl)
-     close(funit)
- 
-     ti_method_btp = lowercase(ti_method_btp) !added by YaoG
-     filter_weight_type = lowercase(filter_weight_type)
-     filter_basis_type = lowercase(filter_basis_type)
-     out_type = lowercase(out_type)
-     format_vtk = uppercase(format_vtk)
-     vtk_cell_type = uppercase(vtk_cell_type)
- 
-     !Add DT to FNAME
-     write(real_string,'(f9.4)') dt
-     if (dt>=1000) then
-        fname_root=trim(fname_root) // '_' // trim(real_string(1:9))
-     else if (dt>=100) then
-        fname_root=trim(fname_root) // '_' // trim(real_string(2:9))
-     else if (dt>=10) then
-        fname_root=trim(fname_root) // '_' // trim(real_string(3:9))
-     else
-        fname_root=trim(fname_root) // '_' // trim(real_string(4:9))
-     end if
- 
-     !Add SPACE_METHOD to FNAME
-     if (space_method == 'cgc' .or. space_method == 'cgd' .or. space_method == 'dg') then
-        fname_root=trim(fname_root) // '_' // trim(space_method)
-     else
-        if (irank == 0) then
-           print*,' Error in MOD_INPUT; Incompatible input data.'
-           print*,' space_method = ',space_method
-        end if
-        stop
-     end if
- 
-     !Add TI_METHOD to FNAME
 
-      if (ti_method_btp /= 'rk35' .and. ti_method_btp /= 'rk34' .and. ti_method_btp /= 'lsrk') then
-         ti_method_btp = 'explicit'
-      endif
-      fname_root=trim(fname_root) // '_' // trim(ti_method_btp)
- 
-     !Grid Generation and Graph Partitioning
+      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
+         nlayers, &
+         nproc_z, &
+         x_boundary, y_boundary, z_boundary, &
+         x_periodic, y_periodic, z_periodic, &
+         bc_tscale, bc_xscale, bc_yscale, bc_zscale, &
+         sponge_type, sponge_top_coe, sponge_lateralx_coe,sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
+         lsommerfeld, &
+         lgrid_only, &
+         lread_external_grid, &
+         is_non_conforming_flg, &
+         p4est_log_level, &
+         xlim_min, xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, &
+         amr_indicator_variables, &
+         amr_smoothness_limits, &
+         amr_max_min_lim, &
+         amr_threshold_lim, &
+         amr_smoothness_qL2_limit, &
+         amr_mark_max_min, &
+         amr_mark_random, &
+         amr_mark_threshold, &
+         amr_mark_modes, &
+         amr_mark_modes_use_baseline_decay, &
+         amr_num_neigh_iter, &
+         amr_mark_set2nc, &
+         lread_bc, &
+         lserial_grid_creation, lparallel_grid_creation, lwrite_grid_ascii,&
+         refinement_levels_h, nel_root_h,&
+         xstretch_coe, ystretch_coe, zstretch_coe, &
+         lxstretch, lystretch, lzstretch
+
+      amr_indicator_variables(1) = 1
+
+      !Read input namelist
+      funit = get_unit()
+      print*,"File:",namelist_input, funit
+      open(funit,file=namelist_input)
+      read(funit,input)
+      close(funit)
+
+      !Read eqnset namelist
+      !funit = get_unit()
+      !open(funit,file=namelist_input)
+      !read(funit,eqnset)
+      !close(funit)
+
+      !Read gridnl namelist
+      funit = get_unit()
+      open(funit,file=namelist_input)
+      read(funit,gridnl)
+      close(funit)
+
+      ti_method_btp = lowercase(ti_method_btp) !added by YaoG
+      filter_weight_type = lowercase(filter_weight_type)
+      filter_basis_type = lowercase(filter_basis_type)
+      out_type = lowercase(out_type)
+      format_vtk = uppercase(format_vtk)
+      vtk_cell_type = uppercase(vtk_cell_type)
+
+      !Add DT to FNAME
+      !   write(real_string,'(f9.4)') dt
+      !   if (dt>=1000) then
+      !      fname_root=trim(fname_root) // '_' // trim(real_string(1:9))
+      !   else if (dt>=100) then
+      !      fname_root=trim(fname_root) // '_' // trim(real_string(2:9))
+      !   else if (dt>=10) then
+      !      fname_root=trim(fname_root) // '_' // trim(real_string(3:9))
+      !   else
+      !      fname_root=trim(fname_root) // '_' // trim(real_string(4:9))
+      !   end if
+
+      !Add SPACE_METHOD to FNAME
+      !   if (space_method == 'cgc' .or. space_method == 'cgd' .or. space_method == 'dg') then
+      !      fname_root=trim(fname_root) // '_' // trim(space_method)
+      !   else
+      !      if (irank == 0) then
+      !         print*,' Error in MOD_INPUT; Incompatible input data.'
+      !         print*,' space_method = ',space_method
+      !      end if
+      !      stop
+      !   end if
+
+      !Add TI_METHOD to FNAME
+
+      ! if (ti_method_btp /= 'rk35' .and. ti_method_btp /= 'rk34' .and. ti_method_btp /= 'lsrk') then
+      !    ti_method_btp = 'explicit'
+      ! endif
+      ! ! fname_root=trim(fname_root) // '_' // trim(ti_method_btp)
+
+      !Grid Generation and Graph Partitioning
 
       lserial_grid_creation=.false.
       ! fname_root=trim(fname_root) // '_P4est'
 
- 
-     read_external_grid_flg = 0
-     if(lread_external_grid) read_external_grid_flg = 1
- 
-     if (x_boundary(1) == 3 .or. x_boundary(2) == 3 .or. x_periodic > 0) then
-        x_periodic    = 1
-        x_boundary(1) = 3
-        x_boundary(2) = 3
-     endif
- 
-     if (y_boundary(1) == 3 .or. y_boundary(2) == 3 .or. y_periodic > 0) then
-        y_periodic    = 1
-        y_boundary(1) = 3
-        y_boundary(2) = 3
-     endif
- 
-     if (z_boundary(1) == 3 .or. z_boundary(2) == 3 .or. z_periodic > 0) then
-        z_periodic    = 1
-        z_boundary(1) = 3
-        z_boundary(2) = 3
-     endif
- 
-   !   if (space_method == 'cgc' .and. (x_periodic+y_periodic+z_periodic > 0)) then
-   !      if (irank == 0) then
-   !         print*, '---------------------------------------------------'
-   !         print*,' INPUT WARNING:'
-   !         print*,' Space_Method and Periodic BCs conflict!'
-   !         print*,' space_method = ',space_method
-   !         print*,' x_periodic y_periodic z_periodic = ',x_periodic,y_periodic,z_periodic
-   !         print*,' Please, correct your input and rerun'
-   !         print*, '---------------------------------------------------'
-   !      end if
-   !      stop
-   !   end if
- 
+
+      read_external_grid_flg = 0
+      if(lread_external_grid) read_external_grid_flg = 1
+
+      if (x_boundary(1) == 3 .or. x_boundary(2) == 3 .or. x_periodic > 0) then
+         x_periodic    = 1
+         x_boundary(1) = 3
+         x_boundary(2) = 3
+      endif
+
+      if (y_boundary(1) == 3 .or. y_boundary(2) == 3 .or. y_periodic > 0) then
+         y_periodic    = 1
+         y_boundary(1) = 3
+         y_boundary(2) = 3
+      endif
+
+      if (z_boundary(1) == 3 .or. z_boundary(2) == 3 .or. z_periodic > 0) then
+         z_periodic    = 1
+         z_boundary(1) = 3
+         z_boundary(2) = 3
+      endif
+
+      !   if (space_method == 'cgc' .and. (x_periodic+y_periodic+z_periodic > 0)) then
+      !      if (irank == 0) then
+      !         print*, '---------------------------------------------------'
+      !         print*,' INPUT WARNING:'
+      !         print*,' Space_Method and Periodic BCs conflict!'
+      !         print*,' space_method = ',space_method
+      !         print*,' x_periodic y_periodic z_periodic = ',x_periodic,y_periodic,z_periodic
+      !         print*,' Please, correct your input and rerun'
+      !         print*, '---------------------------------------------------'
+      !      end if
+      !      stop
+      !   end if
+
    end subroutine mod_input_create
- 
- end module mod_input
- 
+
+end module mod_input
+

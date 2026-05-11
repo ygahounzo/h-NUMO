@@ -186,14 +186,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                pbr(iquad) = pbr(iquad) + hi*q_recv(5,n,kk)
             end do
 
-            if (qbl(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-               qbl(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
-               qbl(2:4,iquad) = 0.0
-            elseif( qbr(1,iquad) <= (gravity/alpha_mlswe(nlayers))*eps) then
-               qbr(1,iquad) = (gravity/alpha_mlswe(nlayers))*eps
-               qbr(2:4,iquad) = 0.0
-            end if
-
             pprime_l(1) = 0.0; pprime_r(1) = 0.0
             do k = 1, nlayers
                ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
@@ -215,15 +207,6 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                   vpl = vpl + hi*q_send(ii+3,n,kk)
                   vpr = vpr + hi*q_recv(ii+3,n,kk)
                enddo
-
-               if (ppl <= (gravity/alpha_mlswe(k))*eps) then
-                  ppl = (gravity/alpha_mlswe(k))*eps
-                  upl = 0.0 ; vpl = 0.0
-               end if
-               if (ppr <= (gravity/alpha_mlswe(k))*eps) then
-                  ppr = (gravity/alpha_mlswe(k))*eps
-                  upr = 0.0 ; vpr = 0.0
-               end if
 
                Q_uu_q(iquad) = Q_uu_q(iquad) + 0.5*alpha_mlswe(k)*((upl*(upl*ppl)) + (upr*(upr*ppr)))
                Q_uv_q(iquad) = Q_uv_q(iquad) + 0.5*alpha_mlswe(k)*((vpl*(upl*ppl)) + (vpr*(upr*ppr)))

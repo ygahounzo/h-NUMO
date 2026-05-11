@@ -1,0 +1,47 @@
+! ===========================================================================================================================
+! This module contains the routines for the predictor-corrector (for baroclinic) and the RK35 time integration (for barotropic) methods
+!   Author: Yao Gahounzo
+!   Computing PhD
+!   Boise State University
+!   Date: October 27, 2023
+! ==========================================================================================================================
+
+subroutine ti_rk_btp(q_df, qb_df)
+
+   ! q: layer variable dp, u*dp, v*dp at quad points and their face values: q_face
+   ! q_df : layer variable dp, u*dp, v*dp at nodal (dof) point
+   ! qprime: value dp', u' and v' at quad points and their face values: qprime_face
+   ! qb : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at quad points and their face values: qb_face
+   ! qb_df: : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at nodal points
+   ! qprime_df: value dp', u' and v' at nodal points
+   ! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
+
+   use mod_input, only: nlayers, method_visc
+   use mod_grid, only: npoin, npoin_q, nface
+   use mod_constants, only: gravity
+   use mod_initial, only: alpha_mlswe, zbot_df
+   use mod_basis, only: nq, ngl
+   use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
+   use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
+   use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
+   use mod_layer_terms, only: extract_qprime_df_face, interpolate_dpp
+
+   implicit none
+
+   real, dimension(4,npoin), intent(inout) :: qb_df
+   real, dimension(3,npoin,nlayers), intent(inout) :: q_df
+
+   real, dimension(3,npoin,nlayers) :: qprime_df
+   integer :: k
+
+   ! ==================== Prediction step =================================
+
+   call extract_qprime_df_face(qprime_df,q_df,qb_df)
+
+   dpprime_visc(:,:) = qprime_df(1,:,:)
+   if (method_visc == 1) call interpolate_dpp(dpprime_visc_q, dpprime_visc)
+
+   call btp_bcl_coeffs_qdf(qprime_df)
+   call ti_barotropic_ssprk_mlswe(qb_df, qprime_df)
+
+end subroutine ti_rk_btp
