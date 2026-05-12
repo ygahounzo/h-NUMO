@@ -13,6 +13,7 @@ module mod_time_loop
     use mod_types, only: r8
     use mod_global_grid, only: npoin_g, nelem_g
     use mpi
+    use mod_openacc_utilities, only: openacc_initialize, openacc_enter_data
 
     implicit none
 
@@ -188,6 +189,9 @@ contains
             print *, "--------------"
             print *, "Begin Time Integration: "
         end if
+
+        call openacc_initialize()
+        call openacc_enter_data()
 
         !     Time Loop
 

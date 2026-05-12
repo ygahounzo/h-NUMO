@@ -39,7 +39,6 @@ module mod_openacc_utilities
 #endif
     end subroutine openacc_initialize
 
-
     ! =========================================================================
     subroutine openacc_enter_data()
       ! =========================================================================

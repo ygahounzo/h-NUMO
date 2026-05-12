@@ -118,6 +118,9 @@ subroutine initialize_fields()
 
   ! Create Initial Conditions, Boundary Conditions, reference fields, and Metric terms
 
+   ! allocate btp_variables
+   call mod_allocate_mlswe()
+
   !Create Initial Conditions
   call mod_initial_create()
   if (irank == irank0) print *, "Initial Fields Created"
@@ -138,10 +141,6 @@ subroutine initialize_fields()
    if (space_method == 'dg') then
       call mod_mpi_communicator_create()
    end if
-
-   ! allocate btp_variables
-
-   call mod_allocate_mlswe()
 
 end subroutine initialize_fields
 
