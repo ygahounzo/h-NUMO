@@ -25,8 +25,7 @@ subroutine unpack_data_dg_general_quad(q_send,q_recv,send_data,recv_data,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, ftype
 
     ii = 0
     jj = 1
@@ -76,8 +75,7 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar
 
     ii = 0
     jj = 1
@@ -124,8 +122,7 @@ subroutine unpack_data_dg_general_lap(q_send,q_recv,send_data,recv_data,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar
 
     ii = 0
     jj = 1
@@ -171,8 +168,7 @@ subroutine unpack_data_dg_general_bcl(q_send,q_recv,send_data,recv_data)
     real, dimension(3*nlayers*ngl*nboun), intent(in)  :: send_data, recv_data
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype, index, ll
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, index, ll
 
     ii = 0
     jj = 1
@@ -222,8 +218,7 @@ subroutine unpack_data_dg_general_lap_bcl(q_send,q_recv,send_data,recv_data,nlay
     integer, intent(in) :: nlayers
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype, ll, index
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, ll, index
 
     ii = 0
     jj = 1
@@ -273,8 +268,7 @@ subroutine unpack_data_dg_general_consistency(q_send,q_recv,send_data,recv_data,
     integer, intent(in) :: nlayers
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar
 
     ii = 0
     jj = 1
@@ -321,8 +315,7 @@ subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,n
     integer, intent(in) :: nvarb,nlayers,nq
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype, ll
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, ll
 
     ii = 0
     jj = 1
@@ -374,8 +367,7 @@ subroutine unpack_data_dg_general_quad_1v(q_send,q_recv,send_data,recv_data)
     real, dimension(nq*nboun), intent(in)  :: send_data, recv_data
 
     !Local Variables
-    integer ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer nq_i, nq_j, plane_ij, iface, imulti, ftype
+    integer ii, jj, kk, inbh, ib, iface, imulti, inode
 
     ii = 0
     jj = 1
@@ -429,11 +421,7 @@ subroutine pack_data_dg_quad(q_send,q_face,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl
 
     ii = 0
     jj = 1
@@ -486,11 +474,8 @@ subroutine pack_data_dg_df(q_send,q_face,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: inode, ip, ilocl
 
     ii = 0
     jj = 1
@@ -556,11 +541,8 @@ subroutine pack_data_dg_df_btp(q_send,q,qprime_df,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type, ll
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: inode, ip, ilocl, ll
 
     ii = 0
     jj = 1
@@ -630,11 +612,8 @@ subroutine pack_data_dg_df_btp_lap(q_send,q,btp_dpp_graduv,pbprime_visc,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: inode, ip, ilocl
 
     ii = 0
     jj = 1
@@ -703,11 +682,8 @@ subroutine pack_data_dg_df_bcl(q_send,q)
     real, intent(in) :: q(3,npoin,nlayers)
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr,ll
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: inode, ip, ilocl, ll
 
     ii = 0
     jj = 1
@@ -767,11 +743,8 @@ subroutine pack_data_dg_df_bcl_lap(q_send,dpp_graduv,dpprime_visc,nlayers)
     integer, intent(in) :: nlayers
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type, ll
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: inode, ip, ilocl, ll
 
     ii = 0
     jj = 1
@@ -836,11 +809,8 @@ subroutine pack_data_dg_consistency(q_send,dprime_df,nlayers)
     integer, intent(in) :: nlayers
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type, ll
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl
+    integer :: inode, ip, ilocl, ll
 
     ii = 0
     jj = 1
@@ -901,11 +871,7 @@ subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl
 
     ii = 0
     jj = 1
@@ -963,11 +929,8 @@ subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
     integer, intent(in) :: nvarb
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: inode, ip, ilocl
 
     ii = 0
     jj = 1
@@ -1022,11 +985,7 @@ subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers,nq)
     integer, intent(in) :: nvarb, nlayers, nq
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij, ll
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl, ll
 
     ii = 0
     jj = 1
@@ -1078,11 +1037,7 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
     integer, intent(in) :: nvarb, nlayers
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij, ll
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl, ll
 
     ii = 0
     jj = 1
@@ -1142,11 +1097,7 @@ subroutine pack_data_dg_quad_1v(q_send,q_face)
     real, intent(in) :: q_face(2,nq,nface)
 
     !Local Variables
-    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: nq_i, nq_j, plane_ij
-    real :: h, qu, qv
-    integer :: inode, jnode, ip, ilocl, ilocr
-    integer :: iface_type
+    integer :: ii, jj, inbh, ib, iface, imulti, el, inode, ilocl
 
     ii = 0
     jj = 1
@@ -1216,7 +1167,7 @@ subroutine send_bound_dg_general(send_data,recv_data,nsize,nreq,ireq,status)
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nq
-    integer ngl_i, ngl_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer ngl_i, ngl_j, plane_ij, jj, ilocl, ib, iface, i
 
     nreq = 0
     iend = 0
@@ -1298,7 +1249,7 @@ subroutine send_bound_dg_general_quad(send_data,recv_data,nvarb,nreq,ireq,status
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 
@@ -1313,10 +1264,8 @@ subroutine send_bound_dg_general_quad(send_data,recv_data,nvarb,nreq,ireq,status
         nqp = 0
         do ib = 1,num_send_recv(inbh)
             iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
 
             ilocl = face(5,iface)
-            ! if(ftype==21) ilocl = face(6,iface)
 
             do i=1,nbh_send_recv_multi(jj)
                 call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
@@ -1350,7 +1299,7 @@ subroutine send_bound_dg_general_quad(send_data,recv_data,nvarb,nreq,ireq,status
         nreq = nreq + 1
     end do
 
-    
+
 
 end subroutine send_bound_dg_general_quad
 
@@ -1382,7 +1331,7 @@ subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 
@@ -1463,7 +1412,7 @@ subroutine send_bound_dg_general_lap(send_data,recv_data,nvarb,nreq,ireq,status)
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 
@@ -1545,7 +1494,7 @@ subroutine send_bound_dg_general_bcl(send_data,recv_data,nreq,ireq,status)
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 
@@ -1626,7 +1575,7 @@ subroutine send_bound_dg_general_lap_bcl(send_data,recv_data,nlayers,nreq,ireq,s
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 
@@ -1707,7 +1656,7 @@ subroutine send_bound_dg_general_consistency(send_data,recv_data,nlayers,nreq,ir
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 
@@ -1786,7 +1735,7 @@ subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nq
 
     !local variables
     integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
+    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i
 
     !recv_data=0.0
 

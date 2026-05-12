@@ -1,0 +1,71 @@
+! ===========================================================================================================================
+! This module contains the routines for the predictor-corrector (for baroclinic) and the RK35 time integration (for barotropic) methods
+!   Author: Yao Gahounzo 
+!   Computing PhD 
+!   Boise State University
+!   Date: October 27, 2023
+! ==========================================================================================================================
+
+subroutine ti_rk_bcl(q_df, qb_df)
+
+    ! q: layer variable dp, u*dp, v*dp at quad points and their face values: q_face
+    ! q_df : layer variable dp, u*dp, v*dp at nodal (dof) point
+    ! qprime: value dp', u' and v' at quad points and their face values: qprime_face
+    ! qb : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at quad points and their face values: qb_face
+    ! qb_df: : barotopic variable pb, pb_pert = pb'*eta, ub*pb, vb*pb at nodal points 
+    ! qprime_df: value dp', u' and v' at nodal points
+    ! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
+
+    use mod_splitting, only: thickness, momentum, momentum_mass, create_rhs_bcl, rhs_momentum
+    use mod_input, only: nlayers, method_visc, dt
+    use mod_grid, only: npoin, npoin_q, nface
+    use mod_constants, only: gravity
+    use mod_initial, only: alpha_mlswe, zbot_df, pbprime_df
+    use mod_basis, only: nq, ngl
+    use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
+    use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
+    use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
+    use mod_layer_terms, only: extract_qprime_df_face, interpolate_dpp, layer_mom_boundary_df, extract_velocity
+    use mod_initial_mlswe, only: poslimiter
+    use mod_create_rhs_mlswe, only: layer_mass_rhs
+
+    implicit none
+
+    real, dimension(4,npoin), intent(inout) :: qb_df
+    real, dimension(3,npoin,nlayers), intent(inout) :: q_df
+    
+    real, dimension(4,npoin) :: qbp_df
+    real, dimension(3,npoin,nlayers) :: qprime_df, qprime_df2, q_df2, rhs
+    integer :: k, I
+    real, dimension(2,npoin,nlayers) :: uv_df, rhs_mom
+    real, dimension(npoin, nlayers) :: rhs_dp
+    real :: ope
+    
+    ! ==================== Prediction step =================================
+
+    qbp_df = qb_df
+    q_df2 = q_df
+
+    call extract_qprime_df_face(qprime_df,q_df2,qbp_df)
+
+    call btp_bcl_coeffs_qdf(qprime_df)
+    call ti_barotropic_ssprk_mlswe(qbp_df, qprime_df)
+    call momentum_mass(q_df2,qprime_df,qbp_df)
+
+    ! ==================== Correction step =================================
+
+    call extract_qprime_df_face(qprime_df2,q_df2,qbp_df)
+
+    qprime_df2 = 0.5*(qprime_df2 + qprime_df)
+
+    call btp_bcl_coeffs_qdf(qprime_df2)
+    call ti_barotropic_ssprk_mlswe(qb_df,qprime_df2)
+        
+    ! Layer continuty equation
+    call thickness(qprime_df2, q_df, qb_df)
+
+    qprime_df2(1,:,:) = 0.5*(qprime_df(1,:,:) + qprime_df2(1,:,:))
+      
+    call momentum(q_df,qprime_df2,qb_df)
+
+end subroutine ti_rk_bcl

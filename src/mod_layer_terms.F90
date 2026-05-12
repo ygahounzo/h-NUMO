@@ -228,8 +228,8 @@ module mod_layer_terms
             vbar = 0.0
             
             do k = 1, nlayers
-                ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
-                vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
+                ubar = ubar + (uv_df(1,I,k) * q_df(1,I,k))
+                vbar = vbar + (uv_df(2,I,k) * q_df(1,I,k))
             end do
 
             if(qb_df(1,I) > 0.0) then
@@ -239,8 +239,8 @@ module mod_layer_terms
 
                 do k = 1, nlayers
 
-                    uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
-                    uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
+                    uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
                 end do
 
             else

@@ -10,78 +10,48 @@
 !>@date April 2024 modified by Yao Gahounzo
 !----------------------------------------------------------------------!
 
-subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
+subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   use mod_metrics, only: jac
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: nq
+
+   use mod_grid, only: nboun, face_type, nface
+
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                      num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: q_face(nvarb,2,nq,nface)
    real,intent(in):: q_send(nvarb,nq,nboun)
    real,intent(in):: q_recv(nvarb,nq,nboun)
    integer, intent(in) :: nvarb
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate
- 
+
+   integer :: iface, k
+   integer :: jj, im, imm, inbh, ib, kk
+   integer :: ftype, imulti
+
    !Constants
- 
+
    jj=1
    kk=1
    imm = 0
 
-   ! do ifaceb =1,nboun
-   !    iface = face_send(ifaceb)  ! Get Local Face
- 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
          imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
- 
+
          do im = 1,imulti
- 
-            ! if (ftype==2) then
-               ilocl=face(5,iface)
-               iel=face(7,iface)
- 
-               ! if (multirate==1 .and. lev_list(iel)==0) then
-               !    kk=kk+1
-               !    cycle
-               ! end if
-            ! end if
- 
+
             !-------------------------------------
             !Store Left Side Variables
             !-------------------------------------
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-            
+
             do k=1,nvarb
                !Left Element
                q_face(k,1,:,iface)=q_send(k,:,kk)
@@ -89,31 +59,29 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
                !Right Element
                q_face(k,2,:,iface)=q_recv(k,:,kk)
             end do
- 
+
             kk=kk+1
 
-            ! end if
          end do
          jj=jj+1
       end do
- 
+
    end do !iface
- 
+
  end subroutine create_nbhs_face_quad
 
- subroutine create_nbhs_face_df(rhs,q_send,q_recv,nvarb,multirate)
+ subroutine create_nbhs_face_df(rhs,q_send,q_recv)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psiq
-   use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
-   use mod_initial, only: nvar, alpha_mlswe
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, nq, psiq
+   use mod_face, only: normal_vector_q, jac_faceq, imapl
+   use mod_grid, only: npoin, intma, face, nboun
+   use mod_initial, only: alpha_mlswe
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
- 
+
    use mod_ref, only: nbtp_var
-   use mod_input, only: nlayers, dry_cutoff
-   use mod_constants, only: gravity
-   use mod_variables, only: H_face_ave,ope_face_ave,btp_mass_flux_face_ave, &
+   use mod_input, only: nlayers
+   use mod_variables, only: H_face_ave, ope_face_ave, btp_mass_flux_face_ave, &
                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
                                 uvb_face_ave, ope2_face_ave
 
@@ -123,22 +91,20 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
    real, intent(inout) :: rhs(3,npoin)
    real,intent(in):: q_send(nbtp_var,ngl,nboun)
    real,intent(in):: q_recv(nbtp_var,ngl,nboun)
-   integer, intent(in) :: nvarb
- 
+
    !local variables
- 
-   integer :: jj, imm, inbh, ib, kk, ivar, ii
+
+   integer :: jj, imm, inbh, ib, kk, ii
    integer :: imulti
-   integer :: multirate
-   integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
-   real :: wq, hi, nxl, nyl, nxr, nyr, un
+   integer :: iface, iquad, el, er, il, jl, I, kl, n
+   real :: wq, hi, nxl, nyl, nxr, nyr
    real :: ul, ur, vl, vr, pbl, pbr, clam, one_eta
    real :: pU_L, pU_R, pbpert_edge
    real :: qbl(4), qbr(4), flux(3,nq)
    real :: c_minus, c_plus
    real :: ppl, ppr, upl, upr, vpl, vpr
    real, dimension(nlayers+1) :: pprime_l, pprime_r
-   integer :: itype, k
+   integer :: k
    real :: H_bcl_ql, H_bcl_qr, H_bcl_q, flux_pb, flux_u, flux_v, fxl, fxr, flux_edge_x, flux_edge_y
    real, dimension(2) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr
 
@@ -313,48 +279,41 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_df
 
- subroutine create_nbhs_face_df_lap(rhs,q_send,q_recv,nvarb,multirate)
+ subroutine create_nbhs_face_df_lap(rhs,q_send,q_recv)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psi
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
- 
-   use mod_metrics, only: jac, massinv
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, psi
+
+   use mod_face, only: normal_vector, jac_face, imapl
+
+   use mod_grid, only: npoin, intma, face, nboun
+
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
 
-   use mod_variables, only: btp_graduv_dpp_face, graduvb_face_ave
- 
+   use mod_variables, only: graduvb_face_ave
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: rhs(2,npoin)
    real,intent(in):: q_send(10,ngl,nboun)
    real,intent(in):: q_recv(10,ngl,nboun)
-   integer, intent(in) :: nvarb
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate
-   real :: nxl, nyl, nxr, nyr
-   integer :: el, iquad, n, I, il, jl, kl, er, itype, ip
+
+   real :: wq, iflux
+   integer :: iface
+   integer :: jj, imm, inbh, ib, kk, ivar
+   integer :: imulti
+   real :: nxl, nyl
+   integer :: el, iquad, i, il, jl, kl, er, ip
 
    real, dimension(2) :: qu_mean, qv_mean
    real, dimension(4,2) :: flux_uv_visc_face
    real, dimension(2) :: qul,qur
    real, dimension(2) :: qvl,qvr
    real, dimension(5) :: grad_uvb_pb_l, grad_uvb_pb_r
-   real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
+   real :: flux_qu, flux_qv, hi, alpha, beta
 
    jj=1
    kk=1
@@ -441,49 +400,46 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_df_lap
 
- subroutine create_nbhs_face_bcl(rhs,q_send,q_recv,multirate)
+ subroutine create_nbhs_face_bcl(rhs,q_send,q_recv)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psi, psiq
-   use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
-   use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
-   use mod_metrics, only: jac, massinv
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, nq, psiq
+   use mod_face, only: normal_vector_q, jac_faceq, imapl
+   use mod_grid, only: npoin, intma, face, nboun
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
-   use mod_input, only: nlayers, dry_cutoff
+   use mod_input, only: nlayers
    use mod_constants, only : gravity
    use mod_initial, only : alpha_mlswe, zbot_face
    use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
-                                uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
-   use mod_variables, only: sum_layer_mass_flux_face, btp_mass_flux_face_ave
- 
+                                uvb_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: rhs(3,npoin,nlayers)
    real,intent(in):: q_send(3*nlayers,ngl,nboun)
    real,intent(in):: q_recv(3*nlayers,ngl,nboun)
- 
+
    !local variables
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar, imulti
-   integer :: multirate
-   
+
+   integer :: jj, imm, inbh, ib, kk, ivar, imulti
+
    real, dimension(nlayers) :: alpha_over_g, g_over_alpha
    real, dimension(2,nlayers+1) :: p_face, z_face
-   real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
+   real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus
    real, dimension(3,nlayers) :: ql, qr
    real, dimension(3,nq) :: qbl, qbr
-   integer :: iface, ilr, k, iquad, ktemp, I
+   integer :: iface, k, iquad, ktemp, I
    real :: z_intersect_top,z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
    real :: p_intersect_bot, p_intersect_top, one_plus_eta_edge
-   real :: H_corr,p_inc, weight, H_corr1,p_inc1, H_corr2,p_inc2, temp, ope_l, ope_r
-   integer :: Iq, el, er
+   real :: weight, H_corr1, p_inc1, ope_l, ope_r
+   integer :: el, er
    real ::  ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv
    real, dimension(nlayers) :: udpl, udpr, vdpl, vdpr
    real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
    real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
-   integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
-   real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
+   integer :: il, jl, kl, n, index
+   real :: wq, hi, flux_x, flux_y, flux
    real, dimension(2,nq,nlayers) :: udp_flux, vdp_flux, dp_flux
    real :: dp_lr(2,nlayers), dp_deficit(2)
    real, dimension(nq,nlayers) :: H_face, flux_ul, flux_vl, flux_dp
@@ -738,35 +694,32 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_bcl
 
-  subroutine create_nbhs_face_bcl_continuity(rhs,q_send,q_recv,multirate)
+  subroutine create_nbhs_face_bcl_continuity(rhs,q_send,q_recv)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psi, psiq
-   use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
-   use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, nq, psiq
+   use mod_face, only: normal_vector_q, jac_faceq, imapl
+   use mod_grid, only: npoin, intma, face, nboun
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
-   use mod_input, only: nlayers, dry_cutoff
-   use mod_variables, only: ope_face_ave, uvb_face_ave, sum_layer_mass_flux_face, btp_mass_flux_face_ave
-   use mod_constants, only : gravity
-   use mod_initial, only : alpha_mlswe
- 
+   use mod_input, only: nlayers
+   use mod_variables, only: ope_face_ave, uvb_face_ave, btp_mass_flux_face_ave
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: rhs(npoin,nlayers)
    real,intent(in):: q_send(3*nlayers,ngl,nboun)
    real,intent(in):: q_recv(3*nlayers,ngl,nboun)
- 
+
    !local variables
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar, imulti
-   integer :: multirate
-   
-   integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
-   integer :: kl, kr, jquad, n, m, index
+
+   integer :: jj, imm, inbh, ib, kk, ivar, imulti
+
+   integer :: k, iface, iquad, el, er, il, jl, I
+   integer :: kl, n, index
    real :: wq, nxl, nyl, hi
    real :: dpl, dpr, uu, vv, flux, ul, ur, vl, vr, weight, dp_lr(2,nlayers), dp_deficit(2)
-   real, dimension(nq,nlayers) :: flux_edge_u, flux_edge_v, flux_dp
+   real, dimension(nq,nlayers) :: flux_edge_u, flux_edge_v
    real, dimension(3) :: ql, qr
    real, dimension(3,nq) :: qbl, qbr
    real, parameter :: eps = 1.0e-10
@@ -888,48 +841,46 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_bcl_continuity
 
- subroutine create_nbhs_face_bcl_momentum(rhs,q_send,q_recv,multirate)
+ subroutine create_nbhs_face_bcl_momentum(rhs,q_send,q_recv)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psi, psiq
-   use mod_face, only: normal_vector_q, jac_faceq, imapl, imapr, face_send
-   use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
-   use mod_metrics, only: jac, massinv
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, nq, psiq
+   use mod_face, only: normal_vector_q, jac_faceq, imapl
+   use mod_grid, only: npoin, intma, face, nboun
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
-   use mod_input, only: nlayers, dry_cutoff
+   use mod_input, only: nlayers
    use mod_constants, only : gravity
    use mod_initial, only : alpha_mlswe, zbot_face
    use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
-                                uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
- 
+                                uvb_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: rhs(2,npoin,nlayers)
    real,intent(in):: q_send(3*nlayers,ngl,nboun)
    real,intent(in):: q_recv(3*nlayers,ngl,nboun)
- 
+
    !local variables
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar, imulti
-   integer :: multirate
-   
+
+   integer :: jj, imm, inbh, ib, kk, ivar, imulti
+
    real, dimension(nlayers) :: alpha_over_g, g_over_alpha
    real, dimension(2,nlayers+1) :: p_face, z_face
-   real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
+   real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus
    real, dimension(3,nlayers) :: ql, qr
    real, dimension(3,nq) :: qbl, qbr
-   integer :: iface, ilr, k, iquad, ktemp, I
+   integer :: iface, k, iquad, ktemp, I
    real :: z_intersect_top,z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
    real :: p_intersect_bot, p_intersect_top, one_plus_eta_edge
-   real :: H_corr,p_inc, weight, H_corr1,p_inc1, H_corr2,p_inc2, temp, ope_l, ope_r
-   integer :: Iq, el, er
+   real :: weight, H_corr1, p_inc1, ope_l, ope_r
+   integer :: el, er
    real ::  ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv
    real, dimension(nlayers) :: udpl, udpr, vdpl, vdpr
    real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
    real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
-   integer :: il, jl, ir, jr, kl, kr, jquad, n, m, index
-   real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux
+   integer :: il, jl, kl, n, index
+   real :: wq, hi, flux_x, flux_y
    real, dimension(2,nq,nlayers) :: udp_flux, vdp_flux
    real, dimension(nq,nlayers) :: H_face, flux_ul, flux_vl
 
@@ -1166,48 +1117,41 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
  end subroutine create_nbhs_face_bcl_momentum
 
-  subroutine create_nbhs_face_df_lap_bcl(rhs,q_send,q_recv,nlayers,multirate)
+  subroutine create_nbhs_face_df_lap_bcl(rhs,q_send,q_recv,nlayers)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psi
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, face_type,nface
- 
-   use mod_metrics, only: jac, massinv
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, psi
+
+   use mod_face, only: normal_vector, jac_face, imapl
+
+   use mod_grid, only: npoin, intma, face, nboun
+
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
 
    use mod_variables, only: graduvb_face_ave
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: rhs(2,npoin,nlayers)
    real,intent(in):: q_send(5*nlayers,ngl,nboun)
    real,intent(in):: q_recv(5*nlayers,ngl,nboun)
    integer, intent(in) :: nlayers
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate
-   real :: nxl, nyl, nxr, nyr
-   integer :: el, iquad, n, I, il, jl, kl, er, itype, ip, index
+
+   real :: wq, iflux
+   integer :: iface, k
+   integer :: jj, imm, inbh, ib, kk, ivar
+   integer :: imulti
+   real :: nxl, nyl
+   integer :: el, iquad, i, il, jl, kl, er, ip, index
 
    real, dimension(2) :: qu_mean, qv_mean
    real, dimension(4,2) :: flux_uv_visc_face
    real, dimension(2) :: qul,qur
    real, dimension(2) :: qvl,qvr
-   real, dimension(5) :: grad_uvb_pb_l, grad_uvb_pb_r
-   real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
+   real :: flux_qu, flux_qv, hi, alpha, beta
 
    jj=1
    kk=1
@@ -1293,77 +1237,47 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_df_lap_bcl
 
- subroutine create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send,q_recv,nvarb,multirate)
+ subroutine create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send,q_recv,nvarb)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   use mod_metrics, only: jac
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: nq
+
+   use mod_grid, only: nboun, face_type, nface
+
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: q_face(nvarb,2,nq,nface), grad_uvdp_face(nvarb,2,nq,nface)
    real,intent(in):: q_send(2*nvarb,nq,nboun)
    real,intent(in):: q_recv(2*nvarb,nq,nboun)
    integer, intent(in) :: nvarb
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate
- 
+
+   integer :: iface, k
+   integer :: jj, im, imm, inbh, ib, kk
+   integer :: ftype, imulti
+
    !Constants
- 
+
    jj=1
    kk=1
    imm = 0
 
-   ! do ifaceb =1,nboun
-   !    iface = face_send(ifaceb)  ! Get Local Face
- 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
          imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
- 
+
          do im = 1,imulti
- 
-            ! if (ftype==2) then
-               ilocl=face(5,iface)
-               iel=face(7,iface)
- 
-               ! if (multirate==1 .and. lev_list(iel)==0) then
-               !    kk=kk+1
-               !    cycle
-               ! end if
-            ! end if
- 
+
             !-------------------------------------
             !Store Left Side Variables
             !-------------------------------------
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
             
             do k=1,nvarb
                !Left Element
@@ -1392,72 +1306,56 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_quad_all
 
- subroutine create_nbhs_face_lap_quad_ip(rhs,q_send,q_recv,nvarb,multirate)
+ subroutine create_nbhs_face_lap_quad_ip(rhs,q_send,q_recv,nvarb)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq, psiq
- 
-   use mod_face, only: normal_vector_q, jac_face, imapl, imapr, face_send, jac_faceq
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   !use mod_metrics, only: jac_faceq
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: ngl, nq, psiq
+
+   use mod_face, only: normal_vector_q, imapl, jac_faceq
+
+   use mod_grid, only: npoin, intma, face, nboun, face_type
+
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: rhs(2,npoin)
    real,intent(in):: q_send(nvarb,nq,nboun)
    real,intent(in):: q_recv(nvarb,nq,nboun)
    integer, intent(in) :: nvarb
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux, nx, ny, hi 
-   integer ::iface,k, il, jl, kl, ip, i
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate, iquad
+
+   real :: wq, nx, ny, hi
+   integer :: iface, il, jl, kl, ip, i
+   integer :: iel
+   integer :: jj, im, imm, inbh, ib, kk
+   integer :: ftype, imulti
+   integer :: iquad
    real, dimension(2) :: qu_mean, qv_mean
    real :: flux_qu, flux_qv
- 
+
    !Constants
- 
+
    jj=1
    kk=1
    imm = 0
 
-   ! do ifaceb =1,nboun
-   !    iface = face_send(ifaceb)  ! Get Local Face
- 
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
          imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
- 
+
          do im = 1,imulti
- 
-            ilocl=face(5,iface)
+
             iel=face(7,iface)
- 
+
             !-------------------------------------
             !Store Left Side Variables
             !-------------------------------------
-            ! call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
             
             ! do k=1,nvarb
             !    !Left Element
@@ -1522,46 +1420,31 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_lap_quad_ip
 
- subroutine create_nbhs_face_quad1(q_face,face_sendrecv,q_send,q_recv,nvarb,multirate)
+ subroutine create_nbhs_face_quad1(q_face,face_sendrecv,q_send,q_recv,nvarb)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   use mod_metrics, only: jac
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: nq
+
+   use mod_grid, only: nboun, face_type, nface
+
+   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, &
                            num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: q_face(nvarb,2,nq,nface)
    real,intent(in):: q_send(nvarb,nq+1,nboun)
    real,intent(in):: q_recv(nvarb,nq+1,nboun)
    integer, intent(in) :: nvarb
    integer, intent(out) :: face_sendrecv(nvarb,2,nboun)
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate,inode
- 
+
+   integer :: iface, k
+   integer :: jj, im, imm, inbh, ib, kk
+   integer :: ftype, imulti
+   integer :: inode
+
    !Constants
  
    jj=1
@@ -1575,32 +1458,13 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
          imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
- 
+
          do im = 1,imulti
- 
-            ! if (ftype==2) then
-               ilocl=face(5,iface)
-               iel=face(7,iface)
- 
-               ! if (multirate==1 .and. lev_list(iel)==0) then
-               !    kk=kk+1
-               !    cycle
-               ! end if
-            ! end if
- 
-            !-------------------------------------
-            !Store Left Side Variables
-            !-------------------------------------
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-            
+
             do inode = 1,nq
                do k=1,nvarb
-                  !Left Element
-                  !q_face(k,1,:,iface)=q_send(k,:,kk)
-
-                  !Right Element
                   q_face(k,2,inode,iface)=q_recv(k,inode,jj)
                   face_sendrecv(nvarb,1,jj) = q_send(nvarb,nq+1,jj)
                   face_sendrecv(nvarb,2,jj) = q_recv(nvarb,nq+1,jj)
@@ -1609,76 +1473,48 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
 
             kk=kk+1
 
-            ! end if
          end do
          jj=jj+1
       end do
- 
+
    end do !iface
- 
+
  end subroutine create_nbhs_face_quad1
 
  subroutine create_nbhs_face_quad_layer(q_face,q_send,q_recv,nvarb,nlayers,nq)
 
-   use mod_basis, only: FACE_CHILDREN
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   use mod_metrics, only: jac
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_grid, only: nboun, face_type, nface
+
+   use mod_parallel, only: nbh_send_recv, &
                      num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: q_face(nvarb,2,nq,nface,nlayers)
    real,intent(in):: q_send(nvarb,nq,nboun,nlayers)
    real,intent(in):: q_recv(nvarb,nq,nboun,nlayers)
-   integer, intent(in) :: nvarb,nlayers,nq
- 
+   integer, intent(in) :: nvarb, nlayers, nq
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti, ll, inode
- 
+
+   integer :: iface, k
+   integer :: jj, imm, inbh, ib, kk
+   integer :: ftype, ll, inode
+
    !Constants
- 
+
    jj=1
    kk=1
    imm = 0
- 
+
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
-         imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
- 
-         ! do im = 1,imulti
- 
+
             if (ftype==2) then
-               ilocl=face(5,iface)
-               iel=face(7,iface)
- 
-            !-------------------------------------
-            !Store Left Side Variables
-            !-------------------------------------
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
             
             do ll = 1,nlayers
                do inode = 1,nq
@@ -1703,76 +1539,42 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  end subroutine create_nbhs_face_quad_layer
 
   subroutine create_nbhs_face_quad_layer_all(q_face,qprime_face,q_send,q_recv,nvarb, &
-               nlayers,multirate)
+               nlayers)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   use mod_metrics, only: jac
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: nq
+
+   use mod_grid, only: nboun, face_type, nface
+
+   use mod_parallel, only: nbh_send_recv, &
                            num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, dimension(nvarb,2,nq,nface,nlayers), intent(inout) :: q_face, qprime_face
    real,intent(in):: q_send(2*nvarb,nq,nboun,nlayers)
    real,intent(in):: q_recv(2*nvarb,nq,nboun,nlayers)
-   integer, intent(in) :: nvarb,nlayers
- 
+   integer, intent(in) :: nvarb, nlayers
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti, ll
-   integer :: multirate
- 
+
+   integer :: iface, k
+   integer :: jj, imm, inbh, ib, kk
+   integer :: ftype, ll
+
    !Constants
- 
+
    jj=1
    kk=1
    imm = 0
- 
+
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
-         imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
 
-         !print*, 'iface', iface, 'ftype', ftype, 'imulti', imulti
- 
-         ! do im = 1,imulti
- 
             if (ftype==2) then
-               ilocl=face(5,iface)
-               iel=face(7,iface)
- 
-            !    if (multirate==1 .and. lev_list(iel)==0) then
-            !       kk=kk+1
-            !       cycle
-            !    end if
-            ! end if
- 
-            !-------------------------------------
-            !Store Left Side Variables
-            !-------------------------------------
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
             
             do ll = 1,nlayers
                do k=1,nvarb
@@ -1802,88 +1604,53 @@ subroutine create_nbhs_face_quad(q_face,q_send,q_recv,nvarb,multirate)
  
  end subroutine create_nbhs_face_quad_layer_all
 
- subroutine create_nbhs_face_quad_1v(q_face,q_send,q_recv,multirate)
+ subroutine create_nbhs_face_quad_1v(q_face,q_send,q_recv)
 
-   use mod_basis, only: ngl, FACE_CHILDREN,nq
- 
-   use mod_face, only: normal_vector, jac_face, imapl, imapr, face_send
- 
-   use mod_grid, only: nelem, npoin, intma, face, nboun, mod_grid_get_face_nq, face_type,nface
- 
-   use mod_initial, only: nvar
- 
-   use mod_metrics, only: jac
- 
-   use mod_p4est, only: scatter_element_2d, scatter_element_2d_subface, &
-                        gather_element_2d_subface, plist, lev_list
- 
-   use mod_parallel, only: nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half, &
+   use mod_basis, only: nq
+
+   use mod_grid, only: nboun, face_type, nface
+
+   use mod_parallel, only: nbh_send_recv, &
                            num_nbh, num_send_recv
- 
-   use mod_ref, only: nmessage
- 
+
    implicit none
- 
+
    !global arrays
    real, intent(inout) :: q_face(2,nq,nface)
    real,intent(in):: q_send(nq,nboun)
    real,intent(in):: q_recv(nq,nboun)
- 
+
    !local variables
- 
-   real :: wq, a_constant, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   integer :: multirate
- 
+
+   integer :: iface
+   integer :: jj, imm, inbh, ib, kk
+   integer :: ftype
+
    !Constants
- 
+
    jj=1
    kk=1
    imm = 0
- 
+
    do inbh = 1, num_nbh
       do ib=1,num_send_recv(inbh)
          iface = nbh_send_recv(jj)
-         imulti = nbh_send_recv_multi(jj)
- 
+
          ftype = face_type(iface)
 
-         !print*, 'iface', iface, 'ftype', ftype, 'imulti', imulti
- 
-         !do im = 1,imulti
- 
             if (ftype==2) then
-               ilocl=face(5,iface)
-               iel=face(7,iface)
- 
-            !    if (multirate==1 .and. lev_list(iel)==0) then
-            !       kk=kk+1
-            !       cycle
-            !    end if
-            ! end if
- 
-            !-------------------------------------
-            !Store Left Side Variables
-            !-------------------------------------
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
 
             !Left Element
             q_face(1,:,iface)=q_send(:,kk)
 
             !Right Element
             q_face(2,:,iface)=q_recv(:,jj)
- 
+
             kk=kk+1
             end if
-         !end do
          jj=jj+1
       end do
- 
+
    end do !iface
- 
+
  end subroutine create_nbhs_face_quad_1v

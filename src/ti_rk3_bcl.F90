@@ -16,14 +16,11 @@ subroutine ti_rk3_bcl(q_df, qb_df)
     ! qprime_df: value dp', u' and v' at nodal points
     ! qp_df_out: output variable, thickness h_k, velocity u_k,v_k, free surface ssh
 
-    use mod_splitting, only: thickness, momentum, momentum_mass, create_rhs_bcl
-    use mod_input, only: nlayers, method_visc, dt
-    use mod_grid, only: npoin, npoin_q, nface
-    use mod_constants, only: gravity
-    use mod_initial, only: alpha_mlswe, zbot_df, ssprk_a, ssprk_beta
-    use mod_basis, only: nq, ngl
+    use mod_splitting, only: create_rhs_bcl
+    use mod_input, only: nlayers, dt
+    use mod_grid, only: npoin
+    use mod_initial, only: ssprk_a, ssprk_beta
     use mod_rk_mlswe, only: ti_barotropic_ssprk_mlswe
-    use mod_variables, only: one_plus_eta_df, dpprime_visc, dpprime_visc_q
     use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
     use mod_layer_terms, only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
 
@@ -33,7 +30,7 @@ subroutine ti_rk3_bcl(q_df, qb_df)
     real, dimension(3,npoin,nlayers), intent(inout) :: q_df
     
     real, dimension(4,npoin) :: qbp_df
-    real, dimension(3,npoin,nlayers) :: qprime_df, qprime_df2, q_df2
+    real, dimension(3,npoin,nlayers) :: qprime_df
     integer :: k, ik
     real, dimension(3,npoin,nlayers) :: q0_df, q1_df, q2_df, rhs
     real, dimension(2,npoin,nlayers) :: uv_df
@@ -79,5 +76,50 @@ subroutine ti_rk3_bcl(q_df, qb_df)
         if(ik == 5 .and. k == 2) q2_df = q_df
 
     end do
+
+    ! ── Heun's Method (RK2) ─────────────────────────────────────────────────────
+    ! Stage 1 – Predictor: q1 = q0 + dt * f(q0)
+
+    ! call extract_qprime_df_face(qprime_df, q0_df, qb_df)
+    ! call btp_bcl_coeffs_qdf(qprime_df)
+    ! call ti_barotropic_ssprk_mlswe(qb_df, qprime_df)
+    ! call create_rhs_bcl(rhs, qprime_df, q0_df)
+
+    ! do k = 1, nlayers
+    !     q_df(1,:,k) = q0_df(1,:,k) + dt*rhs(1,:,k)
+    !     q_df(2,:,k) = q0_df(2,:,k) + dt*rhs(2,:,k)
+    !     q_df(3,:,k) = q0_df(3,:,k) + dt*rhs(3,:,k)
+    ! end do
+
+    ! call layer_mom_boundary_df(q_df)
+    ! call extract_velocity(uv_df, q_df, qb_df)
+
+    ! do k = 1, nlayers
+    !     q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
+    !     q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+    ! end do
+
+    ! q1_df = q_df   ! save predictor solution
+
+    ! ! ── Stage 2 – Corrector: q_new = 0.5*q0 + 0.5*(q1 + dt*f(q1)) ──────────────
+
+    ! call extract_qprime_df_face(qprime_df, q1_df, qb_df)
+    ! call btp_bcl_coeffs_qdf(qprime_df)
+    ! call ti_barotropic_ssprk_mlswe(qb_df, qprime_df)
+    ! call create_rhs_bcl(rhs, qprime_df, q1_df)
+
+    ! do k = 1, nlayers
+    !     q_df(1,:,k) = 0.5*q0_df(1,:,k) + 0.5*q1_df(1,:,k) + 0.5*dt*rhs(1,:,k)
+    !     q_df(2,:,k) = 0.5*q0_df(2,:,k) + 0.5*q1_df(2,:,k) + 0.5*dt*rhs(2,:,k)
+    !     q_df(3,:,k) = 0.5*q0_df(3,:,k) + 0.5*q1_df(3,:,k) + 0.5*dt*rhs(3,:,k)
+    ! end do
+
+    ! call layer_mom_boundary_df(q_df)
+    ! call extract_velocity(uv_df, q_df, qb_df)
+
+    ! do k = 1, nlayers
+    !     q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
+    !     q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+    ! end do
 
 end subroutine ti_rk3_bcl
