@@ -9,6 +9,7 @@ DIRS +=
 
 SOURCEF += amain.F90
 SOURCEF += mod_variables.F90
+SOURCEF += mod_openacc_utilities.F90
 SOURCEF += apply_boundary_conditions.F90
 SOURCEF += courant.F90
 SOURCEF += create_boundary.F90

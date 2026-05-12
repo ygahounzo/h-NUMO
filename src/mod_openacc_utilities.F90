@@ -1,7 +1,7 @@
 module mod_openacc_utilities
 
     use openacc
-    use mpi_utilities
+    use mod_mpi_utilities
 
     implicit none
 
