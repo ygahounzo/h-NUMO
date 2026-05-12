@@ -146,7 +146,7 @@ subroutine read_mlswe(q_df,qb_df,fname)
         pos = index(fname, '.nc')
 
         if (pos > 0 .and. pos + 2 == len_trim(fname)) then
-            call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, nlayers)
+            ! call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, nlayers)
         else
             call load_data_mlswe(fname, qb_grp, q_grp, npoin_grp, nlayers)
         end if
@@ -169,81 +169,81 @@ subroutine read_mlswe(q_df,qb_df,fname)
 
 end subroutine read_mlswe
 
-subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
+! subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
 
-    use netcdf
+!     use netcdf
     
-    character(len=*), intent(in) :: name_data_file
-    real, dimension(3, npoin_g), intent(out) :: qb_df_g
-    real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
-    integer, intent(in) :: npoin_g, nlayers
+!     character(len=*), intent(in) :: name_data_file
+!     real, dimension(3, npoin_g), intent(out) :: qb_df_g
+!     real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
+!     integer, intent(in) :: npoin_g, nlayers
 
-    integer :: ncid, time_dimid, npoin_dimid, nlayers_dimid, zi_dimid
-    integer :: dt_varid, dt_btp_varid, x_varid, y_varid
-    integer :: pb_varid, pbub_varid, pbvb_varid, h_varid, u_varid
-    integer :: v_varid, eta_varid
-    integer :: status
-    integer :: time_size, npoin_size, nlayers_size, zi_size
-    real(8), allocatable :: dt(:), dt_btp(:)
-    real(8), allocatable :: pb(:), pbub(:), pbvb(:), h(:,:), u(:,:), v(:,:)
+!     integer :: ncid, time_dimid, npoin_dimid, nlayers_dimid, zi_dimid
+!     integer :: dt_varid, dt_btp_varid, x_varid, y_varid
+!     integer :: pb_varid, pbub_varid, pbvb_varid, h_varid, u_varid
+!     integer :: v_varid, eta_varid
+!     integer :: status
+!     integer :: time_size, npoin_size, nlayers_size, zi_size
+!     real(8), allocatable :: dt(:), dt_btp(:)
+!     real(8), allocatable :: pb(:), pbub(:), pbvb(:), h(:,:), u(:,:), v(:,:)
 
-    ! Open NetCDF file
-    call check(nf90_open(trim(name_data_file), NF90_NOWRITE, ncid))
+!     ! Open NetCDF file
+!     call check(nf90_open(trim(name_data_file), NF90_NOWRITE, ncid))
 
-    ! Get dimension sizes
-    call check(nf90_inq_dimid(ncid, "time", time_dimid))
-    call check(nf90_inq_dimid(ncid, "npoin", npoin_dimid))
-    !call check(nf90_inquire_dimension(ncid, npoin_dimid, len=npoin_size))
-    call check(nf90_inq_dimid(ncid, "nlayers", nlayers_dimid))
-    !call check(nf90_inquire_dimension(ncid, nlayers_dimid, len=nlayers_size))
+!     ! Get dimension sizes
+!     call check(nf90_inq_dimid(ncid, "time", time_dimid))
+!     call check(nf90_inq_dimid(ncid, "npoin", npoin_dimid))
+!     !call check(nf90_inquire_dimension(ncid, npoin_dimid, len=npoin_size))
+!     call check(nf90_inq_dimid(ncid, "nlayers", nlayers_dimid))
+!     !call check(nf90_inquire_dimension(ncid, nlayers_dimid, len=nlayers_size))
 
-    ! Allocate arrays based on the dimensions
-    allocate(pb(npoin_g), pbub(npoin_g), pbvb(npoin_g))
-    allocate(h(npoin_g,nlayers), u(npoin_g,nlayers))
-    allocate(v(npoin_g, nlayers))
+!     ! Allocate arrays based on the dimensions
+!     allocate(pb(npoin_g), pbub(npoin_g), pbvb(npoin_g))
+!     allocate(h(npoin_g,nlayers), u(npoin_g,nlayers))
+!     allocate(v(npoin_g, nlayers))
 
-    ! Get variable IDs
-    call check(nf90_inq_varid(ncid, "pb", pb_varid))
-    call check(nf90_inq_varid(ncid, "pbub", pbub_varid))
-    call check(nf90_inq_varid(ncid, "pbvb", pbvb_varid))
-    call check(nf90_inq_varid(ncid, "h", h_varid))
-    call check(nf90_inq_varid(ncid, "u", u_varid))
-    call check(nf90_inq_varid(ncid, "v", v_varid))
+!     ! Get variable IDs
+!     call check(nf90_inq_varid(ncid, "pb", pb_varid))
+!     call check(nf90_inq_varid(ncid, "pbub", pbub_varid))
+!     call check(nf90_inq_varid(ncid, "pbvb", pbvb_varid))
+!     call check(nf90_inq_varid(ncid, "h", h_varid))
+!     call check(nf90_inq_varid(ncid, "u", u_varid))
+!     call check(nf90_inq_varid(ncid, "v", v_varid))
 
-    ! Read the variables
-    call check(nf90_get_var(ncid, pb_varid, pb))
-    call check(nf90_get_var(ncid, pbub_varid, pbub))
-    call check(nf90_get_var(ncid, pbvb_varid, pbvb))
-    call check(nf90_get_var(ncid, h_varid, h))
-    call check(nf90_get_var(ncid, u_varid, u))
-    call check(nf90_get_var(ncid, v_varid, v))
+!     ! Read the variables
+!     call check(nf90_get_var(ncid, pb_varid, pb))
+!     call check(nf90_get_var(ncid, pbub_varid, pbub))
+!     call check(nf90_get_var(ncid, pbvb_varid, pbvb))
+!     call check(nf90_get_var(ncid, h_varid, h))
+!     call check(nf90_get_var(ncid, u_varid, u))
+!     call check(nf90_get_var(ncid, v_varid, v))
 
-    ! Close NetCDF file
-    call check(nf90_close(ncid))
+!     ! Close NetCDF file
+!     call check(nf90_close(ncid))
 
-    ! Barotropic variables
-    qb_df_g(1,:) = pb
-    qb_df_g(2,:) = pbub
-    qb_df_g(3,:) = pbvb
+!     ! Barotropic variables
+!     qb_df_g(1,:) = pb
+!     qb_df_g(2,:) = pbub
+!     qb_df_g(3,:) = pbvb
 
-    ! Baroclinic variables
-    q_df_g(1,:,:) = h
-    q_df_g(2,:,:) = u
-    q_df_g(3,:,:) = v
+!     ! Baroclinic variables
+!     q_df_g(1,:,:) = h
+!     q_df_g(2,:,:) = u
+!     q_df_g(3,:,:) = v
 
-    deallocate(h, u, v, pb, pbub, pbvb)
+!     deallocate(h, u, v, pb, pbub, pbvb)
 
-    contains
+!     contains
 
-    ! Error checking subroutine
-    subroutine check(status)
-      integer, intent(in) :: status
-      if (status /= NF90_NOERR) then
-        print *, "NetCDF error: ", nf90_strerror(status)
-        stop
-      end if
-    end subroutine check
-end subroutine load_data_mlswe_nc
+!     ! Error checking subroutine
+!     subroutine check(status)
+!       integer, intent(in) :: status
+!       if (status /= NF90_NOERR) then
+!         print *, "NetCDF error: ", nf90_strerror(status)
+!         stop
+!       end if
+!     end subroutine check
+! end subroutine load_data_mlswe_nc
 
 subroutine load_data_mlswe(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
 

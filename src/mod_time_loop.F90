@@ -97,8 +97,8 @@ contains
            if(dump_data) then 
                 if(trim(out_type) == 'txt') then
                     call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
-                elseif(trim(out_type) == 'nc') then
-                    call diagnostics_nc(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
+                ! elseif(trim(out_type) == 'nc') then
+                !     call diagnostics_nc(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
                 elseif(trim(out_type) == 'vtk') then
                     do l=1,nlayers
                         !Write Snapshot File
@@ -232,8 +232,8 @@ contains
 
                 if(trim(out_type)=='txt') then
                     call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
-                elseif(trim(out_type)=='nc') then
-                    call diagnostics_nc(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+                ! elseif(trim(out_type)=='nc') then
+                !     call diagnostics_nc(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
                 elseif(trim(out_type)=='vtk') then
                     do l=1,nlayers
                         !Write Snapshot File

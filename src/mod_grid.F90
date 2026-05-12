@@ -70,6 +70,7 @@ module mod_grid
     real,    dimension(:),        allocatable :: sigma
     integer, dimension(:,:),      allocatable :: index2d
     integer, dimension(:,:,:,:),  allocatable :: intma_table
+    integer, dimension(:,:,:,:),  allocatable :: intma
     integer, dimension(:,:,:,:),  allocatable :: D2C_mask
     integer(C_INT), dimension(:,:), allocatable :: NC_face
     integer(C_INT), dimension(:,:), allocatable :: NC_edge
@@ -114,7 +115,7 @@ module mod_grid
     public:: intma_1d, intma_1d_cg
     public:: node_column, node_column_cg
 
-    procedure(intma_interface), pointer:: intma
+    ! procedure(intma_interface), pointer:: intma
     procedure(intma_1d_interface), pointer:: intma_1d
     procedure(node_column_interface), pointer:: node_column
 
@@ -306,15 +307,25 @@ contains
 
         implicit none
 
-        integer:: AllocateStatus
+        integer:: AllocateStatus, i,j,k,e
 
         integer :: npoin_dg
+
+        if (allocated(intma)) then
+            !!$acc exit data delete(intma)
+            deallocate(intma)
+        endif
+
+        allocate(intma(nglx,ngly,nglz,nelem))
 
         if(space_method == 'cgc') then
             !3d
             npoin = npoin_cg
             npoin_dg = nelem * (nopx + 1) * (nopy + 1) * (nopz + 1) !just for coord_dg from p4est
-            intma => intma_cg
+            ! intma => intma_cg
+            do concurrent (i=1:nglx, j=1:ngly, k=1:nglz, e=1:nelem)
+                intma(i,j,k,e) = intma_cg(i,j,k,e)
+            end do
             intma_dg_to_cg => intma_dg_to_cg_1
 
             !1D
@@ -330,7 +341,12 @@ contains
             !3D
             npoin = nelem * (nopx + 1) * (nopy + 1) * (nopz + 1)
             npoin_q = nelem * nqx * nqy * nqz
-            intma => intma_dg
+            ! intma => intma_dg
+
+            do concurrent (i=1:nglx, j=1:ngly, k=1:nglz, e=1:nelem)
+                intma(i,j,k,e) = intma_dg(i,j,k,e)
+            end do
+
             intma_dg_to_cg => intma_dg_to_cg_2
 
             !1D

@@ -61,6 +61,17 @@ hnumo-acc:
 	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lp4est -lsc -lz" \
 	"AR=ar rv"
 
+hnumo-acc-db:
+	$(MAKE) $(TARGET) \
+	"FC=mpif90" \
+	"LD=mpif90 -acc=gpu -Minfo=accel" \
+	"CC=mpicc" \
+	"FFLAGS= -O0 -g -r8 -acc=gpu -gpu=debug -Minfo=accel,intensity -traceback -C -Mchkptr -Dblock_size=0" \
+	"CFLAGS= -O0 -g -std=c99 -acc=gpu -gpu=debug -Minfo=accel" \
+	"INCLUDE= -I${NUMO_P4EST_DIR}/include -I${NUMO_DIR}/include" \
+	"LIBS=$(NUMOLIBS) -L${NUMO_P4EST_DIR}/lib -L/usr/lib -lp4est -lsc -lz" \
+	"AR=ar rv"
+
 #--------------------------------------------------------------------------------
 # This is used to compile the code on GitHub servers for continuous integration
 #--------------------------------------------------------------------------------

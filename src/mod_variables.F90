@@ -20,6 +20,7 @@ module mod_variables
     public :: sum_layer_mass_flux, sum_layer_mass_flux_face
         
     public :: z_elevation
+    public :: qb_df, qprime_df, rhs_btp
 
     private 
     ! module variable and parameters 
@@ -45,6 +46,9 @@ module mod_variables
     ! bcl variables 
     real, dimension(:,:), allocatable :: sum_layer_mass_flux
     real, dimension(:,:,:), allocatable :: sum_layer_mass_flux_face
+
+    real, dimension(:,:), allocatable :: qb_df, rhs_btp
+    real, dimension(:,:,:), allocatable :: qprime_df
 
     contains
 
@@ -102,6 +106,12 @@ module mod_variables
     allocate(sum_layer_mass_flux(2,npoin_q), &
         sum_layer_mass_flux_face(2,nq,nface), &
         stat=AllocateStatus)
+    if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables" 
+
+    if (allocated(qb_df)) then
+        deallocate(qb_df, qprime_df, rhs_btp)
+    endif 
+    allocate(qb_df(4,npoin), qprime_df(3,npoin,nlayers), rhs_btp(3,npoin))
     if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables" 
         
     end subroutine mod_allocate_mlswe
