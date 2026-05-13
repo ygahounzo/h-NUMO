@@ -191,10 +191,12 @@ module mod_rk_mlswe
         graduvb_ave             = 0.0
 
         ! Push zeroed accumulators to the device so GPU accumulation starts from 0.
-        !!$acc update device(H_ave, Qu_ave, Qv_ave, Quv_ave, tau_bot_ave, &
-        !!$acc               ope_ave, ope2_ave, btp_mass_flux_ave, uvb_ave)
+        !$acc update device(H_ave, Qu_ave, Qv_ave, Quv_ave, tau_bot_ave, &
+        !$acc               ope_ave, ope2_ave, btp_mass_flux_ave, uvb_ave)
 
         qb2_df = 0.0
+
+        !$acc update device(qb_df)
 
         ! Time loop for the barotropic solver, with SSPRK time integration. 
         do mstep = 1, N_btp
@@ -219,7 +221,7 @@ module mod_rk_mlswe
                 call create_rhs_btp(rhs_btp, qb_df, qprime_df)
                 ! Download GPU volume-integral result so CPU face-flux routine
                 ! and the RK update below both see the correct rhs_btp.
-                !!$acc update host(rhs_btp)
+                !$acc update host(rhs_btp)
 
                 ! Update barotropic variables using SSPRK formula
                 qb1_df(2:4,:) = a0*qb0_df(2:4,:) + a1*qb_df(2:4,:) + a2*qb2_df(2:4,:) + dtt*rhs_btp
@@ -229,7 +231,7 @@ module mod_rk_mlswe
                 call btp_mom_boundary_df(qb1_df)
 
                 qb_df = qb1_df
-                !!$acc update device(qb_df)
+                !$acc update device(qb_df)
 
                 if (kstages == 5 .and. ik == 2) qb2_df = qb_df
 
@@ -241,8 +243,8 @@ module mod_rk_mlswe
 
         ! Download GPU-accumulated averaging variables to host before normalisation.
         ! These were accumulated by create_rhs_btp_volume_qdf on the device.
-        !!$acc update host(H_ave, Qu_ave, Qv_ave, Quv_ave, tau_bot_ave, &
-        !!$acc             ope_ave, ope2_ave, btp_mass_flux_ave, uvb_ave)
+        !$acc update host(H_ave, Qu_ave, Qv_ave, Quv_ave, tau_bot_ave, &
+        !$acc             ope_ave, ope2_ave, btp_mass_flux_ave, uvb_ave)
 
         ! Normalise accumulators to get time averages
         N_inv = 1.0 / real(kstages * N_btp)

@@ -34,6 +34,7 @@ contains
             nlayers, is_mlswe, ti_method_btp, dump_data, lcheck_conserved
         use mod_constants, only: gravity
         use mod_restart, only: restart_mlswe
+        use mod_variables, only: qb_df
         use mpi
 
         implicit none
@@ -70,7 +71,7 @@ contains
 
         !initialize all layers here
         q0_df_mlswe = q_df_mlswe_init
-        qb0_df_mlswe = qb_df_mlswe_init
+        qb_df = qb_df_mlswe_init
 
         !Initialize/Restart
         inorm=0
@@ -96,9 +97,9 @@ contains
            !write layers output
            if(dump_data) then 
                 if(trim(out_type) == 'txt') then
-                    call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
+                    call diagnostics(qout_mlswe,q0_df_mlswe, qb_df(1:4,:),itime,idone)
                 ! elseif(trim(out_type) == 'nc') then
-                !     call diagnostics_nc(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,idone)
+                !     call diagnostics_nc(qout_mlswe,q0_df_mlswe, qb_df(1:4,:),itime,idone)
                 elseif(trim(out_type) == 'vtk') then
                     do l=1,nlayers
                         !Write Snapshot File
@@ -109,7 +110,7 @@ contains
                         fnp1(j:j)='0'
                         end do
                         write(fnp2,'(a1,a3,a5)')"l",fnp1,"_0000"
-                        call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
+                        call write_output_mlswe(qout_mlswe(:,:,l),qb_df(1:4,:),fnp2,time,l)
 
                     end do
                 end if
@@ -139,9 +140,9 @@ contains
                 fnp=trim('mlswe') // trim(fnp4)
                 if(trim(out_type) == 'nc') fnp = trim('mlswe') // trim(fnp4)//trim('.nc')
 
-                call restart_mlswe(q0_df_mlswe,qb0_df_mlswe,qout_mlswe, fnp)
+                call restart_mlswe(q0_df_mlswe,qb_df,qout_mlswe, fnp)
 
-                qb0_df_mlswe = qb0_df_mlswe
+                qb_df = qb_df
             end if
            
            if(irank==0)  print*,' Done Reading'
@@ -150,7 +151,7 @@ contains
         if(lcheck_conserved) then 
 
             if (.not. dump_data) then
-                call diagnostics(qout_mlswe,q0_df_mlswe, qb0_df_mlswe(1:4,:),itime,1)
+                call diagnostics(qout_mlswe,q0_df_mlswe, qb_df(1:4,:),itime,1)
             end if
 
             do l = 1,nlayers
@@ -181,7 +182,7 @@ contains
         endif 
 
         if (lprint_diagnostics) then
-            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone, &
+            call print_diagnostics_mlswe(qout_mlswe,qb_df(1:4,:),time,itime,dt,idone, &
             mass_conserv0_g,ntime,fnp11,unit0)
         end if
 
@@ -209,7 +210,7 @@ contains
             !time1 = wtime()
             call cpu_time(time1)
 
-            call ti_rk_bcl(q0_df_mlswe, qb0_df_mlswe)
+            call ti_rk_bcl(q0_df_mlswe, qb_df, qout_mlswe, time, itime, dt)
 
             call cpu_time(time2)
 
@@ -231,9 +232,9 @@ contains
                 end do
 
                 if(trim(out_type)=='txt') then
-                    call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+                    call diagnostics(qout_mlswe,q0_df_mlswe,qb_df(1:4,:),inorm,idone)
                 ! elseif(trim(out_type)=='nc') then
-                !     call diagnostics_nc(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+                !     call diagnostics_nc(qout_mlswe,q0_df_mlswe,qb_df(1:4,:),inorm,idone)
                 elseif(trim(out_type)=='vtk') then
                     do l=1,nlayers
                         !Write Snapshot File
@@ -245,13 +246,13 @@ contains
                         end do
                         write(fnp2,'(a1,a3,a1,a4)')"l",fnp4,"_",fnp1
 
-                        call write_output_mlswe(qout_mlswe(:,:,l),qb0_df_mlswe(1:4,:),fnp2,time,l)
+                        call write_output_mlswe(qout_mlswe(:,:,l),qb_df(1:4,:),fnp2,time,l)
                     end do
                 end if
 
                 !Append q max and q min to file:
                 if (lprint_diagnostics) then 
-                    call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+                    call print_diagnostics_mlswe(qout_mlswe,qb_df(1:4,:),time,itime,dt,idone,&
                     mass_conserv0_g,ntime,fnp11,unit0)
                 end if
             end if !mod
@@ -265,14 +266,14 @@ contains
 
         !if (lprint_diagnostics) then 
             if (.not. dump_data) then
-                call diagnostics(qout_mlswe,q0_df_mlswe,qb0_df_mlswe(1:4,:),inorm,idone)
+                call diagnostics(qout_mlswe,q0_df_mlswe,qb_df(1:4,:),inorm,idone)
             end if
-            call print_diagnostics_mlswe(qout_mlswe,qb0_df_mlswe(1:4,:),time,itime,dt,idone,&
+            call print_diagnostics_mlswe(qout_mlswe,qb_df(1:4,:),time,itime,dt,idone,&
             mass_conserv0_g,ntime,fnp11,unit0)
         !end if
 
         if(allocated(q0_df_mlswe)) deallocate(q0_df_mlswe)
-        if(allocated(qb0_df_mlswe)) deallocate(qb0_df_mlswe)
+        ! if(allocated(qb0_df_mlswe)) deallocate(qb0_df_mlswe)
         
     end subroutine time_loop
 

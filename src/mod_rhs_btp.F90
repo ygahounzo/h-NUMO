@@ -56,7 +56,7 @@ contains
     
         call create_rhs_btp_volume_qdf(rhs_btp, qb_df, qprime_df)
 
-        !!$acc update host(rhs_btp)
+        !$acc update host(rhs_btp)
 
         call create_btp_fluxes_qdf(rhs_btp, qb_df, qprime_df)
 
@@ -122,28 +122,28 @@ contains
         ! integer, dimension(npts) :: I_c
         integer :: Iq, ip, k, I
 
-        !!$acc data present(rhs_btp, qb_df, qprime_df,                                  &
-        !!$acc               grad_zbot_quad, tau_wind, psih, dpsidx, dpsidy,        &
-        !!$acc               indexq, wjac, pbprime_df, coriolis_quad, alpha_mlswe,  &
-        !!$acc               tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave,  &
-        !!$acc               uvb_ave, btp_mass_flux_ave, ope2_ave)
+        !$acc data present(rhs_btp, qb_df, qprime_df,                                  &
+        !$acc               grad_zbot_quad, tau_wind, psih, dpsidx, dpsidy,        &
+        !$acc               indexq, wjac, pbprime_df, coriolis_quad, alpha_mlswe,  &
+        !$acc               tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave,  &
+        !$acc               uvb_ave, btp_mass_flux_ave, ope2_ave)
 
         ! Zero rhs on device. Caller used 'create(rhs)' (not 'copyin'), so
         ! device memory is uninitialised; both kernels accumulate into rhs.
-        !!$acc kernels
+        !$acc kernels
         rhs_btp = 0.0
-        !!$acc end kernels
+        !$acc end kernels
 
-        !!$acc parallel loop gang                                                    &
-        !!$acc   private(dp, dpp, udp, vdp, pbq, hi, Hq, wq, ub, vb,               &
-        !!$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y,                   &
-        !!$acc           ope, ope2, grav_dp,                                         &
-        !!$acc           pp_k, up_k, vp_k, pprime_k, pprime_k1,                     &
-        !!$acc           Qu1, Qu2, Qv1, Qv2,                                        &
-        !!$acc           dhdx, dhdy, sum_up2, sum_uv, sum_vp2,                      &
-        !!$acc           wq_udp, wq_vdp, wq_scx, wq_scy,                            &
-        !!$acc           wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2,                           &
-        !!$acc           ip, k)
+        !$acc parallel loop gang                                                    &
+        !$acc   private(dp, dpp, udp, vdp, pbq, hi, Hq, wq, ub, vb,               &
+        !$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y,                   &
+        !$acc           ope, ope2, grav_dp,                                         &
+        !$acc           pp_k, up_k, vp_k, pprime_k, pprime_k1,                     &
+        !$acc           Qu1, Qu2, Qv1, Qv2,                                        &
+        !$acc           dhdx, dhdy, sum_up2, sum_uv, sum_vp2,                      &
+        !$acc           wq_udp, wq_vdp, wq_scx, wq_scy,                            &
+        !$acc           wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2,                           &
+        !$acc           ip, k)
         do Iq = 1, npoin_q
 
             wq = wjac(Iq)
@@ -157,7 +157,7 @@ contains
 
             ! Barotropic projection
             dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  pbq = 0.0
-            !!$acc loop seq
+            !$acc loop seq
             do ip = 1, npts
                 I = indexq(ip, Iq)
                 hi = psih(ip, Iq)
@@ -175,10 +175,10 @@ contains
             Hq = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
             pprime_k = 0.0     ! pprime_0 = 0 at sea surface
 
-            !!$acc loop seq
+            !$acc loop seq
             do k = 1, nlayers
                 pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
-                !!$acc loop seq
+                !$acc loop seq
                 do ip = 1, npts
                     I = indexq(ip, Iq)
                     hi = psih(ip, Iq)
@@ -259,7 +259,7 @@ contains
 
             ! Volume RHS
             ! Iq is unique per node
-            !!$acc loop seq
+            !$acc loop seq
             do ip = 1, npts
                 I = indexq(ip, Iq)
                 hi = psih(ip, Iq)
@@ -274,7 +274,7 @@ contains
             end do
 
         end do
-        !!$acc end data
+        !$acc end data
 
     end subroutine create_rhs_btp_volume_qdf
 
