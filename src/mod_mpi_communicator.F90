@@ -9,12 +9,16 @@
 module mod_mpi_communicator
   
     use mpi
+    use mod_parallel
 
-    use mod_parallel, only: num_nbh
+    type :: mpi_communicator
+        integer, dimension(:),   allocatable :: ireq
+        integer, dimension(:,:), allocatable :: status
+        integer :: nreq, ierr
+    end type mpi_communicator
 
     public :: &
-        mod_mpi_communicator_create, &
-        ireq, status, nreq, ierr
+        mod_mpi_communicator_create, mpi_communicator
     private
   
     !module variables and parameters
@@ -23,14 +27,17 @@ module mod_mpi_communicator
   
 contains
   
-    subroutine mod_mpi_communicator_create()
+    subroutine mod_mpi_communicator_create(par, mpic)
     
         implicit none
+
+        type(parallel_CS), intent(in) :: par
+        type(mpi_communicator), intent(inout) :: mpic
     
         integer :: AllocateStatus
 
-        if(allocated(ireq)) deallocate(ireq, status)
-        allocate( ireq(2*num_nbh), status(mpi_status_size,2*num_nbh), &
+        if(allocated(mpic%ireq)) deallocate(mpic%ireq, mpic%status)
+        allocate( mpic%ireq(2*par%num_nbh), mpic%status(mpi_status_size,2*par%num_nbh), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - MOD_MPI_COMMUNICATOR_CREATE **"
 

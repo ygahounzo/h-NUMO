@@ -1,119 +1,187 @@
 module mod_variables
 
-    ! This routine contains pre-allocation variable for barotropic equations terms 
+    ! Pre-allocated variables for barotropic and baroclinic equation terms.
+    ! Variables are grouped into two control-structure types:
+    !   btp_CS  –  barotropic fields and time-averaged accumulators
+    !   bcl_CS  –  baroclinic / BCL fields
 
-    use mod_grid, only: npoin_q, nface, npoin, face
-    use mod_basis, only: nq, ngl
-    use mod_input, only: nlayers
+    use mod_grid
+    use mod_basis
+    use mod_input
 
-    public :: Qu_face, Qv_face, one_plus_eta_face, flux_edge, &
-                Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge, &
-                Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope2_ave_df, one_plus_eta_out, &
-                Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, &
-                ope2_ave, tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2, btp_mass_flux_ave, &
-                uvb_ave, one_plus_eta_edge_2_ave, H_face_ave, tau_wind_ave, tau_bot_ave, &
-                uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, Qu_face_ave, Qv_face_ave, &
-                Quv_face_ave, pbprime_visc, one_plus_eta_edge, mod_allocate_mlswe, uvb_ave_df, &
-                dpprime_visc,btp_dpp_graduv, btp_dpp_uvp, dpp_uvp,dpp_graduv, graduv_dpp_face, &
-                btp_graduv_dpp_face, graduvb_face_ave, graduvb_ave, dpprime_visc_q, ope2_face_ave
+    implicit none
+    private
 
-    public :: sum_layer_mass_flux, sum_layer_mass_flux_face
+    !  Barotropic control structure
+    type, public :: btp_CS
+
+        ! 1-D arrays 
+        real, dimension(:),       allocatable :: one_plus_eta, one_plus_eta_df
+        real, dimension(:),       allocatable :: ope2_ave_df, one_plus_eta_out
+        real, dimension(:),       allocatable :: pbprime_visc
+        real, dimension(:),       allocatable :: ope_ave, H_ave
+        real, dimension(:),       allocatable :: Qu_ave, Qv_ave, Quv_ave, ope2_ave
+
+        ! 2-D volume arrays 
+        real, dimension(:,:),     allocatable :: tau_wind, tau_bot
+        real, dimension(:,:),     allocatable :: btp_mass_flux_ave, uvb_ave, uvb_ave_df
+        real, dimension(:,:),     allocatable :: btp_dpp_graduv, btp_dpp_uvp, graduvb_ave
+        real, dimension(:,:),     allocatable :: tau_wind_ave, tau_bot_ave
+
+        ! Face / edge arrays
+        real, dimension(:,:),     allocatable :: one_plus_eta_edge, one_plus_eta_edge_2
+        real, dimension(:,:),     allocatable :: one_plus_eta_edge_2_ave, H_face_ave
+
+        real, dimension(:,:,:),   allocatable :: btp_mass_flux_face_ave
+        real, dimension(:,:,:),   allocatable :: ope_face_ave, ope2_face_ave
+        real, dimension(:,:,:),   allocatable :: Qu_face_ave, Qv_face_ave, Quv_face_ave
+
+        real, dimension(:,:,:,:), allocatable :: uvb_face_ave
+        real, dimension(:,:,:,:), allocatable :: btp_graduv_dpp_face, graduvb_face_ave
+
+        ! RHS and state buffers
+        real, dimension(:,:),     allocatable :: rhs_btp   ! (3,npoin)
+        real, dimension(:,:),     allocatable :: qb_df     ! (4,npoin)
+
+    end type btp_CS
+
+    !  Baroclinic control structure
+    type, public :: bcl_CS
+
+        ! Viscosity / gradient arrays
+        real, dimension(:,:,:),     allocatable :: dpp_uvp, dpp_graduv
+        real, dimension(:,:,:,:,:), allocatable :: graduv_dpp_face
+        real, dimension(:,:),     allocatable :: dpprime_visc, dpprime_visc_q
+
+        ! BCL mass-flux accumulators
+        real, dimension(:,:),   allocatable :: sum_layer_mass_flux
+        real, dimension(:,:,:), allocatable :: sum_layer_mass_flux_face
+
+        ! State vectors
+        real, dimension(:,:,:), allocatable :: q_df       ! (3,npoin,nlayers)
+        real, dimension(:,:,:), allocatable :: qprime_df  ! (3,npoin,nlayers)
+
+    end type bcl_CS
+
+    public :: mod_allocate_mlswe
+
+contains
+
+    subroutine mod_allocate_mlswe(inp, G, b, btp, bcl)
         
-    public :: z_elevation
-    public :: qb_df, qprime_df, rhs_btp
+        type(input), intent(in) :: inp
+        type(grid), intent(in) :: G
+        type(basis), intent(in) :: b
 
-    private 
-    ! module variable and parameters 
-    real, dimension(:,:,:), allocatable :: Qu_face, Qv_face, one_plus_eta_face, flux_edge
-    real, dimension(:,:), allocatable :: Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge
-    real, dimension(:), allocatable :: Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope2_ave_df
-    real, dimension(:), allocatable :: one_plus_eta_out, pbprime_visc, Qv_ave, Quv_ave, ope2_ave
-    real, dimension(:), allocatable :: Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave 
-    real, dimension(:,:), allocatable :: tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2
-    real, dimension(:,:), allocatable :: btp_mass_flux_ave, uvb_ave, uvb_ave_df
-    real, dimension(:,:), allocatable :: dpprime_visc, dpprime_visc_q
+        type(btp_CS), intent(inout) :: btp
+        type(bcl_CS), intent(inout) :: bcl
+        integer :: stat
 
-    real, dimension(:,:), allocatable :: one_plus_eta_edge_2_ave, H_face_ave, tau_wind_ave
-    real, dimension(:,:), allocatable :: tau_bot_ave, one_plus_eta_edge
-    real, dimension(:,:,:,:), allocatable :: uvb_face_ave, btp_graduv_dpp_face, graduvb_face_ave
-    real, dimension(:,:,:), allocatable :: btp_mass_flux_face_ave, ope_face_ave, ope2_face_ave
-    real, dimension(:,:,:), allocatable :: Qu_face_ave, Qv_face_ave, Quv_face_ave
+        ! =========================================================
+        !  btp_CS
+        ! =========================================================
 
-    real, dimension(:,:,:), allocatable :: dpp_uvp, dpp_graduv
-    real, dimension(:,:), allocatable :: btp_dpp_graduv, btp_dpp_uvp, graduvb_ave
-    real, dimension(:,:,:,:,:), allocatable :: graduv_dpp_face
+        if (allocated(btp%one_plus_eta)) then
+            deallocate(                                                         &
+                btp%one_plus_eta,       btp%one_plus_eta_df,                   &
+                btp%ope2_ave_df,        btp%one_plus_eta_out,                  &
+                btp%pbprime_visc,                                              &
+                btp%ope_ave,            btp%H_ave,                             &
+                btp%Qu_ave,             btp%Qv_ave,                            &
+                btp%Quv_ave,            btp%ope2_ave,                          &
+                btp%tau_wind,           btp%tau_bot,                           &
+                btp%btp_mass_flux_ave,  btp%uvb_ave,       btp%uvb_ave_df,    &
+                btp%btp_dpp_graduv,     btp%btp_dpp_uvp,   btp%graduvb_ave,   &
+                btp%tau_wind_ave,       btp%tau_bot_ave,                       &
+                btp%one_plus_eta_edge,  btp%one_plus_eta_edge_2,               &
+                btp%one_plus_eta_edge_2_ave, btp%H_face_ave,                   &
+                btp%btp_mass_flux_face_ave,                                    &
+                btp%ope_face_ave,       btp%ope2_face_ave,                     &
+                btp%Qu_face_ave,        btp%Qv_face_ave,   btp%Quv_face_ave,  &
+                btp%uvb_face_ave,                                              &
+                btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
+                btp%rhs_btp,            btp%qb_df)
+        end if
 
-    ! bcl variables 
-    real, dimension(:,:), allocatable :: sum_layer_mass_flux
-    real, dimension(:,:,:), allocatable :: sum_layer_mass_flux_face
+        ! 1-D volume arrays
+        allocate(                                                               &
+            btp%one_plus_eta(G%npoin_q),                                         &
+            btp%one_plus_eta_df(G%npoin),                                        &
+            btp%ope2_ave_df(G%npoin),                                            &
+            btp%one_plus_eta_out(G%npoin),                                       &
+            btp%pbprime_visc(G%npoin),                                           &
+            btp%ope_ave(G%npoin_q),      btp%H_ave(G%npoin_q),                     &
+            btp%Qu_ave(G%npoin_q),       btp%Qv_ave(G%npoin_q),                    &
+            btp%Quv_ave(G%npoin_q),      btp%ope2_ave(G%npoin_q),                  &
+            stat=stat)
+        if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp 1-D)"
 
-    real, dimension(:,:), allocatable :: qb_df, rhs_btp
-    real, dimension(:,:,:), allocatable :: qprime_df
+        ! 2-D volume arrays
+        allocate(                                                               &
+            btp%tau_wind(2,G%npoin_q),                                           &
+            btp%tau_bot(2,G%npoin_q),                                            &
+            btp%btp_mass_flux_ave(2,G%npoin_q),                                  &
+            btp%uvb_ave(2,G%npoin_q),                                            &
+            btp%uvb_ave_df(2,G%npoin),                                           &
+            btp%btp_dpp_graduv(4,G%npoin),                                       &
+            btp%btp_dpp_uvp(2,G%npoin),                                          &
+            btp%graduvb_ave(4,G%npoin),                                          &
+            btp%tau_wind_ave(2,G%npoin_q),                                       &
+            btp%tau_bot_ave(2,G%npoin_q),                                        &
+            stat=stat)
+        if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp 2-D)"
 
-    contains
+        ! Face / edge arrays
+        allocate(                                                               &
+            btp%one_plus_eta_edge(b%nq,G%nface),                                   &
+            btp%one_plus_eta_edge_2(b%nq,G%nface),                                 &
+            btp%one_plus_eta_edge_2_ave(b%nq,G%nface),                             &
+            btp%H_face_ave(b%nq,G%nface),                                          &
+            btp%btp_mass_flux_face_ave(2,b%nq,G%nface),                            &
+            btp%ope_face_ave(2,b%nq,G%nface),                                      &
+            btp%ope2_face_ave(2,b%nq,G%nface),                                     &
+            btp%Qu_face_ave(2,b%nq,G%nface),                                       &
+            btp%Qv_face_ave(2,b%nq,G%nface),                                       &
+            btp%Quv_face_ave(2,b%nq,G%nface),                                      &
+            btp%uvb_face_ave(2,2,b%nq,G%nface),                                    &
+            btp%btp_graduv_dpp_face(5,2,b%ngl,G%nface),                            &
+            btp%graduvb_face_ave(4,2,b%ngl,G%nface),                               &
+            stat=stat)
+        if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp face)"
 
-    subroutine mod_allocate_mlswe()
+        ! RHS and state buffers
+        allocate(                                                               &
+            btp%rhs_btp(3,G%npoin),                                              &
+            btp%qb_df(4,G%npoin),                                                &
+            stat=stat)
+        if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp buffers)"
 
-        implicit none
-        integer AllocateStatus
+        ! =========================================================
+        !  bcl_CS
+        ! =========================================================
 
-        if(allocated(H_bcl)) then 
-            deallocate(Q_uu_dp, Q_uv_dp, Q_vv_dp, H_bcl, ope_ave, H_ave, Qu_ave, Qv_ave, Quv_ave, &
-            ope2_ave, Quu, Qvv, Quv, H, one_plus_eta, one_plus_eta_df, ope2_ave_df, &
-            one_plus_eta_out, Q_uu_dp_edge, Q_uv_dp_edge, Q_vv_dp_edge, H_bcl_edge, &
-            Qu_face, Qv_face, one_plus_eta_face, flux_edge, &
-            tau_bot, btp_mass_flux, H_face, one_plus_eta_edge_2, btp_mass_flux_ave, uvb_ave, &
-            one_plus_eta_edge_2_ave, H_face_ave, tau_wind_ave, tau_bot_ave, one_plus_eta_edge, &
-            uvb_face_ave, btp_mass_flux_face_ave, ope_face_ave, Qu_face_ave, Qv_face_ave, &
-            Quv_face_ave, uvb_ave_df, ope2_face_ave)
-        endif 
+        if (allocated(bcl%dpp_uvp)) then
+            deallocate(                                                         &
+                bcl%dpp_uvp,              bcl%dpp_graduv,                      &
+                bcl%graduv_dpp_face,                                           &
+                bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
+                bcl%q_df,                 bcl%qprime_df,                     &
+                bcl%dpprime_visc,       bcl%dpprime_visc_q)
+        end if
 
-        allocate(Q_uu_dp(npoin_q), Q_uv_dp(npoin_q), Q_vv_dp(npoin_q), H_bcl(npoin_q), &
-            Q_uu_dp_edge(nq,nface), Q_uv_dp_edge(nq,nface), Q_vv_dp_edge(nq,nface), &
-            H_bcl_edge(nq,nface), Qu_face(2,nq,nface), Qv_face(2,nq,nface), &
-            one_plus_eta_face(2,nq,nface), flux_edge(2,nq,nface), one_plus_eta_df(npoin), &
-            tau_bot(2,npoin_q), btp_mass_flux(2,npoin_q), H_face(nq,nface), &
-            one_plus_eta_edge_2(nq,nface), Quu(npoin_q), Qvv(npoin_q), Quv(npoin_q), &
-            H(npoin_q), one_plus_eta(npoin_q), ope_ave(npoin_q), H_ave(npoin_q), Qu_ave(npoin_q), &
-            Qv_ave(npoin_q), Quv_ave(npoin_q), ope2_ave(npoin_q), btp_mass_flux_ave(2,npoin_q), &
-            uvb_ave(2,npoin_q), ope2_ave_df(npoin), uvb_face_ave(2,2,nq,nface), &
-            btp_mass_flux_face_ave(2,nq,nface), ope_face_ave(2,nq,nface), H_face_ave(nq,nface), &
-            Qu_face_ave(2,nq,nface), Qv_face_ave(2,nq,nface), Quv_face_ave(2,nq,nface), &
-            one_plus_eta_out(npoin), tau_wind_ave(2,npoin_q), tau_bot_ave(2,npoin_q), &
-            one_plus_eta_edge(nq,nface), one_plus_eta_edge_2_ave(nq,nface), &
-            uvb_ave_df(2,npoin), ope2_face_ave(2,nq,nface), stat=AllocateStatus)
-        if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables"
+        allocate(                                                               &
+            bcl%dpp_uvp(2,G%npoin,inp%nlayers),                                      &
+            bcl%dpp_graduv(4,G%npoin,inp%nlayers),                                   &
+            bcl%graduv_dpp_face(5,2,b%ngl,G%nface,inp%nlayers),                        &
+            bcl%sum_layer_mass_flux(2,G%npoin_q),                                &
+            bcl%sum_layer_mass_flux_face(2,b%nq,G%nface),                          &
+            bcl%q_df(3,G%npoin,inp%nlayers),                                         &
+            bcl%qprime_df(3,G%npoin,inp%nlayers),                                    &
+            bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
+            bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
+            stat=stat)
+        if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 
-        if(allocated(dpprime_visc)) then 
-            deallocate(dpprime_visc,pbprime_visc,btp_dpp_graduv, btp_dpp_uvp, dpp_uvp, &
-            dpp_graduv, graduv_dpp_face, btp_graduv_dpp_face, &
-            graduvb_ave, graduvb_face_ave, dpprime_visc_q)
-        endif 
-
-        allocate(dpprime_visc(npoin,nlayers), pbprime_visc(npoin), btp_dpp_graduv(4,npoin), &
-            btp_dpp_uvp(2,npoin), dpp_uvp(2,npoin,nlayers), dpp_graduv(4,npoin,nlayers), &
-            graduv_dpp_face(5,2,ngl,nface,nlayers),btp_graduv_dpp_face(5,2,ngl,nface), &
-            graduvb_face_ave(4,2,ngl,nface), graduvb_ave(4,npoin), &
-            dpprime_visc_q(npoin_q,nlayers), stat=AllocateStatus)
-        if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables"
-
-    ! ======== bcl variables =========
-
-    if(allocated(sum_layer_mass_flux)) then 
-        deallocate(sum_layer_mass_flux, sum_layer_mass_flux_face)
-    endif 
-
-    allocate(sum_layer_mass_flux(2,npoin_q), &
-        sum_layer_mass_flux_face(2,nq,nface), &
-        stat=AllocateStatus)
-    if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables" 
-
-    if (allocated(qb_df)) then
-        deallocate(qb_df, qprime_df, rhs_btp)
-    endif 
-    allocate(qb_df(4,npoin), qprime_df(3,npoin,nlayers), rhs_btp(3,npoin))
-    if (AllocateStatus /= 0) stop "** Not Enough Memory - mod_variables" 
-        
     end subroutine mod_allocate_mlswe
 
 end module mod_variables

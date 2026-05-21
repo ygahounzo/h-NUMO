@@ -21,11 +21,11 @@ lread_external_grid = F,  ! Read external grid file
 
 /
 
-&input
+&input_nml
 dt= 100,
 dt_btp = 1.8,
 time_initial = 0.0,
-time_final   = 200,
+time_final   = 10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 !lrestart_file = .true.,

@@ -2,7 +2,7 @@
 ! This subroutine reads in the mesh from .msh file gerated
 ! by GMSH. The mesh that is read in is 1st order. The read_gmsh_size
 ! subroutine reads only the size of the mesh.
-! The high order populating of the elements is done a-posteriori 
+! The high order populating of the elements is done a-posteriori
 ! in the mod_grid part.
 !
 ! Written by Michal Kopera on 08/22/2014
@@ -182,7 +182,7 @@ subroutine read_bathy(fname,bathy0,nnodes)
     implicit none
 
     real, dimension(nnodes) :: bathy0
-  
+
     character :: fname*72,text*72
     integer   :: nnodes,i,ip,j
     real      :: z
@@ -207,67 +207,12 @@ subroutine read_bathy(fname,bathy0,nnodes)
 end subroutine read_bathy
 
 !---------------------------------------------------------------------!
-!program test_gmsh
-!
-!  implicit none
-!
-!
-!  real, dimension(:,:), allocatable :: coord0
-!  integer, dimension(:,:), allocatable :: intma0
-
-!   integer nelem,nnodes,e
-
-!   character :: fname*72
-
-!   fname="untitled2.msh"
-
-!   call read_gmsh_size(fname,nelem,nnodes)
-
-!   allocate(coord0(2,nnodes),intma0(nelem,4))
-!   coord0=0
-!   intma0=0
-
-!   print*,"nelem=",nelem," nnodes=",nnodes
-
-!   call read_gmsh(fname,coord0,intma0,nelem,nnodes)
-
-!   do e=1,nelem
-!      print*,e,intma0(e,1:4)
-!   end do
-
-!   print*,"nelem=",nelem," nnodes=",nnodes
-
-!   do e=1,nnodes
-!      print*,e,coord0(1:2,e)
-!   end do
-
-! end program test_gmsh
-
-
-!------------------------------------------------------------------------!
-!Populate linear quads with high order elements
-!
-! This subroutine adds the LGL points
-! to a linear grid of quads on the plane.
-!
-! Written by F.X. Giraldo 11/00 for the sphere
-!
-! Modified by:
-! Simone Marras to populate, with LGL points, a linear grid that is read
-! from an external file
-!
-! The routine to read the grid is called read_mesh.
-! October 2012, Cambridge, UK
-!------------------------------------------------------------------------!
-
 !------------------------------------------------------------------------!
 !This subroutine creates the higher order quads
 !------------------------------------------------------------------------!
 subroutine make_quadh_gmsh(coordh,intmaq,intma,bsido,iboun,npoinq,npoin,nelem,nboun, &
         boundary,nside,nop,ngl,npoin_out,bc,nbc)
 
-    use mod_constants, only: tol
-  
     use mod_legendre, only: legendre_gauss_lobatto
 
     implicit none
@@ -503,9 +448,7 @@ end subroutine make_quadh_gmsh
 !------------------------------------------------------------------------!
 subroutine make_bathyh(bathyh, intmaq,intma,bsido,iboun, &
     npoinq,npoin,nelem,nboun,boundary,nside,nop,ngl,npoin_out,bc,nbc)
-  
-    use mod_constants, only: tol
-  
+
     use mod_legendre, only: legendre_gauss_lobatto
 
     implicit none
@@ -546,7 +489,7 @@ subroutine make_bathyh(bathyh, intmaq,intma,bsido,iboun, &
     integer btype
 
     character fname*100
-  
+
     !initialize
     npoinh=npoinq
 
@@ -594,18 +537,18 @@ subroutine make_bathyh(bathyh, intmaq,intma,bsido,iboun, &
 
         do i=2,ngl-1
             zt=dz/2.0*(xgl(i)+1.0) + z(1)
-        
+
             npoinh=npoinh + 1
 
             !coordh(1,npoinh)=xt
             !coordh(2,npoinh)=yt
             bathyh(  npoinh)=zt
-        
+
             ipoin(is,i)=npoinh !ipoin stores points at each side
         end do !i
 
     end do !is
-  
+
     ic = npoinh !point counter
 
     !loop thru elements and create the interior points
@@ -692,7 +635,7 @@ subroutine make_bathyh(bathyh, intmaq,intma,bsido,iboun, &
     end do !IE
 
     npoin_out=ic
-  
+
 end subroutine make_bathyh
 
 !Linear interpolation subroutine
@@ -733,13 +676,6 @@ subroutine side_gmsh(iside,jeside,intma,bsido,npoin,nelem,nboun,nside,ngl)
     integer in, ie, ip, e, jloca, iloca, iloc1, iele, iwher, ip1, ip2, ipt
     integer iel, ier, in1, in2, i, i1, i2, j, jnod, iold, is, is1, is2, il, ir
     integer ib, ibe, ibc, ilb, irb
-
-    !Swap Nodes to make CCW
-    !  do ie=1,nelem
-    !     itemp=intma(ie,3)
-    !     intma(ie,3)=intma(ie,4)
-    !     intma(ie,4)=itemp
-    !  end do
 
     !initialize
     iside=0
@@ -926,11 +862,6 @@ subroutine side_gmsh(iside,jeside,intma,bsido,npoin,nelem,nboun,nside,ngl)
        read(1,*) Dx, Dy, Dz
        read(1,*) nx, ny, nz
 
-       !  print*,"bathymetry read from file"
-       !  print*, Ox, Oy, Oz
-       !  print*, Dx, Dy, Dz
-       !  print*, nx, ny, nz
-
        close(1)
 
    end subroutine read_bathymetry_structured_size
@@ -1020,41 +951,44 @@ subroutine side_gmsh(iside,jeside,intma,bsido,npoin,nelem,nboun,nside,ngl)
    end subroutine interpolate_bathymetry
 
    !read high order mesh
-   subroutine read_ho_mesh_size(nelem,ngl,npoin,nside,nboun)
+   subroutine read_ho_mesh_size(inp, b, nelem, ngl, npoin, nside, nboun)
 
-       use mod_input, only: mesh_file
-  
-       use mod_basis, only: nop
+       use mod_input, only: input
+       use mod_basis, only: basis
 
        implicit none
 
-       integer:: nelem, ngl, npoin, nside, nboun
+       type(input), intent(in) :: inp
+       type(basis), intent(in) :: b
 
-       integer:: i
-       real::x,y,z
+       integer :: nelem, ngl, npoin, nside, nboun
+       integer :: i
+       real    :: x,y,z
 
-       open(1,file=mesh_file)
-       read(1,*)npoin
+       open(1, file=inp%mesh_file)
+       read(1,*) npoin
        do i=1,npoin
-           read(1,*)x,y,z
+           read(1,*) x,y,z
        end do
-       read(1,*)nelem,ngl,nside,nboun
+       read(1,*) nelem,ngl,nside,nboun
        close(1)
 
-       if(ngl.ne.nop+1) then
-           print*,"READ_HO_MESH_SIZE:: ngl in the mesh file does not match the input file"
+       if(ngl .ne. b%nop+1) then
+           print*, "READ_HO_MESH_SIZE:: ngl in the mesh file does not match the input file"
            stop
        end if
 
    end subroutine read_ho_mesh_size
 
-   subroutine read_ho_mesh(coordg,npoinT,intma,nelemT,ngl)
+   subroutine read_ho_mesh(inp, coordg, npoinT, intma, nelemT, ngl)
 
-       use mod_input, only: mesh_file
+       use mod_input, only: input
 
        implicit none
 
-       integer :: npoinT,nelemT,ngl
+       type(input), intent(in) :: inp
+
+       integer :: npoinT, nelemT, ngl
        real, dimension(2,npoinT) :: coordg
        integer, dimension(ngl,ngl,nelemT) :: intma
 
@@ -1062,23 +996,23 @@ subroutine side_gmsh(iside,jeside,intma,bsido,npoin,nelem,nboun,nside,ngl)
        real :: buf
        real :: x,y,z
 
-       open(1,file=mesh_file)
-       read(1,*)npoin
+       open(1, file=inp%mesh_file)
+       read(1,*) npoin
        do i=1,npoin
-           read(1,*)x,y,z
+           read(1,*) x,y,z
            coordg(1,i)=x
            coordg(2,i)=y
        end do
 
-       read(1,*)nelem,i,j,ii
+       read(1,*) nelem,i,j,ii
        do el=1,nelem
            do j=1,ngl
                do i=1,ngl
-                   read(1,*)ee,ii,jj,intma(ii,jj,ee)
+                   read(1,*) ee,ii,jj,intma(ii,jj,ee)
                end do
            end do
        end do
        close(1)
-       print*,'circular coords read'
+       print*, 'circular coords read'
 
    end subroutine read_ho_mesh

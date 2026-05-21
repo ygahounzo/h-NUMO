@@ -3,29 +3,39 @@ module mod_splitting
 
     ! ============================================================================================
     ! This module contains the routines for the barotropic-baroclinic splitting
-    !   Author: Yao Gahounzo 
-    !   Computing PhD 
+    !   Author: Yao Gahounzo
+    !   Computing PhD
     !   Boise State University
     !   Date: March 27, 2023
     ! It contains the following routines:
-    ! - thickness: baroclinic substem for splitting system using two-level time integration 
+    ! - thickness: baroclinic substem for splitting system using two-level time integration
     ! - momentum: baroclinic substem for splitting system using two-level time integration
     ! These routines are based on Prof. Higdon 1D MLSWE code
     !
     ! ============================================================================================
 
-    use mod_initial, only: coriolis_df, coriolis_quad, tau_wind
-        
+    use mod_grid,             only: grid
+    use mod_basis,            only: basis
+    use mod_input,            only: input
+    use mod_initial,          only: initial
+    use mod_metrics,          only: metrics
+    use mod_face,             only: face_CS
+    use mod_tensor,           only: tensor_CS
+    use mod_variables,        only: btp_CS, bcl_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
+
     implicit none
 
-    public :: thickness, momentum, momentum_mass, create_rhs_bcl
-    
-    contains
+    public :: thickness, momentum, momentum_mass, create_rhs_bcl, rhs_momentum
 
-    subroutine thickness(qprime_df, q_df, qb_df)
+contains
+
+    subroutine thickness(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, qprime_df, q_df, qb_df)
 
         ! ========================================================================================
-        ! This subroutine is used to predict or correct the layer thickness for the splitting 
+        ! This subroutine is used to predict or correct the layer thickness for the splitting
         ! system using two-level time integration
         ! The nodal points or degree of freedom of the layer thickness is stored in qprime_df(1,:,:)
         ! The quadrature points of the layer thickness dp is stored in q_df(1,:,:)
@@ -33,158 +43,128 @@ module mod_splitting
         ! Enforce consistency between the layer masses and the barotropic mass.
         ! ========================================================================================
 
-        use mod_input, only: nlayers, dt
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
-        use mod_initial, only: pbprime_df, alpha_mlswe
-        use mod_layer_terms, only: extract_dprime_df_face
         use mod_create_rhs_mlswe, only: layer_mass_rhs
 
         implicit none
-    
-        ! Input variables
-        real, dimension(3,npoin,nlayers), intent(inout) :: qprime_df
-        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, intent(in)    :: qb_df(4,npoin)
-    
-        ! Other variables
-        real :: one_plus_eta_temp(npoin), dp_advec(npoin,nlayers), ope
+
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
+
+        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: qprime_df
+        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, intent(in) :: qb_df(4, G%npoin)
+
+        real :: dp_advec(G%npoin, inp%nlayers), ope
         integer :: k, I
 
-        ! =========================================== layer mass =================================
-    
-        ! Compute the mass advection term and RHS for mass equation, 
-        ! return the result in array  dp_advec. 
+        call layer_mass_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, dp_advec, qprime_df)
 
-        call layer_mass_rhs(dp_advec, qprime_df)
-
-        ! Compute the tentative values of the predicted or corrected 
-        ! degrees of freedom for  dp (q_df(1,:,:)).  These would be the values at
-        ! baroclinic time level  n+1,  except for the need to enforce
-        ! consistency between the layer masses and the barotropic mass 
-        ! and for the possible need to use a variation limiter to 
-        ! prevent pointwise negative layer thicknesses. 
-        
-        do k = 1, nlayers
-
-            q_df(1,:,k) = q_df(1,:,k) + dt*dp_advec(:,k)
-
-            ! Check for negative layer thicknesses.  If any are found, stop the program.
-            ! if(any(q_df(1, :, k) < 0.0)) then
-            !     write(*,*) 'Negative mass in thickness at some points'
-            !     stop
-            ! endif
+        do k = 1, inp%nlayers
+            q_df(1,:,k) = q_df(1,:,k) + inp%dt*dp_advec(:,k)
         end do
 
-        ! Store the degree of freedom (nodal points) values of dpprime_df
-        ! one_plus_eta_temp(:) = sum(q_df(1,:,:),dim=2) / pbprime_df(:)
-        ! do k = 1,nlayers
-        !     qprime_df(1,:,k) = q_df(1,:,k) / one_plus_eta_temp(:)
-        ! end do
-
-        do k = 1,nlayers
-            do I = 1, npoin
-                ope = sum(q_df(1,I,:)) / pbprime_df(I)
+        do k = 1, inp%nlayers
+            do I = 1, G%npoin
+                ope = sum(q_df(1,I,:)) / init%pbprime_df(I)
                 qprime_df(1,I,k) = q_df(1,I,k) / ope
-            enddo 
+            end do
         end do
-        
+
     end subroutine thickness
 
-
-    subroutine momentum(q_df,qprime_df,qb_df)
+    subroutine momentum(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_df, qprime_df, qb_df)
 
         ! ========================================================================================
-        ! This subroutine is used to correct the layer momentum for the splitting system 
+        ! This subroutine is used to correct the layer momentum for the splitting system
         ! The nodal points or degree of freedom of the layer momentum is stored in q_df(2:3,:,:)
         ! ========================================================================================
 
-        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe
-        use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, alpha_mlswe
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
-        use mod_layer_terms, only: layer_mom_boundary_df, &
-                                    velocity_df, extract_velocity
-        use mod_metrics, only: massinv
+        use mod_layer_terms,      only: layer_mom_boundary_df, velocity_df, extract_velocity
 
         implicit none
 
-        ! Input variables
-        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(4,npoin), intent(in) :: qb_df
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
 
-        ! Local variables
-        real, dimension(2,npoin_q,nlayers)     :: uv
-        real, dimension(2,npoin,nlayers)       :: q_df_temp, uv_df
-        real, dimension(2,npoin,nlayers) :: rhs_mom, rhs_stress
-        real, dimension(3,npoin,nlayers) :: q_df3
-        real, dimension(3,npoin_q,nlayers) :: q
-        
+        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+        real, dimension(4, G%npoin),              intent(in)    :: qb_df
+
+        real, dimension(2, G%npoin,   inp%nlayers) :: q_df_temp, uv_df, rhs_mom, rhs_stress
+        real, dimension(3, G%npoin,   inp%nlayers) :: q_df3
+        real, dimension(3, G%npoin_q, inp%nlayers) :: q
+        real, dimension(G%npoin) :: tempu, tempv
         integer :: k, I
-        real, dimension(npoin) :: tempu, tempv
 
         q_df_temp = 0.0
 
-        ! ==== layer momentum ====
-        call rhs_momentum(rhs_mom, qprime_df,q_df)
+        call rhs_momentum(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs_mom, qprime_df, q_df)
 
-        ! Compute the momentum equation variables for the next time step
-        do k = 1,nlayers
-            q_df_temp(1,:,k) = q_df(2,:,k) + dt*rhs_mom(1,:,k)
-            q_df_temp(2,:,k) = q_df(3,:,k) + dt*rhs_mom(2,:,k)
+        do k = 1, inp%nlayers
+            q_df_temp(1,:,k) = q_df(2,:,k) + inp%dt*rhs_mom(1,:,k)
+            q_df_temp(2,:,k) = q_df(3,:,k) + inp%dt*rhs_mom(2,:,k)
         end do
 
-        ! Compute the shear stress terms
-        if(ad_mlswe > 0.0) then 
-            do k = 1,nlayers
-                do I = 1,npoin
-                    tempu(I) = q_df_temp(1,I,k) + fdt2_bcl(I)*q_df(3,I,k)
-                    tempv(I) = q_df_temp(2,I,k) - fdt2_bcl(I)*q_df(2,I,k)
-
-                    q_df3(2,I,k) = a_bcl(I)*tempu(I) + b_bcl(I)*tempv(I)
-                    q_df3(3,I,k) = - b_bcl(I)*tempu(I) + a_bcl(I)*tempv(I)
+        if(inp%ad_mlswe > 0.0) then
+            do k = 1, inp%nlayers
+                do I = 1, G%npoin
+                    tempu(I) = q_df_temp(1,I,k) + init%fdt2_bcl(I)*q_df(3,I,k)
+                    tempv(I) = q_df_temp(2,I,k) - init%fdt2_bcl(I)*q_df(2,I,k)
+                    q_df3(2,I,k) = init%a_bcl(I)*tempu(I) + init%b_bcl(I)*tempv(I)
+                    q_df3(3,I,k) = -init%b_bcl(I)*tempu(I) + init%a_bcl(I)*tempv(I)
                 end do
                 q_df3(1,:,k) = q_df(1,:,k)
             end do
 
-            !call layer_mom_boundary_df(q_df3)
+            call velocity_df(G, inp, q_df3, qb_df)
+            call rhs_layer_shear_stress(G, inp, b, init, tsp, rhs_stress, q_df3)
 
-            ! Velocity smoothing from the momentum
-            call velocity_df(q_df3, qb_df)
-
-            ! Compute the vertical stress terms
-            call rhs_layer_shear_stress(rhs_stress,uv)
-
-            do k = 1,nlayers
-                q_df_temp(1,:,k) = q_df_temp(1,:,k) + dt*(massinv(:)*rhs_stress(1,:,k))
-                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*(massinv(:)*rhs_stress(2,:,k))
+            do k = 1, inp%nlayers
+                q_df_temp(1,:,k) = q_df_temp(1,:,k) + inp%dt*(mt%massinv(:)*rhs_stress(1,:,k))
+                q_df_temp(2,:,k) = q_df_temp(2,:,k) + inp%dt*(mt%massinv(:)*rhs_stress(2,:,k))
             end do
-        end if ! ad_mlswe > 0.0
-        
-        ! Add the Coriolis term
-        do k = 1,nlayers
+        end if
 
-            tempu(:) = q_df_temp(1,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-            tempv(:) = q_df_temp(2,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-            q_df(2,:,k) = a_bcl(:)*tempu(:) + b_bcl(:)*tempv(:)
-            q_df(3,:,k) = - b_bcl(:)*tempu(:) + a_bcl(:)*tempv(:)
+        do k = 1, inp%nlayers
+            tempu(:) = q_df_temp(1,:,k) + init%fdt2_bcl(:)*q_df(3,:,k)
+            tempv(:) = q_df_temp(2,:,k) - init%fdt2_bcl(:)*q_df(2,:,k)
+            q_df(2,:,k) = init%a_bcl(:)*tempu(:) + init%b_bcl(:)*tempv(:)
+            q_df(3,:,k) = -init%b_bcl(:)*tempu(:) + init%a_bcl(:)*tempv(:)
         end do
 
-        call layer_mom_boundary_df(q_df)
+        call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
-        ! Compute dpprime, uprime and vprime at the nodal points
-        call extract_velocity(uv_df, q_df, qb_df)
+        call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
-        do k = 1,nlayers
+        do k = 1, inp%nlayers
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
 
     end subroutine momentum
 
-    subroutine momentum_mass(q_df, qprime_df, qb_df)
+    subroutine momentum_mass(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_df, qprime_df, qb_df)
 
         ! ========================================================================================
         ! This subroutine is used to predict the layer mass and momentum for the splitting system
@@ -192,171 +172,162 @@ module mod_splitting
         ! momentum is stored in q_df(2:3,:,:)
         ! ========================================================================================
 
-        use mod_grid, only: npoin, npoin_q, nface, face, intma_dg_quad, intma
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, dt, ad_mlswe
-        use mod_initial, only: fdt_bcl, fdt2_bcl, a_bcl, b_bcl, pbprime_df, alpha_mlswe
         use mod_create_rhs_mlswe, only: rhs_layer_shear_stress
-        use mod_layer_terms, only: layer_mom_boundary_df, &
-                                    velocity_df, extract_qprime_df_face,extract_velocity
-        use mod_metrics, only: massinv
+        use mod_layer_terms,      only: layer_mom_boundary_df, velocity_df, &
+                                        extract_qprime_df_face, extract_velocity
 
         implicit none
 
-        ! Input variables
-        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(4,npoin), intent(in) :: qb_df
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
 
-        ! Local variables
-        real, dimension(npoin,nlayers) :: dp_advec, dpprime_df
-        real, dimension(2,npoin,nlayers) :: uv_df
-        real, dimension(2,npoin,nlayers) :: rhs_stress
-        real, dimension(npoin) :: one_plus_eta_temp
-        real, dimension(3,npoin_q,nlayers) :: qprime_temp, q
-        real, dimension(3,npoin,nlayers) :: q_df3
-        real, dimension(2,npoin_q,nlayers) :: uv
+        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+        real, dimension(4, G%npoin),              intent(in)    :: qb_df
+
+        real, dimension(2, G%npoin,   inp%nlayers) :: uv_df, rhs_stress
+        real, dimension(3, G%npoin,   inp%nlayers) :: q_df3, rhs, q_df_temp
+        real, dimension(3, G%npoin_q, inp%nlayers) :: q
+        real, dimension(G%npoin) :: tempu, tempv
         integer :: k, I
-        real, dimension(npoin) :: tempu, tempv
-        real, dimension(3,npoin,nlayers) :: rhs, q_df_temp
 
-        call create_rhs_bcl(rhs, qprime_df, q_df)
+        call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
-        ! Compute the momentum equation variables for the next time step
-        do k = 1,nlayers
-            q_df_temp(1,:,k) = q_df(1,:,k) + dt*rhs(1,:,k)
-            q_df_temp(2,:,k) = q_df(2,:,k) + dt*rhs(2,:,k)
-            q_df_temp(3,:,k) = q_df(3,:,k) + dt*rhs(3,:,k)
+        do k = 1, inp%nlayers
+            q_df_temp(1,:,k) = q_df(1,:,k) + inp%dt*rhs(1,:,k)
+            q_df_temp(2,:,k) = q_df(2,:,k) + inp%dt*rhs(2,:,k)
+            q_df_temp(3,:,k) = q_df(3,:,k) + inp%dt*rhs(3,:,k)
 
-            ! Check for negative layer thicknesses.  If any are found, stop the program.
-            if(any(q_df(1, :, k) < 0.0)) then
+            if(any(q_df(1,:,k) < 0.0)) then
                 write(*,*) 'Negative mass in thickness at some points'
                 stop
-            endif
+            end if
         end do
 
-        ! Compute the shear stress terms
-        if(ad_mlswe > 0.0) then 
-            do k = 1,nlayers
-                do I = 1,npoin
-                    tempu(I) = q_df_temp(2,I,k) + fdt2_bcl(I)*q_df(3,I,k)
-                    tempv(I) = q_df_temp(3,I,k) - fdt2_bcl(I)*q_df(2,I,k)
-                    q_df3(2,I,k) = a_bcl(I)*tempu(I) + b_bcl(I)*tempv(I)
-                    q_df3(3,I,k) = - b_bcl(I)*tempu(I) + a_bcl(I)*tempv(I)
+        if(inp%ad_mlswe > 0.0) then
+            do k = 1, inp%nlayers
+                do I = 1, G%npoin
+                    tempu(I) = q_df_temp(2,I,k) + init%fdt2_bcl(I)*q_df(3,I,k)
+                    tempv(I) = q_df_temp(3,I,k) - init%fdt2_bcl(I)*q_df(2,I,k)
+                    q_df3(2,I,k) = init%a_bcl(I)*tempu(I) + init%b_bcl(I)*tempv(I)
+                    q_df3(3,I,k) = -init%b_bcl(I)*tempu(I) + init%a_bcl(I)*tempv(I)
                 end do
                 q_df3(1,:,k) = q_df(1,:,k)
             end do
 
-            !call layer_mom_boundary_df(q_df3)
+            call velocity_df(G, inp, q_df3, qb_df)
+            call rhs_layer_shear_stress(G, inp, b, init, tsp, rhs_stress, q_df3)
 
-            ! Velocity smoothing from the momentum
-            call velocity_df(q_df3, qb_df)
-
-            ! Compute the vertical stress terms
-            call rhs_layer_shear_stress(rhs_stress,q_df3)
-
-            do k = 1,nlayers
-                q_df_temp(2,:,k) = q_df_temp(2,:,k) + dt*(massinv(:)*rhs_stress(1,:,k))
-                q_df_temp(3,:,k) = q_df_temp(3,:,k) + dt*(massinv(:)*rhs_stress(2,:,k))
+            do k = 1, inp%nlayers
+                q_df_temp(2,:,k) = q_df_temp(2,:,k) + inp%dt*(mt%massinv(:)*rhs_stress(1,:,k))
+                q_df_temp(3,:,k) = q_df_temp(3,:,k) + inp%dt*(mt%massinv(:)*rhs_stress(2,:,k))
             end do
-        end if ! ad_mlswe > 0
-        
-        ! Add the Coriolis term
-        do k = 1,nlayers
+        end if
 
-            tempu(:) = q_df_temp(2,:,k) + fdt2_bcl(:)*q_df(3,:,k)
-            tempv(:) = q_df_temp(3,:,k) - fdt2_bcl(:)*q_df(2,:,k)
-            q_df(2,:,k) = a_bcl(:)*tempu(:) + b_bcl(:)*tempv(:)
-            q_df(3,:,k) = - b_bcl(:)*tempu(:) + a_bcl(:)*tempv(:)
-
+        do k = 1, inp%nlayers
+            tempu(:) = q_df_temp(2,:,k) + init%fdt2_bcl(:)*q_df(3,:,k)
+            tempv(:) = q_df_temp(3,:,k) - init%fdt2_bcl(:)*q_df(2,:,k)
+            q_df(2,:,k) = init%a_bcl(:)*tempu(:) + init%b_bcl(:)*tempv(:)
+            q_df(3,:,k) = -init%b_bcl(:)*tempu(:) + init%a_bcl(:)*tempv(:)
             q_df(1,:,k) = q_df_temp(1,:,k)
         end do
 
-        call layer_mom_boundary_df(q_df)
+        call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
-        ! Compute dpprime, uprime and vprime at the quad and nodal points
-        call extract_velocity(uv_df, q_df, qb_df)
+        call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
-        do k = 1,nlayers
+        do k = 1, inp%nlayers
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
 
-        ! call extract_qprime_df_face(qprime_df, q_df, qb_df)
-
     end subroutine momentum_mass
 
-    subroutine rhs_momentum(rhs_mom, qprime_df, q_df)
+    subroutine rhs_momentum(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs_mom, qprime_df, q_df)
 
-        ! =======================================================================================
-        ! This subroutine computes the RHS of the layer momentum equation and viscosity terms
-        ! and stores them in rhs_mom and rhs_visc_bcl
-        ! =======================================================================================
-
-        use mod_grid, only: npoin, npoin_q, nface, face, intma
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: layer_momentum_rhs
-        use mod_laplacian_quad, only: bcl_create_laplacian
-        use mod_metrics, only: massinv
+        use mod_laplacian_quad,   only: bcl_create_laplacian
 
         implicit none
 
-        ! Input variables
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
-        real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
 
-        real, dimension(2,npoin,nlayers) :: rhs_visc_bcl
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
+        real, dimension(2, G%npoin, inp%nlayers), intent(out) :: rhs_mom
+
+        real, dimension(2, G%npoin, inp%nlayers) :: rhs_visc_bcl
         integer :: k
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl) 
+        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, rhs_visc_bcl)
 
-        ! Compute the RHS of the layer momentum equation
-        call layer_momentum_rhs(rhs_mom, qprime_df, q_df)
+        call layer_momentum_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs_mom, qprime_df, q_df)
 
-        do k = 1, nlayers
-            rhs_mom(1,:,k) = massinv(:)*rhs_mom(1,:,k) + rhs_visc_bcl(1,:,k)
-            rhs_mom(2,:,k) = massinv(:)*rhs_mom(2,:,k) + rhs_visc_bcl(2,:,k)
+        do k = 1, inp%nlayers
+            rhs_mom(1,:,k) = mt%massinv(:)*rhs_mom(1,:,k) + rhs_visc_bcl(1,:,k)
+            rhs_mom(2,:,k) = mt%massinv(:)*rhs_mom(2,:,k) + rhs_visc_bcl(2,:,k)
         end do
 
     end subroutine rhs_momentum
 
-    subroutine create_rhs_bcl(rhs, qprime_df, q_df)
+    subroutine create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
-        ! =======================================================================================
-        ! This subroutine computes the RHS of the layer momentum equation and viscosity terms
-        ! and stores them in rhs_mom and rhs_visc_bcl
-        ! =======================================================================================
-
-        use mod_grid, only: npoin, npoin_q, nface, face, intma
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers, method_visc
         use mod_create_rhs_mlswe, only: bcl_rhs
-        use mod_laplacian_quad, only: bcl_create_laplacian
-        use mod_metrics, only: massinv
+        use mod_laplacian_quad,   only: bcl_create_laplacian
 
         implicit none
 
-        ! Input variables
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df, q_df
-        real, dimension(3,npoin,nlayers), intent(out) :: rhs
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
 
-        real, dimension(2,npoin,nlayers) :: rhs_visc_bcl
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
+        real, dimension(3, G%npoin, inp%nlayers), intent(out) :: rhs
+
+        real, dimension(2, G%npoin, inp%nlayers) :: rhs_visc_bcl
         integer :: k
 
         rhs_visc_bcl = 0.0
 
-        if (method_visc > 0) call bcl_create_laplacian(rhs_visc_bcl)
+        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, rhs_visc_bcl)
 
-        ! Compute the RHS of the layer momentum equation
-        call bcl_rhs(rhs, qprime_df, q_df)
+        call bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
-        do k = 1, nlayers
-            rhs(1,:,k) = massinv(:)*rhs(1,:,k)
-            rhs(2,:,k) = massinv(:)*rhs(2,:,k) + rhs_visc_bcl(1,:,k)
-            rhs(3,:,k) = massinv(:)*rhs(3,:,k) + rhs_visc_bcl(2,:,k)
+        do k = 1, inp%nlayers
+            rhs(1,:,k) = mt%massinv(:)*rhs(1,:,k)
+            rhs(2,:,k) = mt%massinv(:)*rhs(2,:,k) + rhs_visc_bcl(1,:,k)
+            rhs(3,:,k) = mt%massinv(:)*rhs(3,:,k) + rhs_visc_bcl(2,:,k)
         end do
 
     end subroutine create_rhs_bcl

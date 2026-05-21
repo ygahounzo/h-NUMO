@@ -12,394 +12,405 @@
 !>     Boise State University
 !----------------------------------------------------------------------!
 
-subroutine create_rhs_precommunicator_quad(q_face,nvarb)
+subroutine btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, q, qprime_df, nvarb)
 
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: nface
-
-    use mod_ref, only: recv_data_dg_quad, send_data_dg_quad
-
-    use mod_basis, only: nq
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(nvarb,2,nq,nface), intent(in)  :: q_face
-    integer, intent(in) :: nvarb
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_quad(send_data_dg_quad,q_face,nvarb)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad(send_data_dg_quad,recv_data_dg_quad,nvarb,nreq,ireq,status)
-
-end subroutine create_rhs_precommunicator_quad
-
-subroutine create_rhs_postcommunicator_quad(q_face,nvarb)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: nface
-
-    use mod_ref, only: q_send_quad, q_recv_quad, recv_data_dg_quad, send_data_dg_quad
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_initial,          only: initial
+    use mod_parallel,         only: parallel_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
-    !Global Arrays
-    real, dimension(nvarb,2,nq,nface), intent(inout) :: q_face
-    integer, intent(in) :: nvarb
-
-    ! DG - Discontinuous communicator
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad(q_send_quad,q_recv_quad,send_data_dg_quad, &
-            recv_data_dg_quad,nvarb)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_quad(q_face,q_send_quad,q_recv_quad,nvarb)
-
-end subroutine create_rhs_postcommunicator_quad
-
-subroutine create_communicator_quad(q_face,nvarb)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: nface, nboun
-
-    implicit none
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(initial),          intent(in)    :: init
+    type(parallel_CS),      intent(in)    :: par
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
 
     !Global Arrays
-    real, dimension(nvarb,2,nq,nface), intent(inout) :: q_face
     integer, intent(in) :: nvarb
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(nvarb*nq*nboun)
-    real :: send_data_dg_quad1(nvarb*nq*nboun)
-    real :: q_recv_quad1(nvarb,nq,nboun), q_send_quad1(nvarb,nq,nboun)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
+    real, dimension(nvarb, G%npoin),            intent(inout) :: q
+    real, dimension(3, G%npoin, inp%nlayers),   intent(in)    :: qprime_df
 
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
+    call pack_data_dg_df_btp(G, inp, b, mf, init, par, ref, ref%send_data_dg, q, qprime_df, nvarb)
 
     !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1,recv_data_dg_quad1,nvarb)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_quad(q_face,q_send_quad1,q_recv_quad1,nvarb)
-
-end subroutine create_communicator_quad
-
-subroutine btp_create_precommunicator(q,qprime_df,nvarb)
-
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: recv_data_dg, send_data_dg
-
-    use mod_input, only: nlayers
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(nvarb,npoin), intent(inout) :: q
-    real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-    integer, intent(in) :: nvarb
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_df_btp(send_data_dg,q,qprime_df,nvarb)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_df(send_data_dg,recv_data_dg,nvarb,nreq,ireq,status)
+    call send_bound_dg_general_df(G, b, par, ref%send_data_dg, ref%recv_data_dg, ref%nbtp_var, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_create_precommunicator
 
-subroutine btp_lap_create_precommunicator(q,nvarb)
+subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q, nvarb)
 
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: recv_data_dg_lap, send_data_dg_lap
-
-    use mod_variables, only: pbprime_visc, btp_dpp_graduv
+    use mod_grid,             only: grid
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_initial,          only: initial
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(initial),          intent(in)    :: init
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(in)    :: btp
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(nvarb,npoin), intent(inout) :: q
     integer, intent(in) :: nvarb
+    real, dimension(nvarb, G%npoin), intent(inout) :: q
 
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_df_btp_lap(send_data_dg_lap,q,btp_dpp_graduv,pbprime_visc,nvarb)
+    call pack_data_dg_df_btp_lap(G, b, mf, init, par, ref%send_data_dg_lap, q, btp%btp_dpp_graduv, btp%pbprime_visc, nvarb)
 
     !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_lap(send_data_dg_lap,recv_data_dg_lap,nvarb,nreq,ireq,status)
+    call send_bound_dg_general_lap(G, b, par, ref%send_data_dg_lap, ref%recv_data_dg_lap, nvarb, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_lap_create_precommunicator
 
-subroutine bcl_create_precommunicator(qprime_df)
+subroutine bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
 
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: recv_data_bcl, send_data_bcl
-
-    use mod_input, only: nlayers
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+    real, dimension(3, G%npoin, inp%nlayers), intent(in) :: qprime_df
 
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_df_bcl(send_data_bcl,qprime_df)
+    call pack_data_dg_df_bcl(G, inp, b, mf, par, ref%send_data_bcl, qprime_df)
 
     !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_bcl(send_data_bcl,recv_data_bcl,nreq,ireq,status)
+    call send_bound_dg_general_bcl(G, b, inp, par, ref%send_data_bcl, ref%recv_data_bcl, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine bcl_create_precommunicator
 
-subroutine bcl_lap_create_precommunicator(dpp_graduv,dpprime_visc)
+subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_graduv, dpprime_visc)
 
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: recv_data_lap_bcl, send_data_lap_bcl
-
-    use mod_input, only: nlayers
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(5,npoin,nlayers), intent(in) :: dpp_graduv
-    real, dimension(npoin,nlayers), intent(in) :: dpprime_visc
+    real, dimension(5, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
+    real, dimension(G%npoin, inp%nlayers),    intent(in) :: dpprime_visc
 
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_df_bcl_lap(send_data_lap_bcl,dpp_graduv,dpprime_visc,nlayers)
+    call pack_data_dg_df_bcl_lap(G, b, mf, par, ref%send_data_lap_bcl, dpp_graduv, dpprime_visc, inp%nlayers)
 
     !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_lap_bcl(send_data_lap_bcl,recv_data_lap_bcl,nlayers,nreq,ireq,status)
+    call send_bound_dg_general_lap_bcl(G, b, par, ref%send_data_lap_bcl, ref%recv_data_lap_bcl, inp%nlayers, &
+        mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine bcl_lap_create_precommunicator
 
-subroutine btp_create_postcommunicator(rhs, nvarb)
+subroutine btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs, nvarb)
 
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: q_send, q_recv, recv_data_dg, send_data_dg
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_initial,          only: initial
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(inout) :: btp
+    type(initial),          intent(in)    :: init
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(3,npoin), intent(inout) :: rhs
     integer, intent(in) :: nvarb
+    real, dimension(3, G%npoin), intent(inout) :: rhs
 
     ! DG - Discontinuous communicator
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_df(q_send,q_recv,send_data_dg,recv_data_dg,nvarb)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_df(rhs,q_send,q_recv)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
+    call unpack_data_dg_general_df(G, b, par, ref%q_send, ref%q_recv, ref%send_data_dg, ref%recv_data_dg, ref%nbtp_var)
+    call create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, ref%q_send, ref%q_recv, ref%nbtp_var)
 
 end subroutine btp_create_postcommunicator
 
-subroutine create_rhs_lap_postcommunicator_df(rhs,nvarb)
+subroutine create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs, nvarb)
 
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: q_send_lap, q_recv_lap, recv_data_dg_lap, send_data_dg_lap
+    use mod_grid,             only: grid
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(inout) :: btp
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(2,npoin), intent(inout) :: rhs
     integer, intent(in) :: nvarb
+    real, dimension(nvarb, G%npoin), intent(inout) :: rhs
 
     ! DG - Discontinuous communicator
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_lap(q_send_lap,q_recv_lap,send_data_dg_lap, &
-            recv_data_dg_lap,nvarb)
+    call unpack_data_dg_general_lap(G, b, par, ref%q_send_lap, ref%q_recv_lap, ref%send_data_dg_lap, &
+            ref%recv_data_dg_lap, nvarb)
 
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_df_lap(rhs,q_send_lap,q_recv_lap)
+    !Build Inviscid Fluxes On Element Boundary
+    call create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, ref%q_send_lap, ref%q_recv_lap, nvarb)
 
 end subroutine create_rhs_lap_postcommunicator_df
 
-subroutine bcl_create_postcommunicator(rhs)
+subroutine bcl_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs)
 
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: q_send_bcl, q_recv_bcl, recv_data_bcl, send_data_bcl
-
-    use mod_input, only: nlayers
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_initial,          only: initial
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(inout) :: btp
+    type(initial),          intent(in)    :: init
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(3,npoin,nlayers), intent(inout) :: rhs
+    real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: rhs
 
     ! DG - Discontinuous communicator
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_bcl(q_send_bcl,q_recv_bcl,send_data_bcl,recv_data_bcl)
+    call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl)
 
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_bcl(rhs,q_send_bcl,q_recv_bcl)
+    !Build Inviscid Fluxes On Element Boundary
+    call create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl)
 
 end subroutine bcl_create_postcommunicator
 
-subroutine bcl_create_postcommunicator_continuity(rhs)
+subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, ref, mpic, rhs)
 
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: q_send_bcl, q_recv_bcl, recv_data_bcl, send_data_bcl
-
-    use mod_input, only: nlayers
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(inout) :: btp
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(npoin,nlayers), intent(inout) :: rhs
+    real, dimension(G%npoin, inp%nlayers), intent(inout) :: rhs
 
     ! DG - Discontinuous communicator
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_bcl(q_send_bcl,q_recv_bcl,send_data_bcl,recv_data_bcl)
+    call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl)
 
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_bcl_continuity(rhs,q_send_bcl,q_recv_bcl)
+    !Build Inviscid Fluxes On Element Boundary
+    call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
 
 end subroutine bcl_create_postcommunicator_continuity
 
-subroutine bcl_create_postcommunicator_momentum(rhs)
+subroutine bcl_create_postcommunicator_momentum(G, inp, b, mf, par, btp, init, ref, mpic, rhs)
 
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: q_send_bcl, q_recv_bcl, recv_data_bcl, send_data_bcl
-
-    use mod_input, only: nlayers
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_initial,          only: initial
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(inout) :: btp
+    type(initial),          intent(in)    :: init
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(2,npoin,nlayers), intent(inout) :: rhs
+    real, dimension(2, G%npoin, inp%nlayers), intent(inout) :: rhs
 
     ! DG - Discontinuous communicator
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_bcl(q_send_bcl,q_recv_bcl,send_data_bcl,recv_data_bcl)
+    call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl)
 
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_bcl_momentum(rhs,q_send_bcl,q_recv_bcl)
+    !Build Inviscid Fluxes On Element Boundary
+    call create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
 
 end subroutine bcl_create_postcommunicator_momentum
 
-subroutine bcl_create_rhs_lap_postcommunicator_df(rhs)
+subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, rhs)
 
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin
-
-    use mod_ref, only: q_send_lap_bcl, q_recv_lap_bcl, recv_data_lap_bcl, send_data_lap_bcl
-
-    use mod_input, only: nlayers
+    use mod_grid,             only: grid
+    use mod_input,            only: input
+    use mod_basis,            only: basis
+    use mod_face,             only: face_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_variables,        only: btp_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(input),            intent(in)    :: inp
+    type(basis),            intent(in)    :: b
+    type(face_CS),          intent(in)    :: mf
+    type(parallel_CS),      intent(in)    :: par
+    type(btp_CS),           intent(inout) :: btp
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(2,npoin,nlayers), intent(inout) :: rhs
+    real, dimension(2, G%npoin, inp%nlayers), intent(inout) :: rhs
 
     ! DG - Discontinuous communicator
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_lap_bcl(q_send_lap_bcl,q_recv_lap_bcl,send_data_lap_bcl, &
-            recv_data_lap_bcl,nlayers)
+    call unpack_data_dg_general_lap_bcl(G, b, par, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, ref%send_data_lap_bcl, &
+            ref%recv_data_lap_bcl, inp%nlayers)
 
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_df_lap_bcl(rhs,q_send_lap_bcl,q_recv_lap_bcl,nlayers)
+    !Build Inviscid Fluxes On Element Boundary
+    call create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, inp%nlayers, 0)
 
 end subroutine bcl_create_rhs_lap_postcommunicator_df
 
-subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
+subroutine bcl_create_communicator(G, b, par, ref, mpic, q_face, nvarb, nlayers, nq)
 
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: nface, nboun
+    use mod_grid,             only: grid
+    use mod_basis,            only: basis
+    use mod_parallel,         only: parallel_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
 
     implicit none
 
+    type(grid),             intent(in)    :: G
+    type(basis),            intent(in)    :: b
+    type(parallel_CS),      intent(in)    :: par
+    type(mref),             intent(inout) :: ref
+    type(mpi_communicator), intent(inout) :: mpic
+
     !Global Arrays
-    real, dimension(nvarb,2,nq,nface), intent(inout) :: q_face
-    real, dimension(nvarb,2,nq,nface), intent(inout) :: grad_uvdp_face
-    integer, intent(in) :: nvarb
+    integer, intent(in) :: nvarb, nlayers, nq
+    real, dimension(nvarb, 2, nq, G%nface, nlayers), intent(inout) :: q_face
 
     !MPI Variables
-    real :: recv_data_dg_quad1(2*nvarb*nq*nboun)
-    real :: send_data_dg_quad1(2*nvarb*nq*nboun)
-    real :: q_recv_quad1(2*nvarb,nq,nboun), q_send_quad1(2*nvarb,nq,nboun)
+    integer :: i, j, k, iv, e, ip
+    real :: recv_data_dg_quad1(nvarb*nq*G%nboun*nlayers)
+    real :: send_data_dg_quad1(nvarb*nq*G%nboun*nlayers)
+    real :: q_recv_quad1(nvarb, nq, G%nboun, nlayers)
+    real :: q_send_quad1(nvarb, nq, G%nboun, nlayers)
 
     recv_data_dg_quad1 = 0.0
     send_data_dg_quad1 = 0.0
@@ -409,262 +420,20 @@ subroutine create_communicator_quad_all(q_face,grad_uvdp_face,nvarb)
     ! DG - Discontinuous communicator
 
     !Load all the boundary data into a vector
-    call pack_data_dg_quad_all(send_data_dg_quad1,q_face,grad_uvdp_face,nvarb)
+    call pack_data_dg_quad_layer(send_data_dg_quad1, q_face, nvarb, nlayers, nq)
 
     !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,2*nvarb,nreq,ireq,status)
+    call send_bound_dg_general_quad_layer(G, b, par, send_data_dg_quad1, recv_data_dg_quad1, nvarb, &
+        nlayers, nq, mpic%nreq, mpic%ireq, mpic%status)
 
     !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
+    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
     !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1, &
-        recv_data_dg_quad1,2*nvarb)
+    call unpack_data_dg_general_quad_layer(G, par, q_send_quad1, q_recv_quad1, send_data_dg_quad1, &
+        recv_data_dg_quad1, nvarb, nlayers, nq)
 
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_quad_all(q_face,grad_uvdp_face,q_send_quad1,q_recv_quad1,nvarb)
-
-end subroutine create_communicator_quad_all
-
-subroutine bcl_create_communicator(q_face,nvarb,nlayers,nq)
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: nface, nboun
-
-    !use mod_input, only: nlayers
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(nvarb,2,nq,nface,nlayers), intent(inout) :: q_face
-    integer, intent(in) :: nvarb, nlayers,nq
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(nvarb*nq*nboun*nlayers)
-    real :: send_data_dg_quad1(nvarb*nq*nboun*nlayers)
-    real :: q_recv_quad1(nvarb,nq,nboun,nlayers), q_send_quad1(nvarb,nq,nboun,nlayers)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_quad_layer(send_data_dg_quad1,q_face,nvarb,nlayers,nq)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad_layer(send_data_dg_quad1,recv_data_dg_quad1,nvarb, &
-        nlayers,nq,nreq,ireq,status)
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad_layer(q_send_quad1,q_recv_quad1,send_data_dg_quad1, &
-        recv_data_dg_quad1,nvarb,nlayers,nq)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_quad_layer(q_face,q_send_quad1,q_recv_quad1,nvarb,nlayers,nq)
+    !Build Inviscid Fluxes On Element Boundary
+    call create_nbhs_face_quad_layer(G, b, par, q_face, q_send_quad1, q_recv_quad1, nvarb, nlayers, nq)
 
 end subroutine bcl_create_communicator
-
-subroutine create_communicator_quad_layer_all(qprime_face,q_face,nvarb,nlayers)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: nface, nboun
-
-    !use mod_input, only: nlayers
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(nvarb,2,nq,nface,nlayers), intent(inout) :: q_face, qprime_face
-    integer, intent(in) :: nvarb, nlayers
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(2*nvarb*nq*nboun*nlayers)
-    real :: send_data_dg_quad1(2*nvarb*nq*nboun*nlayers)
-    real :: q_recv_quad1(2*nvarb,nq,nboun,nlayers), q_send_quad1(2*nvarb,nq,nboun,nlayers)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_quad_layer_all(send_data_dg_quad1,q_face,qprime_face,nvarb,nlayers)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad_layer(send_data_dg_quad1,recv_data_dg_quad1,2*nvarb, &
-        nlayers,nq,nreq,ireq,status)
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad_layer(q_send_quad1,q_recv_quad1,send_data_dg_quad1, &
-        recv_data_dg_quad1,2*nvarb,nlayers,nq)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_quad_layer_all(q_face,qprime_face,q_send_quad1,q_recv_quad1, &
-        nvarb,nlayers)
-
-end subroutine create_communicator_quad_layer_all
-
-subroutine create_communicator_quad_1var(q_face)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: nface, nboun
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(2,nq,nface), intent(inout) :: q_face
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(nq*nboun)
-    real :: send_data_dg_quad1(nq*nboun)
-    real :: q_recv_quad1(nq,nboun), q_send_quad1(nq,nboun)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_quad_1v(send_data_dg_quad1,q_face)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,1,nreq,ireq,status)
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad_1v(q_send_quad1,q_recv_quad1,send_data_dg_quad1, &
-        recv_data_dg_quad1)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_quad_1v(q_face,q_send_quad1,q_recv_quad1)
-
-end subroutine create_communicator_quad_1var
-
-
-subroutine create_lap_postcommunicator_quad(rhs,nvarb)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ierr, ireq, nreq, status
-
-    use mod_grid, only: npoin, nboun
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(2,npoin), intent(inout) :: rhs
-    integer, intent(in) :: nvarb
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(nvarb*nq*nboun)
-    real :: send_data_dg_quad1(nvarb*nq*nboun)
-    real :: q_recv_quad1(nvarb,nq,nboun), q_send_quad1(nvarb,nq,nboun)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
-
-    ! DG - Discontinuous communicator
-
-    !To build inter-processor fluxes, All Procs Must Wait
-    call mpi_waitall(nreq,ireq,status,ierr)
-
-    !Map Recv buffer to the boundary of the Receiver (unpack data)
-    call unpack_data_dg_general_quad(q_send_quad1,q_recv_quad1,send_data_dg_quad1, &
-        recv_data_dg_quad1,nvarb)
-
-    !Build Inviscid Fluxes On Element Boundary - need to add multirate here
-    call create_nbhs_face_lap_quad_ip(rhs,q_send_quad1,q_recv_quad1,nvarb)
-
-end subroutine create_lap_postcommunicator_quad
-
-subroutine create_lap_precommunicator_quad(q_face,nvarb)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: nface, nboun
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(nvarb,2,nq,nface), intent(in) :: q_face
-    integer, intent(in) :: nvarb
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(nvarb*nq*nboun)
-    real :: send_data_dg_quad1(nvarb*nq*nboun)
-    real :: q_recv_quad1(nvarb,nq,nboun), q_send_quad1(nvarb,nq,nboun)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_quad(send_data_dg_quad1,q_face,nvarb)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
-
-end subroutine create_lap_precommunicator_quad
-
-subroutine create_lap_precommunicator_quad_v1(grad_uvdp,nvarb)
-
-    use mod_basis, only: nq
-
-    use mod_mpi_communicator, only: ireq, nreq, status
-
-    use mod_grid, only: npoin_q, nboun
-
-    implicit none
-
-    !Global Arrays
-    real, dimension(4,npoin_q), intent(in) :: grad_uvdp
-    integer, intent(in) :: nvarb
-
-    !MPI Variables
-    real :: recv_data_dg_quad1(nvarb*nq*nboun)
-    real :: send_data_dg_quad1(nvarb*nq*nboun)
-    real :: q_recv_quad1(nvarb,nq,nboun), q_send_quad1(nvarb,nq,nboun)
-
-    recv_data_dg_quad1 = 0.0
-    send_data_dg_quad1 = 0.0
-    q_recv_quad1 = 0.0
-    q_send_quad1 = 0.0
-
-    ! DG - Discontinuous communicator
-
-    !Load all the boundary data into a vector
-    call pack_data_dg_quad_lap(send_data_dg_quad1,grad_uvdp,nvarb)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_quad(send_data_dg_quad1,recv_data_dg_quad1,nvarb,nreq,ireq,status)
-
-end subroutine create_lap_precommunicator_quad_v1

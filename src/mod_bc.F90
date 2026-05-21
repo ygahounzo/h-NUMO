@@ -13,16 +13,6 @@
 !----------------------------------------------------------------------!
 module mod_bc
 
-    use mod_basis, only: ngl, nglx, ngly, nglz
-
-    use mod_global_grid, only: xperiodic, yperiodic, zperiodic, iperiodic_g
-
-    use mod_grid, only: npoin, nbsido, coord, nelem
-
-    use mod_input, only: sponge_type
-
-    use mod_types, only : r8
-
     public :: &
         mod_bc_create, &
         mod_bc_create_iperiodic, &
@@ -31,7 +21,7 @@ module mod_bc
         normals, &
         bc_list, bc_count, & !for identifying boundary points not on boundary element faces
         vc_el_type
-    
+
 
     private
 
@@ -46,23 +36,33 @@ module mod_bc
 
 contains
 
-    subroutine mod_bc_create()
+    subroutine mod_bc_create(G, b, mf, par)
+
+        use mod_grid,     only: grid
+        use mod_basis,    only: basis
+        use mod_face,     only: face_CS
+        use mod_parallel, only: parallel_CS
 
         implicit none
 
+        type(grid),        intent(in) :: G
+        type(basis),       intent(in) :: b
+        type(face_CS),     intent(in) :: mf
+        type(parallel_CS), intent(in) :: par
+
         integer AllocateStatus
         integer ierr
-        
+
         ! Allocate Memory for BC data structures
 
-        allocate(normals(3,npoin), ipoin_bound(npoin), stat=AllocateStatus )
+        allocate(normals(3,G%npoin), ipoin_bound(G%npoin), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_BC **"
 
         !Construct PMATRIX for NFBCs
-        call create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
+        call create_nfbc_vector(G, b, mf, normals, ipoin_bound, npoin_bound, ldirichlet)
 
-        call create_bc_list()
-        
+        call create_bc_list(G, b, mf, par)
+
     end subroutine mod_bc_create
 
     !-----------------------------------------------------------------------!
@@ -94,24 +94,28 @@ contains
     !         Department of Aerospace Engineering
     !         Cincinnati, OH 45220
     !-----------------------------------------------------------------------!
-    subroutine read_bc(face,nface,bsido,nbsido)
+    subroutine read_bc(G, b, face, nface, bsido, nbsido)
+
         use mod_types,    only: r8
-
-        use mod_basis, only: FACE_LEN
-
-        use mod_grid,     only: coord_cg
+        use mod_grid,     only: grid
+        use mod_basis,    only: basis
 
         implicit none
 
-        integer                       :: nface,nbsido,npoin_cg,iboun,AllocateStatus
-        integer                       :: nfiles,nptsi,nptsj,npts,bc_type,num_match
-        integer                       :: ifiles,ipoint_f,ipoint_bc,ip,iface
-        integer, dimension(FACE_LEN,nface)   :: face
-        integer, dimension(6,nbsido)  :: bsido
+        type(grid),  intent(in) :: G
+        type(basis), intent(in) :: b
+
+        integer,                               intent(in)    :: nface, nbsido
+        integer, dimension(b%FACE_LEN,nface),  intent(inout) :: face
+        integer, dimension(6,nbsido),          intent(inout) :: bsido
+
+        integer                       :: npoin_cg, iboun, AllocateStatus
+        integer                       :: nfiles, nptsi, nptsj, npts, bc_type, num_match
+        integer                       :: ifiles, ipoint_f, ipoint_bc, ip, iface
         character(len=100)            :: bc_file
-        real(kind=r8)                 :: tol,face_x,face_y,face_z
+        real(kind=r8)                 :: tol, face_x, face_y, face_z
         logical                       :: lmatch
-        real(kind=r8), dimension(:), allocatable :: bc_x,bc_y,bc_z
+        real(kind=r8), dimension(:), allocatable :: bc_x, bc_y, bc_z
 
         ! set boundary condition match tolerance
         tol = 1.e-5
@@ -134,12 +138,12 @@ contains
             read(2,*)
 
             ! get number of points in each direction, (i,j) - structured
-            read(2,*) nptsi,nptsj
+            read(2,*) nptsi, nptsj
             npts = nptsi*nptsj
 
-            allocate(bc_x(npts),bc_y(npts),bc_z(npts),stat=AllocateStatus)
+            allocate(bc_x(npts), bc_y(npts), bc_z(npts), stat=AllocateStatus)
             if (AllocateStatus /= 0) stop "Memory error - read_bc"
-         
+
             ! read boundary condition patch coordinates
             do ipoint_bc = 1,npts
                 read(2,*) bc_x(ipoint_bc), bc_y(ipoint_bc), bc_z(ipoint_bc)
@@ -152,9 +156,9 @@ contains
                 num_match = 0
                 do ipoint_f = 1,4
                     ip = bsido(ipoint_f,iboun)
-                    face_x = coord_cg(1,ip)
-                    face_y = coord_cg(2,ip)
-                    face_z = coord_cg(3,ip)
+                    face_x = G%coord_cg(1,ip)
+                    face_y = G%coord_cg(2,ip)
+                    face_z = G%coord_cg(3,ip)
 
                     do ipoint_bc = 1,npts
                         ! check if current face point is included in the boundary
@@ -186,9 +190,9 @@ contains
                 num_match = 0
                 do ipoint_f = 1,4
                     ip = face(ipoint_f,iface)
-                    face_x = coord_cg(1,ip)
-                    face_y = coord_cg(2,ip)
-                    face_z = coord_cg(3,ip)
+                    face_x = G%coord_cg(1,ip)
+                    face_y = G%coord_cg(2,ip)
+                    face_z = G%coord_cg(3,ip)
 
                     do ipoint_bc = 1,npts
                         ! check if current face point is included in the boundary
@@ -213,7 +217,7 @@ contains
 
             end do !iface
 
-            deallocate(bc_x,bc_y,bc_z)
+            deallocate(bc_x, bc_y, bc_z)
 
         end do !ifiles
 
@@ -221,44 +225,42 @@ contains
     end subroutine read_bc
 
 
-    subroutine create_bc_list()
+    subroutine create_bc_list(G, b, mf, par)
 
-      use mod_grid, only: npoin, mod_grid_get_face_ngl, nface, face, intma, coord
-      
-      use mod_face, only: imapl
-
-      use mod_parallel, only : num_send_recv_total
-
+      use mod_grid,     only: grid, mod_grid_get_face_ngl
+      use mod_basis,    only: basis
+      use mod_face,     only: face_CS
+      use mod_parallel, only: parallel_CS
       use mpi
 
       implicit none
 
-      !Global Arrays    
-!      integer, dimension(:), allocatable :: bc_list
-!      integer :: bc_count
-      
-     
+      type(grid),        intent(in) :: G
+      type(basis),       intent(in) :: b
+      type(face_CS),     intent(in) :: mf
+      type(parallel_CS), intent(in) :: par
+
       !Local Arrays
       integer :: iface, ier, ilocl, iel, i, j, k, il, jl, kl, ip
-      integer :: ngl_i, ngl_j,plane_ij, irank, ierr
-      real, dimension (4,num_send_recv_total) :: bc_marker_nbh
-      real, dimension(4,npoin) :: bc_marker  
-      integer, dimension(4) :: bcflag !same here
+      integer :: ngl_i, ngl_j, plane_ij, irank, ierr
+      real, dimension(4,par%num_send_recv_total) :: bc_marker_nbh
+      real, dimension(4,G%npoin) :: bc_marker
+      integer, dimension(4) :: bcflag
 
-      call mpi_comm_rank(mpi_comm_world,irank,ierr)
+      call mpi_comm_rank(mpi_comm_world, irank, ierr)
 
       bc_marker = 0.0
-      
+
       !------------------------------
       !loop over boundary points
       !------------------------------
-      do iface=1, nface
-         ier=face(8,iface)
+      do iface=1, G%nface
+         ier=G%face(8,iface)
          if (ier >= 0) cycle
-        
-         ilocl=face(5,iface)
-         iel=face(7,iface)
-         call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
+
+         ilocl=G%face(5,iface)
+         iel=G%face(7,iface)
+         call mod_grid_get_face_ngl(b, ilocl, ngl_i, ngl_j, plane_ij)
 
          !----  boundary condition for U, T, S
          bcflag(1) = mod(ier,10)
@@ -270,11 +272,11 @@ contains
 
          do j=1,ngl_j
             do i=1,ngl_i
-               il=imapl(1,i,j,iface)
-               jl=imapl(2,i,j,iface)
-               kl=imapl(3,i,j,iface)
-               ip=intma(il,jl,kl,iel)
-               
+               il=mf%imapl(1,i,j,iface)
+               jl=mf%imapl(2,i,j,iface)
+               kl=mf%imapl(3,i,j,iface)
+               ip=G%intma(il,jl,kl,iel)
+
                do k=1,4 !loop over different variables (U,T,S) and mesh velocity
 
                   if (bcflag(k) == -3) then !non-reflecting
@@ -296,17 +298,17 @@ contains
       end do
 
 
-      call create_global_rhs(bc_marker,bc_marker_nbh,4,0)
+      call create_global_rhs(bc_marker, bc_marker_nbh, 4, 0)
 
-      ! remove points that lie on boundary faces to keep only boundary vertices 
+      ! remove points that lie on boundary faces to keep only boundary vertices
       ! (that lie on a non-boundary face of an element)
-      do iface=1, nface
-         ier=face(8,iface)
+      do iface=1, G%nface
+         ier=G%face(8,iface)
          if (ier >= 0) cycle
-        
-         ilocl=face(5,iface)
-         iel=face(7,iface)
-         call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
+
+         ilocl=G%face(5,iface)
+         iel=G%face(7,iface)
+         call mod_grid_get_face_ngl(b, ilocl, ngl_i, ngl_j, plane_ij)
 
          !----  boundary condition for U, T, S
          bcflag(1) = mod(ier,10)
@@ -319,17 +321,17 @@ contains
          bcflag(3) = ier/100
          bcflag(3) = mod(bcflag(3),100)
 
-         bcflag(4) = mod(ier,10)                
+         bcflag(4) = mod(ier,10)
 
          do j=1,ngl_j
             do i=1,ngl_i
-               il=imapl(1,i,j,iface)
-               jl=imapl(2,i,j,iface)
-               kl=imapl(3,i,j,iface)
-               ip=intma(il,jl,kl,iel)
+               il=mf%imapl(1,i,j,iface)
+               jl=mf%imapl(2,i,j,iface)
+               kl=mf%imapl(3,i,j,iface)
+               ip=G%intma(il,jl,kl,iel)
 
                do k=1,4
-                 
+
                   if (bcflag(k) == -3) then !non-reflecting
                      !do nothing
                   else if (bcflag(k) == -4) then !no-flux (velocity-neumann, pressure-dirichlet)
@@ -350,7 +352,7 @@ contains
       bc_count=0
       !count how many markers we need
       do k=1,4
-         do i=1,npoin
+         do i=1,G%npoin
             if(bc_marker(k,i).gt.0) bc_count(k)=bc_count(k)+1
          end do
       end do
@@ -360,7 +362,7 @@ contains
       bc_list=0
       do k=1,4
          ip=0
-         do i=1,npoin
+         do i=1,G%npoin
             if(bc_marker(k,i).gt.0) then
                ip=ip+1
                bc_list(k,ip)=i

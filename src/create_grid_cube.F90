@@ -31,15 +31,15 @@
 !> stretching option is set in input by the user, a regular grid will 
 !> be built by default
 !--------------------------------------------------------------------------------------------------
-subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,npoin,nelem,nboun,&
+subroutine create_grid_cube(inp,coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,npoin,nelem,nboun,&
     xglx,xgly,xglz,nglx,ngly,nglz,nelex,neley,nelez,xmin,xmax,ymin,ymax,zmin,zmax,&
     nx,ny,nz,iboun,xperiodic,yperiodic,zperiodic)
 
-    use mod_input, only: xstretch_coe, ystretch_coe, zstretch_coe, &
-        lxstretch, lystretch, lzstretch, &
-        xstretch_type, ystretch_type, zstretch_type, space_method
-  
+    use mod_input, only: input
+
     implicit none
+
+    type(input), intent(in) :: inp
 
     !global
     integer :: npoin_cg, npoin, nelem, nboun, ngl, nglx, ngly, nglz, nelex, neley, nelez
@@ -67,6 +67,8 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
 
     integer, dimension(:,:,:), allocatable :: inode
     integer :: AllocateStatus
+
+    real :: x_coe, y_coe, z_coe  !local effective stretch coefficients (may override inp values)
 
     !Local stretching variables:
     real, dimension(:), allocatable :: ksi,     eta,     zeta     !Logical space
@@ -116,12 +118,12 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
     zeta_ref = (zeta(nelez+1) - zeta(1))/2.0
 
     !Force no clustering when clustering_type_* == 'none'
-    !X:
-    if( xstretch_type == 'none') xstretch_coe= 0.0
-    !Y:
-    if( ystretch_type == 'none') ystretch_coe = 0.0
-    !Z:
-    if( zstretch_type == 'none') zstretch_coe= 0.0
+    x_coe = x_coe
+    y_coe = y_coe
+    z_coe = z_coe
+    if( inp%xstretch_type == 'none') x_coe = 0.0
+    if( inp%ystretch_type == 'none') y_coe = 0.0
+    if( inp%zstretch_type == 'none') z_coe = 0.0
 
     !>  nglm1 = ngl - 1
     Lx = (xmax - xmin)/nelex
@@ -144,7 +146,7 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
             k1 = 2
         end if
 
-        if(.not.lzstretch) then
+        if(.not.inp%lzstretch) then
             !
             ! No clustering:
             !
@@ -156,22 +158,22 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
             !
             zstart = 0.0
 
-            if( zstretch_type == 'one_sided' ) then
+            if( inp%zstretch_type == 'one_sided' ) then
                 !
                 ! one_sided
                 !
-                h = (zmax-zmin)*(exp(zstretch_coe*zeta(iz)) - 1.0)/(exp(zstretch_coe) - 1.0)
+                h = (zmax-zmin)*(exp(z_coe*zeta(iz)) - 1.0)/(exp(z_coe) - 1.0)
 
-            else if( zstretch_type == 'middle' ) then
+            else if( inp%zstretch_type == 'middle' ) then
                 !
                 ! middle
                 !
                 if( zeta(iz) >= 0.0 .and. zeta(iz) <= zeta_ref) then
-                    h = (zmax-zmin)*zeta_ref*( (exp(zstretch_coe) - exp(zstretch_coe*(1.0 - &
-                        zeta(iz)/zeta_ref)))/(exp(zstretch_coe) - 1.0))
+                    h = (zmax-zmin)*zeta_ref*( (exp(z_coe) - exp(z_coe*(1.0 - &
+                        zeta(iz)/zeta_ref)))/(exp(z_coe) - 1.0))
                 else if( zeta(iz) > zeta_ref .and. zeta(iz) <= 1.0) then
-                    h = (zmax-zmin)*zeta_ref + (zmax-zmin)*(1.0 - zeta_ref)*(exp(zstretch_coe* &
-                        (zeta(iz)-zeta_ref)/(1.0 - zeta_ref)) - 1.0)/(exp(zstretch_coe) - 1.0)
+                    h = (zmax-zmin)*zeta_ref + (zmax-zmin)*(1.0 - zeta_ref)*(exp(z_coe* &
+                        (zeta(iz)-zeta_ref)/(1.0 - zeta_ref)) - 1.0)/(exp(z_coe) - 1.0)
                 end if
 
             else
@@ -179,12 +181,12 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                 ! symmetric (Eriksson)
                 !
                 if(zeta(iz) <= zeta_ref ) then
-                    h = (zmax-zmin)*zeta_ref*(exp(zstretch_coe*zeta(iz)/zeta_ref) - &
-                        1.0)/(exp(zstretch_coe) - 1.0)
+                    h = (zmax-zmin)*zeta_ref*(exp(z_coe*zeta(iz)/zeta_ref) - &
+                        1.0)/(exp(z_coe) - 1.0)
                 else
 
-                    h = (zmax-zmin) - (zmax-zmin)*(1.0-zeta_ref)*(exp(zstretch_coe* &
-                        (1-zeta(iz))/(1-zeta_ref)) - 1.0)/(exp(zstretch_coe) - 1.0)
+                    h = (zmax-zmin) - (zmax-zmin)*(1.0-zeta_ref)*(exp(z_coe* &
+                        (1-zeta(iz))/(1-zeta_ref)) - 1.0)/(exp(z_coe) - 1.0)
                 end if
             end if
 
@@ -210,7 +212,7 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                     j1 = 2
                 end if
 
-                if(.not.lystretch) then
+                if(.not.inp%lystretch) then
                     !
                     ! No clustering in the x direction
                     !
@@ -222,34 +224,34 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                     ! Clustering (defined by the function 'h'):
                     !
                     ystart = 0.0
-                    if( ystretch_type == 'one_sided' ) then
+                    if( inp%ystretch_type == 'one_sided' ) then
                         !
                         ! one_sided
                         !
-                        h = (ymax-ymin)*(exp(ystretch_coe*eta(iy)) - 1.0)/(exp(ystretch_coe) - 1.0)
-                    else if( ystretch_type == 'middle' ) then
+                        h = (ymax-ymin)*(exp(y_coe*eta(iy)) - 1.0)/(exp(y_coe) - 1.0)
+                    else if( inp%ystretch_type == 'middle' ) then
                         !
                         ! middle
                         !
                         if( eta(iy) >= 0.0 .and. eta(iy) <= eta_ref) then
-                            h = (ymax-ymin)*eta_ref*( (exp(ystretch_coe) - exp(ystretch_coe* &
-                            (1.0 - eta(iy)/eta_ref)))/(exp(ystretch_coe) - 1.0))
+                            h = (ymax-ymin)*eta_ref*( (exp(y_coe) - exp(y_coe* &
+                            (1.0 - eta(iy)/eta_ref)))/(exp(y_coe) - 1.0))
 
                         else if( eta(iy) > eta_ref .and. eta(iy) <= 1.0) then
                             h = (ymax-ymin)*eta_ref + (ymax-ymin)*(1.0 - eta_ref)* &
-                                (exp(ystretch_coe*(eta(iy)-eta_ref)/(1.0 - eta_ref)) - &
-                                1.0)/(exp(ystretch_coe) - 1.0)
+                                (exp(y_coe*(eta(iy)-eta_ref)/(1.0 - eta_ref)) - &
+                                1.0)/(exp(y_coe) - 1.0)
                         end if
                     else 
                         !
                         ! symmetric
                         !
                         if(eta(iy) <= eta_ref ) then
-                            h = (ymax-ymin)*eta_ref*(exp(ystretch_coe*eta(iy)/eta_ref) - &
-                                1.0)/(exp(ystretch_coe) - 1.0)
+                            h = (ymax-ymin)*eta_ref*(exp(y_coe*eta(iy)/eta_ref) - &
+                                1.0)/(exp(y_coe) - 1.0)
                         else
-                            h = (ymax-ymin) - (ymax-ymin)*(1.0-eta_ref)*(exp(ystretch_coe* &
-                                (1-eta(iy))/(1-eta_ref)) - 1.0)/(exp(ystretch_coe) - 1.0)
+                            h = (ymax-ymin) - (ymax-ymin)*(1.0-eta_ref)*(exp(y_coe* &
+                                (1-eta(iy))/(1-eta_ref)) - 1.0)/(exp(y_coe) - 1.0)
                         end if
                     end if
 
@@ -274,7 +276,7 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                             i1 = 2
                         end if
 
-                        if(.not.lxstretch) then
+                        if(.not.inp%lxstretch) then
                             !
                             ! No clustering in the x direction
                             !
@@ -286,36 +288,36 @@ subroutine create_grid_cube(coord_cg,indexg,intma_table,ele_col,bsido,npoin_cg,n
                             ! Clustering (defined by the function 'h'):
                             !
                             xstart = 0.0
-                            if( xstretch_type == 'one_sided' ) then
+                            if( inp%xstretch_type == 'one_sided' ) then
                                 !
                                 ! one_sided
                                 !
-                                h = (xmax-xmin)*(exp(xstretch_coe*ksi(ix)) - 1.0) &
-                                    /(exp(xstretch_coe) - 1.0)
-                            else if( xstretch_type == 'middle' ) then
+                                h = (xmax-xmin)*(exp(x_coe*ksi(ix)) - 1.0) &
+                                    /(exp(x_coe) - 1.0)
+                            else if( inp%xstretch_type == 'middle' ) then
                                 !
                                 ! middle
                                 !
                                 if( ksi(ix) >= 0.0 .and. ksi(ix) <= ksi_ref) then
-                                    h = (xmax-xmin)*ksi_ref*( (exp(xstretch_coe) - &
-                                        exp(xstretch_coe*(1.0 - ksi(ix)/ksi_ref)))&
-                                        /(exp(xstretch_coe) - 1.0))
+                                    h = (xmax-xmin)*ksi_ref*( (exp(x_coe) - &
+                                        exp(x_coe*(1.0 - ksi(ix)/ksi_ref)))&
+                                        /(exp(x_coe) - 1.0))
                                 else if( ksi(ix) > ksi_ref .and. ksi(ix) <= 1.0) then
                                     h = (xmax-xmin)*ksi_ref + (xmax-xmin)*(1.0 - ksi_ref)* &
-                                        (exp(xstretch_coe*(ksi(ix)-ksi_ref)/(1.0 - ksi_ref)) - &
-                                        1.0)/(exp(xstretch_coe) - 1.0)
+                                        (exp(x_coe*(ksi(ix)-ksi_ref)/(1.0 - ksi_ref)) - &
+                                        1.0)/(exp(x_coe) - 1.0)
                                 end if
                             else
                                 !
                                 ! symmetric
                                 !
                                 if(ksi(ix) <= ksi_ref ) then
-                                    h = (xmax-xmin)*ksi_ref*(exp(xstretch_coe*ksi(ix)/ksi_ref) - &
-                                        1.0)/(exp(xstretch_coe) - 1.0)
+                                    h = (xmax-xmin)*ksi_ref*(exp(x_coe*ksi(ix)/ksi_ref) - &
+                                        1.0)/(exp(x_coe) - 1.0)
                                 else
                                     h = (xmax-xmin) - (xmax-xmin)*(1.0-ksi_ref)* &
-                                        (exp(xstretch_coe*(1-ksi(ix))/(1-ksi_ref)) - 1.0) &
-                                        /(exp(xstretch_coe) - 1.0)
+                                        (exp(x_coe*(1-ksi(ix))/(1-ksi_ref)) - 1.0) &
+                                        /(exp(x_coe) - 1.0)
                                 end if
                             end if
 

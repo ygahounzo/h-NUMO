@@ -21,7 +21,7 @@ lread_external_grid = F,  ! Read external grid file
 
 /
 
-&input
+&input_nml
 dt= 500,
 dt_btp = 25,
 time_initial = 0.0,

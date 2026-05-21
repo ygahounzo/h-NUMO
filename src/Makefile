@@ -31,6 +31,7 @@ SOURCEF += mod_global_grid.F90
 SOURCEF += mod_grid.F90
 SOURCEF += mod_initial.F90
 SOURCEF += mod_input.F90
+SOURCEF += mod_tensor.F90
 SOURCEF += mod_gradient.F90
 SOURCEF += mod_legendre.F90
 SOURCEF += mod_metrics.F90
@@ -63,8 +64,6 @@ SOURCEH :=
 SOURCEH += p4est.c
 
 #INCLUDE FILES FOR MLSWE
-SOURCEF += Tensor_product.F90
-SOURCEF += mod_Tensorproduct.F90
 SOURCEF += mod_initial_mlswe.F90
 SOURCEF += mod_layer_terms.F90
 SOURCEF += mod_barotropic_terms.F90
@@ -73,7 +72,7 @@ SOURCEF += mod_restart.F90
 SOURCEF += create_normals_quad.F90
 SOURCEF += initial_conditions.F90
 SOURCEF += diagnostics.F90
-# SOURCEF += diagnostics_nc.F90
+SOURCEF += diagnostics_nc.F90
 SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90
 SOURCEF += mod_splitting.F90

@@ -4,21 +4,21 @@
 !>           Computing PhD
 !>           Boise State University
 !----------------------------------------------------------------------
-subroutine compute_conserved(mass_conserv,q)
+subroutine compute_conserved(G, b, tsp, mass_conserv, q)
 
-    use mod_basis, only: npts
-
-    use mod_grid, only: npoin
-
-    use mod_input, only: nlayers
-
-    use mod_initial, only: psih_df,wjac_df, index_df
+    use mod_grid,    only: grid
+    use mod_basis,   only: basis
+    use mod_tensor, only: tensor_CS
 
     implicit none
 
+    type(grid),      intent(in) :: G
+    type(basis),     intent(in) :: b
+    type(tensor_CS), intent(in) :: tsp
+
     !global arrays
     real, intent(out) :: mass_conserv
-    real, intent(in) :: q(npoin)
+    real, intent(in)  :: q(G%npoin)
 
     !local
     real :: wq, hi
@@ -26,19 +26,18 @@ subroutine compute_conserved(mass_conserv,q)
 
     mass_conserv = 0.0
 
-    do Iq = 1, npoin
+    do Iq = 1, G%npoin
 
-        wq = wjac_df(Iq)
+        wq = tsp%wjac_df(Iq)
 
-        do ip = 1,npts
+        do ip = 1, b%npts
 
-            I = index_df(ip,Iq)
-            hi = psih_df(ip,Iq)
-            
+            I  = tsp%index_df(ip,Iq)
+            hi = tsp%psih_df(ip,Iq)
+
             mass_conserv = mass_conserv + wq*hi*q(I)
 
         end do
     end do
 
-    
 end subroutine compute_conserved

@@ -33,7 +33,7 @@ y_periodic = 0,
 
 /
 
-&input
+&input_nml
 dt= 100,
 dt_btp = 1.8,
 time_initial = 0.0,

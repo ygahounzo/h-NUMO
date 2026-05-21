@@ -5,7 +5,7 @@
 !>
 !>@date S. Gopalakrishnan
 !> 26 Mar. 2011
-!> 
+!>
 !>@date Simone Marras
 !> 21 May 2013
 !>
@@ -15,35 +15,30 @@
 !> 20 May 2024
 !---------------------------------------------------------------------!
 
-subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
+subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
 
-    use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
-
-    use mod_constants, only: pi, earth_radius, gravity
-  
-    use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
-
-    use mod_grid, only: npoin, intma, coord, nelem
-  
-    use mod_initial, only: nvar, nvar_diag, kvector
-
-    use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, out_type, &
-        eqn_set, format_vtk, space_method, is_mlswe
-
-    use mod_mpi_utilities, only: irank, irank0
-  
-    use mod_parallel, only: nproc, num_send_recv_total
-
+    use mod_mpi_utilities, only: irank, irank0, MPI_PRECISION
+    use mod_parallel,      only: parallel_CS
+    use mod_global_grid,   only: grid_global
     use mod_vtk_binary
-  
+    use mod_grid,          only: grid
+    use mod_basis,         only: basis
+    use mod_input,         only: input
+    use mod_initial,       only: initial
+
     implicit none
 
-    !global variables
-    real, intent(in) :: q(nvar,npoin), qb(4,npoin)
+    type(grid),        intent(in) :: G
+    type(input),       intent(in) :: inp
+    type(basis),       intent(in) :: b
+    type(initial),     intent(in) :: init
+    type(grid_global), intent(in) :: gg
+    type(parallel_CS), intent(in) :: par
+
+    real, intent(in) :: q(init%nvar, G%npoin), qb(4, G%npoin)
     real, intent(in) :: time
     character, intent(in) :: fname*100
 
-    !local variables
     integer ie, i, j, k, nglm1, nglm13, ii, jj, kk
     integer ncells, nsize
     integer ip, ip_g, iproc
@@ -58,288 +53,238 @@ subroutine outvtk_g_binary_mlswe(q,qb,fname,time)
     real time_value
     real sound, Mach
     real c, rho, theta
-    integer displs1(nproc)
+    integer displs1(par%nproc)
     integer ierr
 
-    !allocatable local arrays
-    real,   dimension(:,:,:), allocatable                  :: q_l
-    real,   dimension(:,:),   allocatable                  :: q_g, coord_dg_gathered,qb_g
-    real,   dimension(:),     allocatable                  :: km
-    real,   dimension(:),     allocatable                  :: x_uns
-    real,   dimension(:),     allocatable                  :: y_uns
-    real,   dimension(:),     allocatable                  :: z_uns
-    integer,dimension(:),     allocatable                  :: eltype
-    integer,dimension(:),     allocatable                  :: conn
-    real,   dimension(:),     allocatable                  :: var_uns_grid, var_uns_grid_ref
+    real,    dimension(:,:,:), allocatable :: q_l
+    real,    dimension(:,:),   allocatable :: q_g, coord_dg_gathered, qb_g
+    real,    dimension(:),     allocatable :: km
+    real,    dimension(:),     allocatable :: x_uns, y_uns, z_uns
+    integer, dimension(:),     allocatable :: eltype, conn
+    real,    dimension(:),     allocatable :: var_uns_grid, var_uns_grid_ref
 
-    character*72 :: cbuf
-    character*12 :: output_format
-    character*24 :: fnp
+    character*72  :: cbuf
+    character*12  :: output_format
+    character*24  :: fnp
     integer elemType, l
     integer AllocateStatus
     real :: xfactor, yfactor, zfactor
-    logical:: is_cgc
-    
-    ! is cgc
+    logical :: is_cgc
+
     is_cgc = .false.
-    if(space_method == 'cgc') is_cgc = .true.
+    if(inp%space_method == 'cgc') is_cgc = .true.
 
     if (irank == irank0) then
-        allocate(q_g(nvar,npoin_g), coord_dg_gathered(3,npoin_g), &
-            x_uns(npoin_g), y_uns(npoin_g), z_uns(npoin_g), &
-            eltype(nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
-            conn(9*nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
-            var_uns_grid(npoin_g), var_uns_grid_ref(npoin_g),&
-            qb_g(4,npoin_g),stat=AllocateStatus)
+        allocate(q_g(init%nvar, gg%npoin_g), coord_dg_gathered(3, gg%npoin_g), &
+            x_uns(gg%npoin_g), y_uns(gg%npoin_g), z_uns(gg%npoin_g),           &
+            eltype(gg%nelem_g*max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)), &
+            conn(9*gg%nelem_g*max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)), &
+            var_uns_grid(gg%npoin_g), var_uns_grid_ref(gg%npoin_g),             &
+            qb_g(4, gg%npoin_g), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"
-    end if ! irank==irank0
-  
+    end if
+
     ! Gather Data onto Head node
-    call gather_data(q_g,q,nvar)
-    call gather_data(qb_g,qb,4)
-    
-    call gather_data(coord_dg_gathered,coord,3)
-    
-    ! copy sections of the diagnostic array
+    call gather_data(G, inp, gg, par, q_g, q, init%nvar)
+    call gather_data(G, inp, gg, par, qb_g, qb, 4)
+    call gather_data(G, inp, gg, par, coord_dg_gathered, G%coord, 3)
+
     if (irank == irank0) then
 
-        nglm13 = max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)   !Number of cells per element
-        ncells = nelem_g*nglm13      !Total number of cells
+        nglm13 = max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)
+        ncells = gg%nelem_g*nglm13
 
-        !
-        ! Open VTK file
-        !
-        call vtk_ini(output_format = format_vtk, &
-            filename      = fname,               &
-            title         = 'NUMO3d data',     &
-            mesh_topology = 'UNSTRUCTURED_GRID', &
+        call vtk_ini(output_format = inp%format_vtk,   &
+            filename      = fname,                     &
+            title         = 'NUMO3d data',             &
+            mesh_topology = 'UNSTRUCTURED_GRID',       &
             time_value    = time)
 
         x_uns(:) = coord_dg_gathered(1,:)
         y_uns(:) = coord_dg_gathered(2,:)
         z_uns(:) = coord_dg_gathered(3,:)
 
-        !
-        ! Write coordinates to file:
-        !
-        call vtk_geo_unst_R8(npoin_g, x_uns, y_uns, z_uns)
-     
-        ! Cell type => Hex or Quads in case of 2D
-        if(is_2d) then
-            do i = 1,ncells
+        call vtk_geo_unst_R8(gg%npoin_g, x_uns, y_uns, z_uns)
+
+        if(b%is_2d) then
+            do i = 1, ncells
                 eltype(i) = 9
             end do
             nsize = 5*ncells
         else
-            do i = 1,ncells
+            do i = 1, ncells
                 eltype(i) = 12
             end do
             nsize = 9*ncells
         endif
-     
-        !
-        ! Write connectivity to file:
-        !
-        l=1
 
-        do ie =1,nelem_g
-            do i = 1,max(nglx-1,1)
-                do j = 1,max(ngly-1,1)
-                    do k = 1,max(nglz-1,1)
-                        ii=min(i+1,nglx)
-                        jj=min(j+1,ngly)
-                        kk=min(k+1,nglz)
-                
-                        if(nglx == 1) then
+        l = 1
+
+        do ie = 1, gg%nelem_g
+            do i = 1, max(b%nglx-1,1)
+                do j = 1, max(b%ngly-1,1)
+                    do k = 1, max(b%nglz-1,1)
+                        ii = min(i+1, b%nglx)
+                        jj = min(j+1, b%ngly)
+                        kk = min(k+1, b%nglz)
+
+                        if(b%nglx == 1) then
                             if(is_cgc) then
-                                conn(l)=4
-                                conn(l+1)=(intma_g( i, j, k,ie)  -1)
-                                conn(l+2)=(intma_g( i,jj, k,ie)  -1)
-                                conn(l+3)=(intma_g( i,jj,kk,ie)  -1)
-                                conn(l+4)=(intma_g( i, j,kk,ie)  -1)
+                                conn(l)   = 4
+                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
+                                conn(l+2) = (gg%intma_g( i,jj, k,ie) - 1)
+                                conn(l+3) = (gg%intma_g( i,jj,kk,ie) - 1)
+                                conn(l+4) = (gg%intma_g( i, j,kk,ie) - 1)
                                 l = l + 5
                             else
-                                conn(l)=4
-                                conn(l+1)=(intma( i, j, k,ie)   -1)
-                                conn(l+2)=(intma( i,jj, k,ie)   -1)
-                                conn(l+3)=(intma( i,jj,kk,ie)   -1)
-                                conn(l+4)=(intma( i, j,kk,ie)   -1)
+                                conn(l)   = 4
+                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                                conn(l+2) = (G%intma( i,jj, k,ie) - 1)
+                                conn(l+3) = (G%intma( i,jj,kk,ie) - 1)
+                                conn(l+4) = (G%intma( i, j,kk,ie) - 1)
                                 l = l + 5
                             endif
-                        else if(ngly == 1) then
+                        else if(b%ngly == 1) then
                             if(is_cgc) then
-                                conn(l)=4
-                                conn(l+1)=(intma_g( i, j, k,ie)  -1)
-                                conn(l+2)=(intma_g(ii, j, k,ie)  -1)
-                                conn(l+3)=(intma_g(ii, j,kk,ie)  -1)
-                                conn(l+4)=(intma_g( i, j,kk,ie)  -1)
+                                conn(l)   = 4
+                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
+                                conn(l+2) = (gg%intma_g(ii, j, k,ie) - 1)
+                                conn(l+3) = (gg%intma_g(ii, j,kk,ie) - 1)
+                                conn(l+4) = (gg%intma_g( i, j,kk,ie) - 1)
                                 l = l + 5
                             else
-                                conn(l)=4
-                                conn(l+1)=(intma( i, j, k,ie)   -1)
-                                conn(l+2)=(intma(ii, j, k,ie)   -1)
-                                conn(l+3)=(intma(ii, j,kk,ie)   -1)
-                                conn(l+4)=(intma( i, j,kk,ie)   -1)
+                                conn(l)   = 4
+                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                                conn(l+2) = (G%intma(ii, j, k,ie) - 1)
+                                conn(l+3) = (G%intma(ii, j,kk,ie) - 1)
+                                conn(l+4) = (G%intma( i, j,kk,ie) - 1)
                                 l = l + 5
                             endif
-                        else if(nglz == 1) then
+                        else if(b%nglz == 1) then
                             if(is_cgc) then
-                                conn(l)=4
-                                conn(l+1)=(intma_g( i, j, k,ie)  -1)
-                                conn(l+2)=(intma_g(ii, j, k,ie)  -1)
-                                conn(l+3)=(intma_g(ii,jj, k,ie)  -1)
-                                conn(l+4)=(intma_g( i,jj, k,ie)  -1)
+                                conn(l)   = 4
+                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
+                                conn(l+2) = (gg%intma_g(ii, j, k,ie) - 1)
+                                conn(l+3) = (gg%intma_g(ii,jj, k,ie) - 1)
+                                conn(l+4) = (gg%intma_g( i,jj, k,ie) - 1)
                                 l = l + 5
                             else
-                                conn(l)=4
-                                conn(l+1)=(intma( i, j, k,ie)   -1)
-                                conn(l+2)=(intma(ii, j, k,ie)   -1)
-                                conn(l+3)=(intma(ii,jj, k,ie)   -1)
-                                conn(l+4)=(intma( i,jj, k,ie)   -1)
+                                conn(l)   = 4
+                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                                conn(l+2) = (G%intma(ii, j, k,ie) - 1)
+                                conn(l+3) = (G%intma(ii,jj, k,ie) - 1)
+                                conn(l+4) = (G%intma( i,jj, k,ie) - 1)
                                 l = l + 5
                             endif
                         else
                             if(is_cgc) then
-                                conn(l)=8
-                                conn(l+1)=(intma_g( i, j, k,ie)  -1)
-                                conn(l+2)=(intma_g(ii, j, k,ie)  -1)
-                                conn(l+3)=(intma_g(ii,jj, k,ie)  -1)
-                                conn(l+4)=(intma_g( i,jj, k,ie)  -1)
-                                conn(l+5)=(intma_g( i, j,kk,ie)  -1)
-                                conn(l+6)=(intma_g(ii, j,kk,ie)  -1)
-                                conn(l+7)=(intma_g(ii,jj,kk,ie)  -1)
-                                conn(l+8)=(intma_g( i,jj,kk,ie)  -1)
+                                conn(l)   = 8
+                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
+                                conn(l+2) = (gg%intma_g(ii, j, k,ie) - 1)
+                                conn(l+3) = (gg%intma_g(ii,jj, k,ie) - 1)
+                                conn(l+4) = (gg%intma_g( i,jj, k,ie) - 1)
+                                conn(l+5) = (gg%intma_g( i, j,kk,ie) - 1)
+                                conn(l+6) = (gg%intma_g(ii, j,kk,ie) - 1)
+                                conn(l+7) = (gg%intma_g(ii,jj,kk,ie) - 1)
+                                conn(l+8) = (gg%intma_g( i,jj,kk,ie) - 1)
                                 l = l + 9
                             else
-                                conn(l)=8
-                                conn(l+1)=(intma( i, j, k,ie)   -1)
-                                conn(l+2)=(intma(ii, j, k,ie)   -1)
-                                conn(l+3)=(intma(ii,jj, k,ie)   -1)
-                                conn(l+4)=(intma( i,jj, k,ie)   -1)
-                                conn(l+5)=(intma( i, j,kk,ie)   -1)
-                                conn(l+6)=(intma(ii, j,kk,ie)   -1)
-                                conn(l+7)=(intma(ii,jj,kk,ie)   -1)
-                                conn(l+8)=(intma( i,jj,kk,ie)   -1)
+                                conn(l)   = 8
+                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                                conn(l+2) = (G%intma(ii, j, k,ie) - 1)
+                                conn(l+3) = (G%intma(ii,jj, k,ie) - 1)
+                                conn(l+4) = (G%intma( i,jj, k,ie) - 1)
+                                conn(l+5) = (G%intma( i, j,kk,ie) - 1)
+                                conn(l+6) = (G%intma(ii, j,kk,ie) - 1)
+                                conn(l+7) = (G%intma(ii,jj,kk,ie) - 1)
+                                conn(l+8) = (G%intma( i,jj,kk,ie) - 1)
                                 l = l + 9
                             endif
                         endif
-                
+
                     end do
                 end do
             end do
         end do
         ncon = l-1
 
-        !
-        ! Write connectivity to file
-        !
         call vtk_con(ncells, nsize, ncon, conn, eltype)
+        call vtk_dat(gg%npoin_g, 'NODE')
 
-        !
-        ! Write data to file:
-        !
-        call vtk_dat(npoin_g, 'NODE')
-
-        do i=1,npoin_g
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = q_g(1,i)
         end do
-        call vtk_var_scal_R8(npoin_g,'h',var_uns_grid)
-        
-        !Write bathymetry below reference level
-        ! do i=1,npoin
-        ! var_uns_grid(i) = q_g(4,i)
-        ! end do
-        ! call vtk_var_scal_R8(npoin,'elevation',var_uns_grid)
+        call vtk_var_scal_R8(gg%npoin_g, 'h', var_uns_grid)
 
-
-        !Write u-velo :
-        do i=1,npoin_g
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = q_g(2,i)
         end do
-        
-        call vtk_var_scal_R8(npoin_g,'u',var_uns_grid)
+        call vtk_var_scal_R8(gg%npoin_g, 'u', var_uns_grid)
 
-        !Write v-velo :
-        do i=1,npoin_g
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = q_g(3,i)
         end do
+        call vtk_var_scal_R8(gg%npoin_g, 'v', var_uns_grid)
 
-        call vtk_var_scal_R8(npoin_g,'v',var_uns_grid)
-
-        !Write velocity vectors:
-        do i=1,npoin_g
+        do i = 1, gg%npoin_g
             x_uns(i) = q_g(2,i)
             y_uns(i) = q_g(3,i)
             z_uns(i) = 0.0
         end do
-        call vtk_var_vect_R8('VECT',npoin_g,'MOMENTUM',x_uns, y_uns, z_uns)
+        call vtk_var_vect_R8('VECT', gg%npoin_g, 'MOMENTUM', x_uns, y_uns, z_uns)
 
-        do i=1,npoin_g
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = qb_g(1,i)
         end do
-        call vtk_var_scal_R8(npoin_g,'pb',var_uns_grid)
-            
-        !Write bathymetry below reference level
-        do i=1,npoin_g
+        call vtk_var_scal_R8(gg%npoin_g, 'pb', var_uns_grid)
+
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = q_g(5,i)
         end do
-        call vtk_var_scal_R8(npoin_g,'SSH',var_uns_grid)
-    
-        !Write u-velo :
-        do i=1,npoin_g
+        call vtk_var_scal_R8(gg%npoin_g, 'SSH', var_uns_grid)
+
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = qb_g(3,i) / qb_g(1,i)
         end do
-        
-        call vtk_var_scal_R8(npoin_g,'ub',var_uns_grid)
+        call vtk_var_scal_R8(gg%npoin_g, 'ub', var_uns_grid)
 
-        !Write v-velo :
-        do i=1,npoin_g
+        do i = 1, gg%npoin_g
             var_uns_grid(i) = qb_g(4,i) / qb_g(1,i)
         end do
+        call vtk_var_scal_R8(gg%npoin_g, 'vb', var_uns_grid)
 
-        call vtk_var_scal_R8(npoin_g,'vb',var_uns_grid)
-    
-        !Close the file
         call vtk_end()
-     
-        !deallocate global arrays
-        deallocate(q_g,qb_g)
+
+        deallocate(q_g, qb_g)
         deallocate(var_uns_grid, var_uns_grid_ref)
-     
-    end if !irank0
-  
+
+    end if
+
 end subroutine outvtk_g_binary_mlswe
 
 
-subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
+subroutine outvtk_g_binary_mlswe_global(G, inp, b, gg, par, q, qb, qprime, fname, time)
 
-    use mod_basis, only: ngl, nglx, ngly, nglz, is_2d
-
-    use mod_constants, only: pi, earth_radius, gravity
-  
-    use mod_global_grid, only: coord_g, intma_g, npoin_g, nelem_g, ncol_g
-
-    use mod_grid, only: npoin, intma, coord, nelem
-  
-    use mod_initial, only: nvar, nvar_diag, kvector
-
-    use mod_input, only: nelx, nely, nelz, nopx, nopy, nopz, out_type, &
-        eqn_set, format_vtk, space_method, is_mlswe
-
-    use mod_mpi_utilities, only: irank, irank0
-  
-    use mod_parallel, only: nproc, num_send_recv_total
-
+    use mod_mpi_utilities, only: irank, irank0, MPI_PRECISION
+    use mod_parallel,      only: parallel_CS
+    use mod_global_grid,   only: grid_global
     use mod_vtk_binary
-  
+    use mod_grid,          only: grid
+    use mod_basis,         only: basis
+    use mod_input,         only: input
+
     implicit none
 
-    !global variables
-    real, intent(in) :: q(3,npoin), qb(3,npoin), qprime(3,npoin)
+    type(grid),        intent(in) :: G
+    type(input),       intent(in) :: inp
+    type(basis),       intent(in) :: b
+    type(grid_global), intent(in) :: gg
+    type(parallel_CS), intent(in) :: par
+
+    real, intent(in) :: q(3, G%npoin), qb(3, G%npoin), qprime(3, G%npoin)
     real, intent(in) :: time
     character, intent(in) :: fname*100
 
-    !local variables
     integer ie, i, j, k, nglm1, nglm13, ii, jj, kk
     integer ncells, nsize
     integer ip, ip_g, iproc
@@ -354,173 +299,143 @@ subroutine outvtk_g_binary_mlswe_global(q,qb,qprime,fname,time)
     real time_value
     real sound, Mach
     real c, rho, theta
-    integer displs1(nproc)
+    integer displs1(par%nproc)
     integer ierr
 
-    !allocatable local arrays
-    real,   dimension(:,:,:), allocatable                  :: q_l
-    real,   dimension(:,:),   allocatable                  :: q_g, coord_dg_gathered,qb_g, qprime_g
-    real,   dimension(:),     allocatable                  :: km
-    real,   dimension(:),     allocatable                  :: x_uns
-    real,   dimension(:),     allocatable                  :: y_uns
-    real,   dimension(:),     allocatable                  :: z_uns
-    integer,dimension(:),     allocatable                  :: eltype
-    integer,dimension(:),     allocatable                  :: conn
-    real,   dimension(:),     allocatable                  :: var_uns_grid, var_uns_grid_ref
+    real,    dimension(:,:,:), allocatable :: q_l
+    real,    dimension(:,:),   allocatable :: q_g, coord_dg_gathered, qb_g, qprime_g
+    real,    dimension(:),     allocatable :: km
+    real,    dimension(:),     allocatable :: x_uns, y_uns, z_uns
+    integer, dimension(:),     allocatable :: eltype, conn
+    real,    dimension(:),     allocatable :: var_uns_grid
 
-    character*72 :: cbuf
-    character*12 :: output_format
-    character*24 :: fnp
+    character*72  :: cbuf
+    character*12  :: output_format
+    character*24  :: fnp
     integer elemType, l
     integer AllocateStatus
     real :: xfactor, yfactor, zfactor
-    logical:: is_cgc
-    
+    logical :: is_cgc
 
     if (irank == irank0) then
-        allocate(q_g(3,npoin_g), coord_dg_gathered(3,npoin_g), &
-            x_uns(npoin_g), y_uns(npoin_g), z_uns(npoin_g), &
-            eltype(nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), &
-            conn(9*nelem_g*max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)), var_uns_grid(npoin_g),&
-            qb_g(4,npoin_g),qprime_g(3,npoin_g), stat=AllocateStatus)
+        allocate(q_g(3, gg%npoin_g), coord_dg_gathered(3, gg%npoin_g),         &
+            x_uns(gg%npoin_g), y_uns(gg%npoin_g), z_uns(gg%npoin_g),           &
+            eltype(gg%nelem_g*max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)), &
+            conn(9*gg%nelem_g*max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)), &
+            var_uns_grid(gg%npoin_g),                                           &
+            qb_g(4, gg%npoin_g), qprime_g(3, gg%npoin_g), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"
-    end if ! irank==irank0
-  
+    end if
+
     ! Gather Data onto Head node
-    call gather_data(q_g,q,3)
-    call gather_data(qb_g,qb,4)
-    call gather_data(qprime_g,qprime,3)
-    
-    call gather_data(coord_dg_gathered,coord,3)
-    
-    ! copy sections of the diagnostic array
+    call gather_data(G, inp, gg, par, q_g, q, 3)
+    call gather_data(G, inp, gg, par, qb_g, qb, 4)
+    call gather_data(G, inp, gg, par, qprime_g, qprime, 3)
+    call gather_data(G, inp, gg, par, coord_dg_gathered, G%coord, 3)
+
     if (irank == irank0) then
 
-        nglm13 = max(nglx-1,1)*max(ngly-1,1)*max(nglz-1,1)   !Number of cells per element
-        ncells = nelem_g*nglm13      !Total number of cells
+        nglm13 = max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)
+        ncells = gg%nelem_g*nglm13
 
-        !
-        ! Open VTK file
-        !
-        call vtk_ini(output_format = format_vtk, &
-            filename      = fname,               &
-            title         = 'NUMO3d data',     &
-            mesh_topology = 'UNSTRUCTURED_GRID', &
+        call vtk_ini(output_format = inp%format_vtk,   &
+            filename      = fname,                     &
+            title         = 'NUMO3d data',             &
+            mesh_topology = 'UNSTRUCTURED_GRID',       &
             time_value    = time)
 
         x_uns(:) = coord_dg_gathered(1,:)
         y_uns(:) = coord_dg_gathered(2,:)
         z_uns(:) = coord_dg_gathered(3,:)
 
-        !
-        ! Write coordinates to file:
-        !
-        call vtk_geo_unst_R8(npoin_g, x_uns, y_uns, z_uns)
-     
-        ! Cell type => Hex or Quads in case of 2D
-        if(is_2d) then
-            do i = 1,ncells
+        call vtk_geo_unst_R8(gg%npoin_g, x_uns, y_uns, z_uns)
+
+        if(b%is_2d) then
+            do i = 1, ncells
                 eltype(i) = 9
             end do
             nsize = 5*ncells
         else
-            do i = 1,ncells
+            do i = 1, ncells
                 eltype(i) = 12
             end do
             nsize = 9*ncells
         endif
-     
-        !
-        ! Write connectivity to file:
-        !
-        l=1
 
-        do ie =1,nelem_g
-            do i = 1,max(nglx-1,1)
-                do j = 1,max(ngly-1,1)
-                    do k = 1,max(nglz-1,1)
-                        ii=min(i+1,nglx)
-                        jj=min(j+1,ngly)
-                        kk=min(k+1,nglz)
-                
-                        if(nglx == 1) then
-                            conn(l)=4
-                            conn(l+1)=(intma( i, j, k,ie)   -1)
-                            conn(l+2)=(intma( i,jj, k,ie)   -1)
-                            conn(l+3)=(intma( i,jj,kk,ie)   -1)
-                            conn(l+4)=(intma( i, j,kk,ie)   -1)
+        l = 1
+
+        do ie = 1, gg%nelem_g
+            do i = 1, max(b%nglx-1,1)
+                do j = 1, max(b%ngly-1,1)
+                    do k = 1, max(b%nglz-1,1)
+                        ii = min(i+1, b%nglx)
+                        jj = min(j+1, b%ngly)
+                        kk = min(k+1, b%nglz)
+
+                        if(b%nglx == 1) then
+                            conn(l)   = 4
+                            conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                            conn(l+2) = (G%intma( i,jj, k,ie) - 1)
+                            conn(l+3) = (G%intma( i,jj,kk,ie) - 1)
+                            conn(l+4) = (G%intma( i, j,kk,ie) - 1)
                             l = l + 5
-                        else if(ngly == 1) then
-                            conn(l)=4
-                            conn(l+1)=(intma( i, j, k,ie)   -1)
-                            conn(l+2)=(intma(ii, j, k,ie)   -1)
-                            conn(l+3)=(intma(ii, j,kk,ie)   -1)
-                            conn(l+4)=(intma( i, j,kk,ie)   -1)
+                        else if(b%ngly == 1) then
+                            conn(l)   = 4
+                            conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                            conn(l+2) = (G%intma(ii, j, k,ie) - 1)
+                            conn(l+3) = (G%intma(ii, j,kk,ie) - 1)
+                            conn(l+4) = (G%intma( i, j,kk,ie) - 1)
                             l = l + 5
-                        else if(nglz == 1) then
-                            conn(l)=4
-                            conn(l+1)=(intma( i, j, k,ie)   -1)
-                            conn(l+2)=(intma(ii, j, k,ie)   -1)
-                            conn(l+3)=(intma(ii,jj, k,ie)   -1)
-                            conn(l+4)=(intma( i,jj, k,ie)   -1)
+                        else if(b%nglz == 1) then
+                            conn(l)   = 4
+                            conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                            conn(l+2) = (G%intma(ii, j, k,ie) - 1)
+                            conn(l+3) = (G%intma(ii,jj, k,ie) - 1)
+                            conn(l+4) = (G%intma( i,jj, k,ie) - 1)
                             l = l + 5
                         else
-                            conn(l)=8
-                            conn(l+1)=(intma( i, j, k,ie)   -1)
-                            conn(l+2)=(intma(ii, j, k,ie)   -1)
-                            conn(l+3)=(intma(ii,jj, k,ie)   -1)
-                            conn(l+4)=(intma( i,jj, k,ie)   -1)
-                            conn(l+5)=(intma( i, j,kk,ie)   -1)
-                            conn(l+6)=(intma(ii, j,kk,ie)   -1)
-                            conn(l+7)=(intma(ii,jj,kk,ie)   -1)
-                            conn(l+8)=(intma( i,jj,kk,ie)   -1)
+                            conn(l)   = 8
+                            conn(l+1) = (G%intma( i, j, k,ie) - 1)
+                            conn(l+2) = (G%intma(ii, j, k,ie) - 1)
+                            conn(l+3) = (G%intma(ii,jj, k,ie) - 1)
+                            conn(l+4) = (G%intma( i,jj, k,ie) - 1)
+                            conn(l+5) = (G%intma( i, j,kk,ie) - 1)
+                            conn(l+6) = (G%intma(ii, j,kk,ie) - 1)
+                            conn(l+7) = (G%intma(ii,jj,kk,ie) - 1)
+                            conn(l+8) = (G%intma( i,jj,kk,ie) - 1)
                             l = l + 9
                         endif
-                
+
                     end do
                 end do
             end do
         end do
         ncon = l-1
 
-        !
-        ! Write connectivity to file
-        !
         call vtk_con(ncells, nsize, ncon, conn, eltype)
+        call vtk_dat(gg%npoin_g, 'NODE')
 
-        !
-        ! Write data to file:
-        !
-        call vtk_dat(npoin_g, 'NODE')
+        call vtk_var_scal_R8(gg%npoin_g, 'dp_df', q_g(1,:))
+        call vtk_var_scal_R8(gg%npoin_g, 'dpp_df', qprime_g(1,:))
+        call vtk_var_scal_R8(gg%npoin_g, 'pbpert_df', qb_g(1,:))
 
-        ! do i=1,npoin_g
-        !     var_uns_grid(i) = q_g(1,i)
-        ! end do
-        call vtk_var_scal_R8(npoin_g,'dp_df',q_g(1,:))
-        call vtk_var_scal_R8(npoin_g,'dpp_df',qprime_g(1,:))
-        call vtk_var_scal_R8(npoin_g,'pbpert_df',qb_g(1,:))
-        !Write velocity vectors:
         x_uns(:) = q_g(2,:)
         y_uns(:) = q_g(3,:)
-        call vtk_var_vect2D_R8('VECT',npoin_g,'VELOCITY',x_uns, y_uns)
+        call vtk_var_vect2D_R8('VECT', gg%npoin_g, 'VELOCITY', x_uns, y_uns)
 
-        !Write velocity vectors uprime, vprime
         x_uns(:) = qprime_g(2,:)
         y_uns(:) = qprime_g(3,:)
-        call vtk_var_vect2D_R8('VECT',npoin_g,'VELOPRIME',x_uns, y_uns)
+        call vtk_var_vect2D_R8('VECT', gg%npoin_g, 'VELOPRIME', x_uns, y_uns)
 
-        !Write velocity vectors uprime, vprime
         x_uns(:) = qb_g(2,:)
         y_uns(:) = qb_g(3,:)
-        call vtk_var_vect2D_R8('VECT',npoin_g,'VELOBARO',x_uns, y_uns)
-    
-        !Close the file
+        call vtk_var_vect2D_R8('VECT', gg%npoin_g, 'VELOBARO', x_uns, y_uns)
+
         call vtk_end()
-     
-        !deallocate global arrays
-        deallocate(q_g,qb_g,qprime_g)
+
+        deallocate(q_g, qb_g, qprime_g)
         deallocate(var_uns_grid)
-     
-    end if !irank0
-  
+
+    end if
+
 end subroutine outvtk_g_binary_mlswe_global

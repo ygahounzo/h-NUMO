@@ -18,7 +18,7 @@ ii = 0;
 ilayer = 1;
 nd_view = 2;
 
-name_fortran_data_file = [name_root, sprintf('%04d', 0)];
+name_fortran_data_file = [name_root, sprintf('mlswe%04d', 0)];
 
 [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,z] = load_data(name_fortran_data_file);
 
@@ -41,7 +41,7 @@ for ifile = file_num_start:delta_file_num:file_num_end
     nstep = ifile;
 
     %READ DATA FROM MATLAB OUTPUT FILE
-    name_fortran_data_file = [name_root, sprintf('%04d', ifile)];
+    name_fortran_data_file = [name_root, sprintf('mlswe%04d', ifile)];
     [npoin,pb,ubp,vbp,dp_df,udp_df,vdp_df,coord,z,dt,nk] = load_data(name_fortran_data_file);
 
     % Plot Exact Solution

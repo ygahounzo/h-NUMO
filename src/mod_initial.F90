@@ -11,159 +11,161 @@
 !----------------------------------------------------------------------!
 module mod_initial
 
-    use mod_constants, only: gravity, earth_radius, omega
-
-    use mod_grid, only:  npoin, coord, npoin_cg, nface, npoin_q
-
-    use mod_basis, only: nq, npts, ngl
-
-    use mod_input, only: time_initial, time_final, time_restart, time_scale, &
-        nlayers, dt, dt_btp, is_mlswe, kstages
+    use mod_constants
+    use mod_grid
+    use mod_basis
+    use mod_input
     
     use mod_initial_mlswe, only: bot_topo_derivatives, &
         wind_stress_coriolis, ssprk_coefficients
-    
-    use mod_Tensorproduct, only: compute_gradient_quad, compute_gradient_df
 
-    public :: &
-        mod_initial_create, &
-        create_kvector, &
-        q_init, &
-        hB_grad, phiA_grad, hA, &
-        q_ref,&
-        q_ref_layers, &
-        coriolis_constant, kvector, shear_stress, bathymetry, &
-        nvar, nvar_diag, nvart, ntracers, &
-        nrhs_mxm, &
-        height, &
-        pi_values 
+    use mod_tensor,  only: compute_gradient_quad, compute_gradient_df
+    use mod_face,    only: face_CS
+    use mod_metrics, only: metrics
 
-    public :: q_df_mlswe_init, pbprime_df, &
-        qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, coriolis_df, & 
-        N_btp, zbot,zbot_face,zbot_df, &
-        grad_zbot_quad, psih, dpsidx,dpsidy, indexq, wjac, fdt_bcl, fdt2_bcl, a_bcl, b_bcl, &
-        tau_wind_df, &
-        ssprk_a, ssprk_beta, wjac_df,psih_df,dpsidx_df,dpsidy_df,index_df, &
-        grad_zbot_df, pbprime_df_face
+    type initial
+        ! module variables and parameters
+        real, dimension(:,:), allocatable :: q_init, q_exact, q_ref, kvector, q_sph, coord_sph
+        real, dimension(:,:), allocatable :: pi_values, shear_stress, hA
+        real, dimension(:,:,:), allocatable :: hB_grad, phiA_grad, q_ref_layers
+        real, dimension(:), allocatable :: rho_layers, bathymetry
+        real, dimension(:), allocatable:: height, coriolis_constant
+        real, dimension(:,:,:), allocatable :: q_df
+        real, dimension(:), allocatable :: pbprime_df
+        real, dimension(:,:,:), allocatable :: pbprime_df_face
+        real, dimension(:,:,:,:), allocatable :: qb_face
+        real, dimension(:,:), allocatable :: qb_df, tau_wind, tau_wind_df
+        real, dimension(:), allocatable :: coriolis_df,coriolis_quad
+        real, dimension(:), allocatable :: zbot, zbot_df, fdt_bcl, fdt2_bcl, a_bcl, b_bcl
+        real, dimension(:,:,:), allocatable :: zbot_face
+        real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
 
-    public :: z_interface
+        real, dimension(:,:), allocatable :: ssprk_a
+        real, dimension(:),   allocatable :: ssprk_beta, alpha_mlswe
+
+        real, dimension(:,:), allocatable :: z_init_flag, z_interface_initial, z_init_flag_elem
+        real, dimension(:),   allocatable :: zbot_df_init
+
+        integer :: nvar, nvart, nvar_diag, ntracers
+        integer :: nrhs_mxm, N_btp
+
+    end type initial
+
+    public :: mod_initial_create, initial
 
     private
-
-    !-----------------------------------------------------------------------
-    real, dimension(:,:), allocatable :: q_init, q_exact, q_ref, kvector, q_sph, coord_sph
-    real, dimension(:,:), allocatable :: pi_values, shear_stress, hA
-    real, dimension(:,:,:), allocatable :: hB_grad, phiA_grad, q_ref_layers
-    real, dimension(:), allocatable :: rho_layers, bathymetry
-    real, dimension(:), allocatable:: height, coriolis_constant
-    real, dimension(:,:,:), allocatable :: q_df_mlswe_init
-    real, dimension(:), allocatable :: pbprime_df
-    real, dimension(:,:,:), allocatable :: pbprime_df_face
-    real, dimension(:,:,:,:), allocatable :: qb_face_mlswe_init
-    real, dimension(:,:), allocatable :: qb_df_mlswe_init, tau_wind, tau_wind_df
-    real, dimension(:), allocatable :: coriolis_df,coriolis_quad
-    real, dimension(:), allocatable :: zbot, zbot_df, fdt_bcl, fdt2_bcl, a_bcl, b_bcl
-    real, dimension(:,:,:), allocatable :: zbot_face
-    real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
-
-    real, dimension(:,:), allocatable :: psih, dpsidx,dpsidy, ssprk_a, psih_df,dpsidx_df,dpsidy_df
-    integer, dimension(:,:), allocatable :: indexq, index_df
-    real, dimension(:), allocatable :: wjac, ssprk_beta, wjac_df, alpha_mlswe
-
-    integer :: nvar, nvart, nvar_diag
-    integer :: nrhs_mxm, N_btp
-  !-----------------------------------------------------------------------
 
     contains
 
     !-----------------------------------------------------------------------
-    subroutine mod_initial_create()
+    subroutine mod_initial_create(inp, b, G, mf, init, mt)
 
         implicit none
+
+        ! global
+        type(input),   intent(inout)        :: inp
+        type(basis),   intent(in)           :: b
+        type(grid),    intent(in)           :: G
+        type(face_CS), intent(in)           :: mf
+        type(metrics), intent(in), optional :: mt
+        type(initial), intent(out)          :: init
 
         integer i, iperturbation, ip
         real time
         real x, y, z, xf, yf, zf, radius
         real lat, lon, press, temp, phis, ps
         real pb, tb, pi_f, pi_b, zradius
+        integer :: nlayers, npoin, npoin_q, npts, nface, kstages, nq
 
         !Define the number of prognostic variables
-        nvar=5 !rho,u,v,w,theta
-        nvart=nvar
+        init%nvar = 5 !rho,u,v,w,theta
+        init%nvart = init%nvar
         !Define the number of diagnostic variables
-        nvar_diag=0
+        init%nvar_diag = 0
 
         !Store Number of RHS for MXM calls in CREATE_RHS_VOLUME
-        nrhs_mxm=nvar + 1 !1 is for Pressure
+        init%nrhs_mxm=init%nvar + 1 !1 is for Pressure
 
         !Store Number of Tracers
-        ntracers=nvar-5
+        init%ntracers=init%nvar-5
 
-        if(allocated(q_init)) deallocate(q_init,q_exact,q_ref,kvector,pi_values,height, &
-                coriolis_constant, shear_stress)
-        allocate( q_init(nvar,npoin), q_exact(nvar,npoin), q_ref(nvar,npoin), kvector(3,npoin), &
-            pi_values(3,npoin), height(npoin), coriolis_constant(npoin), shear_stress(3,npoin))
+        npoin = G%npoin
+        nlayers = inp%nlayers
+        npoin_q = G%npoin_q
+        kstages = inp%kstages
+        nq = b%nq
+        npts = b%npts
+        nface = G%nface
+
+        if(allocated(init%q_init)) deallocate(init%q_init,init%q_exact,init%q_ref,init%kvector,init%pi_values,init%height, &
+                init%coriolis_constant, init%shear_stress)
+        allocate( init%q_init(init%nvar,npoin), init%q_exact(init%nvar,npoin), init%q_ref(init%nvar,npoin), init%kvector(3,npoin), &
+            init%pi_values(3,npoin), init%height(npoin), init%coriolis_constant(npoin), init%shear_stress(3,npoin))
+
+        !Set-up kvector (must come after init%kvector is allocated)
+        call create_kvector(init%kvector,G%coord,npoin)
 
         !hack to allocate layers stuff anyways
-        allocate(rho_layers(1),bathymetry(npoin))
+        allocate(init%rho_layers(1),init%bathymetry(npoin))
 
-        if(is_mlswe) then
-            if(allocated(q_df_mlswe_init)) deallocate(q_df_mlswe_init, pbprime_df, & 
-            qb_df_mlswe_init, alpha_mlswe, tau_wind, coriolis_quad, &
-            coriolis_df, zbot, zbot_df, zbot_face, &
-            grad_zbot_quad, tau_wind_df,&
-            ssprk_a,ssprk_beta, grad_zbot_df, &
-            pbprime_df_face, z_interface)
-            allocate(q_df_mlswe_init(3,npoin,nlayers), pbprime_df(npoin), &
-            qb_df_mlswe_init(4,npoin), &
-            alpha_mlswe(nlayers), tau_wind(2,npoin_q), coriolis_quad(npoin_q), coriolis_df(npoin), &
-            zbot(npoin_q), zbot_df(npoin), zbot_face(2,nq,nface), grad_zbot_quad(2,npoin_q), &
-            grad_zbot_df(2,npoin), psih(npts,npoin_q), dpsidx(npts,npoin_q), dpsidy(npts,npoin_q), &
-            indexq(npts,npoin_q), wjac(npoin_q), fdt_bcl(npoin), fdt2_bcl(npoin), a_bcl(npoin), &
-            b_bcl(npoin), &
-            tau_wind_df(2,npoin), ssprk_a(kstages,3), ssprk_beta(kstages), wjac_df(npoin), &
-            psih_df(npts,npoin), dpsidx_df(npts,npoin),dpsidy_df(npts,npoin),index_df(npts,npoin), &
-            pbprime_df_face(2,ngl,nface),z_interface(npoin,nlayers+1))
+        if(inp%is_mlswe) then
+            if(allocated(init%q_df)) deallocate(init%q_df, init%pbprime_df, & 
+            init%qb_df, init%alpha_mlswe, init%tau_wind, init%coriolis_quad, &
+            init%coriolis_df, init%zbot, init%zbot_df, init%zbot_face, &
+            init%grad_zbot_quad, init%tau_wind_df,&
+            init%ssprk_a,init%ssprk_beta, init%grad_zbot_df, &
+            init%pbprime_df_face, init%z_interface, &
+            init%z_init_flag, init%z_interface_initial,                     &
+            init%z_init_flag_elem, init%zbot_df_init)
+            allocate(init%q_df(3,npoin,nlayers), init%pbprime_df(npoin), &
+            init%qb_df(4,npoin), &
+            init%alpha_mlswe(nlayers), init%tau_wind(2,npoin_q), init%coriolis_quad(npoin_q), init%coriolis_df(npoin), &
+            init%zbot(npoin_q), init%zbot_df(npoin), init%zbot_face(2,nq,nface), init%grad_zbot_quad(2,npoin_q), &
+            init%grad_zbot_df(2,npoin), &
+            init%fdt_bcl(npoin), init%fdt2_bcl(npoin), init%a_bcl(npoin), &
+            init%b_bcl(npoin), &
+            init%tau_wind_df(2,npoin), init%ssprk_a(kstages,3), init%ssprk_beta(kstages), &
+            init%pbprime_df_face(2,b%ngl,nface),init%z_interface(npoin,nlayers+1), &
+            init%z_init_flag(npoin,nlayers), init%z_interface_initial(npoin,nlayers+1),  &
+            init%z_init_flag_elem(G%nelem,nlayers), init%zbot_df_init(npoin))
 
-            q_df_mlswe_init = 0.0
-            pbprime_df = 0.0
+            init%q_df = 0.0
+            init%pbprime_df = 0.0
 
         end if
 
         !Initialize q_* arrays to zero:
-        q_init  = 0.0
-        q_exact = 0.0
-        q_ref   = 0.0
+        init%q_init  = 0.0
+        init%q_exact = 0.0
+        init%q_ref   = 0.0
 
         time = 0.0
     
-        if(is_mlswe) then
+        if(inp%is_mlswe) then
 
-            call Tensor_product(wjac,psih,dpsidx,dpsidy,indexq, wjac_df,psih_df,dpsidx_df, &
-                    dpsidy_df,index_df)
+            call initial_conditions(inp, G, b, mf, init)
 
-            call initial_conditions(q_df_mlswe_init, pbprime_df, &
-                qb_df_mlswe_init, alpha_mlswe, pbprime_df_face, &
-                zbot_df,tau_wind_df, z_interface)
+            init%zbot_df_init = init%zbot_df
                 
-            call bot_topo_derivatives(zbot,zbot_face,zbot_df)
+            call bot_topo_derivatives(b, G, inp, mf, init%zbot, init%zbot_face, init%zbot_df)
 
-            call compute_gradient_quad(grad_zbot_quad,zbot_df)
-            call compute_gradient_df(grad_zbot_df,zbot_df)
+            if(present(mt)) then
+                call compute_gradient_quad(G, b, mt, init%grad_zbot_quad, init%zbot_df)
+                call compute_gradient_df(G, b, mt, init%grad_zbot_df, init%zbot_df)
+            end if
 
-            N_btp = ceiling(dt/dt_btp)
-            dt_btp = dt/real(N_btp)
+            init%N_btp = ceiling(inp%dt/inp%dt_btp)
+            inp%dt_btp = inp%dt/real(init%N_btp)
 
-            call wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, &
-                a_bcl, b_bcl, tau_wind_df)
-
-            call ssprk_coefficients(ssprk_a,ssprk_beta)
+            call  wind_stress_coriolis(b, G, inp, init%tau_wind, init%coriolis_df, init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
+                init%a_bcl, init%b_bcl, init%tau_wind_df)
+            call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta)
         endif
 
         !Set-up Times
-        time_initial=time_initial*time_scale
-        time_final=time_final*time_scale
-        time_restart=time_restart*time_scale
+        inp%time_initial = inp%time_initial*inp%time_scale
+        inp%time_final = inp%time_final*inp%time_scale
+        inp%time_restart = inp%time_restart*inp%time_scale
 
     end subroutine mod_initial_create
 
@@ -186,7 +188,11 @@ module mod_initial
         do ip = 1,npoin
             x=coord(1,ip); y=coord(2,ip); z=coord(3,ip)
             radius=sqrt( dot_product(coord(:,ip),coord(:,ip)) )
-            xf=x/radius; yf=y/radius; zf=z/radius
+            if (radius > 0.0) then
+                xf=x/radius; yf=y/radius; zf=z/radius
+            else
+                xf=0.0; yf=0.0; zf=1.0
+            end if
             kvector(1,ip) = xf
             kvector(2,ip) = yf
             kvector(3,ip) = zf

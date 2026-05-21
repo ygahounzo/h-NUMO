@@ -14,21 +14,22 @@
 !       Boise State University
 !       Date: April 03, 2023
 !----------------------------------------------------------------------!
-subroutine create_normals(nv,jac_face,face,nface)
+subroutine create_normals(nv,jac_face,face,nface, b, G)
 
-    use mod_basis, only: ngl, nglx, ngly, nglz, wglx, wgly, wglz, FACE_LEN
-
-    use mod_grid, only: intma, coord
-
+    use mod_basis
+    use mod_grid
     use mod_gradient, only: compute_local_gradient_v3
 
     implicit none
 
+    type(basis), intent(in) :: b
+    type(grid), intent(in) :: G
+
     !global
     integer, intent(in) :: nface
-    real, dimension(3,ngl,ngl,nface), intent(out) :: nv
-    real, dimension(ngl,ngl,nface), intent(out) :: jac_face
-    integer, intent(in) :: face(FACE_LEN,nface)
+    real, dimension(3,b%ngl,b%ngl,nface), intent(out) :: nv
+    real, dimension(b%ngl,b%ngl,nface), intent(out) :: jac_face
+    integer, intent(in) :: face(b%FACE_LEN,nface)
 
     !local
     integer :: iface, i, j, k, ip, l, m
@@ -36,8 +37,8 @@ subroutine create_normals(nv,jac_face,face,nface)
     real :: ww, nx, ny, nz, nlen
 
     !local arrays
-    real, dimension(nglx,ngly,nglz) :: x, y, z
-    real, dimension(nglx,ngly,nglz) :: x_ksi, x_eta, x_zeta, &
+    real, dimension(b%nglx,b%ngly,b%nglz) :: x, y, z
+    real, dimension(b%nglx,b%ngly,b%nglz) :: x_ksi, x_eta, x_zeta, &
         y_ksi, y_eta, y_zeta, &
         z_ksi, z_eta, z_zeta
   
@@ -60,36 +61,36 @@ subroutine create_normals(nv,jac_face,face,nface)
         if(iel.ne.0) then
         
             !Store Element Variables
-            do k=1,nglz
-                do j=1,ngly
-                    do i=1,nglx
-                        ip=intma(i,j,k,iel)
-                        x(i,j,k)=coord(1,ip)
-                        y(i,j,k)=coord(2,ip)
-                        z(i,j,k)=coord(3,ip)
+            do k=1,b%nglz
+                do j=1,b%ngly
+                    do i=1,b%nglx
+                        ip=G%intma(i,j,k,iel)
+                        x(i,j,k)=G%coord(1,ip)
+                        y(i,j,k)=G%coord(2,ip)
+                        z(i,j,k)=G%coord(3,ip)
                     end do !i
                 end do !j
             end do !k
         
             !Construct Mapping Derivatives
-            call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,nglx,ngly,nglz,ndim)
-            call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,nglx,ngly,nglz,ndim)
-            call compute_local_gradient_v3(z_ksi,z_eta,z_zeta,z,nglx,ngly,nglz,ndim)
+            call compute_local_gradient_v3(x_ksi,x_eta,x_zeta,x,b,ndim)
+            call compute_local_gradient_v3(y_ksi,y_eta,y_zeta,y,b,ndim)
+            call compute_local_gradient_v3(z_ksi,z_eta,z_zeta,z,b,ndim)
            
             !set jacobian matrix J for 2D
 
-            do k=1,nglz
-                do j=1,ngly
-                    do i=1,nglx
-                        if(nglx == 1) then
+            do k=1,b%nglz
+                do j=1,b%ngly
+                    do i=1,b%nglx
+                        if(b%nglx == 1) then
                             x_ksi(i,j,k) = 1;  y_ksi(i,j,k) = 0;  z_ksi(i,j,k) = 0;
                             x_eta(i,j,k) = 0;  x_zeta(i,j,k) = 0;
                         endif
-                        if(ngly == 1) then
+                        if(b%ngly == 1) then
                             x_eta(i,j,k) = 0;  y_eta(i,j,k) = 1;  z_eta(i,j,k) = 0;
                             y_ksi(i,j,k) = 0; y_zeta(i,j,k) = 0;
                         endif
-                        if(nglz == 1) then
+                        if(b%nglz == 1) then
                             x_zeta(i,j,k) = 0; y_zeta(i,j,k) = 0; z_zeta(i,j,k) = 1;
                             z_ksi(i,j,k) = 0; z_eta(i,j,k) = 0;
                         endif
@@ -102,9 +103,9 @@ subroutine create_normals(nv,jac_face,face,nface)
            
                 case(1)
                     ! Face 1: zeta = -1
-                    do l=1,nglx
-                        do m = 1,ngly
-                            ww=wglx(l)*wgly(m)
+                    do l=1,b%nglx
+                        do m = 1,b%ngly
+                            ww=b%wglx(l)*b%wgly(m)
                             i = l
                             j = m
                             k = 1
@@ -121,12 +122,12 @@ subroutine create_normals(nv,jac_face,face,nface)
            
                 case(2)
                     ! Face 2: zeta = +1
-                    do l=1,nglx
-                        do m=1,ngly
-                            ww=wglx(l)*wgly(m)
+                    do l=1,b%nglx
+                        do m=1,b%ngly
+                            ww=b%wglx(l)*b%wgly(m)
                             i = l
                             j = m
-                            k = nglz
+                            k = b%nglz
                             nx = - y_eta(i,j,k)*z_ksi(i,j,k) + z_eta(i,j,k)*y_ksi(i,j,k)
                             ny = + x_eta(i,j,k)*z_ksi(i,j,k) - z_eta(i,j,k)*x_ksi(i,j,k)
                             nz = - x_eta(i,j,k)*y_ksi(i,j,k) + y_eta(i,j,k)*x_ksi(i,j,k)
@@ -140,9 +141,9 @@ subroutine create_normals(nv,jac_face,face,nface)
 
                 case(3)
                     ! Face 3: eta = -1
-                    do l=1,nglx
-                        do m=1,nglz
-                            ww=wglx(l)*wglz(m)
+                    do l=1,b%nglx
+                        do m=1,b%nglz
+                            ww=b%wglx(l)*b%wglz(m)
                             i = l
                             j = 1
                             k = m
@@ -159,11 +160,11 @@ subroutine create_normals(nv,jac_face,face,nface)
 
                 case(4)
                     ! Face 4: eta = +1
-                    do l=1,nglx
-                        do m=1,nglz
-                            ww=wglx(l)*wglz(m)
+                    do l=1,b%nglx
+                        do m=1,b%nglz
+                            ww=b%wglx(l)*b%wglz(m)
                             i = l
-                            j = ngly
+                            j = b%ngly
                             k = m
                             nx = - y_ksi(i,j,k)*z_zeta(i,j,k) + z_ksi(i,j,k)*y_zeta(i,j,k)
                             ny = + x_ksi(i,j,k)*z_zeta(i,j,k) - z_ksi(i,j,k)*x_zeta(i,j,k)
@@ -178,9 +179,9 @@ subroutine create_normals(nv,jac_face,face,nface)
 
                 case(5)
                     ! Face 5: ksi = -1
-                    do l=1,ngly
-                        do m=1,nglz
-                            ww=wgly(l)*wglz(m)
+                    do l=1,b%ngly
+                        do m=1,b%nglz
+                            ww=b%wgly(l)*b%wglz(m)
                             i = 1
                             j = l
                             k = m
@@ -197,10 +198,10 @@ subroutine create_normals(nv,jac_face,face,nface)
 
                 case(6)
                     ! Face 6: ksi = +1
-                    do l=1,ngly
-                        do m=1,nglz
-                            ww=wgly(l)*wglz(m)
-                            i = nglx
+                    do l=1,b%ngly
+                        do m=1,b%nglz
+                            ww=b%wgly(l)*b%wglz(m)
+                            i = b%nglx
                             j = l
                             k = m
                             nx = + y_eta(i,j,k)*z_zeta(i,j,k) - z_eta(i,j,k)*y_zeta(i,j,k)
@@ -226,23 +227,23 @@ end subroutine create_normals
 !>@date 11 October 2010
 !>@date 28 May 2015, Daniel S. Abdi
 !----------------------------------------------------------------------!
-subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
+subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface, b, G)
 
-    use mod_basis, only: ngl, ngl2, nglx, ngly, nglz, FACE_LEN
-  
-    use mod_grid, only: intma, coord, mod_grid_get_face_ngl, face_type
-
-    use mod_input, only : lgpu, is_non_conforming_flg
+    use mod_basis
+    use mod_grid
   
     implicit none
+
+    type(basis), intent(in) :: b
+    type(grid), intent(in) :: G
   
     integer nface, ngl_i, ngl_j, ngl_ij, plane_ij
-    integer face(FACE_LEN,nface), imapl(3,ngl,ngl,nface), imapr(3,ngl,ngl,nface)
+    integer face(b%FACE_LEN,nface), imapl(3,b%ngl,b%ngl,nface), imapr(3,b%ngl,b%ngl,nface)
     integer iface, ilocl, ilocr, i, j, k, ii, l, m, iel, ier, il, ir,ip
-    integer jmapl(3,ngl2), jmapr(3,ngl2),  orderl(ngl2), orderr(ngl2)
-    real nodel(ngl2), noder(ngl2)
-    real nv(3,ngl,ngl,nface),jac_face(ngl,ngl,nface)
-    real nvc(3,ngl,ngl), jac_facec(ngl,ngl)
+    integer jmapl(3,b%ngl2), jmapr(3,b%ngl2),  orderl(b%ngl2), orderr(b%ngl2)
+    real nodel(b%ngl2), noder(b%ngl2)
+    real nv(3,b%ngl,b%ngl,nface),jac_face(b%ngl,b%ngl,nface)
+    real nvc(3,b%ngl,b%ngl), jac_facec(b%ngl,b%ngl)
     real x, y, z
 
     integer ik,jk,kk
@@ -253,8 +254,8 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
         iel= face(7,iface)
         ier= face(8,iface)
 
-        call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
-        if(face_type(iface)==21) call mod_grid_get_face_ngl(ilocr, ngl_i, ngl_j,ngl_ij)
+        call mod_grid_get_face_ngl(b, ilocl, ngl_i, ngl_j, plane_ij)
+        if(G%face_type(iface)==21) call mod_grid_get_face_ngl(b, ilocr, ngl_i, ngl_j, ngl_ij)
 
         ii = 0
         do l = 1,ngl_i
@@ -272,7 +273,7 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                         ! Face 2: zeta = +1
                         i = l
                         j = m
-                        k = nglz
+                        k = b%nglz
                     case(3)
                         ! Face 3: eta = -1
                         i = l
@@ -281,7 +282,7 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                     case(4)
                         ! Face 4: eta = +1
                         i = l
-                        j = ngly
+                        j = b%ngly
                         k = m
                     case(5)
                         ! Face 5: ksi = -1
@@ -290,7 +291,7 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                         k = m
                     case(6)
                         ! Face 6: ksi = +1
-                        i = nglx
+                        i = b%nglx
                         j = l
                         k = m
                 end select
@@ -300,10 +301,10 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
 
                 if(iel>0) then
                     !sort based on coordinate NOT local node id
-                    ip = intma(i,j,k,iel);
-                    x = coord(1,ip);
-                    y = coord(2,ip);
-                    z = coord(3,ip);
+                    ip = G%intma(i,j,k,iel);
+                    x = G%coord(1,ip);
+                    y = G%coord(2,ip);
+                    z = G%coord(3,ip);
                     nodel(ii)=sqrt(x*x+y*y+z*z)+x-2*y+3*z
                 else
                     nodel(ii)=ii
@@ -321,7 +322,7 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                         ! Face 2: zeta = +1
                         i = l
                         j = m
-                        k = nglz
+                        k = b%nglz
                     case(3)
                         ! Face 3: eta = -1
                         i = l
@@ -330,7 +331,7 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                     case(4)
                         ! Face 4: eta = +1
                         i = l
-                        j = ngly
+                        j = b%ngly
                         k = m
                     case(5)
                         ! Face 5: ksi = -1
@@ -339,19 +340,19 @@ subroutine create_imaplr(imapl,imapr,nv,jac_face,face,nface)
                         k = m
                     case(6)
                         ! Face 6: ksi = +1
-                        i = nglx
+                        i = b%nglx
                         j = l
                         k = m
                 end select
                 jmapr(1,ii)=i
                 jmapr(2,ii)=j
                 jmapr(3,ii)=k
-                if ((ier > 0).and.(face_type(iface).ne.21)) then
+                if ((ier > 0).and.(G%face_type(iface).ne.21)) then
                     !sort based on coordinate NOT local node id
-                    ip = intma(i,j,k,ier);
-                    x = coord(1,ip);
-                    y = coord(2,ip);
-                    z = coord(3,ip);
+                    ip = G%intma(i,j,k,ier);
+                    x = G%coord(1,ip);
+                    y = G%coord(2,ip);
+                    z = G%coord(3,ip);
                     noder(ii)=sqrt(x*x+y*y+z*z)+x-2*y+3*z
                 else
                     noder(ii)=nodel(ii)

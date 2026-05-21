@@ -5,21 +5,22 @@
 !       Boise State University
 !       Date: March 27, 2023
 !----------------------------------------------------------------------!
-subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
+subroutine create_normals_quad(nv_q,jac_faceq,face,nface,b,G)
 
-    use mod_basis, only: nq, nqx, nqy, nqz, wnqx, wnqy, wnqz, FACE_LEN, nglx,ngly,nglz
-
-    use mod_grid, only: intma_dg_quad, coord, intma
-
+    use mod_basis
+    use mod_grid
     use mod_gradient, only: compute_local_gradient_quad_v3
 
     implicit none
 
+    type(basis), intent(in) :: b
+    type(grid), intent(in) :: G
+
     !global
     integer, intent(in) :: nface
-    real, dimension(3,nq,nq,nface), intent(out) :: nv_q
-    real, dimension(nq,nq,nface), intent(out) :: jac_faceq
-    integer, intent(in) :: face(FACE_LEN,nface)
+    real, dimension(3,b%nq,b%nq,nface), intent(out) :: nv_q
+    real, dimension(b%nq,b%nq,nface), intent(out) :: jac_faceq
+    integer, intent(in) :: face(b%FACE_LEN,nface)
 
     !local
     integer :: iface, i, j, k, ip, l, m
@@ -27,10 +28,10 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
     real :: ww, nx, ny, nz, nlen
 
     !local arrays
-    real, dimension(nglx,ngly,nglz) :: x, y, z
-    real, dimension(nqx,nqy,nqz) :: x_ksiq, x_etaq, x_zetaq
-    real, dimension(nqx,nqy,nqz) :: y_ksiq, y_etaq, y_zetaq
-    real, dimension(nqx,nqy,nqz) :: z_ksiq, z_etaq, z_zetaq
+    real, dimension(b%nglx,b%ngly,b%nglz) :: x, y, z
+    real, dimension(b%nqx,b%nqy,b%nqz) :: x_ksiq, x_etaq, x_zetaq
+    real, dimension(b%nqx,b%nqy,b%nqz) :: y_ksiq, y_etaq, y_zetaq
+    real, dimension(b%nqx,b%nqy,b%nqz) :: z_ksiq, z_etaq, z_zetaq
   
     !Initialize MXM dimension
     ndim=1
@@ -51,13 +52,13 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
         if(iel.ne.0) then
         
             !Store Element Variables
-            do k=1,nglz
-                do j=1,ngly
-                    do i=1,nglx
-                        ip=intma(i,j,k,iel)
-                        x(i,j,k)=coord(1,ip)
-                        y(i,j,k)=coord(2,ip)
-                        z(i,j,k)=coord(3,ip)
+            do k=1,b%nglz
+                do j=1,b%ngly
+                    do i=1,b%nglx
+                        ip=G%intma(i,j,k,iel)
+                        x(i,j,k)=G%coord(1,ip)
+                        y(i,j,k)=G%coord(2,ip)
+                        z(i,j,k)=G%coord(3,ip)
 
                         !print* ,'x = ',x(i,j,k)
                     end do !i
@@ -66,24 +67,24 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
             !Construct Mapping Derivatives
 
-            call compute_local_gradient_quad_v3(x_ksiq,x_etaq,x_zetaq,x,nglx,ngly,nglz,nqx,nqy,nqz)
-            call compute_local_gradient_quad_v3(y_ksiq,y_etaq,y_zetaq,y,nglx,ngly,nglz,nqx,nqy,nqz)
-            call compute_local_gradient_quad_v3(z_ksiq,z_etaq,z_zetaq,z,nglx,ngly,nglz,nqx,nqy,nqz)
+            call compute_local_gradient_quad_v3(x_ksiq,x_etaq,x_zetaq,x,b)
+            call compute_local_gradient_quad_v3(y_ksiq,y_etaq,y_zetaq,y,b)
+            call compute_local_gradient_quad_v3(z_ksiq,z_etaq,z_zetaq,z,b)
 
             !set jacobian matrix J for 2D
 
-            do k=1,nqz
-                do j=1,nqy
-                    do i=1,nqx
-                        if(nqx == 1) then
+            do k=1,b%nqz
+                do j=1,b%nqy
+                    do i=1,b%nqx
+                        if(b%nqx == 1) then
                             x_ksiq(i,j,k) = 1.0;  y_ksiq(i,j,k) = 0.0;  z_ksiq(i,j,k) = 0.0;
                             x_etaq(i,j,k) = 0.0;  x_zetaq(i,j,k) = 0.0;
                         endif
-                        if(nqy == 1) then
+                        if(b%nqy == 1) then
                             x_etaq(i,j,k) = 0.0;  y_etaq(i,j,k) = 1.0;  z_etaq(i,j,k) = 0.0;
                             y_ksiq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0;
                         endif
-                        if(nqz == 1) then
+                        if(b%nqz == 1) then
                             x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0;
                             z_ksiq(i,j,k) = 0.0; z_etaq(i,j,k) = 0.0;
                         endif
@@ -96,9 +97,9 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
            
                 case(1)
                     ! Face 1: zeta = -1
-                    do l=1,nqx
-                        do m = 1,nqy
-                            ww=wnqx(l)*wnqy(m)
+                    do l=1,b%nqx
+                        do m = 1,b%nqy
+                            ww=b%wnqx(l)*b%wnqy(m)
                             i = l
                             j = m
                             k = 1
@@ -116,12 +117,12 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
            
                 case(2)
                     ! Face 2: zeta = +1
-                    do l=1,nqx
-                        do m=1,nqy
-                            ww=wnqx(l)*wnqy(m)
+                    do l=1,b%nqx
+                        do m=1,b%nqy
+                            ww=b%wnqx(l)*b%wnqy(m)
                             i = l
                             j = m
-                            k = nqz
+                            k = b%nqz
                             nx = - y_etaq(i,j,k)*z_ksiq(i,j,k) + z_etaq(i,j,k)*y_ksiq(i,j,k)
                             ny = + x_etaq(i,j,k)*z_ksiq(i,j,k) - z_etaq(i,j,k)*x_ksiq(i,j,k)
                             nz = - x_etaq(i,j,k)*y_ksiq(i,j,k) + y_etaq(i,j,k)*x_ksiq(i,j,k)
@@ -135,9 +136,9 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
                 case(3)
                     ! Face 3: eta = -1
-                    do l=1,nqx
-                        do m=1,nqz
-                            ww=wnqx(l)*wnqz(m)
+                    do l=1,b%nqx
+                        do m=1,b%nqz
+                            ww=b%wnqx(l)*b%wnqz(m)
                             i = l
                             j = 1
                             k = m
@@ -155,11 +156,11 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
                 case(4)
                     ! Face 4: eta = +1
-                    do l=1,nqx
-                        do m=1,nqz
-                            ww=wnqx(l)*wnqz(m)
+                    do l=1,b%nqx
+                        do m=1,b%nqz
+                            ww=b%wnqx(l)*b%wnqz(m)
                             i = l
-                            j = nqy
+                            j = b%nqy
                             k = m
                             nx = - y_ksiq(i,j,k)*z_zetaq(i,j,k) + z_ksiq(i,j,k)*y_zetaq(i,j,k)
                             ny = + x_ksiq(i,j,k)*z_zetaq(i,j,k) - z_ksiq(i,j,k)*x_zetaq(i,j,k)
@@ -174,9 +175,9 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
                 case(5)
                     ! Face 5: ksi = -1
-                    do l=1,nqy
-                        do m=1,nqz
-                            ww=wnqy(l)*wnqz(m)
+                    do l=1,b%nqy
+                        do m=1,b%nqz
+                            ww=b%wnqy(l)*b%wnqz(m)
                             i = 1
                             j = l
                             k = m
@@ -193,10 +194,10 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface)
 
                 case(6)
                     ! Face 6: ksi = +1
-                    do l=1,nqy
-                        do m=1,nqz
-                            ww=wnqy(l)*wnqz(m)
-                            i = nqx
+                    do l=1,b%nqy
+                        do m=1,b%nqz
+                            ww=b%wnqy(l)*b%wnqz(m)
+                            i = b%nqx
                             j = l
                             k = m
                             nx = + y_etaq(i,j,k)*z_zetaq(i,j,k) - z_etaq(i,j,k)*y_zetaq(i,j,k)
@@ -224,22 +225,22 @@ end subroutine create_normals_quad
 !       Boise State University
 !       Date: March 27, 2023
 !----------------------------------------------------------------------!
-subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
+subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface,b,G)
 
-    use mod_basis, only: nq, nq2, nqx, nqy, nqz, FACE_LEN
-  
-    use mod_grid, only: intma_dg_quad, mod_grid_get_face_nq, face_type
-
-    use mod_input, only : lgpu, is_non_conforming_flg
+    use mod_basis
+    use mod_grid
   
     implicit none
+
+    type(basis), intent(in) :: b
+    type(grid), intent(in) :: G
   
     integer nface, nq_i, nq_j, nq_ij, plane_ij
-    integer face(FACE_LEN,nface), imapl_q(3,nq,nq,nface), imapr_q(3,nq,nq,nface)
+    integer face(b%FACE_LEN,nface), imapl_q(3,b%nq,b%nq,nface), imapr_q(3,b%nq,b%nq,nface)
     integer iface, ilocl, ilocr, i, j, k, ii, l, m, iel, ier, il, ir,ip
-    integer jmapl_q(3,nq2), jmapr_q(3,nq2),  orderl(nq2), orderr(nq2)
-    real nv_q(3,nq,nq,nface),jac_faceq(nq,nq,nface)
-    real nvc_q(3,nq,nq), jac_facecq(nq,nq)
+    integer jmapl_q(3,b%nq2), jmapr_q(3,b%nq2),  orderl(b%nq2), orderr(b%nq2)
+    real nv_q(3,b%nq,b%nq,nface),jac_faceq(b%nq,b%nq,nface)
+    real nvc_q(3,b%nq,b%nq), jac_facecq(b%nq,b%nq)
     real x, y, z
 
     integer ik,jk,kk
@@ -250,7 +251,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
         iel= face(7,iface)
         ier= face(8,iface)
 
-        call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
+        call mod_grid_get_face_nq(b, ilocl, nq_i, nq_j, plane_ij)
 
         ii = 0
         do l = 1,nq_i
@@ -268,7 +269,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                         ! Face 2: zeta = +1
                         i = l
                         j = m
-                        k = nqz
+                        k = b%nqz
                     case(3)
                         ! Face 3: eta = -1
                         i = l
@@ -277,7 +278,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                     case(4)
                         ! Face 4: eta = +1
                         i = l
-                        j = nqy
+                        j = b%nqy
                         k = m
                     case(5)
                         ! Face 5: ksi = -1
@@ -286,7 +287,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                         k = m
                     case(6)
                         ! Face 6: ksi = +1
-                        i = nqx
+                        i = b%nqx
                         j = l
                         k = m
                 end select
@@ -306,7 +307,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                         ! Face 2: zeta = +1
                         i = l
                         j = m
-                        k = nqz
+                        k = b%nqz
                     case(3)
                         ! Face 3: eta = -1
                         i = l
@@ -315,7 +316,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                     case(4)
                         ! Face 4: eta = +1
                         i = l
-                        j = nqy
+                        j = b%nqy
                         k = m
                     case(5)
                         ! Face 5: ksi = -1
@@ -324,7 +325,7 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                         k = m
                     case(6)
                         ! Face 6: ksi = +1
-                        i = nqx
+                        i = b%nqx
                         j = l
                         k = m
                 end select
@@ -365,8 +366,6 @@ subroutine create_imaplr_quad(imapl_q,imapr_q,nv_q,jac_faceq,face,nface)
                 jac_faceq(i,j,iface)=jac_facecq(i,j)
             end do
         end do !l
-
-
     end do !iface
     
 end subroutine create_imaplr_quad

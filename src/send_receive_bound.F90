@@ -7,49 +7,44 @@
 !>      Monterey, CA 93943
 !----------------------------------------------------------------------!
 
-subroutine unpack_data_dg_general_quad(q_send,q_recv,send_data,recv_data,nvarb)
+subroutine unpack_data_dg_general_quad(G, b, par, q_send, q_recv, send_data, recv_data, nvarb)
 
-    use mod_basis, only: nq, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    !use mod_ref, only: nfields => nmessage
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(nvarb,nq,nboun), intent(out) :: q_send,q_recv
-    real, dimension(nvarb*nq*nboun), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nvarb
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, ftype
+    real, dimension(nvarb,b%nq,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*b%nq*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ftype = face_type(iface)
 
-            if (ftype == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
+            ftype  = G%face_type(iface)
 
-                ! call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-
-                do inode = 1,nq
-                    do ivar = 1,nvarb
+            if (ftype == 2 .and. imulti > 0) then
+                do inode = 1, b%nq
+                    do ivar = 1, nvarb
                         ii = ii + 1
                         q_send(ivar,inode,kk) = send_data(ii)
                         q_recv(ivar,inode,kk) = recv_data(ii)
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
         end do
@@ -57,46 +52,43 @@ subroutine unpack_data_dg_general_quad(q_send,q_recv,send_data,recv_data,nvarb)
 
 end subroutine unpack_data_dg_general_quad
 
-subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
+subroutine unpack_data_dg_general_df(G, b, par, q_send, q_recv, send_data, recv_data, nvarb)
 
-    use mod_basis, only: ngl, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    use mod_ref, only: nbtp_var
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(nbtp_var,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension(nbtp_var*ngl*nboun), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nvarb
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar
+    real, dimension(nvarb,b%ngl,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                do inode = 1,ngl
-                    do ivar = 1,nbtp_var
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do inode = 1, b%ngl
+                    do ivar = 1, nvarb
                         ii = ii + 1
                         q_send(ivar,inode,kk) = send_data(ii)
                         q_recv(ivar,inode,kk) = recv_data(ii)
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
         end do
@@ -104,46 +96,43 @@ subroutine unpack_data_dg_general_df(q_send,q_recv,send_data,recv_data,nvarb)
 
 end subroutine unpack_data_dg_general_df
 
-subroutine unpack_data_dg_general_lap(q_send,q_recv,send_data,recv_data,nvarb)
+subroutine unpack_data_dg_general_lap(G, b, par, q_send, q_recv, send_data, recv_data, nvarb)
 
-    use mod_basis, only: ngl, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    !use mod_ref, only: nfields => nmessage
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(10,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension(10*ngl*nboun), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nvarb
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar
+    real, dimension(10,b%ngl,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension(10*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                do inode = 1,ngl
-                    do ivar = 1,10
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do inode = 1, b%ngl
+                    do ivar = 1, 10
                         ii = ii + 1
                         q_send(ivar,inode,kk) = send_data(ii)
                         q_recv(ivar,inode,kk) = recv_data(ii)
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
         end do
@@ -151,48 +140,47 @@ subroutine unpack_data_dg_general_lap(q_send,q_recv,send_data,recv_data,nvarb)
 
 end subroutine unpack_data_dg_general_lap
 
-subroutine unpack_data_dg_general_bcl(q_send,q_recv,send_data,recv_data)
+subroutine unpack_data_dg_general_bcl(G, b, inp, par, q_send, q_recv, send_data, recv_data)
 
-    use mod_basis, only: ngl, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    use mod_input, only: nlayers
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
+    use mod_input,    only: input
 
     implicit none
 
-    !Global Variables
-    real, dimension(3*nlayers,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension(3*nlayers*ngl*nboun), intent(in)  :: send_data, recv_data
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(input),       intent(in) :: inp
+    type(parallel_CS), intent(in) :: par
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, index, ll
+    real, dimension(3*inp%nlayers,b%ngl,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension(3*inp%nlayers*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, index, ll
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                do ll = 1,nlayers
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do ll = 1, inp%nlayers
                     index = (ll-1)*3
-                    do inode = 1,ngl
-                        do ivar = 1,3
+                    do inode = 1, b%ngl
+                        do ivar = 1, 3
                             ii = ii + 1
                             q_send(index+ivar,inode,kk) = send_data(ii)
                             q_recv(index+ivar,inode,kk) = recv_data(ii)
                         end do
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
         end do
@@ -200,49 +188,46 @@ subroutine unpack_data_dg_general_bcl(q_send,q_recv,send_data,recv_data)
 
 end subroutine unpack_data_dg_general_bcl
 
-subroutine unpack_data_dg_general_lap_bcl(q_send,q_recv,send_data,recv_data,nlayers)
+subroutine unpack_data_dg_general_lap_bcl(G, b, par, q_send, q_recv, send_data, recv_data, nlayers)
 
-    use mod_basis, only: ngl, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    !use mod_ref, only: nfields => nmessage
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(5*nlayers,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension(5*nlayers*ngl*nboun), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nlayers
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nlayers
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, ll, index
+    real, dimension(5*nlayers,b%ngl,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension(5*nlayers*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, ll, index
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                do ll = 1,nlayers
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do ll = 1, nlayers
                     index = (ll-1)*5
-                    do inode = 1,ngl
-                        do ivar = 1,5
+                    do inode = 1, b%ngl
+                        do ivar = 1, 5
                             ii = ii + 1
                             q_send(index+ivar,inode,kk) = send_data(ii)
                             q_recv(index+ivar,inode,kk) = recv_data(ii)
                         end do
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
         end do
@@ -250,46 +235,43 @@ subroutine unpack_data_dg_general_lap_bcl(q_send,q_recv,send_data,recv_data,nlay
 
 end subroutine unpack_data_dg_general_lap_bcl
 
-subroutine unpack_data_dg_general_consistency(q_send,q_recv,send_data,recv_data,nlayers)
+subroutine unpack_data_dg_general_consistency(G, b, par, q_send, q_recv, send_data, recv_data, nlayers)
 
-    use mod_basis, only: ngl, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    use mod_ref, only: nbtp_var
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(nlayers+1,ngl,nboun), intent(out) :: q_send,q_recv
-    real, dimension((nlayers+1)*ngl*nboun), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nlayers
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nlayers
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar
+    real, dimension(nlayers+1,b%ngl,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension((nlayers+1)*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                do inode = 1,ngl
-                    do ivar = 1,nlayers+1
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do inode = 1, b%ngl
+                    do ivar = 1, nlayers+1
                         ii = ii + 1
                         q_send(ivar,inode,kk) = send_data(ii)
                         q_recv(ivar,inode,kk) = recv_data(ii)
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
         end do
@@ -297,286 +279,263 @@ subroutine unpack_data_dg_general_consistency(q_send,q_recv,send_data,recv_data,
 
 end subroutine unpack_data_dg_general_consistency
 
-subroutine unpack_data_dg_general_quad_layer(q_send,q_recv,send_data,recv_data,nvarb,nlayers,nq)
+subroutine unpack_data_dg_general_quad_layer(G, par, q_send, q_recv, send_data, recv_data, nvarb, nlayers, nq)
 
-    use mod_basis, only: FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    !use mod_ref, only: nfields => nmessage
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(nvarb,nq,nboun,nlayers), intent(out) :: q_send,q_recv
-    real, dimension(nvarb*nq*nboun*nlayers), intent(in)  :: send_data, recv_data
-    integer, intent(in) :: nvarb,nlayers,nq
+    type(grid),        intent(in) :: G
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb, nlayers, nq
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode, ivar, ll
+    real, dimension(nvarb,nq,G%nboun,nlayers), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*nq*G%nboun*nlayers), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, ll
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti>0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                ! call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-
-                do ll = 1,nlayers
-
-                    do inode = 1,nq
-                        do ivar = 1,nvarb
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do ll = 1, nlayers
+                    do inode = 1, nq
+                        do ivar = 1, nvarb
                             ii = ii + 1
                             q_send(ivar,inode,kk,ll) = send_data(ii)
                             q_recv(ivar,inode,kk,ll) = recv_data(ii)
                         end do
                     end do
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
-        
+
         end do
     end do
 
 end subroutine unpack_data_dg_general_quad_layer
 
-subroutine unpack_data_dg_general_quad_1v(q_send,q_recv,send_data,recv_data)
+subroutine unpack_data_dg_general_quad_1v(G, b, par, q_send, q_recv, send_data, recv_data)
 
-    use mod_basis, only: nq, FACE_CHILDREN
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-    
-    !use mod_ref, only: nfields => nmessage
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
 
-    !Global Variables
-    real, dimension(nq,nboun), intent(out) :: q_send,q_recv
-    real, dimension(nq*nboun), intent(in)  :: send_data, recv_data
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
 
-    !Local Variables
-    integer ii, jj, kk, inbh, ib, iface, imulti, inode
+    real, dimension(b%nq,G%nboun), intent(out) :: q_send, q_recv
+    real, dimension(b%nq*G%nboun), intent(in)  :: send_data, recv_data
+
+    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
+    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
 
     ii = 0
     jj = 1
     kk = 1
-    
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
 
-            if (face_type(iface) == 2 .and. imulti > 0) then
-                ! ilocl = face(5,iface)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                ! call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-
-                do inode = 1,nq
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                do inode = 1, b%nq
                     ii = ii + 1
                     q_send(inode,kk) = send_data(ii)
                     q_recv(inode,kk) = recv_data(ii)
                 end do
-                kk=kk+1
+                kk = kk + 1
             end if
             jj = jj + 1
-        
+
         end do
     end do
 
 end subroutine unpack_data_dg_general_quad_1v
 
 
-subroutine pack_data_dg_quad(q_send,q_face,nvarb)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN, nq
+subroutine pack_data_dg_quad(G, b, par, q_send, q_face, nvarb)
 
-    use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
-
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(nvarb*nq*nboun)
-    real, intent(in) :: q_face(nvarb,2,nq,nface)
-    integer, intent(in) :: nvarb
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
+
+    real, intent(out) :: q_send(nvarb*b%nq*G%nboun)
+    real, intent(in)  :: q_face(nvarb,2,b%nq,G%nface)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,nq
-                    
-                    ! Load primitive variables
-                    do ivar=1,nvarb
+                do inode = 1, b%nq
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=q_face(ivar,1,inode,iface) 
+                        q_send(ii) = q_face(ivar,1,inode,iface)
                     end do
                 end do
             end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_quad
 
-subroutine pack_data_dg_df(q_send,q_face,nvarb)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN
+subroutine pack_data_dg_df(G, b, mf, init, par, q_send, q_face, nvarb)
 
-    use mod_face, only: face_send, imapl, imapr, normal_vector_q, jac_faceq
-
-    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar, pbprime_df
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_initial,  only: initial
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(5*ngl*nboun)
-    real, intent(in) :: q_face(nvarb,2,ngl,nface)
-    integer, intent(in) :: nvarb
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: inode, ip, ilocl
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(initial),     intent(in) :: init
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
+
+    real, intent(out) :: q_send(5*b%ngl*G%nboun)
+    real, intent(in)  :: q_face(nvarb,2,b%ngl,G%nface)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,ngl
+                do inode = 1, b%ngl
 
-                    il = imapl(1,inode,1,iface)
-                    jl = imapl(2,inode,1,iface)
-                    kl = imapl(3,inode,1,iface)
+                    il = mf%imapl(1,inode,1,iface)
+                    jl = mf%imapl(2,inode,1,iface)
+                    kl = mf%imapl(3,inode,1,iface)
 
-                    ip=intma(il,jl,kl,el)
-                    
-                    ! Load primitive variables
-                    do ivar=1,nvarb
+                    ip = G%intma(il,jl,kl,el)
+
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=q_face(ivar,1,inode,iface) 
+                        q_send(ii) = q_face(ivar,1,inode,iface)
                     end do
                     ii = ii + 1
-                    q_send(ii)=pbprime_df(ip)
+                    q_send(ii) = init%pbprime_df(ip)
                 end do
             end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_df
 
-subroutine pack_data_dg_df_btp(q_send,q,qprime_df,nvarb)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN
+subroutine pack_data_dg_df_btp(G, inp, b, mf, init, par, ref, q_send, q, qprime_df, nvarb)
 
-    use mod_face, only: face_send, imapl, imapr, normal_vector, jac_face
-
-    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar, pbprime_df
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_input, only: nlayers
-
-    use mod_ref, only: nbtp_var
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_initial,  only: initial
+    use mod_parallel, only: parallel_CS
+    use mod_input,    only: input
+    use mod_ref,      only: mref
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(nbtp_var*ngl*nboun)
-    real, intent(in) :: q(nvarb,npoin)
-    real, intent(in) :: qprime_df(3,npoin,nlayers)
-    integer, intent(in) :: nvarb
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: inode, ip, ilocl, ll
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(initial),     intent(in) :: init
+    type(input),       intent(in) :: inp
+    type(parallel_CS), intent(in) :: par
+    type(mref),        intent(in) :: ref
+    integer,           intent(in) :: nvarb
+
+    real, intent(out) :: q_send(ref%nbtp_var*b%ngl*G%nboun)
+    real, intent(in)  :: q(nvarb,G%npoin)
+    real, intent(in)  :: qprime_df(3,G%npoin,inp%nlayers)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type, ll
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,ngl
+                do inode = 1, b%ngl
 
-                    il = imapl(1,inode,1,iface)
-                    jl = imapl(2,inode,1,iface)
-                    kl = imapl(3,inode,1,iface)
+                    il = mf%imapl(1,inode,1,iface)
+                    jl = mf%imapl(2,inode,1,iface)
+                    kl = mf%imapl(3,inode,1,iface)
 
-                    ip=intma(il,jl,kl,el)
-                    
-                    ! Load primitive variables
-                    do ivar=1,nvarb
+                    ip = G%intma(il,jl,kl,el)
+
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=q(ivar,ip)
+                        q_send(ii) = q(ivar,ip)
                     end do
                     ii = ii + 1
-                    q_send(ii)=pbprime_df(ip)
+                    q_send(ii) = init%pbprime_df(ip)
 
-                    do ll = 1,nlayers
-                        do ivar=1,3
+                    do ll = 1, inp%nlayers
+                        do ivar = 1, 3
                             ii = ii + 1
-                            q_send(ii)=qprime_df(ivar,ip,ll)
+                            q_send(ii) = qprime_df(ivar,ip,ll)
                         end do
                     end do
                 end do
@@ -584,131 +543,126 @@ subroutine pack_data_dg_df_btp(q_send,q,qprime_df,nvarb)
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_df_btp
 
-subroutine pack_data_dg_df_btp_lap(q_send,q,btp_dpp_graduv,pbprime_visc,nvarb)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN
+subroutine pack_data_dg_df_btp_lap(G, b, mf, init, par, q_send, q, btp_dpp_graduv, pbprime_visc, nvarb)
 
-    use mod_face, only: face_send, imapl, imapr, normal_vector, jac_face
-
-    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar, pbprime_df
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_initial,  only: initial
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(10*ngl*nboun)
-    real, intent(in) :: q(nvarb,npoin)
-    real, intent(in) :: btp_dpp_graduv(4,npoin)
-    real, intent(in) :: pbprime_visc(npoin)
-    integer, intent(in) :: nvarb
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: inode, ip, ilocl
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(initial),     intent(in) :: init
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
+
+    real, intent(out) :: q_send(10*b%ngl*G%nboun)
+    real, intent(in)  :: q(nvarb,G%npoin)
+    real, intent(in)  :: btp_dpp_graduv(4,G%npoin)
+    real, intent(in)  :: pbprime_visc(G%npoin)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,ngl
+                do inode = 1, b%ngl
 
-                    il = imapl(1,inode,1,iface)
-                    jl = imapl(2,inode,1,iface)
-                    kl = imapl(3,inode,1,iface)
+                    il = mf%imapl(1,inode,1,iface)
+                    jl = mf%imapl(2,inode,1,iface)
+                    kl = mf%imapl(3,inode,1,iface)
 
-                    ip=intma(il,jl,kl,el)
-                    
-                    ! Load primitive variables
-                    do ivar=1,nvarb
+                    ip = G%intma(il,jl,kl,el)
+
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=q(ivar,ip)
+                        q_send(ii) = q(ivar,ip)
                     end do
                     ii = ii + 1
-                    q_send(ii)=pbprime_df(ip)
-                    do ivar=1,4
+                    q_send(ii) = init%pbprime_df(ip)
+                    do ivar = 1, 4
                         ii = ii + 1
-                        q_send(ii)=btp_dpp_graduv(ivar,ip)
+                        q_send(ii) = btp_dpp_graduv(ivar,ip)
                     end do
                     ii = ii + 1
-                    q_send(ii)=pbprime_visc(ip)
+                    q_send(ii) = pbprime_visc(ip)
 
                 end do
             end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_df_btp_lap
 
-subroutine pack_data_dg_df_bcl(q_send,q)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN
+subroutine pack_data_dg_df_bcl(G, inp, b, mf, par, q_send, q)
 
-    use mod_face, only: face_send, imapl, imapr, normal_vector, jac_face
-
-    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar, pbprime_df
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_input, only: nlayers
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
+    use mod_input,    only: input
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(3*nlayers*ngl*nboun)
-    real, intent(in) :: q(3,npoin,nlayers)
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: inode, ip, ilocl, ll
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(input),       intent(in) :: inp
+    type(parallel_CS), intent(in) :: par
+
+    real, intent(out) :: q_send(3*inp%nlayers*b%ngl*G%nboun)
+    real, intent(in)  :: q(3,G%npoin,inp%nlayers)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr, ll
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do ll = 1,nlayers
-                    do inode = 1,ngl
+                do ll = 1, inp%nlayers
+                    do inode = 1, b%ngl
 
-                        il = imapl(1,inode,1,iface)
-                        jl = imapl(2,inode,1,iface)
-                        kl = imapl(3,inode,1,iface)
+                        il = mf%imapl(1,inode,1,iface)
+                        jl = mf%imapl(2,inode,1,iface)
+                        kl = mf%imapl(3,inode,1,iface)
 
-                        ip=intma(il,jl,kl,el)
-                        ! Load primitive variables
-                        do ivar=1,3
+                        ip = G%intma(il,jl,kl,el)
+                        do ivar = 1, 3
                             ii = ii + 1
-                            q_send(ii)=q(ivar,ip,ll)
+                            q_send(ii) = q(ivar,ip,ll)
                         end do
                     end do
                 end do
@@ -716,66 +670,62 @@ subroutine pack_data_dg_df_bcl(q_send,q)
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_df_bcl
 
-subroutine pack_data_dg_df_bcl_lap(q_send,dpp_graduv,dpprime_visc,nlayers)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN
+subroutine pack_data_dg_df_bcl_lap(G, b, mf, par, q_send, dpp_graduv, dpprime_visc, nlayers)
 
-    use mod_face, only: face_send, imapl, imapr, normal_vector, jac_face
-
-    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar, pbprime_df
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(5*nlayers*ngl*nboun)
-    real, intent(in) :: dpp_graduv(4,npoin,nlayers)
-    real, intent(in) :: dpprime_visc(npoin,nlayers)
-    integer, intent(in) :: nlayers
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: inode, ip, ilocl, ll
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nlayers
+
+    real, intent(out) :: q_send(5*nlayers*b%ngl*G%nboun)
+    real, intent(in)  :: dpp_graduv(4,G%npoin,nlayers)
+    real, intent(in)  :: dpprime_visc(G%npoin,nlayers)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type, ll
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do ll = 1,nlayers
+                do ll = 1, nlayers
 
-                    do inode = 1,ngl
+                    do inode = 1, b%ngl
 
-                        il = imapl(1,inode,1,iface)
-                        jl = imapl(2,inode,1,iface)
-                        kl = imapl(3,inode,1,iface)
+                        il = mf%imapl(1,inode,1,iface)
+                        jl = mf%imapl(2,inode,1,iface)
+                        kl = mf%imapl(3,inode,1,iface)
 
-                        ip=intma(il,jl,kl,el)
-                        
-                        ! Load primitive variables
-                        do ivar=1,4
+                        ip = G%intma(il,jl,kl,el)
+
+                        do ivar = 1, 4
                             ii = ii + 1
-                            q_send(ii)=dpp_graduv(ivar,ip,ll)
+                            q_send(ii) = dpp_graduv(ivar,ip,ll)
                         end do
                         ii = ii + 1
-                        q_send(ii)=dpprime_visc(ip,ll)
+                        q_send(ii) = dpprime_visc(ip,ll)
                     end do
 
                 end do
@@ -783,287 +733,270 @@ subroutine pack_data_dg_df_bcl_lap(q_send,dpp_graduv,dpprime_visc,nlayers)
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_df_bcl_lap
 
-subroutine pack_data_dg_consistency(q_send,dprime_df,nlayers)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN
+subroutine pack_data_dg_consistency(G, b, mf, init, par, q_send, dprime_df, nlayers)
 
-    use mod_face, only: face_send, imapl, imapr, normal_vector, jac_face
-
-    use mod_grid, only: nelem, npoin, intma, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar, pbprime_df
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_initial,  only: initial
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send((nlayers+1)*ngl*nboun)
-    real, intent(in) :: dprime_df(npoin,nlayers)
-    integer, intent(in) :: nlayers
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl
-    integer :: inode, ip, ilocl, ll
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(initial),     intent(in) :: init
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nlayers
+
+    real, intent(out) :: q_send((nlayers+1)*b%ngl*G%nboun)
+    real, intent(in)  :: dprime_df(G%npoin,nlayers)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type, ll
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,ngl
+                do inode = 1, b%ngl
 
-                    il = imapl(1,inode,1,iface)
-                    jl = imapl(2,inode,1,iface)
-                    kl = imapl(3,inode,1,iface)
-                    ip=intma(il,jl,kl,el)
-                    
-                    ! Load primitive variables
-                    do ll = 1,nlayers
+                    il = mf%imapl(1,inode,1,iface)
+                    jl = mf%imapl(2,inode,1,iface)
+                    kl = mf%imapl(3,inode,1,iface)
+                    ip = G%intma(il,jl,kl,el)
+
+                    do ll = 1, nlayers
                         ii = ii + 1
-                        q_send(ii)=dprime_df(ip,ll)
+                        q_send(ii) = dprime_df(ip,ll)
                     end do
                     ii = ii + 1
-                    q_send(ii)=pbprime_df(ip)
+                    q_send(ii) = init%pbprime_df(ip)
                 end do
             end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_consistency
 
-subroutine pack_data_dg_quad_all(q_send,q_face,grad_face,nvarb)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN, nq
+subroutine pack_data_dg_quad_all(G, b, par, q_send, q_face, grad_face, nvarb)
 
-    use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
-
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(2*nvarb*nq*nboun)
-    real, intent(in) :: q_face(nvarb,2,nq,nface)
-    real, intent(in) :: grad_face(nvarb,2,nq,nface)
-    integer, intent(in) :: nvarb
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
+
+    real, intent(out) :: q_send(2*nvarb*b%nq*G%nboun)
+    real, intent(in)  :: q_face(nvarb,2,b%nq,G%nface)
+    real, intent(in)  :: grad_face(nvarb,2,b%nq,G%nface)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-            if(face_type(iface) == 2 .and. imulti > 0) then
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,nq
-                    
-                    ! Load primitive variables
-                    do ivar=1,nvarb
+                do inode = 1, b%nq
+
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=q_face(ivar,1,inode,iface) 
+                        q_send(ii) = q_face(ivar,1,inode,iface)
                     end do
 
-                    do ivar=1,nvarb
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=grad_face(ivar,1,inode,iface) 
+                        q_send(ii) = grad_face(ivar,1,inode,iface)
                     end do
                 end do
             end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_quad_all
 
-subroutine pack_data_dg_quad_lap(q_send,grad_uvdp,nvarb)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN, nq
+subroutine pack_data_dg_quad_lap(G, b, mf, par, q_send, grad_uvdp, nvarb)
 
-    use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
-
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, npoin_q, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_face,     only: face_CS
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(nvarb*nq*nboun)
-    real, intent(in) :: grad_uvdp(nvarb,npoin_q)
-    integer, intent(in) :: nvarb
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, il, jl, kl, ivar
-    integer :: inode, ip, ilocl
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(face_CS),     intent(in) :: mf
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
+
+    real, intent(out) :: q_send(nvarb*b%nq*G%nboun)
+    real, intent(in)  :: grad_uvdp(nvarb,G%npoin_q)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-            ! jj = jj + 1
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
             !if(face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,nq
+                do inode = 1, b%nq
 
-                    il = imapr_q(1,inode,1,iface);
-                    jl = imapr_q(2,inode,1,iface)
-                    kl = imapr_q(3,inode,1,iface)
-        
-                    ip=intma_dg_quad(il,jl,kl,el)
-                    
-                    ! Load primitive variables
-                    do ivar=1,nvarb
+                    il = mf%imapr_q(1,inode,1,iface)
+                    jl = mf%imapr_q(2,inode,1,iface)
+                    kl = mf%imapr_q(3,inode,1,iface)
+
+                    ip = G%intma_dg_quad(il,jl,kl,el)
+
+                    do ivar = 1, nvarb
                         ii = ii + 1
-                        q_send(ii)=grad_uvdp(ivar,ip) 
+                        q_send(ii) = grad_uvdp(ivar,ip)
                     end do
                 end do
             !end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_quad_lap
 
-subroutine pack_data_dg_quad_layer(q_send,q_face,nvarb,nlayers,nq)
-  
-    use mod_basis, only: FACE_CHILDREN
+subroutine pack_data_dg_quad_layer(G, par, q_send, q_face, nvarb, nlayers, nq)
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(nvarb*nq*nboun*nlayers)
-    real, intent(in) :: q_face(nvarb,2,nq,nface,nlayers)
-    integer, intent(in) :: nvarb, nlayers, nq
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl, ll
+    type(grid),        intent(in) :: G
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb, nlayers, nq
+
+    real, intent(out) :: q_send(nvarb*nq*G%nboun*nlayers)
+    real, intent(in)  :: q_face(nvarb,2,nq,G%nface,nlayers)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij, ll
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-        
-            if(face_type(iface)== 2 .and. imulti > 0) then
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                do ll = 1,nlayers
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                    do inode = 1,nq
-                        
-                        ! Load primitive variables
-                        do ivar=1,nvarb
+                do ll = 1, nlayers
+                    do inode = 1, nq
+                        do ivar = 1, nvarb
                             ii = ii + 1
-                            q_send(ii)=q_face(ivar,1,inode,iface,ll) 
+                            q_send(ii) = q_face(ivar,1,inode,iface,ll)
                         end do
-
                     end do
                 end do
             end if
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_quad_layer
 
-subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN, nq
+subroutine pack_data_dg_quad_layer_all(G, b, par, q_send, q_face, qprime_face, nvarb, nlayers)
 
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(2*nvarb*nq*nboun*nlayers)
-    real, dimension(nvarb,2,nq,nface,nlayers), intent(in) :: q_face, qprime_face
-    integer, intent(in) :: nvarb, nlayers
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, ivar, inode, ilocl, ll
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb, nlayers
+
+    real, intent(out) :: q_send(2*nvarb*b%nq*G%nboun*nlayers)
+    real, dimension(nvarb,2,b%nq,G%nface,nlayers), intent(in) :: q_face, qprime_face
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij, ll
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-        
-            if(face_type(iface)== 2 .and. imulti > 0) then
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
 
-                do ll = 1,nlayers
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                    do inode = 1,nq
-                        
-                        ! Load primitive variables
-                        do ivar = 1,nvarb
+                do ll = 1, nlayers
+                    do inode = 1, b%nq
+
+                        do ivar = 1, nvarb
                             ii = ii + 1
-                            q_send(ii)=q_face(ivar,1,inode,iface,ll) 
+                            q_send(ii) = q_face(ivar,1,inode,iface,ll)
                         end do
 
                         do ivar = 1, nvarb
                             ii = ii + 1
-                            q_send(ii)=qprime_face(ivar,1,inode,iface,ll) 
+                            q_send(ii) = qprime_face(ivar,1,inode,iface,ll)
                         end do
 
                     end do
@@ -1072,57 +1005,51 @@ subroutine pack_data_dg_quad_layer_all(q_send,q_face,qprime_face,nvarb,nlayers)
             jj = jj + 1
         end do
     end do
-  
+
 end subroutine pack_data_dg_quad_layer_all
 
-subroutine pack_data_dg_quad_1v(q_send,q_face)
-  
-    use mod_basis, only: ngl, FACE_CHILDREN, nq
+subroutine pack_data_dg_quad_1v(G, b, par, q_send, q_face)
 
-    use mod_face, only: face_send, imapl_q, imapr_q, normal_vector_q, jac_faceq
-
-    use mod_grid, only: nelem, npoin, intma_dg_quad, face_type, nboun, face, &
-                        mod_grid_get_face_nq, nface
-
-    use mod_initial, only: nvar
-
-    use mod_metrics, only: jac
-
-    use mod_parallel, only: num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
 
     implicit none
-  
-    !Global Variables
-    real, intent(out) :: q_send(nq*nboun)
-    real, intent(in) :: q_face(2,nq,nface)
 
-    !Local Variables
-    integer :: ii, jj, inbh, ib, iface, imulti, el, inode, ilocl
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+
+    real, intent(out) :: q_send(b%nq*G%nboun)
+    real, intent(in)  :: q_face(2,b%nq,G%nface)
+
+    integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
+    integer :: nq_i, nq_j, plane_ij
+    real :: h, qu, qv
+    integer :: inode, jnode, ip, ilocl, ilocr
+    integer :: iface_type
 
     ii = 0
     jj = 1
 
-    do inbh = 1,num_nbh
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            imulti = nbh_send_recv_multi(jj)
-        
+    do inbh = 1, par%num_nbh
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
+
             !if(face_type(iface) == 2 .and. imulti > 0) then
 
-                ilocl=face(5,iface)
-                el = face(7,iface)      ! Get Element
+                ilocl = G%face(5,iface)
+                el    = G%face(7,iface)
 
-                do inode = 1,nq
-                    
-                    ! Load primitive variables
+                do inode = 1, b%nq
                     ii = ii + 1
-                    q_send(ii)=q_face(1,inode,iface) 
-
+                    q_send(ii) = q_face(1,inode,iface)
                 end do
             !end if
 
             jj = jj + 1
-        
+
         end do
     end do
 
@@ -1139,80 +1066,68 @@ end subroutine pack_data_dg_quad_1v
 !>@date January 7, 2016, M.A. Kopera, modified to handle AMR
 !>@date December 25, 2016, F.X. Giraldo, modified to be a general DG communicator of size NSIZE
 !----------------------------------------------------------------------!
-subroutine send_bound_dg_general(send_data,recv_data,nsize,nreq,ireq,status)
+subroutine send_bound_dg_general(G, b, par, send_data, recv_data, nsize, nreq, ireq, status)
 
-    use mod_basis, only: ngl
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_ngl, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid, mod_grid_get_face_ngl
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(nmessage*ngl*ngl*nboun)
-    real, intent(out) :: recv_data(nmessage*ngl*ngl*nboun)
-    integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
-    integer, intent(in) :: nsize
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nsize
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nq
-    integer ngl_i, ngl_j, plane_ij, jj, ilocl, ib, iface, i
+    real, intent(in)  :: send_data(nsize*b%ngl*b%ngl*G%nboun)
+    real, intent(out) :: recv_data(nsize*b%ngl*b%ngl*G%nboun)
+    integer, intent(out) :: nreq
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
+
+    integer :: inbh, idest, istart, iend, ierr, nq
+    integer :: ngl_i, ngl_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nq = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            !if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
-                nq = nq + ngl_i * ngl_j * nsize !NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                call mod_grid_get_face_ngl(b, ilocl, ngl_i, ngl_j, plane_ij)
+                nq = nq + ngl_i * ngl_j * nsize
             end do
 
             jj = jj + 1
 
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nq - 1
 
-        if(nq > 0) then
+        if (nq > 0) then
           call mpi_irecv(recv_data(istart:iend), nq, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nq, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
@@ -1221,161 +1136,133 @@ subroutine send_bound_dg_general(send_data,recv_data,nsize,nreq,ireq,status)
 
 end subroutine send_bound_dg_general
 
-subroutine send_bound_dg_general_quad(send_data,recv_data,nvarb,nreq,ireq,status)
+subroutine send_bound_dg_general_quad(G, b, par, send_data, recv_data, nvarb, nreq, ireq, status)
 
-    use mod_basis, only: nq
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid, mod_grid_get_face_nq
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(nvarb*nq*nboun)
-    real, intent(out) :: recv_data(nvarb*nq*nboun)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nvarb
+
+    real, intent(in)  :: send_data(nvarb*b%nq*G%nboun)
+    real, intent(out) :: recv_data(nvarb*b%nq*G%nboun)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
-    integer, intent(in) :: nvarb
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-                nqp = nqp + nq *  nvarb!NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                call mod_grid_get_face_nq(b, ilocl, nq_i, nq_j, plane_ij)
+                nqp = nqp + b%nq * nvarb
             end do
             jj = jj + 1
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
         nreq = nreq + 1
     end do
 
-
-
 end subroutine send_bound_dg_general_quad
 
-subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
+subroutine send_bound_dg_general_df(G, b, par, send_data, recv_data, nvarb, nreq, ireq, status)
 
-    use mod_basis, only: ngl
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage, nbtp_var
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(nbtp_var*ngl*nboun)
-    real, intent(out) :: recv_data(nbtp_var*ngl*nboun)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nvarb
+
+    real, intent(in)  :: send_data(nvarb*b%ngl*G%nboun)
+    real, intent(out) :: recv_data(nvarb*b%ngl*G%nboun)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
-    integer, intent(in) :: nvarb
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            ! if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                nqp = nqp + ngl *  nbtp_var !NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * nvarb
             end do
             jj = jj + 1
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
@@ -1384,79 +1271,65 @@ subroutine send_bound_dg_general_df(send_data,recv_data,nvarb,nreq,ireq,status)
 
 end subroutine send_bound_dg_general_df
 
-subroutine send_bound_dg_general_lap(send_data,recv_data,nvarb,nreq,ireq,status)
+subroutine send_bound_dg_general_lap(G, b, par, send_data, recv_data, nvarb, nreq, ireq, status)
 
-    use mod_basis, only: ngl
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(10*ngl*nboun)
-    real, intent(out) :: recv_data(10*ngl*nboun)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nvarb
+
+    real, intent(in)  :: send_data(10*b%ngl*G%nboun)
+    real, intent(out) :: recv_data(10*b%ngl*G%nboun)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
-    integer, intent(in) :: nvarb
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            ! if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                nqp = nqp + ngl *  10 !NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * 10
             end do
             jj = jj + 1
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
@@ -1465,80 +1338,66 @@ subroutine send_bound_dg_general_lap(send_data,recv_data,nvarb,nreq,ireq,status)
 
 end subroutine send_bound_dg_general_lap
 
-subroutine send_bound_dg_general_bcl(send_data,recv_data,nreq,ireq,status)
+subroutine send_bound_dg_general_bcl(G, b, inp, par, send_data, recv_data, nreq, ireq, status)
 
-    use mod_basis, only: ngl
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage, nbtp_var
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
-
-    use mod_input, only: nlayers
+    use mod_input,    only: input
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(3*nlayers*ngl*nboun)
-    real, intent(out) :: recv_data(3*nlayers*ngl*nboun)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(input),       intent(in)  :: inp
+    type(parallel_CS), intent(in)  :: par
+
+    real, intent(in)  :: send_data(3*inp%nlayers*b%ngl*G%nboun)
+    real, intent(out) :: recv_data(3*inp%nlayers*b%ngl*G%nboun)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            ! if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                nqp = nqp + ngl *  (3*nlayers) !NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * (3*inp%nlayers)
             end do
             jj = jj + 1
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
@@ -1547,79 +1406,65 @@ subroutine send_bound_dg_general_bcl(send_data,recv_data,nreq,ireq,status)
 
 end subroutine send_bound_dg_general_bcl
 
-subroutine send_bound_dg_general_lap_bcl(send_data,recv_data,nlayers,nreq,ireq,status)
+subroutine send_bound_dg_general_lap_bcl(G, b, par, send_data, recv_data, nlayers, nreq, ireq, status)
 
-    use mod_basis, only: ngl
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(5*nlayers*ngl*nboun)
-    integer, intent(in) :: nlayers
-    real, intent(out) :: recv_data(5*nlayers*ngl*nboun)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nlayers
+
+    real, intent(in)  :: send_data(5*nlayers*b%ngl*G%nboun)
+    real, intent(out) :: recv_data(5*nlayers*b%ngl*G%nboun)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            ! if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                nqp = nqp + ngl *  5*nlayers !NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * 5*nlayers
             end do
             jj = jj + 1
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
@@ -1628,79 +1473,65 @@ subroutine send_bound_dg_general_lap_bcl(send_data,recv_data,nlayers,nreq,ireq,s
 
 end subroutine send_bound_dg_general_lap_bcl
 
-subroutine send_bound_dg_general_consistency(send_data,recv_data,nlayers,nreq,ireq,status)
+subroutine send_bound_dg_general_consistency(G, b, par, send_data, recv_data, nlayers, nreq, ireq, status)
 
-    use mod_basis, only: ngl
-
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage, nbtp_var
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data((nlayers+1)*ngl*nboun)
-    integer, intent(in) :: nlayers
-    real, intent(out) :: recv_data((nlayers+1)*ngl*nboun)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nlayers
+
+    real, intent(in)  :: send_data((nlayers+1)*b%ngl*G%nboun)
+    real, intent(out) :: recv_data((nlayers+1)*b%ngl*G%nboun)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            ! if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                nqp = nqp + ngl *  (nlayers+1) !NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * (nlayers+1)
             end do
             jj = jj + 1
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
@@ -1709,86 +1540,72 @@ subroutine send_bound_dg_general_consistency(send_data,recv_data,nlayers,nreq,ir
 
 end subroutine send_bound_dg_general_consistency
 
-subroutine send_bound_dg_general_quad_layer(send_data,recv_data,nvarb,nlayers,nq,nreq,ireq,status)
+subroutine send_bound_dg_general_quad_layer(G, b, par, send_data, recv_data, nvarb, nlayers, nq, nreq, ireq, status)
 
-    use mod_face, only: face_send
-
-    use mod_grid, only: nboun, face, mod_grid_get_face_nq, face_type
-
-    use mod_parallel, only: nbh_proc, num_nbh, num_send_recv, nbh_send_recv, nbh_send_recv_multi
-
-    use mod_ref, only: nmessage
-
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid, mod_grid_get_face_nq
+    use mod_parallel, only: parallel_CS
     use mpi
-
     use mod_mpi_utilities, only: MPI_PRECISION
 
     implicit none
 
-    !global variables
-    real, intent(in)  :: send_data(nvarb*nq*nboun*nlayers)
-    real, intent(out) :: recv_data(nvarb*nq*nboun*nlayers)
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(parallel_CS), intent(in)  :: par
+    integer,           intent(in)  :: nvarb, nlayers, nq
+
+    real, intent(in)  :: send_data(nvarb*nq*G%nboun*nlayers)
+    real, intent(out) :: recv_data(nvarb*nq*G%nboun*nlayers)
     integer, intent(out) :: nreq
-    integer, intent(out) :: ireq(2*num_nbh)
-    integer, intent(out) :: status(mpi_status_size,2*num_nbh)
-    integer, intent(in) :: nvarb, nlayers, nq
+    integer, intent(out) :: ireq(2*par%num_nbh)
+    integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
 
-    !local variables
-    integer inbh, idest, istart, iend, ierr, nqp
-    integer nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i
-
-    !recv_data=0.0
+    integer :: inbh, idest, istart, iend, ierr, nqp
+    integer :: nq_i, nq_j, plane_ij, jj, ilocl, ib, iface, i, ftype, iel
 
     nreq = 0
     iend = 0
     jj = 1
-    status=0
+    status = 0
 
-    do inbh = 1, num_nbh
+    do inbh = 1, par%num_nbh
 
-        !Determine size
         nqp = 0
-        do ib = 1,num_send_recv(inbh)
-            iface = nbh_send_recv(jj)
-            !ftype = face_type(iface)
+        do ib = 1, par%num_send_recv(inbh)
+            iface = par%nbh_send_recv(jj)
 
-            ilocl = face(5,iface)
-            !if(ftype==21) ilocl = face(6,iface)
+            ilocl = G%face(5,iface)
 
-            do i=1,nbh_send_recv_multi(jj)
-                call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
-                nqp = nqp + nq *  nvarb*nlayers!NSIZE is the size of the message
+            do i = 1, par%nbh_send_recv_multi(jj)
+                call mod_grid_get_face_nq(b, ilocl, nq_i, nq_j, plane_ij)
+                nqp = nqp + nq * nvarb*nlayers
             end do
 
             jj = jj + 1
 
         end do
 
-        !Get Neighboring Processor
-        idest = nbh_proc(inbh)
+        idest = par%nbh_proc(inbh)
 
-        !Send to NBHs
         nreq = nreq + 1
         istart = iend + 1
         iend = istart + nqp - 1
 
-        if(nqp > 0) then
+        if (nqp > 0) then
           call mpi_irecv(recv_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq), ierr)
 
           call mpi_isend(send_data(istart:iend), nqp, &
-            MPI_PRECISION,idest-1,99,mpi_comm_world, &
-            ireq(nreq+1),ierr)
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, &
+            ireq(nreq+1), ierr)
         else
-          ireq(nreq) = MPI_REQUEST_NULL
-
+          ireq(nreq)   = MPI_REQUEST_NULL
           ireq(nreq+1) = MPI_REQUEST_NULL
         endif
 
         nreq = nreq + 1
     end do
-
-    
 
 end subroutine send_bound_dg_general_quad_layer

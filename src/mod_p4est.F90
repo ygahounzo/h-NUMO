@@ -22,46 +22,18 @@
 
 module mod_p4est
 
-  use mod_input, only: nelx, nely, nelz, nproc_z, nopx, nopy, nopz, xdims,     &
-    ydims, ztop, zbottom, x_boundary, y_boundary, z_boundary,     &
-    x_periodic, y_periodic, z_periodic, nel_root_h,            &
-    refinement_levels_h, &
-    space_method, read_external_grid_flg, is_non_conforming_flg, xlim_min,     &
-    xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, space_method,            &
-    luse_hybrid_cpu_gpu, platformWeight, platformWeight2, cpus_per_node,       &
-    gpus_per_node, amr_indicator_variables, amr_smoothness_limits,  &
-    amr_smoothness_qL2_limit, lrestoring_sponge
+  use mod_input,       only: input
+  use mod_basis,       only: basis
+  use mod_global_grid, only: grid_global
+  use mod_grid,        only: grid
+  use mod_parallel,    only: parallel_CS
+  use mod_initial,     only: initial
+  use mod_face,        only: face_CS
 
-  use mod_basis, only: nopz, ngl, nglx, ngly, nglz, xgl, xglx, xgly, xglz,     &
-    npts, is_2d, FACE_CHILDREN, FACE_LEN, P4EST_FACES, P8EST_EDGES
-
-  use mod_bc, only: vc_el_type
-
-  use mod_global_grid, only: nelem_g, npoin_g_cg, npoin_g, ncol_g, xmin, xmax, &
-    ymin, ymax, zmin, zmax, iboundary, xperiodic, yperiodic, zperiodic
-
-  use mod_face, only: mod_face_create_nc_list
-
-  use mod_grid, only: intma, intma_table, nelemx, nelemy, nelemz,              &
-    npoin_cg, npoin, nelem, coord_cg, coord, nbsido, bsido, sigma,             &
-    ncol, ncol_cg, nz_cg, node_column_table, face, nface, face_type, nboun,    &
-    index2d, mod_grid_init_unified, mod_grid_init_coord,                       &
-    mod_grid_init_coord_dg_to_cg, is_non_conforming,                           &
-    NC_face, NC_edge, EToNC, nNC, D2C_mask
-
-  use mod_metrics, only: mod_metrics_create_metrics
-
-  use mod_mpi_utilities, only : irank, irank0, MPI_PRECISION
-
-  use mod_parallel, only: nproc, num_nbh, num_send_recv, num_send_recv_total,  &
-    nbh_send_recv, nbh_send_recv_multi, nbh_send_recv_half,  nbh_proc,         &
-    ipoin_proc, npoin_l, npoin_l_max, ncol_l, ncol_l_max, nelem_l,             &
-    nelem_l_max, nboun_max
-
-  use mod_types, only : r8
-
-  use iso_c_binding, only: C_INT64_T
-
+  use mod_bc,             only: vc_el_type
+  use mod_mpi_utilities,  only: irank, irank0, MPI_PRECISION
+  use mod_types,          only: r8
+  use iso_c_binding,      only: C_INT64_T
   use mpi
 
   public :: &
@@ -140,54 +112,63 @@ contains
 !-----------------------------------------------------------------------
   ! {{{
 
-  subroutine mod_p4est_create()
-    use mod_initial, only: mod_initial_create, q_init
-    use mod_input, only: max_mesh_lvl, p4est_log_level
+  subroutine mod_p4est_create(G, inp, b, gg, par, mf, init)
+
+    use mod_initial,   only: mod_initial_create
     use iso_c_binding, only: C_INT
+
     implicit none
+
+    type(grid),        intent(inout) :: G
+    type(input),       intent(inout) :: inp
+    type(basis),       intent(in)    :: b
+    type(grid_global), intent(inout) :: gg
+    type(parallel_CS), intent(inout) :: par
+    type(face_CS),     intent(inout) :: mf
+    type(initial),     intent(inout) :: init
 
     integer:: ierr, temp, k
     integer(C_INT) :: p4est_log_level_c
 
-    p4est_log_level_c = p4est_log_level
+    p4est_log_level_c = inp%p4est_log_level
 
-    call mpi_comm_size(mpi_comm_world, nproc, ierr)
+    call mpi_comm_size(mpi_comm_world, par%nproc, ierr)
 
-    allocate(npoin_l(nproc), ncol_l(nproc), nelem_l(nproc))
+    allocate(par%npoin_l(par%nproc), par%ncol_l(par%nproc), par%nelem_l(par%nproc))
     allocate(partition(1))
     allocate(refine_coarsen_elements(1))
 
     !create projection matrices
-    if(is_non_conforming_flg > 0) then
-        call create_2d_projection_matrices_numa2d(PsgXY,1)
-        call create_2d_projection_matrices_numa2d(PsgXZ,2)
-        call create_2d_projection_matrices_numa2d(PsgYZ,3)
+    if(inp%is_non_conforming_flg > 0) then
+        call create_2d_projection_matrices_numa2d(b, PsgXY, 1)
+        call create_2d_projection_matrices_numa2d(b, PsgXZ, 2)
+        call create_2d_projection_matrices_numa2d(b, PsgYZ, 3)
     endif
 
     if(.not.allocated(interp_x)) then
-      call mod_p4est_build_projection_1d(interp_x, project_x, xglx)
-      call mod_p4est_build_projection_1d(interp_y, project_y, xgly)
-      call mod_p4est_build_projection_1d(interp_z, project_z, xglz)
+      call mod_p4est_build_projection_1d(interp_x, project_x, b%xglx)
+      call mod_p4est_build_projection_1d(interp_y, project_y, b%xgly)
+      call mod_p4est_build_projection_1d(interp_z, project_z, b%xglz)
     endif
 
     !start p4est
     call p4est_start(p4est_log_level_c)
 
     !create initial grid
-    temp = is_non_conforming_flg
-    is_non_conforming_flg = 0
-    call mod_p4est_create_grid(.true.)
-    is_non_conforming_flg = temp
+    temp = inp%is_non_conforming_flg
+    inp%is_non_conforming_flg = 0
+    call mod_p4est_create_grid(G, inp, b, gg, par, .true.)
+    inp%is_non_conforming_flg = temp
 
     !refine initial grid
-    if(is_non_conforming_flg == 1 .or. is_non_conforming_flg == 3) then
-      call mod_p4est_refine()
-    elseif(is_non_conforming_flg == 4) then
+    if(inp%is_non_conforming_flg == 1 .or. inp%is_non_conforming_flg == 3) then
+      call mod_p4est_refine(G, inp, b, gg, par, mf)
+    elseif(inp%is_non_conforming_flg == 4) then
       if(irank == irank0) print*, '----------- Begin iterative initial refinement -------------'
       init_refine = .true.
-      do k = 1, max_mesh_lvl
-        call mod_initial_create()
-        call mod_p4est_adapt(q_init)
+      do k = 1, inp%max_mesh_lvl
+        call mod_initial_create(inp, b, G, mf, init)
+        call mod_p4est_adapt(G, inp, b, gg, par, mf, init, init%q_init)
       enddo
       init_refine = .false.
       if(irank == irank0) print*, '----------- End iterative initial refinement -------------'
@@ -198,13 +179,23 @@ contains
 !-----------------------------------------------------------------------
 !@>brief Refine grid
 !-----------------------------------------------------------------------
-  subroutine mod_p4est_refine()
+  subroutine mod_p4est_refine(G, inp, b, gg, par, mf)
+
+    use mod_face, only: mod_face_create_nc_list
+
     implicit none
 
+    type(grid),        intent(inout) :: G
+    type(input),       intent(inout) :: inp
+    type(basis),       intent(in)    :: b
+    type(grid_global), intent(inout) :: gg
+    type(parallel_CS), intent(inout) :: par
+    type(face_CS),     intent(inout) :: mf
+
     if(irank == irank0) print*, '----------- Begin refinement and coarsening -------------'
-    call set_refine_coarsen_flags()
-    call mod_p4est_create_grid(.true.)
-    call mod_face_create_nc_list()
+    call set_refine_coarsen_flags(G, inp, b)
+    call mod_p4est_create_grid(G, inp, b, gg, par, .true.)
+    call mod_face_create_nc_list(mf, G)
 
     if(irank == irank0) print*, '----------- End refinement and coarsening   -------------'
 
@@ -213,12 +204,19 @@ contains
 !-----------------------------------------------------------------------
 !@>brief Generate p4est grid
 !-----------------------------------------------------------------------
-  subroutine mod_p4est_create_grid(init_p4est)
+  subroutine mod_p4est_create_grid(G, inp, b, gg, par, init_p4est)
 
+    use mod_grid, only: mod_grid_init_unified, mod_grid_init_coord_dg_to_cg
+    use mod_bc,   only: vc_el_type
     use mpi
 
     implicit none
 
+    type(grid),        intent(inout) :: G
+    type(input),       intent(inout) :: inp
+    type(basis),       intent(in)    :: b
+    type(grid_global), intent(inout) :: gg
+    type(parallel_CS), intent(inout) :: par
     logical, intent(in) :: init_p4est
 
     integer :: nop
@@ -236,137 +234,136 @@ contains
     integer :: is_dg=0
     integer :: is_cgc=0
 
-    integer irank
+    integer irank_local
 
-    nop = ngl - 1
+    nop = b%ngl - 1
 
-    call mpi_comm_rank(mpi_comm_world, irank, ierr)
+    call mpi_comm_rank(mpi_comm_world, irank_local, ierr)
 
     !------------------
     !  Boundary flags
     !------------------
-    iboundary(1)=z_boundary(1) !bottom (z=-1)
-    iboundary(2)=z_boundary(2) !top    (z=+1)
-    iboundary(3)=y_boundary(1) !left   (y=-1)
-    iboundary(4)=y_boundary(2) !right  (y=+1)
-    iboundary(5)=x_boundary(1) !front  (x=-1)
-    iboundary(6)=x_boundary(2) !back   (x=+1)
+    gg%iboundary(1)=inp%z_boundary(1) !bottom (z=-1)
+    gg%iboundary(2)=inp%z_boundary(2) !top    (z=+1)
+    gg%iboundary(3)=inp%y_boundary(1) !left   (y=-1)
+    gg%iboundary(4)=inp%y_boundary(2) !right  (y=+1)
+    gg%iboundary(5)=inp%x_boundary(1) !front  (x=-1)
+    gg%iboundary(6)=inp%x_boundary(2) !back   (x=+1)
 
     !-----------------------------------------
     ! Initialize p4est
     !------------------------------------------
-    if(space_method == 'dg') is_dg = 1
-    if(space_method == 'cgc') is_cgc = 1
-    
+    if(inp%space_method == 'dg') is_dg = 1
+    if(inp%space_method == 'cgc') is_cgc = 1
+
     !--- p4est initialization
 
-    if(nglx == 1) then
-      lnx = nely; lny = nelz
+    if(b%nglx == 1) then
+      lnx = inp%nely; lny = inp%nelz
       orient = 0
-    else if(ngly == 1) then
-      lnx = nelx; lny = nelz
+    else if(b%ngly == 1) then
+      lnx = inp%nelx; lny = inp%nelz
       orient = 1
     else
       orient = 2
-      lnx = nelx; lny = nely
+      lnx = inp%nelx; lny = inp%nely
     endif
     lnz = 1
 
     if(init_p4est) &
       call p4esttonuma_init(is_cube, lnx, lny, lnz, &
-      refinement_levels_h, read_external_grid_flg, &
-      is_non_conforming_flg, refine_coarsen_elements, &
-      x_periodic, y_periodic, z_periodic, FACE_LEN, orient, lrestoring_sponge)
+      inp%refinement_levels_h, inp%read_external_grid_flg, &
+      inp%is_non_conforming_flg, refine_coarsen_elements, &
+      inp%x_periodic, inp%y_periodic, inp%z_periodic, b%FACE_LEN, orient, inp%lrestoring_sponge)
 
     ! TODO: fix to use xglx, xgly, xglz
-    call p4esttonuma_fill_data(nop, xgl, is_dg, iboundary, read_external_grid_flg, &
-          p2n, lrestoring_sponge)
+    call p4esttonuma_fill_data(nop, b%xgl, is_dg, gg%iboundary, inp%read_external_grid_flg, &
+          p2n, inp%lrestoring_sponge)
 
-    call p4esttonuma_get_mesh_scalars(p2n, npoin_cg, nelem, num_nbh, &
-      num_send_recv_total, nbsido, nface, nboun, nNC)
+    call p4esttonuma_get_mesh_scalars(p2n, G%npoin_cg, G%nelem, par%num_nbh, &
+      par%num_send_recv_total, G%nbsido, G%nface, G%nboun, G%nNC)
 
-    if(is_non_conforming_flg == 0) then
-      nelemx = nelx *2**refinement_levels_h
-      nelemy = nely *2**refinement_levels_h
-      nelemz = nelz *2**refinement_levels_h
+    if(inp%is_non_conforming_flg == 0) then
+      G%nelemx = inp%nelx *2**inp%refinement_levels_h
+      G%nelemy = inp%nely *2**inp%refinement_levels_h
+      G%nelemz = inp%nelz *2**inp%refinement_levels_h
     end if
 
     height_correction = 1
 
-    call mod_grid_init_unified()
+    call mod_grid_init_unified(G, inp, b)
 
     !-----------------------------------------
     ! Allocate parallel data structures
     !------------------------------------------
-    if(allocated(nbh_proc)) then
-    deallocate(nbh_proc, &
-        ipoin_proc, &
-        num_send_recv, &
-        nbh_send_recv, &
-        nbh_send_recv_multi, &
-        nbh_send_recv_half, &
+    if(allocated(par%nbh_proc)) then
+    deallocate(par%nbh_proc, &
+        par%ipoin_proc, &
+        par%num_send_recv, &
+        par%nbh_send_recv, &
+        par%nbh_send_recv_multi, &
+        par%nbh_send_recv_half, &
         lev_list, plist)
     endif
-    allocate(nbh_proc(num_nbh), &
-         ipoin_proc(npoin), &
-         num_send_recv(num_nbh), &
-         nbh_send_recv(num_send_recv_total), &
-         nbh_send_recv_multi(num_send_recv_total), &
-         nbh_send_recv_half(num_send_recv_total*FACE_CHILDREN), &
-         lev_list(nelem), plist(nelem), &
+    allocate(par%nbh_proc(par%num_nbh), &
+         par%ipoin_proc(G%npoin), &
+         par%num_send_recv(par%num_nbh), &
+         par%nbh_send_recv(par%num_send_recv_total), &
+         par%nbh_send_recv_multi(par%num_send_recv_total), &
+         par%nbh_send_recv_half(par%num_send_recv_total*b%FACE_CHILDREN), &
+         lev_list(G%nelem), plist(G%nelem), &
          stat=AllocateStatus )
     if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_p4est **"
 
     if (allocated(cs_face)) deallocate(cs_face)
-    allocate(cs_face(nelem))
+    allocate(cs_face(G%nelem))
     if (allocated(csp_face)) deallocate(csp_face)
-    allocate(csp_face(npoin))
+    allocate(csp_face(G%npoin))
 
     ! Initialize lev_list to 0
     lev_list(:) = 0
-    
+
     !-----------------------------------------
     ! Get grid data from p4est
     !------------------------------------------
 
 
-    if (irank == irank0) print*, '------------------Entering P4est_Mesh_Arrays------------------'
+    if (irank_local == irank0) print*, '------------------Entering P4est_Mesh_Arrays------------------'
       ! FIXME: Kill the NC_face and NC_edge arrays?
-      call p4esttonuma_get_mesh_arrays(p2n, coord, intma_table,           &
-          NC_face, NC_edge, EToNC, face, face_type,                      &
-          num_send_recv, nbh_proc, nbh_send_recv, nbh_send_recv_multi,   &
-          nbh_send_recv_half, bsido, lev_list, plist, is_cgc, vc_el_type, &
-          lrestoring_sponge, D2C_mask)
-      call p4esttonuma_free(p2n,lrestoring_sponge)
+      call p4esttonuma_get_mesh_arrays(p2n, G%coord, G%intma_table,             &
+          G%NC_face, G%NC_edge, G%EToNC, G%face, G%face_type,                  &
+          par%num_send_recv, par%nbh_proc, par%nbh_send_recv,                   &
+          par%nbh_send_recv_multi, par%nbh_send_recv_half,                      &
+          G%bsido, lev_list, plist, is_cgc, vc_el_type,                         &
+          inp%lrestoring_sponge, G%D2C_mask)
+      call p4esttonuma_free(p2n, inp%lrestoring_sponge)
 
-    if (irank == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------'
+    if (irank_local == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------'
 
     !adjust cube dimensions
-    if(is_2d.and.read_external_grid_flg==0) then
-        do i=1, npoin
-!                if(read_external_grid_flg==0) then !don't adjust if mesh read from file
-              if(nglx == 1) then
-                  x=0; y=coord(1, i)/nely; z=coord(2, i)/nelz
-              else if(ngly == 1) then
-                  x=coord(1, i)/nelx; y=0; z=coord(2, i)/nelz
+    if(b%is_2d .and. inp%read_external_grid_flg==0) then
+        do i=1, G%npoin
+              if(b%nglx == 1) then
+                  x=0; y=G%coord(1, i)/inp%nely; z=G%coord(2, i)/inp%nelz
+              else if(b%ngly == 1) then
+                  x=G%coord(1, i)/inp%nelx; y=0; z=G%coord(2, i)/inp%nelz
               else
-                  x=coord(1, i)/nelx; y=coord(2, i)/nely; z=0
+                  x=G%coord(1, i)/inp%nelx; y=G%coord(2, i)/inp%nely; z=0
               endif
-              coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
-              coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
-              coord(3, i)=z*(ztop-zbottom)+zbottom
-!                 end if
+              G%coord(1, i)=x*(inp%xdims(2)-inp%xdims(1))+inp%xdims(1)
+              G%coord(2, i)=y*(inp%ydims(2)-inp%ydims(1))+inp%ydims(1)
+              G%coord(3, i)=z*(inp%ztop-inp%zbottom)+inp%zbottom
         end do
     else
-        if(read_external_grid_flg==0) then !don't adjust if mesh read from file
-          do i=1, npoin
-              x=coord(1, i)/nelx; y=coord(2, i)/nely; z=coord(3, i)/nelz
-              coord(1, i)=x*(xdims(2)-xdims(1))+xdims(1)
-              coord(2, i)=y*(ydims(2)-ydims(1))+ydims(1)
-              coord(3, i)=z*(ztop-zbottom)+zbottom
+        if(inp%read_external_grid_flg==0) then
+          do i=1, G%npoin
+              x=G%coord(1, i)/inp%nelx; y=G%coord(2, i)/inp%nely; z=G%coord(3, i)/inp%nelz
+              G%coord(1, i)=x*(inp%xdims(2)-inp%xdims(1))+inp%xdims(1)
+              G%coord(2, i)=y*(inp%ydims(2)-inp%ydims(1))+inp%ydims(1)
+              G%coord(3, i)=z*(inp%ztop-inp%zbottom)+inp%zbottom
           end do
         end if
-        
+
     endif
 
     !multirate stuff
@@ -376,7 +373,7 @@ contains
     allocate(partition(npartition))
 
     j=1
-    do i=1, nelem
+    do i=1, G%nelem
       if(plist(i)>0) then
          partition(j) = i
          j=j+1
@@ -384,27 +381,22 @@ contains
     end do
 
     !initialize cg coordinate
-    call mod_grid_init_coord_dg_to_cg() !temporary fix - need to change if using non-conforming CG
+    call mod_grid_init_coord_dg_to_cg(G, inp, b)
 
     !initialize some data
-    call mod_p4est_init_data()
+    call mod_p4est_init_data(G, inp, gg, par, b)
 
-    if (irank == irank0) then
+    if (irank_local == irank0) then
        print*,'--------------------------'
        print*,'P4est Boundary Info'
-       print*,'--------------------------'       
+       print*,'--------------------------'
        print*,' Boundary Conditions are: '
        do i=1,6
-          print*,' i, iboundary = ',i,iboundary(i)
+          print*,' i, iboundary = ',i,gg%iboundary(i)
        end do
-       print*,' xperiodic = ',xperiodic
-       print*,' yperiodic = ',yperiodic
-       print*,' zperiodic = ',zperiodic
-!!$       print*,'--------------------------'
-!!$       print*,' P4est Grid Info: '
-!!$       print*,'--------------------------'
-!!$       print*,' npoin npoin_cg nelem = ',npoin,npoin_cg,nelem
-!!$       print*,' nbsido nboun nface   = ',nbsido,nboun,nface
+       print*,' xperiodic = ',gg%xperiodic
+       print*,' yperiodic = ',gg%yperiodic
+       print*,' zperiodic = ',gg%zperiodic
        print*,'--------------------------'
        print*,'--------------------------'
     end if
@@ -417,33 +409,38 @@ contains
 !--------------------------------------------------------------------!
 !>@brief Initialization of some data after extracting p4est grid
 !--------------------------------------------------------------------!
-  subroutine mod_p4est_init_data
-
-    use mod_input, only: lread_bc
+  subroutine mod_p4est_init_data(G, inp, gg, par, b)
 
     use mod_bc, only: read_bc
+    use mpi
 
     implicit none
 
+    type(grid),        intent(inout) :: G
+    type(input),       intent(in)    :: inp
+    type(grid_global), intent(inout) :: gg
+    type(parallel_CS), intent(inout) :: par
+    type(basis),       intent(in)    :: b
+
     integer :: ip, i, j, or, iboun, AllocateStatus, ierr
-    
+
     !----------------------------
     ! read boundary conditions
     !----------------------------
-    if (lread_bc) then
-    
-       call read_bc(face, nface, bsido, nbsido)
-        
+    if (inp%lread_bc) then
+
+       call read_bc(G, b, G%face, G%nface, G%bsido, G%nbsido)
+
     end if
 
     !-------------------
-    ! init ippoin_proc
+    ! init ipoin_proc
     !-------------------
-    ipoin_proc = 1
-    if(space_method /= 'dg') then
-       do i=1, num_send_recv_total
-          ipoin_proc(nbh_send_recv(i)) = ipoin_proc(nbh_send_recv(i)) + 1
-       end do !i
+    par%ipoin_proc = 1
+    if(inp%space_method /= 'dg') then
+       do i=1, par%num_send_recv_total
+          par%ipoin_proc(par%nbh_send_recv(i)) = par%ipoin_proc(par%nbh_send_recv(i)) + 1
+       end do
     end if
 
     !--------------------------------------------
@@ -451,32 +448,29 @@ contains
     !--------------------------------------------
 
     !Determine Periodicity
-    xperiodic=.false.
-    yperiodic=.false.
-    zperiodic=.false.
+    gg%xperiodic=.false.
+    gg%yperiodic=.false.
+    gg%zperiodic=.false.
 
-    !THIS Works: Note that iboundary == 30 in order to let COUNT_FACES count
-    !the right number that CREATE_FACE counts since Periodic Faces are counted twice
-    !since they are seen by CREATE_FACE as boundary faces but in reality are interior faces.
-    if (iboundary(1) == 3 .and. iboundary(2) == 3) zperiodic=.true.
-    if (iboundary(3) == 3 .and. iboundary(4) == 3) yperiodic=.true.
-    if (iboundary(5) == 3 .and. iboundary(6) == 3) xperiodic=.true.
+    if (gg%iboundary(1) == 3 .and. gg%iboundary(2) == 3) gg%zperiodic=.true.
+    if (gg%iboundary(3) == 3 .and. gg%iboundary(4) == 3) gg%yperiodic=.true.
+    if (gg%iboundary(5) == 3 .and. gg%iboundary(6) == 3) gg%xperiodic=.true.
 
     !-----------------------
     !    init global data
     !-----------------------
 
-    call mpi_allgather(npoin, 1, mpi_integer, npoin_l, 1, mpi_integer, mpi_comm_world, ierr)
-    call mpi_allgather(ncol, 1, mpi_integer, ncol_l, 1, mpi_integer, mpi_comm_world, ierr)
-    call mpi_allgather(nelem, 1, mpi_integer, nelem_l, 1, mpi_integer, mpi_comm_world, ierr)
+    call mpi_allgather(G%npoin, 1, mpi_integer, par%npoin_l, 1, mpi_integer, mpi_comm_world, ierr)
+    call mpi_allgather(G%ncol,  1, mpi_integer, par%ncol_l,  1, mpi_integer, mpi_comm_world, ierr)
+    call mpi_allgather(G%nelem, 1, mpi_integer, par%nelem_l, 1, mpi_integer, mpi_comm_world, ierr)
 
-    ncol_g=sum(ncol_l)
-    npoin_g=sum(npoin_l)
-    nelem_g=sum(nelem_l)
+    gg%ncol_g  = sum(par%ncol_l)
+    gg%npoin_g = sum(par%npoin_l)
+    gg%nelem_g = sum(par%nelem_l)
 
-    ncol_l_max = maxval(ncol_l)
-    npoin_l_max = maxval(npoin_l)
-    nelem_l_max = maxval(nelem_l)
+    par%ncol_l_max  = maxval(par%ncol_l)
+    par%npoin_l_max = maxval(par%npoin_l)
+    par%nelem_l_max = maxval(par%nelem_l)
 
   end subroutine mod_p4est_init_data
 
@@ -484,8 +478,13 @@ contains
 !>@brief Static Adaptive Mesh Refinement
 !--------------------------------------------------------------------!
 
-  subroutine set_refine_coarsen_flags()
+  subroutine set_refine_coarsen_flags(G, inp, b)
+
     implicit none
+
+    type(grid),  intent(in) :: G
+    type(input), intent(in) :: inp
+    type(basis), intent(in) :: b
 
     integer :: e, nr, r
 
@@ -493,48 +492,46 @@ contains
 
     !find elements to refine
     deallocate(refine_coarsen_elements)
-    allocate(refine_coarsen_elements(nelem))
+    allocate(refine_coarsen_elements(G%nelem))
 
     nr=0
-    do e=1, nelem
-      r = init_ref_crit(e)
+    do e=1, G%nelem
+      r = init_ref_crit(G, inp, b, e)
       if(r == 1) nr = nr + 1
       if(cr == 1) r = -1
       refine_coarsen_elements(e) = r
     end do
 
     nr = nr * 2 !assume 2x more than what we asked for
-    nr = nr * 8 + (nelem - nr) !correct for 2D with 4 children
+    nr = nr * 8 + (G%nelem - nr) !correct for 2D with 4 children
 
   end subroutine
 
 !--------------------------------------------------------------------!
-!>@brief Set refinement criteriea
+!>@brief Set refinement criteria
 !--------------------------------------------------------------------!
-  integer function init_ref_crit(e)
-
-    use mod_basis, only: nglx, ngly, nglz
-
-    use mod_grid, only: coord, intma
-    use mod_input, only: max_mesh_lvl, nc_box_invert
+  integer function init_ref_crit(G, inp, b, e)
 
     implicit none
 
-    integer :: e
+    type(grid),  intent(in) :: G
+    type(input), intent(in) :: inp
+    type(basis), intent(in) :: b
+    integer,     intent(in) :: e
 
-    real :: x(nglx, ngly, nglz), y(nglx, ngly, nglz), z(nglx, ngly, nglz)
+    real :: x(b%nglx, b%ngly, b%nglz), y(b%nglx, b%ngly, b%nglz), z(b%nglx, b%ngly, b%nglz)
 
     real :: xmin, xmax, ymin, ymax, zmin, zmax
 
     integer :: i, j, k, ip, iref
 
-    do k=1, nglz
-       do j=1, ngly
-          do i=1, nglx
-             ip=intma(i, j, k, e)
-             x(i, j, k) = coord(1, ip)
-             y(i, j, k) = coord(2, ip)
-             z(i, j, k) = coord(3, ip)
+    do k=1, b%nglz
+       do j=1, b%ngly
+          do i=1, b%nglx
+             ip=G%intma(i, j, k, e)
+             x(i, j, k) = G%coord(1, ip)
+             y(i, j, k) = G%coord(2, ip)
+             z(i, j, k) = G%coord(3, ip)
 
           end do
        end do
@@ -545,27 +542,27 @@ contains
     zmin = minval(z); zmax = maxval(z)
 
     iref = 0
-    if(.not. nc_box_invert) then
-      if(  (xmax >= xlim_min .and. xmin <= xlim_max) .and. &
-        (ymax >= ylim_min .and. ymin <= ylim_max) .and. &
-        (zmax >= zlim_min .and. zmin <= zlim_max)) then
+    if(.not. inp%nc_box_invert) then
+      if(  (xmax >= inp%xlim_min .and. xmin <= inp%xlim_max) .and. &
+        (ymax >= inp%ylim_min .and. ymin <= inp%ylim_max) .and. &
+        (zmax >= inp%zlim_min .and. zmin <= inp%zlim_max)) then
 
-        if(max_mesh_lvl .eq. 0) then
+        if(inp%max_mesh_lvl .eq. 0) then
           iref = 1
         else
-          iref = max_mesh_lvl
+          iref = inp%max_mesh_lvl
         endif
       end if
     else
-      if(  (xmax >= xlim_min .and. xmin <= xlim_max) .and. &
-        (ymax >= ylim_min .and. ymin <= ylim_max) .and. &
-        (zmax >= zlim_min .and. zmin <= zlim_max)) then
+      if(  (xmax >= inp%xlim_min .and. xmin <= inp%xlim_max) .and. &
+        (ymax >= inp%ylim_min .and. ymin <= inp%ylim_max) .and. &
+        (zmax >= inp%zlim_min .and. zmin <= inp%zlim_max)) then
         iref = 0
       else
-        if(max_mesh_lvl .eq. 0) then
+        if(inp%max_mesh_lvl .eq. 0) then
           iref = 1
         else
-          iref = max_mesh_lvl
+          iref = inp%max_mesh_lvl
         endif
       end if
     end if
@@ -577,7 +574,7 @@ contains
 !--------------------------------------------------------------------!
 !>@brief Create 2D projection matrices
 !--------------------------------------------------------------------!
- subroutine create_2d_projection_matrices_numa2d(Psg, plane)
+ subroutine create_2d_projection_matrices_numa2d(b, Psg, plane)
 
     use mod_legendre, only: legendre_gauss_lobatto
 
@@ -585,6 +582,7 @@ contains
 
     implicit none
 
+    type(basis), intent(in) :: b
     real, dimension(:,:,:), allocatable, intent(out):: Psg
     integer, intent(in):: plane
 
@@ -597,14 +595,14 @@ contains
     !scatter and gather matrices
     integer :: ngl1, ngl2, nq1, nq2, nngl
     if (plane == 1) then
-       ngl1=nglx
-       ngl2=ngly
+       ngl1=b%nglx
+       ngl2=b%ngly
     elseif (plane == 2) then
-       ngl1=nglx
-       ngl2=nglz
+       ngl1=b%nglx
+       ngl2=b%nglz
     elseif (plane == 3) then
-       ngl1=ngly
-       ngl2=nglz
+       ngl1=b%ngly
+       ngl2=b%nglz
     end if
 
     nq1=ngl1+1
@@ -720,7 +718,7 @@ contains
     endif
 
     !test gather-scatter
-!    call test_projection_matrices_numa2d(ngl1,ngl2,plane)
+!    call test_projection_matrices_numa2d(b, ngl1, ngl2, plane)
 
     !free
     deallocate(xq1, wq1, xq2, wq2, xq3, xq4, &
@@ -732,15 +730,16 @@ contains
 !--------------------------------------------------------------------!
 !>@brief Scatter to one subface
 !--------------------------------------------------------------------!
-  subroutine scatter_element_2d_subface(qe, qec, ic, ngl1, ngl2, plane)
+  subroutine scatter_element_2d_subface(b, qe, qec, ic, ngl1, ngl2, plane)
 
     implicit none
 
+    type(basis), intent(in) :: b
     integer, intent(in):: ngl1, ngl2, plane
     integer, intent(in) :: ic
     integer j, k, n
-    real, dimension(ngl, ngl), intent(in) :: qe
-    real, dimension(ngl, ngl), intent(out) :: qec
+    real, dimension(:,:), intent(in)  :: qe
+    real, dimension(:,:), intent(out) :: qec
     real, dimension(1, ngl1*ngl2) :: qa
 
     do j=1, ngl2
@@ -771,15 +770,16 @@ contains
 !--------------------------------------------------------------------!
 !>@brief Gather from one subface
 !--------------------------------------------------------------------!
-  subroutine gather_element_2d_subface(qec, qe, ic, ngl1, ngl2, plane)
+  subroutine gather_element_2d_subface(b, qec, qe, ic, ngl1, ngl2, plane)
 
     implicit none
 
+    type(basis), intent(in) :: b
     integer, intent(in):: ngl1, ngl2, plane
     integer, intent(in) :: ic
     integer i, j, k, n
-    real, dimension(ngl, ngl) :: qe
-    real, dimension(ngl, ngl) :: qec
+    real, dimension(:,:), intent(in)  :: qec
+    real, dimension(:,:), intent(out) :: qe
     real, dimension(1, ngl1*ngl2) :: qa
 
     do j=1, ngl2
@@ -790,11 +790,11 @@ contains
     end do
 
     if(plane == 1) then
-        qa = matmul(qa, PsgXY(:,:,ic + FACE_CHILDREN))
+        qa = matmul(qa, PsgXY(:,:,ic + b%FACE_CHILDREN))
     else if(plane == 2) then
-        qa = matmul(qa, PsgXZ(:,:,ic + FACE_CHILDREN))
+        qa = matmul(qa, PsgXZ(:,:,ic + b%FACE_CHILDREN))
     else
-        qa = matmul(qa, PsgYZ(:,:,ic + FACE_CHILDREN))
+        qa = matmul(qa, PsgYZ(:,:,ic + b%FACE_CHILDREN))
     endif
 
     do j=1, ngl2
@@ -809,17 +809,18 @@ contains
 !--------------------------------------------------------------------!
 !>@brief Scatter fields to children faces
 !--------------------------------------------------------------------!
-  subroutine scatter_element_2d(qe, qec, ngl1, ngl2, plane)
+  subroutine scatter_element_2d(b, qe, qec, ngl1, ngl2, plane)
 
     implicit none
 
-    real, dimension(ngl, ngl) :: qe
-    real, dimension(ngl, ngl, FACE_CHILDREN) :: qec
+    type(basis), intent(in) :: b
+    real, dimension(:,:),   intent(in)  :: qe
+    real, dimension(:,:,:), intent(out) :: qec
     integer, intent(in):: ngl1, ngl2, plane
     integer ic
 
-    do ic=1, FACE_CHILDREN
-        call scatter_element_2d_subface(qe, qec(:,:,ic), ic, ngl1, ngl2, plane)
+    do ic=1, b%FACE_CHILDREN
+        call scatter_element_2d_subface(b, qe, qec(:,:,ic), ic, ngl1, ngl2, plane)
     enddo
 
   end subroutine scatter_element_2d
@@ -827,34 +828,38 @@ contains
 !--------------------------------------------------------------------!
 !>@brief Gather fields from children faces
 !--------------------------------------------------------------------!
-  subroutine gather_element_2d(qec, qe, ngl1, ngl2, plane)
+  subroutine gather_element_2d(b, qec, qe, ngl1, ngl2, plane)
 
     implicit none
 
-    real, dimension(ngl, ngl) :: qe
-    real, dimension(ngl, ngl, FACE_CHILDREN) :: qec
-    real, dimension(ngl, ngl) :: qe_
+    type(basis), intent(in) :: b
+    real, dimension(:,:,:), intent(in)  :: qec
+    real, dimension(:,:),   intent(out) :: qe
+    real, dimension(:,:),   allocatable :: qe_
     integer, intent(in):: ngl1, ngl2, plane
     integer ic
 
+    allocate(qe_(size(qe,1), size(qe,2)))
     qe = 0
-    do ic=1, FACE_CHILDREN
-        call gather_element_2d_subface(qec(:,:,ic), qe_, ic, ngl1, ngl2, plane)
+    do ic=1, b%FACE_CHILDREN
+        call gather_element_2d_subface(b, qec(:,:,ic), qe_, ic, ngl1, ngl2, plane)
         qe = qe + qe_
     enddo
+    deallocate(qe_)
 
   end subroutine gather_element_2d
 
 !--------------------------------------------------------------------!
 !>@brief Test
 !--------------------------------------------------------------------!
-  subroutine test_projection_matrices_numa2d(ngl1, ngl2, plane)
+  subroutine test_projection_matrices_numa2d(b, ngl1, ngl2, plane)
 
     implicit none
+    type(basis), intent(in) :: b
     integer, intent(in):: ngl1, ngl2, plane
     character :: fmt*10, ngl_str*2
     real, dimension(ngl1, ngl2) :: u1, u3
-    real, dimension(ngl1, ngl2, FACE_CHILDREN) :: u2
+    real, dimension(ngl1, ngl2, b%FACE_CHILDREN) :: u2
     integer i, j, ic
 
     u1=1
@@ -866,14 +871,14 @@ contains
        end do
     end do
 
-    call scatter_element_2d(u1, u2, ngl1, ngl2, plane)
-    call gather_element_2d(u2, u3, ngl1, ngl2, plane)
+    call scatter_element_2d(b, u1, u2, ngl1, ngl2, plane)
+    call gather_element_2d(b, u2, u3, ngl1, ngl2, plane)
 
     write(ngl_str, '(I2)')ngl1*ngl2
     fmt='('//trim(ngl_str)//'e16.4)'
 
     print*, "PsgXY"
-    do i = 1,FACE_CHILDREN*2
+    do i = 1,b%FACE_CHILDREN*2
         do j=1, ngl1*ngl2
            write(*, fmt)PsgXY(j, :, i)
         end do
@@ -889,7 +894,7 @@ contains
     end do
 
     print*, "SCATTER"
-    do ic=1, FACE_CHILDREN
+    do ic=1, b%FACE_CHILDREN
        print*, "Block", ic
        do j=1, ngl1
           write(*, fmt)u2(j, :, ic)
@@ -969,46 +974,50 @@ contains
     binary_search = l
   end function binary_search
 
-  subroutine mod_p4est_mark_elements(q, lvl)
-
-    use mod_input, only: amr_mark_max_min, amr_mark_modes, amr_mark_threshold, &
-      amr_mark_random
+  subroutine mod_p4est_mark_elements(G, inp, b, init, q, lvl)
 
     use iso_c_binding, only: C_INT8_T
 
     implicit none
 
+    type(grid),    intent(in) :: G
+    type(input),   intent(in) :: inp
+    type(basis),   intent(in) :: b
+    type(initial), intent(in) :: init
+
     real, dimension(:, :), allocatable, intent(in):: q
     integer(C_INT8_T), dimension(:) :: lvl
 
-    if (amr_mark_random) then
-      call mod_p4est_mark_elements_random(q, lvl)
+    if (inp%amr_mark_random) then
+      call mod_p4est_mark_elements_random(G, inp, q, lvl)
     endif
-    if (amr_mark_max_min) then
-      call mod_p4est_mark_elements_max_min(q, lvl)
+    if (inp%amr_mark_max_min) then
+      call mod_p4est_mark_elements_max_min(G, inp, b, q, lvl)
     endif
-    if (amr_mark_modes) then
-      call mod_p4est_mark_elements_modes(q, lvl)
+    if (inp%amr_mark_modes) then
+      call mod_p4est_mark_elements_modes(G, inp, b, q, lvl)
     endif
-    if (amr_mark_threshold) then
-      call mod_p4est_mark_threshold(q, lvl)
+    if (inp%amr_mark_threshold) then
+      call mod_p4est_mark_threshold(G, inp, b, init, q, lvl)
     endif
-    ! call mod_p4est_mark_elements_region(q, lvl)
 
   end subroutine mod_p4est_mark_elements
 
-  subroutine mod_p4est_adapt(q, q1, q2, q3, q4, q5, q6)
+  subroutine mod_p4est_adapt(G, inp, b, gg, par, mf, init, q, q1, q2, q3, q4, q5, q6)
 
     use iso_c_binding, only: C_INT32_T, C_INT8_T, C_CHAR, C_NULL_CHAR
-
-    use mod_input, only: amr_num_neigh_iter, amr_mark_random, amr_mark_set2nc, &
-      eqn_set
-
-    use mod_initial, only: nvar, q_ref
-
-    use mod_grid, only: npoin
+    use mod_face,      only: mod_face_create_nc_list
 
     implicit none
+
+    type(grid),        intent(inout) :: G
+    type(input),       intent(inout) :: inp
+    type(basis),       intent(in)    :: b
+    type(grid_global), intent(inout) :: gg
+    type(parallel_CS), intent(inout) :: par
+    type(face_CS),     intent(inout) :: mf
+    type(initial),     intent(inout) :: init
+
     real, dimension(:, :), allocatable, intent(inout):: q
     real, dimension(:, :), allocatable, intent(inout), optional :: q1, q2, q3, &
                                                                    q4, q5, q6
@@ -1029,12 +1038,12 @@ contains
     integer, dimension(:), allocatable :: recv_requests, send_requests
     integer, dimension(:,:), allocatable :: recv_status, send_status
 
-    if(.not.allocated(qid_src)) allocate(qid_src(0:nproc))
-    if(.not.allocated(qid_dst)) allocate(qid_dst(0:nproc))
+    if(.not.allocated(qid_src)) allocate(qid_src(0:par%nproc))
+    if(.not.allocated(qid_dst)) allocate(qid_dst(0:par%nproc))
 
-    num_neigh_iter = amr_num_neigh_iter
+    num_neigh_iter = inp%amr_num_neigh_iter
 
-    if (amr_mark_random) then
+    if (inp%amr_mark_random) then
       num_neigh_iter = 0
     endif
 
@@ -1050,7 +1059,7 @@ contains
 
     sz1 = size(q, 1)
 
-    num_loc_elem = nelem
+    num_loc_elem = G%nelem
 
     !---------------------------!
     ! coarsen / refine Solution !
@@ -1066,7 +1075,7 @@ contains
     ! (2) Mark elements for refinement !
     !----------------------------------!
 
-    call mod_p4est_mark_elements(q, lvl_src)
+    call mod_p4est_mark_elements(G, inp, b, init, q, lvl_src)
 
 
     !----------------------------------------!
@@ -1085,16 +1094,16 @@ contains
     !-----------------------!
     ! (5) Transfer solution !
     !-----------------------!
-    loc_npoin = num_loc_elem * npts
+    loc_npoin = num_loc_elem * b%npts
     allocate(qs(sz1, sz2, loc_npoin))
 
-    call mod_p4est_transfer_q_3d(qs, q, 1, lvl_src, lvl_dst)
-    if(present(q1)) call mod_p4est_transfer_q_3d(qs, q1, 2, lvl_src, lvl_dst)
-    if(present(q2)) call mod_p4est_transfer_q_3d(qs, q2, 3, lvl_src, lvl_dst)
-    if(present(q3)) call mod_p4est_transfer_q_3d(qs, q3, 4, lvl_src, lvl_dst)
-    if(present(q4)) call mod_p4est_transfer_q_3d(qs, q4, 5, lvl_src, lvl_dst)
-    if(present(q5)) call mod_p4est_transfer_q_3d(qs, q5, 6, lvl_src, lvl_dst)
-    if(present(q6)) call mod_p4est_transfer_q_3d(qs, q6, 7, lvl_src, lvl_dst)
+    call mod_p4est_transfer_q_3d(b, qs, q, 1, lvl_src, lvl_dst)
+    if(present(q1)) call mod_p4est_transfer_q_3d(b, qs, q1, 2, lvl_src, lvl_dst)
+    if(present(q2)) call mod_p4est_transfer_q_3d(b, qs, q2, 3, lvl_src, lvl_dst)
+    if(present(q3)) call mod_p4est_transfer_q_3d(b, qs, q3, 4, lvl_src, lvl_dst)
+    if(present(q4)) call mod_p4est_transfer_q_3d(b, qs, q4, 5, lvl_src, lvl_dst)
+    if(present(q5)) call mod_p4est_transfer_q_3d(b, qs, q5, 6, lvl_src, lvl_dst)
+    if(present(q6)) call mod_p4est_transfer_q_3d(b, qs, q6, 7, lvl_src, lvl_dst)
 
     deallocate(lvl_src)
     deallocate(lvl_dst)
@@ -1103,17 +1112,6 @@ contains
     ! (6) Get the new parallel partition !
     !------------------------------------!
     call p8esttonuma_repartition(qid_src, qid_dst)
-    ! if(irank == irank0) then
-    !   print*,">>>",qid_src
-    !   print*,">>>",qid_dst
-    ! endif
-    ! if(irank == irank0) then
-    !   do rk = 0,nproc-1
-    !     print*, rk
-    !     print*, qid_src(rk), qid_src(rk+1)
-    !     print*, qid_dst(rk), qid_dst(rk+1)
-    !   enddo
-    ! endif
 
     !-----------------------------------!
     ! (7) Parallel repartition solution !
@@ -1124,7 +1122,6 @@ contains
     !------------!
     recv_rank_start = binary_search(qid_src, qid_dst(irank  )    ) - 1
     recv_rank_end   = binary_search(qid_src, qid_dst(irank+1) - 1) - 1
-    ! print*,"recv: ", irank, recv_rank_start, recv_rank_end
 
     allocate(recv_requests(recv_rank_start:recv_rank_end))
     allocate(recv_status(MPI_Status_size, recv_rank_start:recv_rank_end))
@@ -1138,7 +1135,7 @@ contains
     ! total size - overlap size
     comm_size = qid_dst(irank+1) - qid_dst(irank) - comm_size
 
-    allocate(q_recv(sz1, sz2, comm_size * npts))
+    allocate(q_recv(sz1, sz2, comm_size * b%npts))
 
     ! Actually post recvs. comm_oset: starting elements - 1 of recv array
     comm_oset = 0
@@ -1150,10 +1147,9 @@ contains
       if(rk .ne. irank) then
         ! Issue MPI_Irecv
         if(comm_size > 0) then
-          call MPI_Irecv(q_recv(1, 1, comm_oset * npts + 1),                   &
-            comm_size * npts * sz1 * sz2 , MPI_PRECISION, rk, tag,             &
+          call MPI_Irecv(q_recv(1, 1, comm_oset * b%npts + 1),                 &
+            comm_size * b%npts * sz1 * sz2 , MPI_PRECISION, rk, tag,           &
             MPI_COMM_WORLD, recv_requests(rk), ierr)
-          ! print*,"recv:", irank, rk, comm_oset, comm_start, comm_end
           comm_oset = comm_oset + comm_size
         else
           recv_requests(rk) = MPI_REQUEST_NULL
@@ -1163,7 +1159,7 @@ contains
         recv_requests(rk) = MPI_REQUEST_NULL
       end if
     end do
-    if (npts * comm_oset .ne. size(q_recv,3)) then
+    if (b%npts * comm_oset .ne. size(q_recv,3)) then
       print*, irank, "recv wrong", comm_oset, size(q_recv,3)
       stop "something went wrong with adapt repartition recv"
     endif
@@ -1174,7 +1170,6 @@ contains
     ! Determine the ranks I send to
     send_rank_start = binary_search(qid_dst, qid_src(irank    )    ) - 1
     send_rank_end   = binary_search(qid_dst, qid_src(irank + 1) - 1) - 1
-    ! print*,"send: ", irank, send_rank_start, send_rank_end
     allocate(send_requests(send_rank_start:send_rank_end))
     allocate(send_status(MPI_Status_size, send_rank_start:send_rank_end))
 
@@ -1188,10 +1183,9 @@ contains
       if(rk .ne. irank) then
         ! Issue MPI_Isend
         if(comm_size > 0) then
-          call MPI_Isend(qs(1, 1, comm_oset * npts + 1),                       &
-            comm_size * npts * sz1 * sz2 , MPI_PRECISION, rk, tag,             &
+          call MPI_Isend(qs(1, 1, comm_oset * b%npts + 1),                     &
+            comm_size * b%npts * sz1 * sz2 , MPI_PRECISION, rk, tag,           &
             MPI_COMM_WORLD, send_requests(rk), ierr)
-          ! print*,"send:", irank, rk, comm_oset, comm_start, comm_end
           comm_oset = comm_oset + comm_size
         else
           send_requests(rk) = MPI_REQUEST_NULL
@@ -1203,7 +1197,7 @@ contains
       end if
 
     end do
-    if (npts * comm_oset .ne. size(qs,3)) then
+    if (b%npts * comm_oset .ne. size(qs,3)) then
       print*, irank, "send wrong", comm_oset, size(qs,3)
       stop "something went wrong with adapt repartition send"
     endif
@@ -1215,38 +1209,38 @@ contains
     ! (7) Set the new solution !
     !--------------------------------!
     num_loc_elem = qid_dst(irank + 1) - qid_dst(irank)
-    loc_npoin = num_loc_elem * npts
+    loc_npoin = num_loc_elem * b%npts
     allocate(q(sz1, loc_npoin))
-    call mod_p4est_adapt_set_q(q, qs, q_recv, 1, recv_rank_start,              &
+    call mod_p4est_adapt_set_q(b, q, qs, q_recv, 1, recv_rank_start,           &
       recv_rank_end, qid_src, qid_dst)
     if(present(q1)) then
       allocate(q1(sz1, loc_npoin))
-      call mod_p4est_adapt_set_q(q1, qs, q_recv, 2, recv_rank_start,           &
+      call mod_p4est_adapt_set_q(b, q1, qs, q_recv, 2, recv_rank_start,        &
         recv_rank_end, qid_src, qid_dst)
     endif
     if(present(q2)) then
       allocate(q2(sz1, loc_npoin))
-      call mod_p4est_adapt_set_q(q2, qs, q_recv, 3, recv_rank_start,           &
+      call mod_p4est_adapt_set_q(b, q2, qs, q_recv, 3, recv_rank_start,        &
         recv_rank_end, qid_src, qid_dst)
     endif
     if(present(q3)) then
       allocate(q3(sz1, loc_npoin))
-      call mod_p4est_adapt_set_q(q3, qs, q_recv, 4, recv_rank_start,           &
+      call mod_p4est_adapt_set_q(b, q3, qs, q_recv, 4, recv_rank_start,        &
         recv_rank_end, qid_src, qid_dst)
     endif
     if(present(q4)) then
       allocate(q4(sz1, loc_npoin))
-      call mod_p4est_adapt_set_q(q4, qs, q_recv, 5, recv_rank_start,           &
+      call mod_p4est_adapt_set_q(b, q4, qs, q_recv, 5, recv_rank_start,        &
         recv_rank_end, qid_src, qid_dst)
     endif
     if(present(q5)) then
       allocate(q5(sz1, loc_npoin))
-      call mod_p4est_adapt_set_q(q5, qs, q_recv, 6, recv_rank_start,           &
+      call mod_p4est_adapt_set_q(b, q5, qs, q_recv, 6, recv_rank_start,        &
         recv_rank_end, qid_src, qid_dst)
     endif
     if(present(q6)) then
       allocate(q6(sz1, loc_npoin))
-      call mod_p4est_adapt_set_q(q6, qs, q_recv, 7, recv_rank_start,           &
+      call mod_p4est_adapt_set_q(b, q6, qs, q_recv, 7, recv_rank_start,        &
         recv_rank_end, qid_src, qid_dst)
     endif
 
@@ -1257,20 +1251,22 @@ contains
     if(irank == irank0) print*, '----------- End mesh adapt   -------------'
 
     ! FIXME: Can we make these routines more efficient?
-    call mod_p4est_create_grid(.false.)
-    call mod_face_create_nc_list()
+    call mod_p4est_create_grid(G, inp, b, gg, par, .false.)
+    call mod_face_create_nc_list(mf, G)
 
   end subroutine mod_p4est_adapt
 
-  subroutine mod_p4est_mark_elements_random(q, lvl)
+  subroutine mod_p4est_mark_elements_random(G, inp, q, lvl)
 
     use iso_c_binding, only: C_INT, C_INT8_T
-    use mod_input, only: max_mesh_lvl
 #ifdef __INTEL_COMPILER
     use ifport
 #endif
 
     implicit none
+
+    type(grid),  intent(in) :: G
+    type(input), intent(in) :: inp
 
     real, dimension(:, :), allocatable, intent(in):: q
     integer(C_INT), dimension(:), allocatable :: hadapt
@@ -1281,19 +1277,19 @@ contains
     double precision :: rand
 #endif
 
-    allocate(hadapt(nelem))
+    allocate(hadapt(G%nelem))
     hadapt = 0
     call srand(irank)
 
     a = 1
     h = 0
 
-    do i = 1, nelem
+    do i = 1, G%nelem
       if(mod(i, a) == 0) then
         a = floor(rand(0) * 13 + 8)
         h = floor(rand(0) * 3) - 1
       endif
-      if(h > 0 .and. lvl(i) .ge. max_mesh_lvl) then
+      if(h > 0 .and. lvl(i) .ge. inp%max_mesh_lvl) then
         hadapt(i) = 0
       else
         hadapt(i) = h
@@ -1301,7 +1297,7 @@ contains
     end do
 
     if(init_refine) then
-      do i = 1, nelem
+      do i = 1, G%nelem
         hadapt(i) = max(0, hadapt(i))
       enddo
     endif
@@ -1310,13 +1306,15 @@ contains
 
   end subroutine mod_p4est_mark_elements_random
 
-  subroutine mod_p4est_mark_elements_max_min(q, lvl)
+  subroutine mod_p4est_mark_elements_max_min(G, inp, b, q, lvl)
 
     use iso_c_binding, only: C_INT, C_INT8_T
-    use mod_input, only: max_mesh_lvl, amr_max_min_lim
-    use mod_initial, only: nvar
 
     implicit none
+
+    type(grid),  intent(in) :: G
+    type(input), intent(in) :: inp
+    type(basis), intent(in) :: b
 
     real, dimension(:, :), allocatable, intent(in):: q
     integer(C_INT), dimension(:), allocatable :: hadapt
@@ -1324,27 +1322,27 @@ contains
     integer :: i, k
     real :: qmax, qmin
 
-    allocate(hadapt(nelem))
+    allocate(hadapt(G%nelem))
     hadapt = 0
 
-    do i = 1, nelem
+    do i = 1, G%nelem
       hadapt(i) = 0
-      qmax = q(1, (i-1)*npts + 1)
-      qmin = q(1, (i-1)*npts + 1)
-      do k = 1,npts
-        qmax = max(qmax, q(1, (i-1)*npts + k))
-        qmin = min(qmin, q(1, (i-1)*npts + k))
+      qmax = q(1, (i-1)*b%npts + 1)
+      qmin = q(1, (i-1)*b%npts + 1)
+      do k = 1,b%npts
+        qmax = max(qmax, q(1, (i-1)*b%npts + k))
+        qmin = min(qmin, q(1, (i-1)*b%npts + k))
       enddo
-      if ((qmax-qmin) > amr_max_min_lim(1)/(2**lvl(i)) .and. &
-          lvl(i) < max_mesh_lvl) then
+      if ((qmax-qmin) > inp%amr_max_min_lim(1)/(2**lvl(i)) .and. &
+          lvl(i) < inp%max_mesh_lvl) then
         hadapt(i) = 1
-      elseif ((qmax-qmin) < amr_max_min_lim(2)/(2**lvl(i)) ) then
+      elseif ((qmax-qmin) < inp%amr_max_min_lim(2)/(2**lvl(i)) ) then
         hadapt(i) = -1
       endif
     enddo
 
     if(init_refine) then
-      do i = 1, nelem
+      do i = 1, G%nelem
         hadapt(i) = max(0, hadapt(i))
       enddo
     endif
@@ -1353,13 +1351,16 @@ contains
 
   end subroutine mod_p4est_mark_elements_max_min
 
-  subroutine mod_p4est_mark_threshold(q, lvl)
+  subroutine mod_p4est_mark_threshold(G, inp, b, init, q, lvl)
 
     use iso_c_binding, only: C_INT, C_INT8_T
-    use mod_input, only: max_mesh_lvl, amr_threshold_lim, eqn_set, limit_threshold
-    use mod_initial, only: nvar, q_ref
 
     implicit none
+
+    type(grid),    intent(in) :: G
+    type(input),   intent(in) :: inp
+    type(basis),   intent(in) :: b
+    type(initial), intent(in) :: init
 
     real, dimension(:, :), allocatable, intent(in):: q
     integer(C_INT), dimension(:), allocatable :: hadapt
@@ -1367,26 +1368,26 @@ contains
     integer :: i, k, j, kv, p
     real :: qval
 
-    allocate(hadapt(nelem))
+    allocate(hadapt(G%nelem))
     hadapt = -1
 
-    do kv = 1,size(amr_indicator_variables, 1)
-      j = amr_indicator_variables(kv)
+    do kv = 1,size(inp%amr_indicator_variables, 1)
+      j = inp%amr_indicator_variables(kv)
       if(j == 0) exit
-      do i = 1, nelem
-        do k = 1,npts
-          qval = q(j, (i-1)*npts + k)
+      do i = 1, G%nelem
+        do k = 1,b%npts
+          qval = q(j, (i-1)*b%npts + k)
           if(j == 5) then
-            if(eqn_set(1:5) == 'set2c') then
-              p = (i-1)*npts + k
-              qval = (q(5,p) + q_ref(5,p)) / (q(1,p) + q_ref(1,p)) &
-                   - q_ref(5,p)/q_ref(1,p)
+            if(inp%eqn_set(1:5) == 'set2c') then
+              p = (i-1)*b%npts + k
+              qval = (q(5,p) + init%q_ref(5,p)) / (q(1,p) + init%q_ref(1,p)) &
+                   - init%q_ref(5,p)/init%q_ref(1,p)
             else
               stop "mod_p4est: temp threshold only set up for set2c"
             endif
           endif
-          if(abs(qval) > amr_threshold_lim(kv)) then
-            if(lvl(i) < max_mesh_lvl) then
+          if(abs(qval) > inp%amr_threshold_lim(kv)) then
+            if(lvl(i) < inp%max_mesh_lvl) then
               hadapt(i) = 1
             else
               hadapt(i) = 0
@@ -1397,7 +1398,7 @@ contains
     enddo
 
     if(init_refine) then
-      do i = 1, nelem
+      do i = 1, G%nelem
         hadapt(i) = max(0, hadapt(i))
       enddo
     endif
@@ -1482,30 +1483,30 @@ contains
 
   end subroutine mod_p4est_build_Vinv
 
-  subroutine mod_p4est_build_perfect_modal_coeff(b, m)
+  subroutine mod_p4est_build_perfect_modal_coeff(b_coeff, m)
     implicit none
 
-    real, dimension(:), allocatable, intent(out) :: b
+    real, dimension(:), allocatable, intent(out) :: b_coeff
     integer, intent(in) :: m
     real :: bN
     integer :: k
 
-    allocate(b(m))
+    allocate(b_coeff(m))
     bN = 0
     do k = 1, m-1
       bN = bN + 1 / real(k**(2*(m-1)))
     enddo
     bN = sqrt(bN)
-    b(1) = 0
+    b_coeff(1) = 0
     do k = 1, m-1
-      b(k+1) = 1 / (k ** (m-1) * bN)
+      b_coeff(k+1) = 1 / (k ** (m-1) * bN)
     enddo
 
   end subroutine mod_p4est_build_perfect_modal_coeff
 
-  subroutine mod_p4est_smoothness(s, q, p, ne, std, m, V_inv, b)
-    use mod_input, only: amr_mark_modes_use_baseline_decay
+  subroutine mod_p4est_smoothness(inp, s, q, p, ne, std, m, V_inv, b_coeff)
     implicit none
+    type(input), intent(in) :: inp
     real, intent(inout) :: s
     real, dimension(:,:), intent(in) :: q
     real, dimension(0:), intent(out) :: p
@@ -1513,14 +1514,14 @@ contains
     integer, intent(in) :: std
     integer, intent(in) :: m
     real, dimension(0:,0:), intent(in) :: V_inv
-    real, dimension(0:), intent(in) :: b
+    real, dimension(0:), intent(in) :: b_coeff
 
     real :: qL2, pavg, xavg, numer, denom, tmp
     integer :: i, k, j
     real, dimension(0:m-1) :: qt
 
-    do k = 1,size(amr_indicator_variables, 1)
-      j = amr_indicator_variables(k)
+    do k = 1,size(inp%amr_indicator_variables, 1)
+      j = inp%amr_indicator_variables(k)
 
       ! When this is zero we're done!
       if(j == 0) return
@@ -1532,12 +1533,12 @@ contains
       p = matmul(V_inv,qt)
       qL2 = sum(p**2)
 
-      if(qL2 .le. amr_smoothness_qL2_limit(k)) cycle
+      if(qL2 .le. inp%amr_smoothness_qL2_limit(k)) cycle
 
       ! skyline pessimization
-      if(amr_mark_modes_use_baseline_decay) then
+      if(inp%amr_mark_modes_use_baseline_decay) then
         do i = 1,m-1
-          p(i) = log10(sqrt(p(i)**2 + qL2 * b(i)**2))
+          p(i) = log10(sqrt(p(i)**2 + qL2 * b_coeff(i)**2))
         enddo
       else
         do i = 1,m-1
@@ -1581,13 +1582,15 @@ contains
   !   year={2011},
   !   publisher={EDP Sciences}
   ! }
-  subroutine mod_p4est_mark_elements_modes(q, lvl)
+  subroutine mod_p4est_mark_elements_modes(G, inp, b, q, lvl)
 
     use iso_c_binding, only: C_INT, C_INT8_T
-    use mod_input, only: max_mesh_lvl
-    use mod_initial, only: nvar
 
     implicit none
+
+    type(grid),  intent(in) :: G
+    type(input), intent(in) :: inp
+    type(basis), intent(in) :: b
 
     real, dimension(:, :), allocatable, intent(in):: q
     integer(C_INT), dimension(:), allocatable :: hadapt
@@ -1595,63 +1598,63 @@ contains
     integer :: i, ix, iy, iz, k, ne, j, std
     real :: qmax, qmin
     real :: sx, sy, sz
-    real :: qx(0:nglx-1), qy(0:ngly-1), qz(0:nglz-1)
+    real :: qx(0:b%nglx-1), qy(0:b%ngly-1), qz(0:b%nglz-1)
     real :: qN
 
 
     ! Build the nodes to modes operators if necessary
     if(.not. allocated(Vx_inv)) then
-      call mod_p4est_build_Vinv(Vx_inv, xglx)
-      call mod_p4est_build_Vinv(Vy_inv, xgly)
-      call mod_p4est_build_Vinv(Vz_inv, xglz)
+      call mod_p4est_build_Vinv(Vx_inv, b%xglx)
+      call mod_p4est_build_Vinv(Vy_inv, b%xgly)
+      call mod_p4est_build_Vinv(Vz_inv, b%xglz)
 
-      call mod_p4est_build_perfect_modal_coeff(bx, nglx)
-      call mod_p4est_build_perfect_modal_coeff(by, ngly)
-      call mod_p4est_build_perfect_modal_coeff(bz, nglz)
+      call mod_p4est_build_perfect_modal_coeff(bx, b%nglx)
+      call mod_p4est_build_perfect_modal_coeff(by, b%ngly)
+      call mod_p4est_build_perfect_modal_coeff(bz, b%nglz)
     endif
 
-    allocate(hadapt(nelem))
+    allocate(hadapt(G%nelem))
     hadapt = 0
 
-    do i = 1, nelem
+    do i = 1, G%nelem
       hadapt(i) = -1
 
       ! smoothness in x direction
-      sx = nglx-1
+      sx = b%nglx-1
       std = 1
       ix = 0
-      do iz = 0,nglz-1
-        do iy = 0,ngly-1
-          ne = (i-1) * npts + ix + nglx * (iy + iz * ngly) + 1
-          call mod_p4est_smoothness(sx, q, qx, ne, std, nglx, Vx_inv, bx)
+      do iz = 0,b%nglz-1
+        do iy = 0,b%ngly-1
+          ne = (i-1) * b%npts + ix + b%nglx * (iy + iz * b%ngly) + 1
+          call mod_p4est_smoothness(inp, sx, q, qx, ne, std, b%nglx, Vx_inv, bx)
         enddo
       enddo
 
       ! smoothness in y direction
-      sy = ngly-1
+      sy = b%ngly-1
       iy = 0
-      std = nglx
-      do iz = 0,nglz-1
-        do ix = 0,nglx-1
-          ne = (i-1) * npts + ix + nglx * (iy + iz * ngly) + 1
-          call mod_p4est_smoothness(sy, q, qy, ne, std, ngly, Vy_inv, by)
+      std = b%nglx
+      do iz = 0,b%nglz-1
+        do ix = 0,b%nglx-1
+          ne = (i-1) * b%npts + ix + b%nglx * (iy + iz * b%ngly) + 1
+          call mod_p4est_smoothness(inp, sy, q, qy, ne, std, b%ngly, Vy_inv, by)
         enddo
       enddo
 
       ! smoothness in z direction
-      sz = nglz-1
+      sz = b%nglz-1
       iz = 0
-      std = nglx * ngly
-      do iy = 0,ngly-1
-        do ix = 0,nglx-1
-          ne = (i-1) * npts + ix + nglx * (iy + iz * ngly) + 1
-          call mod_p4est_smoothness(sz, q, qz, ne, std, nglz, Vz_inv, bz)
+      std = b%nglx * b%ngly
+      do iy = 0,b%ngly-1
+        do ix = 0,b%nglx-1
+          ne = (i-1) * b%npts + ix + b%nglx * (iy + iz * b%ngly) + 1
+          call mod_p4est_smoothness(inp, sz, q, qz, ne, std, b%nglz, Vz_inv, bz)
         enddo
       enddo
 
-      if(min(sx,sy,sz) < amr_smoothness_limits(1) .and. (lvl(i) < max_mesh_lvl)) then
+      if(min(sx,sy,sz) < inp%amr_smoothness_limits(1) .and. (lvl(i) < inp%max_mesh_lvl)) then
         hadapt(i) = 1
-      elseif (min(sx,sy,sz) > amr_smoothness_limits(2)) then
+      elseif (min(sx,sy,sz) > inp%amr_smoothness_limits(2)) then
         hadapt(i) = -1
       else
         hadapt(i) = 0
@@ -1659,7 +1662,7 @@ contains
     enddo
 
     if(init_refine) then
-      do i = 1, nelem
+      do i = 1, G%nelem
         hadapt(i) = max(0, hadapt(i))
       enddo
     endif
@@ -1669,29 +1672,32 @@ contains
   end subroutine mod_p4est_mark_elements_modes
 
 
-  subroutine mod_p4est_mark_elements_region(q, lvl)
+  subroutine mod_p4est_mark_elements_region(G, inp, b, q, lvl)
 
     use iso_c_binding, only: C_INT, C_INT8_T
-    use mod_input, only: max_mesh_lvl
 
     implicit none
+
+    type(grid),  intent(in) :: G
+    type(input), intent(in) :: inp
+    type(basis), intent(in) :: b
 
     real, dimension(:, :), allocatable, intent(in):: q
     integer(C_INT8_T), dimension(:) :: lvl
     integer(C_INT), dimension(:), allocatable :: hadapt
     integer :: i
 
-    allocate(hadapt(nelem))
+    allocate(hadapt(G%nelem))
     hadapt = 0
 
-    do i = 1, nelem
-      if (lvl(i) < max_mesh_lvl) then
-        hadapt(i) = init_ref_crit(i)
+    do i = 1, G%nelem
+      if (lvl(i) < inp%max_mesh_lvl) then
+        hadapt(i) = init_ref_crit(G, inp, b, i)
       endif
     enddo
 
     if(init_refine) then
-      do i = 1, nelem
+      do i = 1, G%nelem
         hadapt(i) = max(0, hadapt(i))
       enddo
     endif
@@ -1760,11 +1766,6 @@ contains
     real, dimension(:), allocatable :: ra_b, ra_t, wa, rb, wb, wb_gl
     integer :: Nrp, k
     real, dimension(:, :), allocatable :: tmp, I_a2b, I_b2a, M, MI
-
-    ! Uncomment to check the projection
-    ! real, dimension(:, :), allocatable :: chk
-    ! real :: s
-    ! integer :: j
 
     ! Number of points in stencil
     Nrp = size(ra,1)
@@ -1836,32 +1837,15 @@ contains
     deallocate(M)
     deallocate(MI)
 
-    ! Uncomment to check the projection
-    ! allocate(chk(Nrp, Nrp))
-    ! chk = 0
-    ! do k = 1,Nrp
-    !   chk(k,k) = 1
-    ! end do
-    ! chk = matmul(project(:, :, 2), interp(:, :, 2)) + &
-    !       matmul(project(:,:,1), interp(:,:,1)) - &
-    !       chk
-    ! s = 0
-    ! do k = 1,Nrp
-    !   do j = 1,Nrp
-    !     s = s + chk(k,j)**2
-    !   end do
-    ! end do
-    ! print*,"If projection correct this should be close to zero: ", sqrt(s)
-    ! deallocate(chk)
-
   end subroutine mod_p4est_build_projection_1d
 
-  subroutine mod_p4est_transfer_q_3d(q_dst, q_src, n, lvl_src, lvl_dst)
+  subroutine mod_p4est_transfer_q_3d(b, q_dst, q_src, n, lvl_src, lvl_dst)
 
     use iso_c_binding, only : C_INT8_T
 
     implicit none
 
+    type(basis), intent(in) :: b
     real, dimension(:, :, :), intent(inout) :: q_dst
     real, dimension(:, :), allocatable, intent(inout) :: q_src
     integer, intent(in) :: n
@@ -1875,9 +1859,9 @@ contains
     real, dimension(:, :), allocatable :: qx, qxy
 
 
-    nx=nglx
-    ny=ngly
-    nz=nglz
+    nx=b%nglx
+    ny=b%ngly
+    nz=b%nglz
     np = nx * ny * nz
     nf = size(q_dst, 1)
 
@@ -1885,9 +1869,9 @@ contains
     allocate(qxy(nf, np))
 
     if(.not.allocated(interp_x)) then
-      call mod_p4est_build_projection_1d(interp_x, project_x, xglx)
-      call mod_p4est_build_projection_1d(interp_y, project_y, xgly)
-      call mod_p4est_build_projection_1d(interp_z, project_z, xglz)
+      call mod_p4est_build_projection_1d(interp_x, project_x, b%xglx)
+      call mod_p4est_build_projection_1d(interp_y, project_y, b%xgly)
+      call mod_p4est_build_projection_1d(interp_z, project_z, b%xglz)
     endif
 
     num_elem = size(lvl_dst, 1)
@@ -2060,13 +2044,14 @@ contains
 
   end subroutine mod_p4est_transfer_q_3d
 
-  subroutine mod_p4est_adapt_set_q(q, qs, qr, n, recv_rank_start,       &
+  subroutine mod_p4est_adapt_set_q(b, q, qs, qr, n, recv_rank_start,     &
       recv_rank_end, qid_src, qid_dst)
 
     use iso_c_binding, only: C_INT64_T
 
     implicit none
 
+    type(basis), intent(in) :: b
     real, intent(out) :: q(:,0:)
     real, intent(in) :: qs(:,:,0:)
     real, intent(in) :: qr(:,:,0:)
@@ -2087,8 +2072,8 @@ contains
       comm_size = comm_end - comm_start
 
       if(comm_size > 0) then
-        q_end = q_start + comm_size * npts
-        r_end = r_start + comm_size * npts
+        q_end = q_start + comm_size * b%npts
+        r_end = r_start + comm_size * b%npts
         q(:, q_start : q_end - 1) = qr(:, n, r_start : r_end - 1)
         q_start = q_end
         r_start = r_end
@@ -2102,9 +2087,9 @@ contains
       comm_size = comm_end - comm_start
 
       if(comm_size > 0) then
-        q_end = q_start + comm_size * npts
-        s_start = (comm_start - qid_src(irank)) * npts
-        s_end = s_start + comm_size * npts
+        q_end = q_start + comm_size * b%npts
+        s_start = (comm_start - qid_src(irank)) * b%npts
+        s_end = s_start + comm_size * b%npts
         q(:, q_start : q_end - 1) = qs(:, n, s_start : s_end - 1)
         q_start = q_end
       endif
@@ -2117,8 +2102,8 @@ contains
       comm_size = comm_end - comm_start
 
       if(comm_size > 0) then
-        q_end = q_start + comm_size * npts
-        r_end = r_start + comm_size * npts
+        q_end = q_start + comm_size * b%npts
+        r_end = r_start + comm_size * b%npts
         q(:, q_start : q_end - 1) = qr(:, n, r_start : r_end - 1)
         q_start = q_end
         r_start = r_end

@@ -1,19 +1,13 @@
 module mod_rhs_btp
 
-    ! Module-level imports: only what create_rhs_btp uses directly.
-    ! Each contained subroutine declares its own dependencies via local 'use'.
-    use mod_grid,           only: npoin
-    use mod_input,          only: nlayers, method_visc
-    use mod_metrics,        only: massinv
-    use mod_laplacian_quad, only: btp_create_laplacian
-
     implicit none
     public :: create_rhs_btp
 
 contains
 
     !===========================================================================
-    subroutine create_rhs_btp(rhs_btp, qb_df, qprime_df)
+    subroutine create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
+                               rhs_btp, qb_df, qprime_df)
     !===========================================================================
     !  Top-level barotropic RHS driver.
     !
@@ -28,60 +22,70 @@ contains
     !  Subroutine arguments (rhs, qb_df, qprime_df) are managed here.
     !  All static module arrays are entered once via openacc_enter_data.
     !===========================================================================
+        use mod_grid,             only: grid
+        use mod_input,            only: input
+        use mod_basis,            only: basis
+        use mod_face,             only: face_CS
+        use mod_parallel,         only: parallel_CS
+        use mod_variables,        only: btp_CS
+        use mod_initial,          only: initial
+        use mod_ref,              only: mref
+        use mod_mpi_communicator, only: mpi_communicator
+        use mod_metrics,          only: metrics
+        use mod_tensor,           only: tensor_CS
+        use mod_laplacian_quad,   only: btp_create_laplacian
+
         implicit none
 
-        real, dimension(3,npoin),          intent(inout) :: rhs_btp
-        real, dimension(4,npoin),          intent(in)  :: qb_df
-        real, dimension(3,npoin,nlayers),  intent(in)  :: qprime_df
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(metrics),          intent(in)    :: mt
+        type(tensor_CS),        intent(in)    :: tsp
 
-        real, dimension(2,npoin) :: rhs_visc_btp
+        real, dimension(3,G%npoin),             intent(inout) :: rhs_btp
+        real, dimension(4,G%npoin),             intent(in)    :: qb_df
+        real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
+
+        real, dimension(2,G%npoin) :: rhs_visc_btp
 
         rhs_visc_btp = 0.0
 
         ! 1. MPI halo exchange (host).
         !    qb_df / qprime_df must reside on the host at this point.
         !    With standard (non-CUDA-aware) MPI this must precede the upload.
-    
-        call btp_create_precommunicator(qb_df, qprime_df, 4)
 
-        ! 2. Upload per-call arrays to the device.
-        !    rhs  : 'create' (not 'copyin') — volume kernel zeroes it on device.
-        !    qb_df, qprime_df : read-only on GPU, 'copyin' only.
-        
-        !!$acc enter data copyin(qb_df, qprime_df) create(rhs)
+        call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, 4)
 
-        ! 3. GPU kernels.
-        !    create_rhs_btp_volume_qdf zeroes rhs on the device first,
-        !    then both routines accumulate into it.
-    
-        call create_rhs_btp_volume_qdf(rhs_btp, qb_df, qprime_df)
+        call create_rhs_btp_volume_qdf(G, b, inp, init, btp, tsp, rhs_btp, qb_df, qprime_df)
 
-        !$acc update host(rhs_btp)
+        call create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
 
-        call create_btp_fluxes_qdf(rhs_btp, qb_df, qprime_df)
-
-        ! 4. Download rhs to host; free device temporaries.
-        !    qb_df / qprime_df were read-only: no copyout needed.
-        !!$acc exit data copyout(rhs) delete(qb_df, qprime_df)
-
-        ! 5. MPI post-receive: accumulate neighbour contributions into host rhs.
-        call btp_create_postcommunicator(rhs_btp, 4)
+        call btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs_btp, 4)
 
         ! 6. Viscosity (host; not yet GPU-ported).
-        
-        if (method_visc > 0) call btp_create_laplacian(rhs_visc_btp, qb_df)
+
+        if (inp%method_visc > 0) &
+            call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, rhs_visc_btp, qb_df)
 
         ! 7. Mass-matrix inverse scaling (host, after GPU download).
 
-        rhs_btp(1,:) = massinv(:) * rhs_btp(1,:)
-        rhs_btp(2,:) = massinv(:) * (rhs_btp(2,:) + rhs_visc_btp(1,:))
-        rhs_btp(3,:) = massinv(:) * (rhs_btp(3,:) + rhs_visc_btp(2,:))
+        rhs_btp(1,:) = mt%massinv(:) * rhs_btp(1,:)
+        rhs_btp(2,:) = mt%massinv(:) * (rhs_btp(2,:) + rhs_visc_btp(1,:))
+        rhs_btp(3,:) = mt%massinv(:) * (rhs_btp(3,:) + rhs_visc_btp(2,:))
 
     end subroutine create_rhs_btp
 
 
     !===========================================================================
-    subroutine create_rhs_btp_volume_qdf(rhs_btp, qb_df, qprime_df)
+    subroutine create_rhs_btp_volume_qdf(G, b, inp, init, btp, tsp, &
+                                          rhs_btp, qb_df, qprime_df)
     !===========================================================================
     !  Volume contribution to the barotropic RHS (DG weak form, interior).
     !
@@ -97,20 +101,26 @@ contains
     !  Race conditions: Iq is unique per node (each node has exactly one owning
     !  Iq), so different gangs scatter to disjoint rhs indices. No atomics needed.
     !===========================================================================
-        use mod_grid,      only: npoin_q, npoin
-        use mod_basis,     only: npts
+        use mod_grid,      only: grid
+        use mod_basis,     only: basis
         use mod_constants, only: gravity
-        use mod_initial,   only: grad_zbot_quad, tau_wind, psih, dpsidx, dpsidy, &
-                                 indexq, wjac, pbprime_df, coriolis_quad, alpha_mlswe
-        use mod_variables, only: tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave,    &
-                                 ope_ave, uvb_ave, btp_mass_flux_ave, ope2_ave
-        use mod_input,     only: nlayers, cd_mlswe, botfr
+        use mod_initial,   only: initial
+        use mod_variables, only: btp_CS
+        use mod_input,     only: input
+        use mod_tensor,    only: tensor_CS
 
         implicit none
 
-        real, dimension(4,npoin),         intent(in)  :: qb_df
-        real, dimension(3,npoin,nlayers), intent(in)  :: qprime_df
-        real, dimension(3,npoin),         intent(inout) :: rhs_btp
+        type(grid),      intent(in)    :: G
+        type(basis),     intent(in)    :: b
+        type(input),     intent(in)    :: inp
+        type(initial),   intent(in)    :: init
+        type(btp_CS),    intent(inout) :: btp
+        type(tensor_CS), intent(in)    :: tsp
+
+        real, dimension(4,G%npoin),             intent(in)    :: qb_df
+        real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
+        real, dimension(3,G%npoin),             intent(inout) :: rhs_btp
 
         real :: sc_x, sc_y, Hq, Qu1, Qu2, Qv1, Qv2
         real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, ope2, grav_dp
@@ -118,15 +128,16 @@ contains
         real :: pp_k, up_k, vp_k, pprime_k, pprime_k1
         real :: sum_up2, sum_uv, sum_vp2
         real :: wq_udp, wq_vdp, wq_scx, wq_scy, wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2
-        ! real,    dimension(npts) :: hi_c
-        ! integer, dimension(npts) :: I_c
         integer :: Iq, ip, k, I
 
         !$acc data present(rhs_btp, qb_df, qprime_df,                                  &
-        !$acc               grad_zbot_quad, tau_wind, psih, dpsidx, dpsidy,        &
-        !$acc               indexq, wjac, pbprime_df, coriolis_quad, alpha_mlswe,  &
-        !$acc               tau_bot_ave, H_ave, Qu_ave, Quv_ave, Qv_ave, ope_ave,  &
-        !$acc               uvb_ave, btp_mass_flux_ave, ope2_ave)
+        !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
+        !$acc               tsp%dpsidx, tsp%dpsidy,                                  &
+        !$acc               tsp%indexq, tsp%wjac, init%pbprime_df,                   &
+        !$acc               init%coriolis_quad, init%alpha_mlswe,                      &
+        !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,      &
+        !$acc               btp%Qv_ave, btp%ope_ave,                                   &
+        !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave)
 
         ! Zero rhs on device. Caller used 'create(rhs)' (not 'copyin'), so
         ! device memory is uninitialised; both kernels accumulate into rhs.
@@ -144,44 +155,37 @@ contains
         !$acc           wq_udp, wq_vdp, wq_scx, wq_scy,                            &
         !$acc           wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2,                           &
         !$acc           ip, k)
-        do Iq = 1, npoin_q
+        do Iq = 1, G%npoin_q
 
-            wq = wjac(Iq)
-
-            ! Cache basis values for this quadrature point.
-            !!$acc loop seq
-            ! do ip = 1, npts
-            !     I_c(ip)  = indexq(ip, Iq)
-            !     hi_c(ip) = psih(ip, Iq)
-            ! end do
+            wq = tsp%wjac(Iq)
 
             ! Barotropic projection
             dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  pbq = 0.0
             !$acc loop seq
-            do ip = 1, npts
-                I = indexq(ip, Iq)
-                hi = psih(ip, Iq)
+            do ip = 1, b%npts
+                I = tsp%indexq(ip, Iq)
+                hi = tsp%psih(ip, Iq)
                 dp  = dp  + hi * qb_df(1, I)
                 dpp = dpp + hi * qb_df(2, I)
                 udp = udp + hi * qb_df(3, I)
                 vdp = vdp + hi * qb_df(4, I)
-                pbq = pbq + hi * pbprime_df(I)
+                pbq = pbq + hi * init%pbprime_df(I)
             end do
 
             ub = udp / dp
             vb = vdp / dp
 
-            ! Layer projections, Hq, momentum-flux sums 
+            ! Layer projections, Hq, momentum-flux sums
             Hq = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
             pprime_k = 0.0     ! pprime_0 = 0 at sea surface
 
             !$acc loop seq
-            do k = 1, nlayers
+            do k = 1, inp%nlayers
                 pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
                 !$acc loop seq
-                do ip = 1, npts
-                    I = indexq(ip, Iq)
-                    hi = psih(ip, Iq)
+                do ip = 1, b%npts
+                    I = tsp%indexq(ip, Iq)
+                    hi = tsp%psih(ip, Iq)
                     pp_k = pp_k + hi * qprime_df(1, I, k)
                     up_k = up_k + hi * qprime_df(2, I, k)
                     vp_k = vp_k + hi * qprime_df(3, I, k)
@@ -191,7 +195,7 @@ contains
 
                 ! Diff-of-squares: pprime_{k+1}^2 - pprime_k^2
                 !   = (pprime_{k+1} + pprime_k) * pp_k
-                Hq      = Hq      + 0.5 * alpha_mlswe(k) * (pprime_k1 + pprime_k) * pp_k
+                Hq      = Hq      + 0.5 * init%alpha_mlswe(k) * (pprime_k1 + pprime_k) * pp_k
                 sum_up2 = sum_up2 + up_k * up_k * pp_k
                 sum_uv  = sum_uv  + up_k * vp_k * pp_k
                 sum_vp2 = sum_vp2 + vp_k * vp_k * pp_k
@@ -201,31 +205,31 @@ contains
 
             ! Bottom friction
             tb_u = 0.0;  tb_v = 0.0
-            if (botfr /= 0) then
+            if (inp%botfr /= 0) then
                 ubot = up_k + ub
                 vbot = vp_k + vb
-                if (botfr == 1) then
-                    spd = (cd_mlswe / gravity) * pp_k
+                if (inp%botfr == 1) then
+                    spd = (inp%cd_mlswe / gravity) * pp_k
                 else
-                    spd = (cd_mlswe / alpha_mlswe(nlayers)) * sqrt(ubot**2 + vbot**2)
+                    spd = (inp%cd_mlswe / init%alpha_mlswe(inp%nlayers)) * sqrt(ubot**2 + vbot**2)
                 end if
                 tb_u = spd * ubot
                 tb_v = spd * vbot
             end if
 
-            ! Free-surface factor 
+            ! Free-surface factor
             ope  = 1.0 + (dpp / pbq)
             ope2 = ope * ope
             Hq   = ope2 * Hq
 
             ! Source terms
             grav_dp = gravity * dp
-            sc_x =  coriolis_quad(Iq) * vdp                                  &
-                    + gravity * (tau_wind(1,Iq) - tb_u)                       &
-                    - grav_dp * grad_zbot_quad(1,Iq)
-            sc_y = -coriolis_quad(Iq) * udp                                  &
-                    + gravity * (tau_wind(2,Iq) - tb_v)                       &
-                    - grav_dp * grad_zbot_quad(2,Iq)
+            sc_x =  init%coriolis_quad(Iq) * vdp                              &
+                    + gravity * (init%tau_wind(1,Iq) - tb_u)                   &
+                    - grav_dp * init%grad_zbot_quad(1,Iq)
+            sc_y = -init%coriolis_quad(Iq) * udp                              &
+                    + gravity * (init%tau_wind(2,Iq) - tb_v)                   &
+                    - grav_dp * init%grad_zbot_quad(2,Iq)
 
             ! Flux tensors
             Qu1 = ub * udp + ope * sum_up2
@@ -234,18 +238,18 @@ contains
             Qv2 = vb * vdp + ope * sum_vp2
 
             ! Time-average accumulators
-            H_ave(Iq)               = H_ave(Iq)               + Hq
-            Qu_ave(Iq)              = Qu_ave(Iq)              + Qu1
-            Qv_ave(Iq)              = Qv_ave(Iq)              + Qv1
-            Quv_ave(Iq)             = Quv_ave(Iq)             + Qu2
-            tau_bot_ave(1,Iq)       = tau_bot_ave(1,Iq)       + tb_u
-            tau_bot_ave(2,Iq)       = tau_bot_ave(2,Iq)       + tb_v
-            ope_ave(Iq)             = ope_ave(Iq)             + ope
-            ope2_ave(Iq)            = ope2_ave(Iq)            + ope2
-            btp_mass_flux_ave(1,Iq) = btp_mass_flux_ave(1,Iq) + udp
-            btp_mass_flux_ave(2,Iq) = btp_mass_flux_ave(2,Iq) + vdp
-            uvb_ave(1,Iq)           = uvb_ave(1,Iq)           + ub
-            uvb_ave(2,Iq)           = uvb_ave(2,Iq)           + vb
+            btp%H_ave(Iq)               = btp%H_ave(Iq)               + Hq
+            btp%Qu_ave(Iq)              = btp%Qu_ave(Iq)              + Qu1
+            btp%Qv_ave(Iq)              = btp%Qv_ave(Iq)              + Qv1
+            btp%Quv_ave(Iq)             = btp%Quv_ave(Iq)             + Qu2
+            btp%tau_bot_ave(1,Iq)       = btp%tau_bot_ave(1,Iq)       + tb_u
+            btp%tau_bot_ave(2,Iq)       = btp%tau_bot_ave(2,Iq)       + tb_v
+            btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope
+            btp%ope2_ave(Iq)            = btp%ope2_ave(Iq)            + ope2
+            btp%btp_mass_flux_ave(1,Iq) = btp%btp_mass_flux_ave(1,Iq) + udp
+            btp%btp_mass_flux_ave(2,Iq) = btp%btp_mass_flux_ave(2,Iq) + vdp
+            btp%uvb_ave(1,Iq)           = btp%uvb_ave(1,Iq)           + ub
+            btp%uvb_ave(2,Iq)           = btp%uvb_ave(2,Iq)           + vb
 
             ! Add hydrostatic pressure to the diagonal flux components.
             Qu1 = Qu1 + Hq
@@ -260,11 +264,11 @@ contains
             ! Volume RHS
             ! Iq is unique per node
             !$acc loop seq
-            do ip = 1, npts
-                I = indexq(ip, Iq)
-                hi = psih(ip, Iq)
-                dhdx = dpsidx(ip, Iq)
-                dhdy = dpsidy(ip, Iq)
+            do ip = 1, b%npts
+                I = tsp%indexq(ip, Iq)
+                hi = tsp%psih(ip, Iq)
+                dhdx = tsp%dpsidx(ip, Iq)
+                dhdy = tsp%dpsidy(ip, Iq)
                 !!$acc atomic update
                 rhs_btp(1, I) = rhs_btp(1, I) + dhdx*wq_udp + dhdy*wq_vdp
                 !!$acc atomic update
@@ -279,7 +283,7 @@ contains
     end subroutine create_rhs_btp_volume_qdf
 
     !===========================================================================
-    subroutine create_btp_fluxes_qdf(rhs_btp, qb, qprime_df)
+    subroutine create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb, qprime_df)
     !===========================================================================
     !  Face flux contribution to the barotropic RHS (Riemann solver).
     !
@@ -307,21 +311,26 @@ contains
     !  Time-average arrays are indexed by (iquad,iface) — each (gang,iquad) pair
     !  is unique; no atomics required for those.
     !===========================================================================
-        use mod_basis,     only: psiq, ngl, nq
-        use mod_grid,      only: npoin, intma, nface, face, face_type
-        use mod_face,      only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: H_face_ave, ope_face_ave, btp_mass_flux_face_ave, &
-                                 Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave, &
-                                 uvb_face_ave, ope2_face_ave
-        use mod_initial,   only: alpha_mlswe, pbprime_df
+        use mod_basis,     only: basis
+        use mod_grid,      only: grid
+        use mod_face,      only: face_CS
+        use mod_variables, only: btp_CS
+        use mod_initial,   only: initial
         use mod_constants, only: gravity
-        use mod_input,     only: nlayers
+        use mod_input,     only: input
 
         implicit none
 
-        real, dimension(3,npoin),          intent(inout) :: rhs_btp
-        real, dimension(4,npoin),          intent(in)    :: qb
-        real, dimension(3,npoin,nlayers),  intent(in)    :: qprime_df
+        type(grid),    intent(in)    :: G
+        type(basis),   intent(in)    :: b
+        type(input),   intent(in)    :: inp
+        type(face_CS), intent(in)    :: mf
+        type(initial), intent(in)    :: init
+        type(btp_CS),  intent(inout) :: btp
+
+        real, dimension(3,G%npoin),             intent(inout) :: rhs_btp
+        real, dimension(4,G%npoin),             intent(in)    :: qb
+        real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
         integer :: iface, iquad, el, er, il, jl, kl, ir, jr, kr, I, n, k
         real    :: wq, hi, nxl, nyl, un
@@ -338,16 +347,18 @@ contains
         real    :: pkl, pkr, ukl, ukr, vkl, vkr
         real    :: ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r
         real    :: wq_flux_pb, wq_flux_u, wq_flux_v
-        real,    dimension(ngl) :: hi_c
-        integer, dimension(ngl) :: I_l, I_r
+        real,    dimension(b%ngl) :: hi_c
+        integer, dimension(b%ngl) :: I_l, I_r
 
         !!$acc data present(rhs_btp, qb, qprime_df,                                     &
-        !!$acc               face, face_type, intma, imapl, imapr,                  &
-        !!$acc               normal_vector_q, jac_faceq, psiq,                      &
-        !!$acc               pbprime_df, alpha_mlswe,                               &
-        !!$acc               H_face_ave, ope_face_ave, btp_mass_flux_face_ave,      &
-        !!$acc               Qu_face_ave, Qv_face_ave, one_plus_eta_edge_2_ave,     &
-        !!$acc               uvb_face_ave, ope2_face_ave)
+        !!$acc               G%face, G%face_type, G%intma, mf%imapl, mf%imapr,          &
+        !!$acc               mf%normal_vector_q, mf%jac_faceq, b%psiq,                  &
+        !!$acc               init%pbprime_df, init%alpha_mlswe,                          &
+        !!$acc               btp%H_face_ave, btp%ope_face_ave,                           &
+        !!$acc               btp%btp_mass_flux_face_ave,                                 &
+        !!$acc               btp%Qu_face_ave, btp%Qv_face_ave,                           &
+        !!$acc               btp%one_plus_eta_edge_2_ave,                                &
+        !!$acc               btp%uvb_face_ave, btp%ope2_face_ave)
 
         ! One gang per face. nface (O(millions)) saturates the GPU without
         ! a vector loop over iquad.  Running iquad sequentially within the gang
@@ -370,57 +381,57 @@ contains
         !!$acc           pkl, pkr, ukl, ukr, vkl, vkr,                             &
         !!$acc           ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r,             &
         !!$acc           wq_flux_pb, wq_flux_u, wq_flux_v)
-        do iface = 1, nface
+        do iface = 1, G%nface
 
-            if (face_type(iface) == 2) cycle
+            if (G%face_type(iface) == 2) cycle
 
-            el = face(7, iface)
-            er = face(8, iface)
+            el = G%face(7, iface)
+            er = G%face(8, iface)
 
             ! Precompute node indices once per face
             ! I_l / I_r are reused across all iquad iterations within this gang.
             !!$acc loop seq
-            do n = 1, ngl
-                il = imapl(1,n,1,iface)
-                jl = imapl(2,n,1,iface)
-                kl = imapl(3,n,1,iface)
-                I_l(n) = intma(il, jl, kl, el)
+            do n = 1, b%ngl
+                il = mf%imapl(1,n,1,iface)
+                jl = mf%imapl(2,n,1,iface)
+                kl = mf%imapl(3,n,1,iface)
+                I_l(n) = G%intma(il, jl, kl, el)
             end do
 
             if (er > 0) then
                 !!$acc loop seq
-                do n = 1, ngl
-                    ir = imapr(1,n,1,iface)
-                    jr = imapr(2,n,1,iface)
-                    kr = imapr(3,n,1,iface)
-                    I_r(n) = intma(ir, jr, kr, er)
+                do n = 1, b%ngl
+                    ir = mf%imapr(1,n,1,iface)
+                    jr = mf%imapr(2,n,1,iface)
+                    kr = mf%imapr(3,n,1,iface)
+                    I_r(n) = G%intma(ir, jr, kr, er)
                 end do
             end if
 
             ! Quadrature loop (sequential within gang)
             !!$acc loop seq
-            do iquad = 1, nq
+            do iquad = 1, b%nq
 
-                nxl = normal_vector_q(1, iquad, 1, iface)
-                nyl = normal_vector_q(2, iquad, 1, iface)
+                nxl = mf%normal_vector_q(1, iquad, 1, iface)
+                nyl = mf%normal_vector_q(2, iquad, 1, iface)
 
                 !!$acc loop seq
-                do n = 1, ngl
-                    hi_c(n) = psiq(n, iquad)
+                do n = 1, b%ngl
+                    hi_c(n) = b%psiq(n, iquad)
                 end do
 
                 ! Project barotropic LEFT state
                 qbl(1) = 0.0;  qbl(2) = 0.0;  qbl(3) = 0.0;  qbl(4) = 0.0
                 pbl = 0.0
                 !!$acc loop seq
-                do n = 1, ngl
+                do n = 1, b%ngl
                     hi = hi_c(n)
                     I  = I_l(n)
                     qbl(1) = qbl(1) + hi * qb(1,I)
                     qbl(2) = qbl(2) + hi * qb(2,I)
                     qbl(3) = qbl(3) + hi * qb(3,I)
                     qbl(4) = qbl(4) + hi * qb(4,I)
-                    pbl    = pbl    + hi * pbprime_df(I)
+                    pbl    = pbl    + hi * init%pbprime_df(I)
                 end do
 
                 ! Project barotropic RIGHT state or apply barotropic BC
@@ -428,14 +439,14 @@ contains
                     qbr(1) = 0.0;  qbr(2) = 0.0;  qbr(3) = 0.0;  qbr(4) = 0.0
                     pbr = 0.0
                     !!$acc loop seq
-                    do n = 1, ngl
+                    do n = 1, b%ngl
                         hi = hi_c(n)
                         I  = I_r(n)
                         qbr(1) = qbr(1) + hi * qb(1,I)
                         qbr(2) = qbr(2) + hi * qb(2,I)
                         qbr(3) = qbr(3) + hi * qb(3,I)
                         qbr(4) = qbr(4) + hi * qb(4,I)
-                        pbr    = pbr    + hi * pbprime_df(I)
+                        pbr    = pbr    + hi * init%pbprime_df(I)
                     end do
                 else
                     ! Boundary: mirror left state, then apply velocity BC.
@@ -455,8 +466,8 @@ contains
                 pU_L = nxl*qbl(3) + nyl*qbl(4)
                 pU_R = -(nxl*qbr(3) + nyl*qbr(4))
 
-                c_minus      = sqrt(alpha_mlswe(nlayers) * pbr)
-                c_plus       = sqrt(alpha_mlswe(nlayers) * pbl)
+                c_minus      = sqrt(init%alpha_mlswe(inp%nlayers) * pbr)
+                c_plus       = sqrt(init%alpha_mlswe(inp%nlayers) * pbl)
                 clam         = max(c_minus, c_plus)
                 half_clam    = 0.5  * clam
                 quarter_clam = 0.25 * clam
@@ -477,19 +488,13 @@ contains
                 pprime_lk = 0.0;  pprime_rk = 0.0
 
                 ! Combined layer projection + flux accumulation
-                ! Eliminates the six ppl/upl/vpl/ppr/upr/vpr(nlayers) gang-private
-                ! arrays: each k iteration projects from global memory into three
-                ! scalar pairs, accumulates into running flux totals, then discards.
-                ! The compiler can keep pkl/ukl/vkl/pkr/ukr/vkr in registers.
-                ! one_eta is available here because it depends only on the
-                ! barotropic state, which was projected before this loop.
                 !!$acc loop seq
-                do k = 1, nlayers
+                do k = 1, inp%nlayers
 
                     ! Project left layer k
                     pkl = 0.0;  ukl = 0.0;  vkl = 0.0
                     !!$acc loop seq
-                    do n = 1, ngl
+                    do n = 1, b%ngl
                         hi  = hi_c(n)
                         I   = I_l(n)
                         pkl = pkl + hi * qprime_df(1, I, k)
@@ -501,7 +506,7 @@ contains
                     if (er > 0) then
                         pkr = 0.0;  ukr = 0.0;  vkr = 0.0
                         !!$acc loop seq
-                        do n = 1, ngl
+                        do n = 1, b%ngl
                             hi  = hi_c(n)
                             I   = I_r(n)
                             pkr = pkr + hi * qprime_df(1, I, k)
@@ -539,8 +544,8 @@ contains
 
                     pprime_lk1 = pprime_lk + pkl
                     pprime_rk1 = pprime_rk + pkr
-                    H_bcl_ql   = H_bcl_ql  + 0.5*alpha_mlswe(k) * (pprime_lk1 + pprime_lk) * pkl
-                    H_bcl_qr   = H_bcl_qr  + 0.5*alpha_mlswe(k) * (pprime_rk1 + pprime_rk) * pkr
+                    H_bcl_ql   = H_bcl_ql  + 0.5*init%alpha_mlswe(k) * (pprime_lk1 + pprime_lk) * pkl
+                    H_bcl_qr   = H_bcl_qr  + 0.5*init%alpha_mlswe(k) * (pprime_rk1 + pprime_rk) * pkr
                     pprime_lk  = pprime_lk1
                     pprime_rk  = pprime_rk1
 
@@ -557,28 +562,28 @@ contains
                 H_bcl_q = one_eta2 * H_bcl_q
 
                 ! Time-average accumulators
-                btp_mass_flux_face_ave(1,iquad,iface) = btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
-                btp_mass_flux_face_ave(2,iquad,iface) = btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
+                btp%btp_mass_flux_face_ave(1,iquad,iface) = btp%btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+                btp%btp_mass_flux_face_ave(2,iquad,iface) = btp%btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
 
-                H_face_ave(iquad,iface)    = H_face_ave(iquad,iface)    + H_bcl_q
-                Qu_face_ave(1,iquad,iface) = Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql1 + Qu_qr1)
-                Qu_face_ave(2,iquad,iface) = Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql2 + Qu_qr2)
-                Qv_face_ave(1,iquad,iface) = Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql1 + Qv_qr1)
-                Qv_face_ave(2,iquad,iface) = Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql2 + Qv_qr2)
+                btp%H_face_ave(iquad,iface)    = btp%H_face_ave(iquad,iface)    + H_bcl_q
+                btp%Qu_face_ave(1,iquad,iface) = btp%Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql1 + Qu_qr1)
+                btp%Qu_face_ave(2,iquad,iface) = btp%Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql2 + Qu_qr2)
+                btp%Qv_face_ave(1,iquad,iface) = btp%Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql1 + Qv_qr1)
+                btp%Qv_face_ave(2,iquad,iface) = btp%Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql2 + Qv_qr2)
 
                 opl = 1.0 + qbl(2)/pbl
                 opr = 1.0 + qbr(2)/pbr
-                ope_face_ave(1,iquad,iface)  = ope_face_ave(1,iquad,iface)  + opl
-                ope_face_ave(2,iquad,iface)  = ope_face_ave(2,iquad,iface)  + opr
-                ope2_face_ave(1,iquad,iface) = ope2_face_ave(1,iquad,iface) + opl*opl
-                ope2_face_ave(2,iquad,iface) = ope2_face_ave(2,iquad,iface) + opr*opr
+                btp%ope_face_ave(1,iquad,iface)  = btp%ope_face_ave(1,iquad,iface)  + opl
+                btp%ope_face_ave(2,iquad,iface)  = btp%ope_face_ave(2,iquad,iface)  + opr
+                btp%ope2_face_ave(1,iquad,iface) = btp%ope2_face_ave(1,iquad,iface) + opl*opl
+                btp%ope2_face_ave(2,iquad,iface) = btp%ope2_face_ave(2,iquad,iface) + opr*opr
 
-                one_plus_eta_edge_2_ave(iquad,iface) = one_plus_eta_edge_2_ave(iquad,iface) + one_eta2
+                btp%one_plus_eta_edge_2_ave(iquad,iface) = btp%one_plus_eta_edge_2_ave(iquad,iface) + one_eta2
 
-                uvb_face_ave(1,1,iquad,iface) = uvb_face_ave(1,1,iquad,iface) + ul
-                uvb_face_ave(1,2,iquad,iface) = uvb_face_ave(1,2,iquad,iface) + ur
-                uvb_face_ave(2,1,iquad,iface) = uvb_face_ave(2,1,iquad,iface) + vl
-                uvb_face_ave(2,2,iquad,iface) = uvb_face_ave(2,2,iquad,iface) + vr
+                btp%uvb_face_ave(1,1,iquad,iface) = btp%uvb_face_ave(1,1,iquad,iface) + ul
+                btp%uvb_face_ave(1,2,iquad,iface) = btp%uvb_face_ave(1,2,iquad,iface) + ur
+                btp%uvb_face_ave(2,1,iquad,iface) = btp%uvb_face_ave(2,1,iquad,iface) + vl
+                btp%uvb_face_ave(2,2,iquad,iface) = btp%uvb_face_ave(2,2,iquad,iface) + vr
 
                 ! Momentum fluxes
                 oe2_Hql = one_eta2 * H_bcl_ql
@@ -594,17 +599,14 @@ contains
                 flux_v = 0.5 * (nxl*(Qv_ql1 + Qv_qr1) + nyl*(Qv_ql2 + Qv_qr2)) &
                         - quarter_clam * (qbr(4) - qbl(4))
 
-                wq         = jac_faceq(iquad, 1, iface)
+                wq         = mf%jac_faceq(iquad, 1, iface)
                 wq_flux_pb = wq * flux_pb
                 wq_flux_u  = wq * flux_u
                 wq_flux_v  = wq * flux_v
 
                 ! RHS scatter
-                ! rhs(m,I) is shared across faces: different gangs (faces) may
-                ! write to the same node I simultaneously.
-                ! !$acc atomic update serialises conflicting writes.
                 !!$acc loop seq
-                do n = 1, ngl
+                do n = 1, b%ngl
                     hi = hi_c(n)
                     I  = I_l(n)
                     !!$acc atomic update
@@ -617,7 +619,7 @@ contains
 
                 if (er > 0) then
                     !!$acc loop seq
-                    do n = 1, ngl
+                    do n = 1, b%ngl
                         hi = hi_c(n)
                         I  = I_r(n)
                         !!$acc atomic update

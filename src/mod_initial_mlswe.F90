@@ -7,18 +7,16 @@
 !----------------------------------------------------------------------!
 module mod_initial_mlswe
 
-    use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
-    use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, mod_grid_get_face_nq
-    use mod_basis, only: nq, psiq, psiqx, psiqy, psiqz, dpsiq, dpsiqx, dpsiqy, dpsiqz
-    use mod_metrics, only: ksiq_x,ksiq_y,ksiq_z, etaq_x,etaq_y,etaq_z, zetaq_x,zetaq_y,zetaq_z
+    use mod_basis,   only: basis
+    use mod_grid,    only: grid
+    use mod_metrics, only: metrics
+    use mod_input,   only: input
+    use mod_face,    only: face_CS
 
     public :: &
         bot_topo_derivatives, &
-        compute_gradient_quad, &
-        interpolate_from_dof_to_quad_uv_init, &
         interpolate_pbprime_init, wind_stress_coriolis, &
-            map_deriv,interpolate_layer_from_quad_to_node_1d, ssprk_coefficients, &
-            poslimiter
+        map_deriv, ssprk_coefficients
 
     private
 
@@ -26,21 +24,18 @@ module mod_initial_mlswe
     contains
     
     !> Compute the gradient of the bottom topography at quadrature points
-    subroutine bot_topo_derivatives(zbot,zbot_face,zbot_df)
-
-        use mod_grid, only : npoin, npoin_q, nface, intma_dg_quad, face, &
-                            mod_grid_get_face_nq, coord, nelem, intma
-        use mod_basis, only : nq, nglx, ngly, nqx, nqy
-        use mod_input, only : nlayers, test_case, xdims, ydims
-        use mod_face, only : imapl_q, imapr_q
-
+    subroutine bot_topo_derivatives(b, G, inp, mf, zbot,zbot_face,zbot_df)
 
         implicit none
-        
-        ! Declare output arguments
-        real, dimension(npoin), intent(in) :: zbot_df
-        real, dimension(npoin_q), intent(out) :: zbot
-        real, dimension(2,nq,nface), intent(out) :: zbot_face
+
+        type(basis), intent(in) :: b
+        type(grid), intent(in) :: G
+        type(input), intent(in) :: inp
+        type(face_CS), intent(in) :: mf
+
+        real, dimension(G%npoin), intent(in) :: zbot_df
+        real, dimension(G%npoin_q), intent(out) :: zbot
+        real, dimension(2,b%nq,G%nface), intent(out) :: zbot_face
         
         ! Declare local variables
         integer :: il, jl, ir, jr,kl,kr, el, er, ilocl, ilocr, l, I1,I2, iface, &
@@ -51,18 +46,18 @@ module mod_initial_mlswe
         
         ! Initialize output arrays
 
-        do e = 1, nelem
-            do jquad = 1, nqy
-                do iquad = 1, nqx
+        do e = 1, G%nelem
+            do jquad = 1, b%nqy
+                do iquad = 1, b%nqx
                 
-                    Iq = intma_dg_quad(iquad, jquad, 1, e)
+                    Iq = G%intma_dg_quad(iquad, jquad, 1, e)
 
-                    do m = 1, ngly
-                        do n = 1, nglx
+                    do m = 1, b%ngly
+                        do n = 1, b%nglx
                             
-                            I = intma(n, m, 1, e)
+                            I = G%intma(n, m, 1, e)
                             
-                            hi = psiqx(n, iquad) * psiqy(m, jquad)
+                            hi = b%psiqx(n, iquad) * b%psiqy(m, jquad)
                             
                             zbot(Iq) = zbot(Iq) + zbot_df(I) * hi
                         end do 
@@ -75,35 +70,33 @@ module mod_initial_mlswe
 
         !open(10,file='zbot.txt',status='unknown')
         
-        do iface=1,nface
+        do iface=1,G%nface
 
             !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
-            el = face(7,iface)
-            er = face(8,iface)
-
-            call mod_grid_get_face_nq(ilocl, nq_i, nq_j, plane_ij)
+            ilocl = G%face(5,iface)
+            ilocr = G%face(6,iface)
+            el = G%face(7,iface)
+            er = G%face(8,iface)
                 
             do jquad = 1,1
 
-                do iquad = 1, nq
+                do iquad = 1, b%nq
 
-                    il = imapl_q(1,iquad,jquad,iface)
-                    jl = imapl_q(2,iquad,jquad,iface)
-                    kl = imapl_q(3,iquad,jquad,iface)
+                    il = mf%imapl_q(1,iquad,jquad,iface)
+                    jl = mf%imapl_q(2,iquad,jquad,iface)
+                    kl = mf%imapl_q(3,iquad,jquad,iface)
 
-                    I1 = intma_dg_quad(il,jl,kl,el)
+                    I1 = G%intma_dg_quad(il,jl,kl,el)
 
                     zbot_face(1,iquad,iface) = zbot(I1)
 
                     if(er > 0) then
 
-                        ir = imapr_q(1,iquad,jquad,iface)
-                        jr = imapr_q(2,iquad,jquad,iface)
-                        kr = imapr_q(3,iquad,jquad,iface)
+                        ir = mf%imapr_q(1,iquad,jquad,iface)
+                        jr = mf%imapr_q(2,iquad,jquad,iface)
+                        kr = mf%imapr_q(3,iquad,jquad,iface)
 
-                        I2 = intma_dg_quad(ir,jr,kr,er)
+                        I2 = G%intma_dg_quad(ir,jr,kr,er)
 
                         zbot_face(2,iquad,iface) = zbot(I2)
 
@@ -118,67 +111,21 @@ module mod_initial_mlswe
         end do
         
     end subroutine bot_topo_derivatives
-
-    !> Compute the gradient of the bottom topography at quadrature points
-    subroutine interpolate_from_dof_to_quad_uv_init(q, q_df)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad
-        use mod_basis, only: nq, psiq, psiqx, psiqy, psiqz
-        use mod_input, only: nlayers
-
-        implicit none
-        real, dimension(5,npoin_q,nlayers), intent(inout) :: q
-        real, dimension(5,npoin,nlayers), intent(in) :: q_df
-        integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq
-        real :: hi
-
-        q(2:3,:,:) = 0.0
-        
-        do k = 1, nlayers
-            do e = 1, nelem
-                do kquad = 1, nqz
-                    do jquad = 1, nqy
-                        do iquad = 1, nqx
-                        
-                            Iq = intma_dg_quad(iquad, jquad, kquad, e)
-                            
-                            do l = 1, nglz
-                                do m = 1, ngly
-                                    do n = 1, nglx
-                                        
-                                        I = intma(n, m, l, e)
-                                        
-                                        hi = psiqx(n, iquad) * psiqy(m, jquad)!* psiqz(l, kquad)
-                                        
-                                        q(2,Iq,k) = q(2,Iq,k) + q_df(2,I,k) * hi
-                                        q(3,Iq,k) = q(3,Iq,k) + q_df(3,I,k) * hi
-                                        
-                                    end do
-                                end do
-                            end do
-                        end do
-                        
-                    end do
-                end do
-            end do
-        end do
-
-    end subroutine interpolate_from_dof_to_quad_uv_init
-
+   
     !> Interpolate pressure perturbation from DOF to quadrature points
-    subroutine interpolate_pbprime_init(pbprime_df_face,pbprime_df)
-
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, nface, face
-        use mod_grid, only:  mod_grid_get_face_nq, mod_grid_get_face_ngl
-        use mod_basis, only: nq, ngl
-        use mod_input, only: nlayers
-        use mod_face, only: imapl_q, imapr_q, imapl, imapr
+    subroutine interpolate_pbprime_init(pbprime_df_face, pbprime_df, b, G, inp, mf)
 
         implicit none
-        real, dimension(2,ngl,nface), intent(out) :: pbprime_df_face
-        real, dimension(npoin), intent(in) :: pbprime_df
+
+        type(basis), intent(in) :: b
+        type(grid), intent(in) :: G
+        type(input), intent(in) :: inp
+        type(face_CS), intent(in) :: mf
+
+        real, dimension(G%npoin), intent(in) :: pbprime_df
+        real, dimension(2,b%ngl,G%nface), intent(out) :: pbprime_df_face
+        
+
         integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, iface, I1
         integer :: I2, nq_i, nq_j, plane_ij, ilocl, ilocr, el, er, il, jl, kl, ir, jr, kr
         integer :: ngl_i, ngl_j, ii, jj 
@@ -186,31 +133,29 @@ module mod_initial_mlswe
 
         pbprime_df_face = 0.0
 
-        do iface = 1, nface
+        do iface = 1, G%nface
 
             !Store Left Side Variables
-            ilocl = face(5,iface)
-            ilocr = face(6,iface)
-            el = face(7,iface)
-            er = face(8,iface)
+            ilocl = G%face(5,iface)
+            ilocr = G%face(6,iface)
+            el = G%face(7,iface)
+            er = G%face(8,iface)
 
-            call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
+            do jj = 1,1
+                do ii = 1, b%ngl
 
-            do jj = 1,ngl_j
-                do ii = 1, ngl_i
-
-                    il = imapl(1,ii,jj,iface)
-                    jl = imapl(2,ii,jj,iface)
-                    kl = imapl(3,ii,jj,iface)
-                    I1 = intma(il,jl,kl,el)
+                    il = mf%imapl(1,ii,jj,iface)
+                    jl = mf%imapl(2,ii,jj,iface)
+                    kl = mf%imapl(3,ii,jj,iface)
+                    I1 = G%intma(il,jl,kl,el)
 
                     pbprime_df_face(1,ii,iface) = pbprime_df(I1)
                     if(er > 0) then
 
-                        ir = imapr(1,ii,jj,iface)
-                        jr = imapr(2,ii,jj,iface)
-                        kr = imapr(3,ii,jj,iface)
-                        I2 = intma(ir,jr,kr,er)
+                        ir = mf%imapr(1,ii,jj,iface)
+                        jr = mf%imapr(2,ii,jj,iface)
+                        kr = mf%imapr(3,ii,jj,iface)
+                        I2 = G%intma(ir,jr,kr,er)
 
                         pbprime_df_face(2,ii,iface) = pbprime_df(I2)
                     else
@@ -223,27 +168,25 @@ module mod_initial_mlswe
     end subroutine interpolate_pbprime_init
 
     !> Wind Stress and Coriolis Force
-    subroutine wind_stress_coriolis(tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, &
+    subroutine wind_stress_coriolis(b, G, inp, tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, &
             a_bcl, b_bcl,tau_wind_df)
 
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts
-        use mod_grid, only:  nelem, npoin, npoin_q, intma, intma_dg_quad, coord
-        use mod_constants, only: gravity, pi, tol, omega, earth_radius
-        use mod_input, only: gravity_in, &
-            nelx, nelz, &
-            xdims, ydims, nlayers, dt, dt_btp, test_case, f0, beta
+        use mod_constants, only: gravity
     
         implicit none
 
-        real, dimension(2,npoin_q), intent(out) :: tau_wind
-        real, dimension(npoin), intent(out) :: coriolis_df
-        real, dimension(npoin_q), intent(out) :: coriolis_quad
-        real, dimension(npoin), intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
-
-        real, dimension(2,npoin), intent(in) :: tau_wind_df
+        type(basis), intent(in) :: b
+        type(grid), intent(in) :: G
+        type(input), intent(in) :: inp
+        
+        real, dimension(2,G%npoin), intent(in) :: tau_wind_df
+        real, dimension(2,G%npoin_q), intent(out) :: tau_wind
+        real, dimension(G%npoin), intent(out) :: coriolis_df
+        real, dimension(G%npoin_q), intent(out) :: coriolis_quad
+        real, dimension(G%npoin), intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
 
         integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, ip
-        real :: ym, Ly, y, hi, tau0, lat, omega1, sig, rho_air, w
+        real :: ym, Ly, y, hi, tau0, lat, sig, rho_air, w
 
         tau_wind = 0.0
         coriolis_df = 0.0
@@ -251,26 +194,26 @@ module mod_initial_mlswe
 
         gravity = 9.806
         
-        Ly = ydims(2)
+        Ly = inp%ydims(2)
         ym = 0.5*Ly
 
-        do concurrent(I = 1:npoin)
-            y = coord(2,I)
-            coriolis_df(I) = f0 + beta*(y - ym)
+        do concurrent(I = 1:G%npoin)
+            y = G%coord(2,I)
+            coriolis_df(I) = inp%f0 + inp%beta*(y - ym)
         end do
 
 
-        do  concurrent (e = 1:nelem, kquad = 1:nqz, jquad = 1:nqy, iquad = 1:nqx)
+        do concurrent (e = 1:G%nelem, kquad = 1:b%nqz, jquad = 1:b%nqy, iquad = 1:b%nqx)
                     
-            Iq = intma_dg_quad(iquad, jquad, kquad, e)
+            Iq = G%intma_dg_quad(iquad, jquad, kquad, e)
             
-            do l = 1, nglz
-                do m = 1, ngly
-                    do n = 1, nglx
+            do l = 1, b%nglz
+                do m = 1, b%ngly
+                    do n = 1, b%nglx
                         
-                        I = intma(n, m, l, e)
+                        I = G%intma(n, m, l, e)
                         
-                        hi = psiqx(n, iquad) * psiqy(m, jquad)
+                        hi = b%psiqx(n, iquad) * b%psiqy(m, jquad)
                         
                         coriolis_quad(Iq) = coriolis_quad(Iq) + coriolis_df(I) * hi
                         
@@ -282,139 +225,23 @@ module mod_initial_mlswe
             end do
         end do
         
-        fdt_bcl = dt * coriolis_df
+        fdt_bcl = inp%dt * coriolis_df
         fdt2_bcl = 0.5 * fdt_bcl
         a_bcl = 1.0 / (1.0 + fdt2_bcl**2)
         b_bcl = fdt2_bcl / (1.0 + fdt2_bcl**2)
 
     end subroutine wind_stress_coriolis
 
-    subroutine poslimiter(q,alpha)
-
-        use mod_metrics, only: jac
-        use mod_basis, only: nglx, ngly, nglz, nqx, nqy, nqz, psiqx, psiqy, psiqz, npts, wglx, wgly
-        use mod_grid, only:  nelem, npoin, intma, coord
-        use mod_constants, only: gravity, pi, tol, omega, earth_radius
-        use mod_input, only: gravity_in, &
-            nelx, nelz, &
-            xdims, ydims, nlayers, dry_cutoff
-
+    subroutine ssprk_coefficients(inp, ssprk_a,ssprk_beta)
         implicit none
 
-        !global arrays
-        real, dimension(3,npoin,nlayers) :: q
-        real, dimension(nlayers) :: alpha
+        type(input), intent(in) :: inp
+        real, dimension(inp%kstages,3), intent(out) :: ssprk_a
+        real, dimension(inp%kstages), intent(out) :: ssprk_beta
 
-        real :: pmin, pavg, uavg, vavg, ds
-        real :: theta
+        if(inp%ti_method_btp == 'lsrk') then
 
-        !local filter arrays
-        integer :: I, k, n, m, e
-
-        !loop thru the elements
-
-        do k = 1, nlayers
-
-            do e = 1,nelem
-
-                pmin = 1.0e20
-                pavg = 0.0
-                uavg = 0.0
-                vavg = 0.0
-                ds = 0.0
-                do m = 1, ngly
-                    do n = 1, nglx
-                        I = intma(n,m,1,e)
-                        if (q(1,I,k) < pmin) pmin = q(1,I,k)
-                        ds = ds + jac(n,m,1,e)
-                        ! pavg = pavg + jac(n,m,1,e)*q(1,I,k)
-                        ! uavg = uavg + jac(n,m,1,e)*q(2,I,k)
-                        ! vavg = vavg + jac(n,m,1,e)*q(3,I,k)
-                        pavg = pavg + wglx(n)*wgly(m)*q(1,I,k)
-                        uavg = uavg + wglx(n)*wgly(m)*q(2,I,k)
-                        vavg = vavg + wglx(n)*wgly(m)*q(3,I,k)
-                    end do
-                end do
-                ! pavg = pavg / ds
-                ! uavg = uavg / ds
-                ! vavg = vavg / ds
-                pavg = pavg / 4.0
-                uavg = uavg / 4.0
-                vavg = vavg / 4.0
-
-                !This is basically cheating but as it hurts conservation but
-                !it doesn't affect the solution too much, since integration is inexact anyway
-                if (pavg <= (gravity/alpha(k)) * dry_cutoff) then
-                    do m = 1, ngly
-                        do n = 1, nglx
-                            I = intma(n,m,1,e)
-                            q(1,I,k) = (gravity/alpha(k)) * dry_cutoff
-                            q(2,I,k) = 0.0
-                            q(3,I,k) = 0.0
-                        end do
-                    end do
-                else if (pmin <= (gravity/alpha(k)) * dry_cutoff) then
-                    theta = safe_div(pavg, pavg-pmin, 0.0)
-                    do m=1,ngly
-                        do n=1,nglx
-                            I = intma(n,m,1,e)
-                            q(1,I,k) = abs(theta * (q(1,I,k) - pavg) + pavg)
-                            q(2,I,k) = theta * (q(2,I,k) - uavg) + uavg
-                            q(3,I,k) = theta * (q(3,I,k) - vavg) + vavg
-                        end do !n
-                    end do !m
-                end if
-                
-                !perform stabilization by resetting the velocity to 0 if below the threshold
-                do m=1,ngly
-                    do n=1,nglx
-                        I = intma(n,m,1,e)
-                        if (q(1,I,k) <= (gravity/alpha(k)) * dry_cutoff) then
-                            q(1,I,k) = (gravity/alpha(k)) * dry_cutoff
-                            q(2,I,k) = 0.0
-                            q(3,I,k) = 0.0
-                        end if
-                    end do !n
-                end do !m
-            end do !e
-        end do !k
-
-        !print *, 'limiting succesfull !'
-
-    end subroutine poslimiter
-
-    !----------------------------------------------------------------------!
-    !This is simply an auxiliary function to perform safe division
-    !The function return n/d unless the deivision would produce overflow
-    !In that case altv is returned
-    !----------------------------------------------------------------------!
-    function safe_div(n,d,altv) result(q)
-
-        implicit none
-
-        real, intent(in) :: n, d, altv
-        real q
-
-        !perform safe division
-        if ( exponent(n) - exponent(d) >= maxexponent(n) .or. d == 0.0) then
-            q = altv
-        else
-            q = n/d
-        end if
-
-    end function safe_div
-
-
-    subroutine ssprk_coefficients(ssprk_a,ssprk_beta)
-
-        use mod_input, only: kstages, ti_method_btp
-
-        real, dimension(kstages,3), intent(out) :: ssprk_a
-        real, dimension(kstages), intent(out) :: ssprk_beta
-
-        if(ti_method_btp == 'lsrk') then
-
-            if(kstages == 5) then 
+            if(inp%kstages == 5) then 
 
                 ssprk_a(1,1) = 0.0
                 ssprk_a(2,1) = -567301805773.0 / 1357537059087.0
@@ -428,19 +255,19 @@ module mod_initial_mlswe
                 ssprk_beta(4) = 3134564353537.0 / 4481467310338.0
                 ssprk_beta(5) = 2277821191437.0 / 14882151754819.0
 
-                !ssprk_a(1,1) = 0.0
-                !ssprk_a(2,1) = -4.344339134485095 !-567301805773.0 / 1357537059087.0
-                !ssprk_a(3,1) = 0.0                !-2404267990393.0 / 2016746695238.0
-                !ssprk_a(4,1) = 3.770024161386381  !-3550918686646.0 / 2091501179385.0
-                !ssprk_a(5,1) = -0.046347284573284 !-1275806237668.0 / 842570457699.0
+                !init%ssprk_a(1,1) = 0.0
+                !init%ssprk_a(2,1) = -4.344339134485095 !-567301805773.0 / 1357537059087.0
+                !init%ssprk_a(3,1) = 0.0                !-2404267990393.0 / 2016746695238.0
+                !init%ssprk_a(4,1) = 3.770024161386381  !-3550918686646.0 / 2091501179385.0
+                !init%ssprk_a(5,1) = -0.046347284573284 !-1275806237668.0 / 842570457699.0
 
-                !ssprk_beta(1) = 0.713497331193829 !1432997174477.0 / 9575080441755.0
-                !ssprk_beta(2) = 0.133505249805329 !5161836677717.0 / 13612068292357.0
-                !ssprk_beta(3) = 0.713497331193829 !1720146321549.0 / 2090206949498.0
-                !ssprk_beta(4) = 0.149579395628565 !3134564353537.0 / 4481467310338.0
-                !ssprk_beta(5) = 0.384471116121269 !2277821191437.0 / 14882151754819.0
+                !init%ssprk_beta(1) = 0.713497331193829 !1432997174477.0 / 9575080441755.0
+                !init%ssprk_beta(2) = 0.133505249805329 !5161836677717.0 / 13612068292357.0
+                !init%ssprk_beta(3) = 0.713497331193829 !1720146321549.0 / 2090206949498.0
+                !init%ssprk_beta(4) = 0.149579395628565 !3134564353537.0 / 4481467310338.0
+                !init%ssprk_beta(5) = 0.384471116121269 !2277821191437.0 / 14882151754819.0
 
-            elseif(kstages == 14) then
+            elseif(inp%kstages == 14) then
 
                 ssprk_a(1,1) = 0.0
                 ssprk_a(2,1) = -0.7188012108672410
@@ -475,7 +302,7 @@ module mod_initial_mlswe
 
         else 
 
-            select case (kstages)
+            select case (inp%kstages)
             case (1)               !RK1
                 ssprk_a(1,1)=1.0;       ssprk_a(1,2)=0.0;  ssprk_a(1,3)=0.0; ssprk_beta(1)=1.0
             case (2)               !RK2

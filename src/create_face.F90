@@ -20,13 +20,14 @@
 !----------------------------------------------------------------------
 subroutine create_face(face,nface, FACE_LEN)
 
-    use mod_basis, only: nglx, ngly, nglz
-
-    use mod_global_grid, only: intma_g, bsido_g, nelem_g, nboun_g
-
+    use mod_basis
+    use mod_global_grid
     use mod_mpi_utilities, only: irank
 
     implicit none
+
+    type(grid_global) :: gg
+    type(basis) :: b
 
     !global arrays
     integer FACE_LEN
@@ -48,33 +49,33 @@ subroutine create_face(face,nface, FACE_LEN)
     node_loc(1,2) = 1
     node_loc(1,3) = 1
 
-    node_loc(2,1) = nglx
+    node_loc(2,1) = b%nglx
     node_loc(2,2) = 1
     node_loc(2,3) = 1
 
     node_loc(3,1) = 1
-    node_loc(3,2) = ngly
+    node_loc(3,2) = b%ngly
     node_loc(3,3) = 1
 
-    node_loc(4,1) = nglx
-    node_loc(4,2) = ngly
+    node_loc(4,1) = b%nglx
+    node_loc(4,2) = b%ngly
     node_loc(4,3) = 1
 
     node_loc(5,1) = 1
     node_loc(5,2) = 1
-    node_loc(5,3) = nglz
+    node_loc(5,3) = b%nglz
 
-    node_loc(6,1) = nglx
+    node_loc(6,1) = b%nglx
     node_loc(6,2) = 1
-    node_loc(6,3) = nglz
+    node_loc(6,3) = b%nglz
 
     node_loc(7,1) = 1
-    node_loc(7,2) = ngly
-    node_loc(7,3) = nglz
+    node_loc(7,2) = b%ngly
+    node_loc(7,3) = b%nglz
 
-    node_loc(8,1) = nglx
-    node_loc(8,2) = ngly
-    node_loc(8,3) = nglz
+    node_loc(8,1) = b%nglx
+    node_loc(8,2) = b%ngly
+    node_loc(8,3) = b%nglz
 
     ! Assign local vertices to local faces
     ! Face 1: z = -1 : xy
@@ -122,16 +123,16 @@ subroutine create_face(face,nface, FACE_LEN)
     !Create faces for first element
     ie = 1
     do i1 = 1,6
-        if(nglx == 1 .and. (i1 == 5 .or. i1 == 6)) cycle
-        if(ngly == 1 .and. (i1 == 3 .or. i1 == 4)) cycle
-        if(nglz == 1 .and. (i1 == 1 .or. i1 == 2)) cycle
+        if(b%nglx == 1 .and. (i1 == 5 .or. i1 == 6)) cycle
+        if(b%ngly == 1 .and. (i1 == 3 .or. i1 == 4)) cycle
+        if(b%nglz == 1 .and. (i1 == 1 .or. i1 == 2)) cycle
         do i2 = 1,4
             !Get global nodes for each face
             j1 = face_loc(i1,i2)
             k1 = node_loc(j1,1)
             k2 = node_loc(j1,2)
             k3 = node_loc(j1,3)
-            ips(i2) = intma_g(k1,k2,k3,ie)
+            ips(i2) = gg%intma_g(k1,k2,k3,ie)
         end do
         iface = iface + 1
         face(1:4,iface) = ips
@@ -139,18 +140,18 @@ subroutine create_face(face,nface, FACE_LEN)
         face(7,iface) = ie
     end do
 
-    do ie = 2,nelem_g
+    do ie = 2,gg%nelem_g
         do i1 = 1,6
-            if(nglx == 1 .and. (i1 == 5 .or. i1 == 6)) cycle
-            if(ngly == 1 .and. (i1 == 3 .or. i1 == 4)) cycle
-            if(nglz == 1 .and. (i1 == 1 .or. i1 == 2)) cycle
+            if(b%nglx == 1 .and. (i1 == 5 .or. i1 == 6)) cycle
+            if(b%ngly == 1 .and. (i1 == 3 .or. i1 == 4)) cycle
+            if(b%nglz == 1 .and. (i1 == 1 .or. i1 == 2)) cycle
             do i2 = 1,4
                 !Get global nodes for each face
                 j1 = face_loc(i1,i2)
                 k1 = node_loc(j1,1)
                 k2 = node_loc(j1,2)
                 k3 = node_loc(j1,3)
-                ips(i2) = intma_g(k1,k2,k3,ie)
+                ips(i2) = gg%intma_g(k1,k2,k3,ie)
             end do
             isnew = 1
             do j2 = 1,iface
@@ -180,12 +181,12 @@ subroutine create_face(face,nface, FACE_LEN)
     end if
 
     ! STEP II: Use BSIDO to Assign Info to Faces on the boundary
-    do iboun = 1,nboun_g
-        if (bsido_g(6,iboun) /= 3) then
+    do iboun = 1,gg%nboun_g
+        if (gg%bsido_g(6,iboun) /= 3) then
             !FXG: Skip Periodic Faces since they are treated as regular faces now
             do iface = 1,nface
-                if (issame(bsido_g(1:4,iboun),face(1:4,iface))) then
-                    face(8,iface) = -bsido_g(6,iboun)
+                if (issame(gg%bsido_g(1:4,iboun),face(1:4,iface))) then
+                    face(8,iface) = -gg%bsido_g(6,iboun)
                 end if
             end do
         end if

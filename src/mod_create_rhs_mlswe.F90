@@ -1,348 +1,311 @@
 ! =======================================================================
 !>@brief This subroutine builds the RHS vector for the DG method for MLSWE
-!   Author: Yao Gahounzo 
-!   Computing PhD 
+!   Author: Yao Gahounzo
+!   Computing PhD
 !   Boise State University
 !   Date: April 03, 2023
 ! =======================================================================
 module mod_create_rhs_mlswe
 
-    use mod_constants, only: gravity
-    use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad
-    use mod_basis, only: nglx, ngly, nglz, npts, dpsiqx, dpsiqy, dpsiqz, nqx, nqy, nqz, &
-                            psiqx, psiqy, psiqz
-    use mod_grid, only: intma, coord
-    use mod_initial, only: q_ref, coriolis_constant, kvector, nvar
-    use mod_input, only: nlayers
-    use mod_metrics, only: ksiq_x, ksiq_y, ksiq_z, &
-                           etaq_x, etaq_y, etaq_z, &
-                           zetaq_x, zetaq_y, zetaq_z, &
-                           jacq, massinv
+    use mod_constants,        only: gravity
+    use mod_grid,             only: grid
+    use mod_basis,            only: basis
+    use mod_input,            only: input
+    use mod_initial,          only: initial
+    use mod_metrics,          only: metrics
+    use mod_face,             only: face_CS
+    use mod_tensor,           only: tensor_CS
+    use mod_variables,        only: btp_CS, bcl_CS
+    use mod_parallel,         only: parallel_CS
+    use mod_ref,              only: mref
+    use mod_mpi_communicator, only: mpi_communicator
+
+    implicit none
 
     public :: layer_momentum_rhs, &
               interpolate_layer_from_quad_to_node, rhs_layer_shear_stress, layer_mass_rhs, &
               bcl_rhs
-              
-    contains
 
-    subroutine layer_momentum_rhs(rhs_mom, qprime_df, q_df)
+contains
 
-        use mod_input, only: nlayers
-        use mod_metrics, only: massinv
-        use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad, nface
-        use mod_basis, only: nq, ngl
+    subroutine layer_momentum_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs_mom, qprime_df, q_df)
 
         implicit none
-        real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
-        real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
 
-        integer :: k,I
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
 
-        call bcl_create_precommunicator(qprime_df)
+        real, dimension(2, G%npoin, inp%nlayers), intent(out) :: rhs_mom
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df, qprime_df
 
-        call create_rhs_dynamics_volume_layers(rhs_mom, qprime_df, q_df)
-
-        call Apply_layers_fluxes(rhs_mom, qprime_df)
-
-        call bcl_create_postcommunicator_momentum(rhs_mom)
+        call bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
+        call create_rhs_dynamics_volume_layers(G, inp, b, btp, init, tsp, rhs_mom, qprime_df, q_df)
+        call Apply_layers_fluxes(G, inp, b, mf, btp, init, rhs_mom, qprime_df)
+        call bcl_create_postcommunicator_momentum(G, inp, b, mf, par, btp, init, ref, mpic, rhs_mom)
 
     end subroutine layer_momentum_rhs
 
-    subroutine layer_mass_rhs(dp_advec, qprime_df)
-
-        use mod_metrics, only: massinv
-        use mod_input, only: nlayers
-        use mod_grid, only: npoin, npoin_q, nface
-        use mod_basis, only: nq, ngl
+    subroutine layer_mass_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, dp_advec, qprime_df)
 
         implicit none
 
-        real, dimension(npoin, nlayers), intent(out) :: dp_advec
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
+
+        real, dimension(G%npoin, inp%nlayers),    intent(out) :: dp_advec
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df
+
         integer :: k
 
-        call bcl_create_precommunicator(qprime_df)
-        ! Compute the mass advection term for the degree of freedom for dp in each layer
-        call create_layers_volume_mass(dp_advec, qprime_df)
+        call bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
+        call create_layers_volume_mass(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
+        call create_layer_mass_flux(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
+        call bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, ref, mpic, dp_advec)
 
-        ! Compute the mass flux term 
-        call create_layer_mass_flux(dp_advec, qprime_df)
-
-        call bcl_create_postcommunicator_continuity(dp_advec)
-
-        do k = 1, nlayers
-            dp_advec(:,k) = massinv(:)*dp_advec(:,k)
+        do k = 1, inp%nlayers
+            dp_advec(:,k) = mt%massinv(:) * dp_advec(:,k)
         end do
-        
+
     end subroutine layer_mass_rhs
 
-    subroutine bcl_rhs(rhs, qprime_df, q_df)
-
-        use mod_input, only: nlayers
-        use mod_metrics, only: massinv
-        use mod_grid, only: npoin, npoin_q, intma, intma_dg_quad, nface
-        use mod_basis, only: nq, ngl
+    subroutine bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
         implicit none
-        real, dimension(3,npoin,nlayers), intent(out) :: rhs
-        real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
 
-        integer :: k,I
+        type(grid),             intent(in)    :: G
+        type(input),            intent(in)    :: inp
+        type(basis),            intent(in)    :: b
+        type(face_CS),          intent(in)    :: mf
+        type(parallel_CS),      intent(in)    :: par
+        type(btp_CS),           intent(inout) :: btp
+        type(bcl_CS),           intent(inout) :: bcl
+        type(initial),          intent(in)    :: init
+        type(mref),             intent(inout) :: ref
+        type(mpi_communicator), intent(inout) :: mpic
+        type(tensor_CS),        intent(in)    :: tsp
+        type(metrics),          intent(in)    :: mt
 
-        call bcl_create_precommunicator(qprime_df)
+        real, dimension(3, G%npoin, inp%nlayers), intent(out) :: rhs
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df, qprime_df
 
-        call create_rhs_dynamics_volume_bcl(rhs, qprime_df, q_df)
-        call Apply_bcl_fluxes(rhs, qprime_df)
-
-        call bcl_create_postcommunicator(rhs)
+        call bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
+        call create_rhs_dynamics_volume_bcl(G, inp, b, btp, bcl, init, tsp, rhs, qprime_df, q_df)
+        call Apply_bcl_fluxes(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
+        call bcl_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs)
 
     end subroutine bcl_rhs
 
-    subroutine interpolate_layer_from_quad_to_node(q_df,q)
-
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
-        use mod_basis, only: npts
-        use mod_metrics, only: massinv
-        use mod_input, only: nlayers
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
+    subroutine interpolate_layer_from_quad_to_node(G, inp, b, tsp, mt, q_df, q)
 
         implicit none
-        
-        real, dimension(3,npoin,nlayers), intent(inout) :: q_df
-        real, dimension(3,npoin_q,nlayers), intent(in) :: q
 
-        real :: wq, var_u(nlayers), var_v(nlayers), hi
-        integer :: iquad, jquad, kquad, e, k, m, n, l, I, Iq, ip
+        type(grid),      intent(in)    :: G
+        type(input),     intent(in)    :: inp
+        type(basis),     intent(in)    :: b
+        type(tensor_CS), intent(in)    :: tsp
+        type(metrics),   intent(in)    :: mt
+
+        real, dimension(3, G%npoin,   inp%nlayers), intent(inout) :: q_df
+        real, dimension(3, G%npoin_q, inp%nlayers), intent(in)    :: q
+
+        real    :: wq, hi
+        integer :: Iq, ip, k, I
+        real    :: var_u(inp%nlayers), var_v(inp%nlayers)
 
         q_df(2:3,:,:) = 0.0
-        
-        ! do k = 1, nlayers
 
-        do Iq = 1,npoin_q
-            
-            wq = wjac(Iq)
+        do Iq = 1, G%npoin_q
+
+            wq    = tsp%wjac(Iq)
             var_u = q(2,Iq,:)
             var_v = q(3,Iq,:)
 
-            do ip = 1, npts
-
-                I = indexq(ip,Iq)
-                hi = psih(ip,Iq)
-
+            do ip = 1, b%npts
+                I  = tsp%indexq(ip,Iq)
+                hi = tsp%psih(ip,Iq)
                 q_df(2,I,:) = q_df(2,I,:) + wq*var_u(:)*hi
                 q_df(3,I,:) = q_df(3,I,:) + wq*var_v(:)*hi
             end do
         end do
 
-        do k = 1, nlayers
-            q_df(2,:,k) = massinv(:)*q_df(2,:,k)
-            q_df(3,:,k) = massinv(:)*q_df(3,:,k)  
+        do k = 1, inp%nlayers
+            q_df(2,:,k) = mt%massinv(:) * q_df(2,:,k)
+            q_df(3,:,k) = mt%massinv(:) * q_df(3,:,k)
         end do
-        
+
     end subroutine interpolate_layer_from_quad_to_node
 
-    subroutine rhs_layer_shear_stress(rhs_stress,q_df)
-
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
-        use mod_basis, only: npts
-        use mod_input, only: nlayers, ad_mlswe, max_shear_dz, dt
-        use mod_initial, only: coriolis_quad, alpha_mlswe
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac
+    subroutine rhs_layer_shear_stress(G, inp, b, init, tsp, rhs_stress, q_df)
 
         implicit none
-        
-        real, intent(in) :: q_df(3,npoin,nlayers)
-        real, intent(out) :: rhs_stress(2,npoin,nlayers)
-        
-        real, dimension(nlayers+1) :: tau_u, tau_v
-        real, dimension(nlayers)   :: a,b,c, dp, udp, vdp
-        real, dimension(2,nlayers) :: r, uv
-        real :: wq, hi, tau_u_q, tau_v_q, coeff, mult, coeff1
-        integer :: k, e, iquad, jquad, kquad, l, m, n, Iq, I, ip
 
-        ! Use shear stress between layers to compute  u  and  v  in each layer. 
-        ! In order to do this, implement the shear stress implicitly and
-        ! solve a linear system in the vertical direction, at each
-        ! horizontal location.   
-        ! This computation assumes that the shear stress at an interface
-        ! between layers has the form 
-        ! tau_u = rho * A_D * (u_upper - u_lower) / Delta z
-        ! tau_v = rho * A_D * (v_upper - v_lower) / Delta z
-        ! Here,  Delta z  is the thickness of the Ekman layer 
-        ! (i.e., sqrt(2*A_D/f)) or the value of  max_shear_dz,  whichever 
-        ! is less.
-        
+        type(grid),      intent(in) :: G
+        type(input),     intent(in) :: inp
+        type(basis),     intent(in) :: b
+        type(initial),   intent(in) :: init
+        type(tensor_CS), intent(in) :: tsp
+
+        real, intent(in)  :: q_df(3, G%npoin, inp%nlayers)
+        real, intent(out) :: rhs_stress(2, G%npoin, inp%nlayers)
+
+        real, dimension(inp%nlayers+1) :: tau_u, tau_v
+        real, dimension(inp%nlayers)   :: a, bc, c, dp, udp, vdp
+        real, dimension(2,inp%nlayers) :: r, uv
+        real    :: wq, hi, tau_u_q, tau_v_q, coeff, mult, coeff1
+        integer :: k, Iq, I, ip
+
         rhs_stress = 0.0
-        
-        ! Compute the shear stress
-        do Iq = 1,npoin_q
 
-            ! Projection from nodal to quadrature points
-            dp = 0.0 ; udp = 0.0 ; vdp = 0.0
-            do ip = 1,npts
-                I = indexq(ip,Iq)
-                hi = psih(ip,Iq)
-                dp(:) = dp(:) + hi*q_df(1,I,:)
-                udp(:) = udp(:) + hi*q_df(2,I,:)
-                vdp(:) = vdp(:) + hi*q_df(3,I,:)
-            enddo
+        do Iq = 1, G%npoin_q
 
-            ! The linear system is structured as follows.
-            ! a  refers to the subdiagonal.
-            ! b  refers to the diagonal.
-            ! c  refers to the superdiagonal.
-            ! r(1,:)  initially contains the right side for the system
-            ! for  u, and at the end it contains the solution, which consists of 
-            ! values of  u. 
-            ! r(2,:)  initially contains the right side for the system
-            ! for  v, and at the end it contains the solution, which consists of
-            ! values of  v.
+            dp = 0.0; udp = 0.0; vdp = 0.0
+            do ip = 1, b%npts
+                I  = tsp%indexq(ip,Iq)
+                hi = tsp%psih(ip,Iq)
+                dp(:)  = dp(:)  + hi * q_df(1,I,:)
+                udp(:) = udp(:) + hi * q_df(2,I,:)
+                vdp(:) = vdp(:) + hi * q_df(3,I,:)
+            end do
 
-            coeff = max(sqrt(0.5*coriolis_quad(Iq)*ad_mlswe)/alpha_mlswe(1), &
-                                  ad_mlswe/(alpha_mlswe(1) * max_shear_dz))
+            coeff  = max(sqrt(0.5*init%coriolis_quad(Iq)*inp%ad_mlswe)/init%alpha_mlswe(1), &
+                         inp%ad_mlswe/(init%alpha_mlswe(1) * inp%max_shear_dz))
+            coeff1 = gravity * inp%dt * coeff
 
-            coeff1 = gravity*dt*coeff
-
-            ! Set up the system
-            do k = 1, nlayers
-                a(k) = -coeff
-                b(k) = dp(k) + 2.0*coeff1
-                c(k) = -coeff1
+            do k = 1, inp%nlayers
+                a(k)   = -coeff
+                bc(k)  = dp(k) + 2.0*coeff1
+                c(k)   = -coeff1
                 r(1,k) = udp(k)/dp(k)
                 r(2,k) = vdp(k)/dp(k)
             end do
-            
-            b(1) = dp(1) + coeff1
-            b(nlayers) = dp(nlayers) + coeff1
-            a(1) = 0.0
-            c(nlayers) = 0.0
-            
-            ! Solve the system
-            do k = 2, nlayers
-                mult = a(k) / b(k-1)
-                b(k) = b(k) - mult*c(k-1)
+
+            bc(1)           = dp(1) + coeff1
+            bc(inp%nlayers) = dp(inp%nlayers) + coeff1
+            a(1)            = 0.0
+            c(inp%nlayers)  = 0.0
+
+            do k = 2, inp%nlayers
+                mult   = a(k) / bc(k-1)
+                bc(k)  = bc(k) - mult*c(k-1)
                 r(1,k) = r(1,k) - mult*r(1,k-1)
                 r(2,k) = r(2,k) - mult*r(2,k-1)
             end do
-            
-            r(1,nlayers) = r(1,nlayers) / b(nlayers)
-            r(2,nlayers) = r(2,nlayers) / b(nlayers)
-            uv(1,nlayers) = r(1,nlayers)
-            uv(2,nlayers) = r(2,nlayers)
-            
-            do k = nlayers-1,1,-1
-                r(1,k) = (r(1,k) - c(k)*r(1,k+1)) / b(k)
-                r(2,k) = (r(2,k) - c(k)*r(2,k+1)) / b(k)
+
+            r(1,inp%nlayers)  = r(1,inp%nlayers)  / bc(inp%nlayers)
+            r(2,inp%nlayers)  = r(2,inp%nlayers)  / bc(inp%nlayers)
+            uv(1,inp%nlayers) = r(1,inp%nlayers)
+            uv(2,inp%nlayers) = r(2,inp%nlayers)
+
+            do k = inp%nlayers-1, 1, -1
+                r(1,k)  = (r(1,k) - c(k)*r(1,k+1)) / bc(k)
+                r(2,k)  = (r(2,k) - c(k)*r(2,k+1)) / bc(k)
                 uv(1,k) = r(1,k)
                 uv(2,k) = r(2,k)
             end do
 
-            ! tau_u(k)  and  tau_v(k) contain shear stresses along interface k,
-            ! which is the bottom of layer k.
-
-            tau_u(1) = 0.0 ; tau_v(1) = 0.0
-
-            do k=2,nlayers
+            tau_u(1) = 0.0; tau_v(1) = 0.0
+            do k = 2, inp%nlayers
                 tau_u(k) = coeff*(uv(1,k-1) - uv(1,k))
                 tau_v(k) = coeff*(uv(2,k-1) - uv(2,k))
             end do
 
-            ! Do Gauss-Lobatto Integration
-            wq = wjac(Iq)
+            wq = tsp%wjac(Iq)
 
-            do k = 1, nlayers
-
+            do k = 1, inp%nlayers
                 tau_u_q = gravity*(tau_u(k) - tau_u(k+1))
                 tau_v_q = gravity*(tau_v(k) - tau_v(k+1))
-                
-                do ip = 1, npts
-
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
-
+                do ip = 1, b%npts
+                    I  = tsp%indexq(ip,Iq)
+                    hi = tsp%psih(ip,Iq)
                     rhs_stress(1,I,k) = rhs_stress(1,I,k) + wq*hi*tau_u_q
                     rhs_stress(2,I,k) = rhs_stress(2,I,k) + wq*hi*tau_v_q
                 end do
             end do
 
-        end do ! Iq
+        end do
 
-        ! Apply the mass inverse to the shear stress
-        ! do k = 1, nlayers
-        !     rhs_stress(1,:,k) = massinv(:)*rhs_stress(1,:,k)
-        !     rhs_stress(2,:,k) = massinv(:)*rhs_stress(2,:,k)
-        ! end do
-        
     end subroutine rhs_layer_shear_stress
 
-    subroutine create_rhs_dynamics_volume_layers(rhs_mom, qprime_df,q_df)
-
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
-        use mod_basis, only: npts, dpsiqx
-        use mod_input, only: nlayers, dry_cutoff
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
-                                tau_wind, pbprime_df, zbot_df, grad_zbot_quad
-        use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
-                                    Qu_ave, Qv_ave, Quv_ave, uvb_ave, ope2_ave_df, ope2_ave
+    subroutine create_rhs_dynamics_volume_layers(G, inp, b, btp, init, tsp, rhs_mom, qprime_df, q_df)
 
         implicit none
 
-        real, dimension(2,npoin,nlayers), intent(out) :: rhs_mom
-        real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
+        type(grid),      intent(in) :: G
+        type(input),     intent(in) :: inp
+        type(basis),     intent(in) :: b
+        type(btp_CS),    intent(in) :: btp
+        type(initial),   intent(in) :: init
+        type(tensor_CS), intent(in) :: tsp
 
-        real :: wq, hi, dhdx, dhdy, bot_layer, tau_wind_u, tau_wind_v, temp1
-        real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y, Pstress
+        real, dimension(2, G%npoin, inp%nlayers), intent(out) :: rhs_mom
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df, qprime_df
+
+        real :: wq, hi, dhdx, dhdy, tau_wind_u, tau_wind_v, temp1
+        real :: Hq, source_x, source_y, Pstress, Pbstress
         integer :: k, I, Iq, ip
-        real, dimension(nlayers+1) :: pprime_temp, z
-        real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
-        real :: weight, acceleration, pbq
+        real, dimension(inp%nlayers+1) :: pprime_temp, z
+        real :: tempbot, weight, acceleration, pbq
         real, dimension(3) :: qp, qb
-        real, dimension(nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp
-        real, dimension(2,nlayers) :: u_vdp
-        real :: p_tmp(nlayers+1), u, v, dp, weightq, one_over_sumuq, one_over_sumvq
-        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,nlayers+1)
-        real :: z_elv(npoin,nlayers+1)
-        real, parameter :: eps1 = 1.0e-20!  Parameter used to prevent division by zero.
+        real, dimension(inp%nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp
+        real, dimension(2,inp%nlayers) :: u_vdp
+        real :: p_tmp(inp%nlayers+1), u, v, dp, weightq, one_over_sumuq, one_over_sumvq
+        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
+        real, parameter :: eps1 = 1.0e-20
         real :: flux(2,2)
 
         rhs_mom = 0.0
         pprime_temp = 0.0
 
-        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
-                                                  ! at which wind stress is reduced to 0
-        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth 
-                                                         ! at which bottom stress is reduced to 0
+        Pstress  = (gravity/init%alpha_mlswe(1))            * 50.0
+        Pbstress = (gravity/init%alpha_mlswe(inp%nlayers))  * 10.0
 
-        do concurrent(Iq = 1:npoin_q)
+        do concurrent(Iq = 1:G%npoin_q)
 
-            p_tmp(:) = 0.0
+            p_tmp(:)       = 0.0
             pprime_temp(:) = 0.0
-
             temp_uu = 0.0; temp_vv = 0.0
-            do k = 1,nlayers
+
+            do k = 1, inp%nlayers
                 qp = 0.0; qb = 0.0
-                do ip = 1,npts
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
+                do ip = 1, b%npts
+                    I  = tsp%indexq(ip,Iq)
+                    hi = tsp%psih(ip,Iq)
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
-                enddo
+                end do
 
-                qb(1) = ope_ave(Iq)
-                qb(2) = uvb_ave(1,Iq)
-                qb(3) = uvb_ave(2,Iq)
+                qb(1) = btp%ope_ave(Iq)
+                qb(2) = btp%uvb_ave(1,Iq)
+                qb(3) = btp%uvb_ave(2,Iq)
 
-                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
-                H_tmp(k) = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
-                
+                p_tmp(k+1) = p_tmp(k) + sqrt(btp%ope2_ave(Iq)) * qp(1)
+                H_tmp(k)   = 0.5*init%alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
+
                 dp = qp(1) * qb(1)
-                u = qp(2) + qb(2)
-                v = qp(3) + qb(3)
+                u  = qp(2) + qb(2)
+                v  = qp(3) + qb(3)
 
-                u_udp(k) = dp * u*u
-                v_vdp(k) = dp * v*v
+                u_udp(k)   = dp * u*u
+                v_vdp(k)   = dp * v*v
                 u_vdp(1,k) = u * v * dp
                 u_vdp(2,k) = v * u * dp
 
@@ -352,389 +315,301 @@ module mod_create_rhs_mlswe
                 pprime_temp(k+1) = pprime_temp(k) + qp(1)
             end do
 
-            gradz(:,:) = 0.0 ; pbq = 0.0
-            do ip = 1, npts
-                I = indexq(ip,Iq)
-                z(nlayers+1) = zbot_df(I)
-                do k = nlayers,1,-1
-                    z(k) = z(k+1) + (alpha_mlswe(k)/gravity)*(sqrt(ope2_ave_df(I))*qprime_df(1,I,k))
-
-                    gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z(k)
-                    gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z(k)
+            gradz(:,:) = 0.0; pbq = 0.0
+            do ip = 1, b%npts
+                I = tsp%indexq(ip,Iq)
+                z(inp%nlayers+1) = init%zbot_df(I)
+                do k = inp%nlayers, 1, -1
+                    z(k) = z(k+1) + (init%alpha_mlswe(k)/gravity) * &
+                           (sqrt(btp%ope2_ave_df(I))*qprime_df(1,I,k))
+                    gradz(1,k) = gradz(1,k) + tsp%dpsidx(ip,Iq) * z(k)
+                    gradz(2,k) = gradz(2,k) + tsp%dpsidy(ip,Iq) * z(k)
                 end do
-
-                gradz(1,nlayers+1) = grad_zbot_quad(1,Iq)
-                gradz(2,nlayers+1) = grad_zbot_quad(2,Iq)
-
-                pbq = pbq + psih(ip,Iq)  * pbprime_df(I)
+                gradz(1,inp%nlayers+1) = init%grad_zbot_quad(1,Iq)
+                gradz(2,inp%nlayers+1) = init%grad_zbot_quad(2,Iq)
+                pbq = pbq + tsp%psih(ip,Iq) * init%pbprime_df(I)
             end do
 
-            ! Consistency
-            uu_dp_deficitq = Qu_ave(Iq) - sum(u_udp(:))
-            uv_dp_deficitq = Quv_ave(Iq) - sum(u_vdp(1,:))
-            vv_dp_deficitq = Qv_ave(Iq) - sum(v_vdp(:))
+            uu_dp_deficitq = btp%Qu_ave(Iq)  - sum(u_udp(:))
+            uv_dp_deficitq = btp%Quv_ave(Iq) - sum(u_vdp(1,:))
+            vv_dp_deficitq = btp%Qv_ave(Iq)  - sum(v_vdp(:))
 
             one_over_sumuq = 1.0/sum(temp_uu(:))
             one_over_sumvq = 1.0/sum(temp_vv(:))
 
-            wq = wjac(Iq)
+            wq = tsp%wjac(Iq)
 
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
-                weightq = temp_uu(k) * one_over_sumuq
-                flux(1,1) = u_udp(k) + weightq * uu_dp_deficitq
-                flux(2,1) = u_vdp(1,k) + weightq * uv_dp_deficitq
+                weightq    = temp_uu(k) * one_over_sumuq
+                flux(1,1)  = u_udp(k)   + weightq * uu_dp_deficitq
+                flux(2,1)  = u_vdp(1,k) + weightq * uv_dp_deficitq
 
-                weightq = temp_vv(k) * one_over_sumvq
-                flux(1,2) = u_vdp(2,k) + weightq * uv_dp_deficitq
-                flux(2,2) = v_vdp(k) + weightq * vv_dp_deficitq
+                weightq    = temp_vv(k) * one_over_sumvq
+                flux(1,2)  = u_vdp(2,k) + weightq * uv_dp_deficitq
+                flux(2,2)  = v_vdp(k)   + weightq * vv_dp_deficitq
 
                 Hq = H_tmp(k)
-                
-                ! Adjust the values of  H_r, at quadrature points, so that the vertical sum of
-                ! H_r  over all layers equals the time average of the barotropic forcing  H  
-                ! over all barotropic substeps of the baroclinic
-                ! time interval.
-                ! The difference between the time-averaged  H  and the vertical sum of
-                ! H_r  must be distributed over the layers via some sort of
-                ! weighting scheme.
-                ! Weight according to the current value of H_r.
-                !   That is, the weight for layer r is
-                !   H_r / (sum of H_s over all layers s).
-                !   The adjusted  H_r  is then
-                !   (H_r)_adjusted  =   H_r + [ H_r/(sum H_s)] * [ H_ave - sum(H_s) ]
-                !                       =   H_r +   H_r * H_ave/(sum H_s)  -  H_r
-                !                       =   H_r * H_ave/(sum H_s)
-                !   Therefore, at each quadrature point and cell edge, multiply
-                !   the current value of  H_r  by the layer-independent ratio
-                !   H_ave/(sum H_s),  which should be approximately equal to  1.
-
                 weight = 1.0
                 acceleration = sum(H_tmp(:))
-                if(acceleration > 0.0) weight = H_ave(Iq) / acceleration
+                if(acceleration > 0.0) weight = btp%H_ave(Iq) / acceleration
                 Hq = Hq * weight
 
                 flux(1,1) = flux(1,1) + Hq
                 flux(2,2) = flux(2,2) + Hq
 
-                temp1 = (min(pprime_temp(k+1), Pstress) - min(pprime_temp(k), Pstress))/ Pstress
-                tau_wind_u = temp1*tau_wind(1,Iq)
-                tau_wind_v = temp1*tau_wind(2,Iq)
+                temp1      = (min(pprime_temp(k+1), Pstress) - min(pprime_temp(k), Pstress)) / Pstress
+                tau_wind_u = temp1 * init%tau_wind(1,Iq)
+                tau_wind_v = temp1 * init%tau_wind(2,Iq)
 
-                tempbot = min(Pbstress,pbq-pprime_temp(k+1)) - min(Pbstress, pbq &
-                            - pprime_temp(k))
+                tempbot = min(Pbstress, pbq-pprime_temp(k+1)) - min(Pbstress, pbq-pprime_temp(k))
                 tempbot = tempbot / Pbstress
 
-                source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
-                            p_tmp(k) * gradz(1,k) - p_tmp(k+1) * gradz(1,k+1))
-                source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
-                            p_tmp(k) * gradz(2,k) - p_tmp(k+1) * gradz(2,k+1))
+                source_x = gravity*(tau_wind_u - tempbot*btp%tau_bot_ave(1,Iq) + &
+                            p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1))
+                source_y = gravity*(tau_wind_v - tempbot*btp%tau_bot_ave(2,Iq) + &
+                            p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1))
 
-                ! Do Gauss-Lobatto Integration
-                do ip = 1, npts
-
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
-                    !Xi derivatives
-                    dhdx = dpsidx(ip,Iq)
-                    !Eta derivatives
-                    dhdy = dpsidy(ip,Iq)
-
+                do ip = 1, b%npts
+                    I    = tsp%indexq(ip,Iq)
+                    hi   = tsp%psih(ip,Iq)
+                    dhdx = tsp%dpsidx(ip,Iq)
+                    dhdy = tsp%dpsidy(ip,Iq)
                     rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*(hi*source_x + dhdx*flux(1,1) + dhdy*flux(1,2))
                     rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*(hi*source_y + dhdx*flux(2,1) + dhdy*flux(2,2))
-
                 end do
             end do
-        end do !Iq
+        end do
 
     end subroutine create_rhs_dynamics_volume_layers
 
-    subroutine create_rhs_dynamics_volume_bcl(rhs, qprime_df, q_df)
-
-        use mod_grid, only : npoin_q, npoin, nelem, intma_dg_quad, intma
-        use mod_basis, only: npts, dpsiqx
-        use mod_input, only: nlayers, dry_cutoff
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe, &
-                                tau_wind, pbprime_df, zbot_df, grad_zbot_quad
-        use mod_variables, only: tau_bot_ave, ope_ave, uvb_ave, H_ave, &
-                                    Qu_ave, Qv_ave, Quv_ave, uvb_ave, &
-                                    ope2_ave_df, ope2_ave, sum_layer_mass_flux, btp_mass_flux_ave
+    subroutine create_rhs_dynamics_volume_bcl(G, inp, b, btp, bcl, init, tsp, rhs, qprime_df, q_df)
 
         implicit none
 
-        real, dimension(3,npoin,nlayers), intent(out) :: rhs
-        real, dimension(3,npoin,nlayers), intent(in) :: q_df, qprime_df
+        type(grid),      intent(in)    :: G
+        type(input),     intent(in)    :: inp
+        type(basis),     intent(in)    :: b
+        type(btp_CS),    intent(in)    :: btp
+        type(bcl_CS),    intent(inout) :: bcl
+        type(initial),   intent(in)    :: init
+        type(tensor_CS), intent(in)    :: tsp
+
+        real, dimension(3, G%npoin, inp%nlayers), intent(out) :: rhs
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df, qprime_df
 
         real :: wq, hi, dhdx, dhdy, bot_layer, tau_wind_u, tau_wind_v, temp1
-        real :: Hq, var_uu, var_uv, var_vu, var_vv, source_x, source_y, Pstress
+        real :: Hq, source_x, source_y, Pstress, Pbstress
         integer :: k, I, Iq, ip
-        real, dimension(nlayers+1) :: pprime_temp, z
-        real :: temp_dp, temp_u, temp_v, Ptop_k, Pbot_k, tempbot, Pbstress
-        real :: weight, acceleration, pbq
+        real, dimension(inp%nlayers+1) :: pprime_temp, z
+        real :: tempbot, weight, acceleration, pbq
         real, dimension(3) :: qp, qb
-        real, dimension(nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp, udp, vdp,  dp
-        real, dimension(2,nlayers) :: u_vdp
-        real :: p_tmp(nlayers+1), u, v,weightq, one_over_sumuq, one_over_sumvq
-        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,nlayers+1)
-        real :: z_elv(npoin,nlayers+1)
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
+        real, dimension(inp%nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp, udp, vdp, dp
+        real, dimension(2,inp%nlayers) :: u_vdp
+        real :: p_tmp(inp%nlayers+1), u, v, weightq, one_over_sumuq, one_over_sumvq
+        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
+        real, parameter :: eps1 = 1.0e-20
         real :: flux(3,3)
 
         rhs = 0.0
         bot_layer = 0.0
         pprime_temp = 0.0
-        sum_layer_mass_flux = 0.0
+        bcl%sum_layer_mass_flux = 0.0
 
-        Pstress = (gravity/alpha_mlswe(1)) * 50.0 ! pressure corresponding to 50m depth 
-                                                  ! at which wind stress is reduced to 0
-        Pbstress = (gravity/alpha_mlswe(nlayers)) * 10.0 ! pressure corresponding to 10m depth 
-                                                         ! at which bottom stress is reduced to 0
+        Pstress  = (gravity/init%alpha_mlswe(1))            * 50.0
+        Pbstress = (gravity/init%alpha_mlswe(inp%nlayers))  * 10.0
 
-        ! Find layer interfaces
-        ! z_elv(:,nlayers+1) = zbot_df(:)
-        ! do k = nlayers,1,-1
-        !     z_elv(:,k) = z_elv(:,k+1) + (alpha_mlswe(k)/gravity) * &
-        !                                 (sqrt(ope2_ave_df(:))*qprime_df(1,:,k))
-        ! end do
+        do concurrent(Iq = 1:G%npoin_q)
 
-        do concurrent(Iq = 1:npoin_q)
-
-            p_tmp(1) = 0.0
+            p_tmp(1)       = 0.0
             pprime_temp(:) = 0.0
-
             temp_uu = 0.0; temp_vv = 0.0
-            do k = 1,nlayers
+
+            do k = 1, inp%nlayers
                 qp = 0.0; qb = 0.0
-                do ip = 1,npts
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
+                do ip = 1, b%npts
+                    I  = tsp%indexq(ip,Iq)
+                    hi = tsp%psih(ip,Iq)
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
-                enddo
+                end do
 
-                qb(1) = ope_ave(Iq)
-                qb(2) = uvb_ave(1,Iq)
-                qb(3) = uvb_ave(2,Iq)
+                qb(1) = btp%ope_ave(Iq)
+                qb(2) = btp%uvb_ave(1,Iq)
+                qb(3) = btp%uvb_ave(2,Iq)
 
-                p_tmp(k+1) = p_tmp(k) + sqrt(ope2_ave(Iq)) * qp(1)
-                H_tmp(k) = 0.5*alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
-                
+                p_tmp(k+1) = p_tmp(k) + sqrt(btp%ope2_ave(Iq)) * qp(1)
+                H_tmp(k)   = 0.5*init%alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
+
                 dp(k) = qp(1) * qb(1)
-                u = qp(2) + qb(2)
-                v = qp(3) + qb(3)
+                u     = qp(2) + qb(2)
+                v     = qp(3) + qb(3)
 
-                udp(k) = u*dp(k)
-                vdp(k) = v*dp(k)
-
-                u_udp(k) = u*udp(k)
-                v_vdp(k) = v*vdp(k)
+                udp(k)     = u * dp(k)
+                vdp(k)     = v * dp(k)
+                u_udp(k)   = u * udp(k)
+                v_vdp(k)   = v * vdp(k)
                 u_vdp(1,k) = v * udp(k)
                 u_vdp(2,k) = u * vdp(k)
 
                 temp_uu(k) = abs(udp(k)) + eps1
                 temp_vv(k) = abs(vdp(k)) + eps1
 
-                ! sum_layer_mass_flux(1,Iq) = sum_layer_mass_flux(1,Iq) + udp(k)
-                ! sum_layer_mass_flux(2,Iq) = sum_layer_mass_flux(2,Iq) + vdp(k)
-
                 pprime_temp(k+1) = pprime_temp(k) + qp(1)
             end do
 
-            gradz(:,:) = 0.0 ; pbq = 0.0
-            do ip = 1, npts
-                I = indexq(ip,Iq)
-                z(nlayers+1) = zbot_df(I)
-                do k = nlayers,1,-1
-                    z(k) = z(k+1) + (alpha_mlswe(k)/gravity)*(sqrt(ope2_ave_df(I))*qprime_df(1,I,k))
-
-                    gradz(1,k) = gradz(1,k) + dpsidx(ip,Iq) * z(k)
-                    gradz(2,k) = gradz(2,k) + dpsidy(ip,Iq) * z(k)
+            gradz(:,:) = 0.0; pbq = 0.0
+            do ip = 1, b%npts
+                I = tsp%indexq(ip,Iq)
+                z(inp%nlayers+1) = init%zbot_df(I)
+                do k = inp%nlayers, 1, -1
+                    z(k) = z(k+1) + (init%alpha_mlswe(k)/gravity) * &
+                           (sqrt(btp%ope2_ave_df(I))*qprime_df(1,I,k))
+                    gradz(1,k) = gradz(1,k) + tsp%dpsidx(ip,Iq) * z(k)
+                    gradz(2,k) = gradz(2,k) + tsp%dpsidy(ip,Iq) * z(k)
                 end do
-
-                gradz(1,nlayers+1) = grad_zbot_quad(1,Iq)
-                gradz(2,nlayers+1) = grad_zbot_quad(2,Iq)
-
-                pbq = pbq + psih(ip,Iq)  * pbprime_df(I)
+                gradz(1,inp%nlayers+1) = init%grad_zbot_quad(1,Iq)
+                gradz(2,inp%nlayers+1) = init%grad_zbot_quad(2,Iq)
+                pbq = pbq + tsp%psih(ip,Iq) * init%pbprime_df(I)
             end do
 
-            ! Consistency
-            uu_dp_deficitq = Qu_ave(Iq) - sum(u_udp(:))
-            uv_dp_deficitq = Quv_ave(Iq) - sum(u_vdp(1,:))
-            vv_dp_deficitq = Qv_ave(Iq) - sum(v_vdp(:))
+            uu_dp_deficitq = btp%Qu_ave(Iq)  - sum(u_udp(:))
+            uv_dp_deficitq = btp%Quv_ave(Iq) - sum(u_vdp(1,:))
+            vv_dp_deficitq = btp%Qv_ave(Iq)  - sum(v_vdp(:))
 
             one_over_sumuq = 1.0/sum(temp_uu(:))
             one_over_sumvq = 1.0/sum(temp_vv(:))
 
-            wq = wjac(Iq)
+            wq = tsp%wjac(Iq)
 
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
-                weightq = temp_uu(k) * one_over_sumuq
-                u_udp(k) = u_udp(k) + weightq * uu_dp_deficitq
+                weightq    = temp_uu(k) * one_over_sumuq
+                u_udp(k)   = u_udp(k)   + weightq * uu_dp_deficitq
                 u_vdp(1,k) = u_vdp(1,k) + weightq * uv_dp_deficitq
 
-                weightq = temp_vv(k) * one_over_sumvq
+                weightq    = temp_vv(k) * one_over_sumvq
                 u_vdp(2,k) = u_vdp(2,k) + weightq * uv_dp_deficitq
-                v_vdp(k) = v_vdp(k) + weightq * vv_dp_deficitq
+                v_vdp(k)   = v_vdp(k)   + weightq * vv_dp_deficitq
 
                 Hq = H_tmp(k)
-                
-                ! Adjust the values of  H_r, at quadrature points, so that the vertical sum of
-                ! H_r  over all layers equals the time average of the barotropic forcing  H  
-                ! over all barotropic substeps of the baroclinic
-                ! time interval.
-                ! The difference between the time-averaged  H  and the vertical sum of
-                ! H_r  must be distributed over the layers via some sort of
-                ! weighting scheme.
-                ! Weight according to the current value of H_r.
-                !   That is, the weight for layer r is
-                !   H_r / (sum of H_s over all layers s).
-                !   The adjusted  H_r  is then
-                !   (H_r)_adjusted  =   H_r + [ H_r/(sum H_s)] * [ H_ave - sum(H_s) ]
-                !                       =   H_r +   H_r * H_ave/(sum H_s)  -  H_r
-                !                       =   H_r * H_ave/(sum H_s)
-                !   Therefore, at each quadrature point and cell edge, multiply
-                !   the current value of  H_r  by the layer-independent ratio
-                !   H_ave/(sum H_s),  which should be approximately equal to  1.
-
                 weight = 1.0
                 acceleration = sum(H_tmp(:))
-                if(acceleration > 0.0) weight = H_ave(Iq) / acceleration
+                if(acceleration > 0.0) weight = btp%H_ave(Iq) / acceleration
                 Hq = Hq * weight
 
-                flux(1,1) = udp(k) + (dp(k)/sum(dp(:))) * (btp_mass_flux_ave(1,Iq) - sum(udp(:)))
-                flux(2,1) = vdp(k) + (dp(k)/sum(dp(:))) * (btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
+                flux(1,1) = udp(k) + (dp(k)/sum(dp(:))) * (btp%btp_mass_flux_ave(1,Iq) - sum(udp(:)))
+                flux(2,1) = vdp(k) + (dp(k)/sum(dp(:))) * (btp%btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
 
                 flux(1,2) = u_udp(k) + Hq
                 flux(2,2) = u_vdp(1,k)
                 flux(1,3) = u_vdp(2,k)
                 flux(2,3) = v_vdp(k) + Hq
 
-                temp1 = (min(pprime_temp(k+1), Pstress) - min(pprime_temp(k), Pstress))/ Pstress
-                tau_wind_u = temp1*tau_wind(1,Iq)
-                tau_wind_v = temp1*tau_wind(2,Iq)
+                temp1      = (min(pprime_temp(k+1), Pstress) - min(pprime_temp(k), Pstress)) / Pstress
+                tau_wind_u = temp1 * init%tau_wind(1,Iq)
+                tau_wind_v = temp1 * init%tau_wind(2,Iq)
 
-                tempbot = min(Pbstress,pbq-pprime_temp(k+1)) - min(Pbstress, pbq &
-                            - pprime_temp(k))
+                tempbot = min(Pbstress, pbq-pprime_temp(k+1)) - min(Pbstress, pbq-pprime_temp(k))
                 tempbot = tempbot / Pbstress
 
-                source_x = gravity*(tau_wind_u - tempbot*tau_bot_ave(1,Iq) + &
-                            p_tmp(k) * gradz(1,k) - p_tmp(k+1) * gradz(1,k+1))
-                source_y = gravity*(tau_wind_v - tempbot*tau_bot_ave(2,Iq) + &
-                            p_tmp(k) * gradz(2,k) - p_tmp(k+1) * gradz(2,k+1))
+                source_x = gravity*(tau_wind_u - tempbot*btp%tau_bot_ave(1,Iq) + &
+                            p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1))
+                source_y = gravity*(tau_wind_v - tempbot*btp%tau_bot_ave(2,Iq) + &
+                            p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1))
 
-                ! Do Gauss-Lobatto Integration
-                do ip = 1, npts
-
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
-                    !Xi derivatives
-                    dhdx = dpsidx(ip,Iq)
-                    !Eta derivatives
-                    dhdy = dpsidy(ip,Iq)
-
+                do ip = 1, b%npts
+                    I    = tsp%indexq(ip,Iq)
+                    hi   = tsp%psih(ip,Iq)
+                    dhdx = tsp%dpsidx(ip,Iq)
+                    dhdy = tsp%dpsidy(ip,Iq)
                     rhs(1,I,k) = rhs(1,I,k) + wq*(dhdx*flux(1,1) + dhdy*flux(2,1))
                     rhs(2,I,k) = rhs(2,I,k) + wq*(hi*source_x + dhdx*flux(1,2) + dhdy*flux(2,2))
                     rhs(3,I,k) = rhs(3,I,k) + wq*(hi*source_y + dhdx*flux(1,3) + dhdy*flux(2,3))
-
                 end do
             end do
-        end do !Iq
+        end do
 
     end subroutine create_rhs_dynamics_volume_bcl
 
-    subroutine Apply_layers_fluxes(rhs_mom, qprime_df)
-
-        ! This routine computes the layer momentum advection flux terms using upwind flux
-        ! This routine computes the layer momentum pressure terms
-
-        use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe, zbot_face
-        use mod_grid, only : nface, npoin, npoin_q, face, intma, face_type
-        use mod_basis, only : nq, psiq, ngl
-        use mod_input, only : nlayers, dry_cutoff
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
-                                uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
+    subroutine Apply_layers_fluxes(G, inp, b, mf, btp, init, rhs_mom, qprime_df)
 
         implicit none
 
-        real, dimension(2, npoin, nlayers), intent(inout) :: rhs_mom
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(basis),   intent(in)    :: b
+        type(face_CS), intent(in)    :: mf
+        type(btp_CS),  intent(in)    :: btp
+        type(initial), intent(in)    :: init
 
-        real, dimension(nlayers) :: alpha_over_g, g_over_alpha
-        real, dimension(2,nlayers+1) :: p_face, z_face
-        real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
-        real, dimension(3,nlayers) :: ql, qr
-        real, dimension(3) :: qbl, qbr
-        integer :: iface, ilr, k, iquad, ktemp, I
-        real :: z_intersect_top,z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
+        real, dimension(2, G%npoin, inp%nlayers), intent(inout) :: rhs_mom
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+
+        real, dimension(inp%nlayers)     :: alpha_over_g, g_over_alpha
+        real, dimension(2,inp%nlayers+1) :: p_face, z_face
+        real, dimension(inp%nlayers+1)   :: p_edge_plus, p_edge_minus, p2l, p2r
+        real, dimension(inp%nlayers+1)   :: z_edge_plus, z_edge_minus
+        real, dimension(3,inp%nlayers)   :: ql, qr
+        real, dimension(3)               :: qbl, qbr
+        integer :: iface, k, iquad, ktemp, I
+        real :: z_intersect_top, z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
         real :: p_intersect_bot, p_intersect_top, one_plus_eta_edge
-        real :: H_corr,p_inc, weight, H_corr1,p_inc1, H_corr2,p_inc2, temp, ope_l, ope_r
-        integer :: Iq, el, er
-        real ::  ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv
-        real, dimension(nlayers) :: udpl, udpr, vdpl, vdpr
+        real :: H_corr1, p_inc1, H_corr2, p_inc2, weight, ope_l, ope_r
+        integer :: el, er
+        real :: ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv, un
+        real, dimension(inp%nlayers) :: udpl, udpr, vdpl, vdpr
         real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
-        integer :: il, jl, ir, jr, kl, kr, jquad, n, m
-        real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, un
-        real, dimension(2,nlayers,nq) :: H_face, udp_flux, vdp_flux
-        real, dimension(nq,nlayers) :: flux_ul, flux_ur, flux_vl, flux_vr
-        real :: flux_xl, flux_xr, flux_yl, flux_yr, hl, hr
+        real, parameter :: eps1 = 1.0e-20
+        integer :: il, jl, ir, jr, kl, kr, n
+        real :: wq, hi, flux_xl, flux_xr, flux_yl, flux_yr, hl, hr
+        real, dimension(2,inp%nlayers,b%nq) :: H_face, udp_flux, vdp_flux
 
-        do k=1,nlayers
-            alpha_over_g(k) = alpha_mlswe(k)/gravity
-            g_over_alpha(k) = gravity/alpha_mlswe(k)
-        enddo
+        do k = 1, inp%nlayers
+            alpha_over_g(k) = init%alpha_mlswe(k) / gravity
+            g_over_alpha(k) = gravity / init%alpha_mlswe(k)
+        end do
 
-        ! Compute H_r at the element face
-        do concurrent(iface = 1:nface, iquad = 1:nq)
+        do concurrent(iface = 1:G%nface, iquad = 1:b%nq)
 
-            if (face_type(iface) == 2) cycle
+            if (G%face_type(iface) == 2) cycle
 
-            ! Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
+            el = G%face(7,iface)
+            er = G%face(8,iface)
 
-            qbl(1) = ope_face_ave(1,iquad,iface)
-            qbl(2) = uvb_face_ave(1,1,iquad,iface)
-            qbl(3) = uvb_face_ave(2,1,iquad,iface)
-            qbr(1) = ope_face_ave(2,iquad,iface)
-            qbr(2) = uvb_face_ave(1,2,iquad,iface)
-            qbr(3) = uvb_face_ave(2,2,iquad,iface)
+            qbl(1) = btp%ope_face_ave(1,iquad,iface)
+            qbl(2) = btp%uvb_face_ave(1,1,iquad,iface)
+            qbl(3) = btp%uvb_face_ave(2,1,iquad,iface)
+            qbr(1) = btp%ope_face_ave(2,iquad,iface)
+            qbr(2) = btp%uvb_face_ave(1,2,iquad,iface)
+            qbr(3) = btp%uvb_face_ave(2,2,iquad,iface)
 
-            nxl = normal_vector_q(1,iquad,1,iface)
-            nyl = normal_vector_q(2,iquad,1,iface)
+            nxl = mf%normal_vector_q(1,iquad,1,iface)
+            nyl = mf%normal_vector_q(2,iquad,1,iface)
 
             ql = 0.0; qr = 0.0
 
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
-                do n = 1, ngl
-
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-                    I = intma(il,jl,kl,el)
-                    hi = psiq(n,iquad)
-
+                do n = 1, b%ngl
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
+                    hi = b%psiq(n,iquad)
                     ql(:,k) = ql(:,k) + hi*qprime_df(:,I,k)
-                enddo
+                end do
 
                 if (er > 0) then
-                    do n = 1, ngl
-
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-                        I = intma(ir,jr,kr,er)
-                        hi = psiq(n,iquad)
-
+                    do n = 1, b%ngl
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
+                        hi = b%psiq(n,iquad)
                         qr(:,k) = qr(:,k) + hi*qprime_df(:,I,k)
-                    enddo
-                else 
+                    end do
+                else
                     qr(:,k) = ql(:,k)
-                    ! Apply wall boundary conditions
                     if (er == -4) then
                         un = ql(2,k)*nxl + ql(3,k)*nyl
                         qr(2,k) = ql(2,k) - 2.0*un*nxl
@@ -742,17 +617,15 @@ module mod_create_rhs_mlswe
                     elseif (er == -2) then
                         qr(2,k) = -ql(2,k)
                         qr(3,k) = -ql(3,k)
-                    endif
+                    end if
+                end if
 
-                endif 
-
-                ! Compute the fluxes
                 dpl = qbl(1) * ql(1,k)
                 dpr = qbr(1) * qr(1,k)
-                ul = ql(2,k) + qbl(2)
-                ur = qr(2,k) + qbr(2)
-                vl = ql(3,k) + qbl(3)
-                vr = qr(3,k) + qbr(3)
+                ul  = ql(2,k) + qbl(2)
+                ur  = qr(2,k) + qbr(2)
+                vl  = ql(3,k) + qbl(3)
+                vr  = qr(3,k) + qbr(3)
 
                 uu = 0.5*(ul+ur)
                 vv = 0.5*(vl+vr)
@@ -767,333 +640,265 @@ module mod_create_rhs_mlswe
                 else
                     udp_flux(1,k,iquad) = uu * (ur*dpr)
                     vdp_flux(1,k,iquad) = uu * (vr*dpr)
-                endif
+                end if
                 if(vv*nyl > 0.0) then
                     udp_flux(2,k,iquad) = vv * (ul*dpl)
                     vdp_flux(2,k,iquad) = vv * (vl*dpl)
                 else
                     udp_flux(2,k,iquad) = vv * (ur*dpr)
                     vdp_flux(2,k,iquad) = vv * (vr*dpr)
-                endif
+                end if
 
-            enddo
+            end do
 
-            uu_dp_flux_deficit(1) = Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:,iquad))
-            uu_dp_flux_deficit(2) = Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:,iquad))
-            vv_dp_flux_deficit(1) = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,:,iquad))
-            vv_dp_flux_deficit(2) = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,:,iquad))
+            uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:,iquad))
+            uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:,iquad))
+            vv_dp_flux_deficit(1) = btp%Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,:,iquad))
+            vv_dp_flux_deficit(2) = btp%Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,:,iquad))
 
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
-                ! Adjust the fluxes for the u-momentum equation
-                !x-direction
                 weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                 if(uu_dp_flux_deficit(1)*nxl < 0.0) &
                     weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + weight * uu_dp_flux_deficit(1)
 
-                !y-direction
                 weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                 if(uu_dp_flux_deficit(2)*nyl < 0.0) &
                     weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + weight * uu_dp_flux_deficit(2)
 
-                ! Adjust the fluxes for the v-momentum equation
-                !x-direction
                 weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
                 if(vv_dp_flux_deficit(1)*nxl < 0.0) &
                     weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(1,k,iquad) = vdp_flux(1,k,iquad) + weight * vv_dp_flux_deficit(1)
 
-                !y-direction
                 weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
                 if(vv_dp_flux_deficit(2)*nyl < 0.0) &
                     weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(2,k,iquad) = vdp_flux(2,k,iquad) + weight * vv_dp_flux_deficit(2)
             end do
 
-            z_face = 0.0 ; p_face = 0.0
-            z_edge_plus = 0.0 ; z_edge_minus = 0.0
+            z_face = 0.0; p_face = 0.0
+            z_edge_plus = 0.0; z_edge_minus = 0.0
             p_edge_plus = 0.0; p_edge_minus = 0.0
 
-            !Store Left Side Variables
-            ope_l = sqrt(ope2_face_ave(1,iquad,iface))
-            ope_r = sqrt(ope2_face_ave(2,iquad,iface))
+            ope_l = sqrt(btp%ope2_face_ave(1,iquad,iface))
+            ope_r = sqrt(btp%ope2_face_ave(2,iquad,iface))
             p_face(1,1) = 0.0
             p_face(2,1) = 0.0
-            do k=1,nlayers
+            do k = 1, inp%nlayers
                 p_face(1,k+1) = p_face(1,k) + ope_l * ql(1,k)
                 p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,k)
             end do
 
-            one_plus_eta_edge = sqrt(one_plus_eta_edge_2_ave(iquad,iface))
-            z_face(1,nlayers+1) = zbot_face(1,iquad,iface)
-            z_face(2,nlayers+1) = zbot_face(2,iquad,iface)
-            z_edge_plus(nlayers+1) = zbot_face(1,iquad,iface)
-            z_edge_minus(nlayers+1) = zbot_face(2,iquad,iface)
-            do k=nlayers,1,-1
-                z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,k))
-                z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,k))
-                z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
-                                                    (one_plus_eta_edge * ql(1,k))
-                z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
-                                                    (one_plus_eta_edge * qr(1,k))
+            one_plus_eta_edge = sqrt(btp%one_plus_eta_edge_2_ave(iquad,iface))
+            z_face(1,inp%nlayers+1)    = init%zbot_face(1,iquad,iface)
+            z_face(2,inp%nlayers+1)    = init%zbot_face(2,iquad,iface)
+            z_edge_plus(inp%nlayers+1) = init%zbot_face(1,iquad,iface)
+            z_edge_minus(inp%nlayers+1)= init%zbot_face(2,iquad,iface)
+            do k = inp%nlayers, 1, -1
+                z_face(1,k)    = z_face(1,k+1)    + alpha_over_g(k) * (ope_l * ql(1,k))
+                z_face(2,k)    = z_face(2,k+1)    + alpha_over_g(k) * (ope_r * qr(1,k))
+                z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * (one_plus_eta_edge * ql(1,k))
+                z_edge_minus(k)= z_edge_minus(k+1)+ alpha_over_g(k) * (one_plus_eta_edge * qr(1,k))
             end do
 
-            p_edge_plus(2) = one_plus_eta_edge * ql(1,1)
+            p_edge_plus(2)  = one_plus_eta_edge * ql(1,1)
             p_edge_minus(2) = one_plus_eta_edge * qr(1,1)
-            do k = 2,nlayers
-                p_edge_plus(k+1) = p_edge_plus(k) + one_plus_eta_edge * ql(1,k)
+            do k = 2, inp%nlayers
+                p_edge_plus(k+1)  = p_edge_plus(k)  + one_plus_eta_edge * ql(1,k)
                 p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,k)
             end do
 
-            do k = 1, nlayers
+            do k = 1, inp%nlayers
 
-                ! Computation from + side for layer k
-                H_r_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
+                H_r_plus = 0.5*init%alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
 
-                ! Computation from - side for layer k
                 H_r_minus = 0.0
-                do ktemp = 1, nlayers
-
-                    z_intersect_top = min(z_edge_minus(ktemp), z_edge_plus(k))
+                do ktemp = 1, inp%nlayers
+                    z_intersect_top = min(z_edge_minus(ktemp),   z_edge_plus(k))
                     z_intersect_bot = max(z_edge_minus(ktemp+1), z_edge_plus(k+1))
-                    dz_intersect = z_intersect_top - z_intersect_bot
-
+                    dz_intersect    = z_intersect_top - z_intersect_bot
                     if (dz_intersect > 0.0) then
                         p_intersect_bot = p_edge_minus(ktemp+1) &
                                 - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
                         p_intersect_top = p_edge_minus(ktemp+1) &
                                 - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
                         H_r_minus = H_r_minus + &
-                                0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
-
+                                0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
                     end if
                 end do
-                H_face(1,k,iquad) = 0.5*(H_r_plus + H_r_minus) !computation of H_r for the left side
-                ! Computation from - side for layer k
-                H_r_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
+                H_face(1,k,iquad) = 0.5*(H_r_plus + H_r_minus)
 
-                ! Computation from + side for layer k
+                H_r_minus = 0.5*init%alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
+
                 H_r_plus = 0.0
-                do ktemp = 1, nlayers
-
-                    z_intersect_top = min(z_edge_plus(ktemp), z_edge_minus(k))
+                do ktemp = 1, inp%nlayers
+                    z_intersect_top = min(z_edge_plus(ktemp),   z_edge_minus(k))
                     z_intersect_bot = max(z_edge_plus(ktemp+1), z_edge_minus(k+1))
-                    dz_intersect = z_intersect_top - z_intersect_bot
-
+                    dz_intersect    = z_intersect_top - z_intersect_bot
                     if (dz_intersect > 0.0) then
                         p_intersect_bot = p_edge_plus(ktemp+1) &
                             - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(ktemp+1))
                         p_intersect_top = p_edge_plus(ktemp+1) &
                             - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(ktemp+1))
                         H_r_plus = H_r_plus &
-                            + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                            + 0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
                     end if
                 end do
-                H_face(2,k,iquad) = 0.5*(H_r_plus + H_r_minus) ! H_r for the right side
-            end do !k
+                H_face(2,k,iquad) = 0.5*(H_r_plus + H_r_minus)
+            end do
 
-            ! Wall Boundary conditions
             if(er == -4) then
-                p2l = 0.0 ; p2r = 0.0
-                do k = 1,nlayers
+                p2l = 0.0; p2r = 0.0
+                do k = 1, inp%nlayers
                     p2l(k+1) = p_face(1,k+1)
-                    H_face(1,k,iquad) = 0.5*alpha_mlswe(k)*(p2l(k+1)**2 - p2l(k)**2)
+                    H_face(1,k,iquad) = 0.5*init%alpha_mlswe(k)*(p2l(k+1)**2 - p2l(k)**2)
                     p2r(k+1) = p_face(2,k+1)
-                    H_face(2,k,iquad) = 0.5*alpha_mlswe(k)*(p2r(k+1)**2 - p2r(k)**2)
-
+                    H_face(2,k,iquad) = 0.5*init%alpha_mlswe(k)*(p2r(k+1)**2 - p2r(k)**2)
                 end do
             end if
 
             if(er /= -4) then
-                do k = 1, nlayers-1          ! interface at the bottom of layer k
-                    ! Corrections at the left side of a face.
-                    p_inc1 = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-                    H_corr1 = 0.5 * alpha_mlswe(k) * (p_inc1**2 - p_face(1,k+1)**2)
-                    H_face(1,k,iquad) = H_face(1,k,iquad) - H_corr1
+                do k = 1, inp%nlayers-1
+                    p_inc1  = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+                    H_corr1 = 0.5*init%alpha_mlswe(k)*(p_inc1**2 - p_face(1,k+1)**2)
+                    H_face(1,k,iquad)   = H_face(1,k,iquad)   - H_corr1
                     H_face(1,k+1,iquad) = H_face(1,k+1,iquad) + H_corr1
 
-                    ! Corrections at the right side of a face.
-                    p_inc2 = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
-                    H_corr2 = 0.5 * alpha_mlswe(k) * (p_inc2**2 - p_face(2,k+1)**2)
-                    H_face(2,k,iquad) = H_face(2,k,iquad) - H_corr2
+                    p_inc2  = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
+                    H_corr2 = 0.5*init%alpha_mlswe(k)*(p_inc2**2 - p_face(2,k+1)**2)
+                    H_face(2,k,iquad)   = H_face(2,k,iquad)   - H_corr2
                     H_face(2,k+1,iquad) = H_face(2,k+1,iquad) + H_corr2
-
                 end do
             end if
 
-            ! Adjust the values of  H_k, at element faces, so that the vertical sum of
-            ! H_k  over all layers equals the time average of the barotropic forcing  H 
-            ! over all barotropic substeps of the baroclinic
-            ! time interval.
-
-            ! The difference between the time-averaged  H  and the vertical sum of
-            ! H_k  must be distributed over the layers via some sort of
-            ! weighting scheme.
-            ! Weight according to the current value of H_k.
-            !   That is, the weight for layer k is
-            !   H_k / (sum of H_s over all layers s).
-            !   The adjusted  H_k  is then
-            !   (H_k)_adjusted  =   H_k + [ H_k/(sum H_s)] * [ H_ave - sum(H_s) ]
-            !                       =   H_k +   H_k * H_ave/(sum H_s)  -  H_k
-            !                       =   H_k * H_ave/(sum H_s)
-            !   Therefore, at each quadrature point and cell edge, multiply
-            !   the current value of  H_r  by the layer-independent ratio
-            !   H_ave/(sum H_s),  which should be approximately equal to  1.
-
-            ! Left side of face
             weight = 1.0
             acceleration = sum(H_face(1,:,iquad))
-            if(acceleration > 0.0) then
-                weight = H_face_ave(iquad,iface) / acceleration
-            end if
+            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(1,:,iquad) = H_face(1,:,iquad) * weight
 
-            ! Right side of face
             weight = 1.0
             acceleration = sum(H_face(2,:,iquad))
-            if(acceleration > 0.0) then
-                weight = H_face_ave(iquad,iface) / acceleration
-            end if
+            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(2,:,iquad) = H_face(2,:,iquad) * weight
-        
-            ! Do Gauss-Lobatto Integration
 
-            wq = jac_faceq(iquad,1,iface)
+            wq = mf%jac_faceq(iquad,1,iface)
 
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
                 hl = H_face(1,k,iquad)
                 hr = H_face(2,k,iquad)
 
                 flux_xl = nxl*(udp_flux(1,k,iquad) + hl) + nyl*udp_flux(2,k,iquad)
                 flux_xr = nxl*(udp_flux(1,k,iquad) + hr) + nyl*udp_flux(2,k,iquad)
-
                 flux_yl = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + hl)
                 flux_yr = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + hr)
 
-                do n = 1, ngl
-
-                    hi = psiq(n,iquad)
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-                    I = intma(il,jl,kl,el)
-
+                do n = 1, b%ngl
+                    hi = b%psiq(n,iquad)
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
                     rhs_mom(1,I,k) = rhs_mom(1,I,k) - wq*hi*flux_xl
                     rhs_mom(2,I,k) = rhs_mom(2,I,k) - wq*hi*flux_yl
 
                     if(er > 0) then
-
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-                        I = intma(ir,jr,kr,er)
-
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
                         rhs_mom(1,I,k) = rhs_mom(1,I,k) + wq*hi*flux_xr
                         rhs_mom(2,I,k) = rhs_mom(2,I,k) + wq*hi*flux_yr
-
                     end if
                 end do
             end do
-        end do ! iface, iquad
+        end do
 
     end subroutine Apply_layers_fluxes
 
-    subroutine Apply_bcl_fluxes(rhs, qprime_df)
-
-        ! This routine computes the layer momentum advection flux terms using upwind flux
-        ! This routine computes the layer momentum pressure terms
-
-        use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe, zbot_face
-        use mod_grid, only : nface, npoin, npoin_q, face, intma, face_type
-        use mod_basis, only : nq, psiq, ngl
-        use mod_input, only : nlayers, dry_cutoff
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: ope_face_ave, H_face_ave, one_plus_eta_edge_2_ave, &
-                                uvb_face_ave, Quv_face_ave, Qu_face_ave, Qv_face_ave, ope2_face_ave
-        use mod_variables, only: sum_layer_mass_flux_face, btp_mass_flux_face_ave
+    subroutine Apply_bcl_fluxes(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
 
         implicit none
 
-        real, dimension(3, npoin, nlayers), intent(inout) :: rhs
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(basis),   intent(in)    :: b
+        type(face_CS), intent(in)    :: mf
+        type(btp_CS),  intent(in)    :: btp
+        type(bcl_CS),  intent(inout) :: bcl
+        type(initial), intent(in)    :: init
 
-        real, dimension(nlayers) :: alpha_over_g, g_over_alpha
-        real, dimension(2,nlayers+1) :: p_face, z_face
-        real, dimension(nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
-        real, dimension(3, nlayers) :: ql, qr
-        real, dimension(3) :: qbl, qbr
-        integer :: iface, ilr, k, iquad, ktemp, I
-        real :: z_intersect_top,z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
+        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: rhs
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+
+        real, dimension(inp%nlayers)     :: alpha_over_g, g_over_alpha
+        real, dimension(2,inp%nlayers+1) :: p_face, z_face
+        real, dimension(inp%nlayers+1)   :: p_edge_plus, p_edge_minus, p2l, p2r
+        real, dimension(inp%nlayers+1)   :: z_edge_plus, z_edge_minus
+        real, dimension(3,inp%nlayers)   :: ql, qr
+        real, dimension(3)               :: qbl, qbr
+        integer :: iface, k, iquad, ktemp, I
+        real :: z_intersect_top, z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
         real :: p_intersect_bot, p_intersect_top, one_plus_eta_edge
-        real :: H_corr,p_inc, weight, H_corr1,p_inc1, H_corr2,p_inc2, temp, ope_l, ope_r
-        integer :: Iq, el, er
-        real ::  ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv
-        real, dimension(nlayers) :: udpl, udpr, vdpl, vdpr
-        real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
-        real, parameter :: eps1 = 1.0e-20 !  Parameter used to prevent division by zero.
-        integer :: il, jl, ir, jr, kl, kr, jquad, n, m
-        real :: wq, hi, hlx_k, hly_k, hrx_k, hry_k, flux_x, flux_y, hx_k, hy_k, flux, un
-        real, dimension(2,nlayers,nq) :: H_face, udp_flux, vdp_flux, dp_flux
-        real :: dp_lr(2,nlayers), dp_deficit(2)
-        real, dimension(nq,nlayers) :: flux_ul, flux_ur, flux_vl, flux_vr, flux_dp
-        real :: flux_xl, flux_xr, flux_yl, flux_yr, hl, hr
+        real :: H_corr1, p_inc1, H_corr2, p_inc2, weight, ope_l, ope_r
+        integer :: el, er
+        real :: ul, ur, vl, vr, dpl, dpr, nxl, nyl, uu, vv, flux, un
+        real, dimension(inp%nlayers) :: udpl, udpr, vdpl, vdpr
+        real :: uu_dp_flux_deficit(2), vv_dp_flux_deficit(2), dp_deficit(2)
+        real, parameter :: eps1 = 1.0e-20
+        integer :: il, jl, ir, jr, kl, kr, n
+        real :: wq, hi, flux_xl, flux_xr, flux_yl, flux_yr, hl, hr
+        real, dimension(2,inp%nlayers,b%nq) :: H_face, udp_flux, vdp_flux, dp_flux
+        real :: dp_lr(2,inp%nlayers)
 
-        do k=1,nlayers
-            alpha_over_g(k) = alpha_mlswe(k)/gravity
-            g_over_alpha(k) = gravity/alpha_mlswe(k)
-        enddo
+        do k = 1, inp%nlayers
+            alpha_over_g(k) = init%alpha_mlswe(k) / gravity
+            g_over_alpha(k) = gravity / init%alpha_mlswe(k)
+        end do
 
-        ! Compute H_r at the element face
-        do concurrent (iface = 1:nface, iquad = 1:nq)
+        do concurrent(iface = 1:G%nface, iquad = 1:b%nq)
 
-            if (face_type(iface) == 2) cycle
+            if (G%face_type(iface) == 2) cycle
 
-            ! Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
+            el = G%face(7,iface)
+            er = G%face(8,iface)
 
-            qbl(1) = ope_face_ave(1,iquad,iface)
-            qbl(2) = uvb_face_ave(1,1,iquad,iface)
-            qbl(3) = uvb_face_ave(2,1,iquad,iface)
-            qbr(1) = ope_face_ave(2,iquad,iface)
-            qbr(2) = uvb_face_ave(1,2,iquad,iface)
-            qbr(3) = uvb_face_ave(2,2,iquad,iface)
+            qbl(1) = btp%ope_face_ave(1,iquad,iface)
+            qbl(2) = btp%uvb_face_ave(1,1,iquad,iface)
+            qbl(3) = btp%uvb_face_ave(2,1,iquad,iface)
+            qbr(1) = btp%ope_face_ave(2,iquad,iface)
+            qbr(2) = btp%uvb_face_ave(1,2,iquad,iface)
+            qbr(3) = btp%uvb_face_ave(2,2,iquad,iface)
 
-            nxl = normal_vector_q(1,iquad,1,iface)
-            nyl = normal_vector_q(2,iquad,1,iface)
+            nxl = mf%normal_vector_q(1,iquad,1,iface)
+            nyl = mf%normal_vector_q(2,iquad,1,iface)
 
             ql = 0.0; qr = 0.0
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
-                do n = 1, ngl
-
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-                    I = intma(il,jl,kl,el)
-                    hi = psiq(n,iquad)
-
+                do n = 1, b%ngl
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
+                    hi = b%psiq(n,iquad)
                     ql(:,k) = ql(:,k) + hi*qprime_df(:,I,k)
-                enddo
+                end do
 
                 if (er > 0) then
-                    do n = 1, ngl
-
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-                        I = intma(ir,jr,kr,er)
-                        hi = psiq(n,iquad)
-
+                    do n = 1, b%ngl
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
+                        hi = b%psiq(n,iquad)
                         qr(:,k) = qr(:,k) + hi*qprime_df(:,I,k)
-                    enddo
-                else 
+                    end do
+                else
                     qr(:,k) = ql(:,k)
-                    ! Apply wall boundary conditions
                     if (er == -4) then
                         un = ql(2,k)*nxl + ql(3,k)*nyl
                         qr(2,k) = ql(2,k) - 2.0*un*nxl
@@ -1101,16 +906,15 @@ module mod_create_rhs_mlswe
                     elseif (er == -2) then
                         qr(2,k) = -ql(2,k)
                         qr(3,k) = -ql(3,k)
-                    endif
-                endif
+                    end if
+                end if
 
-                ! Left side of the edge
                 dpl = qbl(1) * ql(1,k)
                 dpr = qbr(1) * qr(1,k)
-                ul = ql(2,k) + qbl(2)
-                ur = qr(2,k) + qbr(2)
-                vl = ql(3,k) + qbl(3)
-                vr = qr(3,k) + qbr(3)
+                ul  = ql(2,k) + qbl(2)
+                ur  = qr(2,k) + qbr(2)
+                vl  = ql(3,k) + qbl(3)
+                vr  = qr(3,k) + qbr(3)
 
                 dp_lr(1,k) = dpl
                 dp_lr(2,k) = dpr
@@ -1123,35 +927,35 @@ module mod_create_rhs_mlswe
                 vdpr(k) = vr*dpr
 
                 if(uu*nxl > 0.0) then
-                    dp_flux(1,k,iquad) = uu * dpl
+                    dp_flux(1,k,iquad)  = uu * dpl
                     udp_flux(1,k,iquad) = uu * (ul*dpl)
                     vdp_flux(1,k,iquad) = uu * (vl*dpl)
                 else
-                    dp_flux(1,k,iquad) = uu * dpr
+                    dp_flux(1,k,iquad)  = uu * dpr
                     udp_flux(1,k,iquad) = uu * (ur*dpr)
                     vdp_flux(1,k,iquad) = uu * (vr*dpr)
-                endif
+                end if
                 if(vv*nyl > 0.0) then
-                    dp_flux(2,k,iquad) = vv * dpl
+                    dp_flux(2,k,iquad)  = vv * dpl
                     udp_flux(2,k,iquad) = vv * (ul*dpl)
                     vdp_flux(2,k,iquad) = vv * (vl*dpl)
                 else
-                    dp_flux(2,k,iquad) = vv * dpr
+                    dp_flux(2,k,iquad)  = vv * dpr
                     udp_flux(2,k,iquad) = vv * (ur*dpr)
                     vdp_flux(2,k,iquad) = vv * (vr*dpr)
-                endif
+                end if
 
-            enddo
+            end do
 
-            uu_dp_flux_deficit(1) = Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:,iquad))
-            uu_dp_flux_deficit(2) = Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:,iquad))
-            vv_dp_flux_deficit(1) = Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,:,iquad))
-            vv_dp_flux_deficit(2) = Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,:,iquad))
+            uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:,iquad))
+            uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:,iquad))
+            vv_dp_flux_deficit(1) = btp%Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,:,iquad))
+            vv_dp_flux_deficit(2) = btp%Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,:,iquad))
 
-            dp_deficit(1) = btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,:,iquad))
-            dp_deficit(2) = btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,:,iquad))
+            dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,:,iquad))
+            dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,:,iquad))
 
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
                 weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
                 if (dp_deficit(1)*nxl < 0.0) &
@@ -1163,180 +967,135 @@ module mod_create_rhs_mlswe
                     weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
                 dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + weight * dp_deficit(2)
 
-                ! Adjust the fluxes for the u-momentum equation
-                !x-direction
                 weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                 if(uu_dp_flux_deficit(1)*nxl < 0.0) &
                     weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + weight * uu_dp_flux_deficit(1)
 
-                !y-direction
                 weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
                 if(uu_dp_flux_deficit(2)*nyl < 0.0) &
                     weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + weight * uu_dp_flux_deficit(2)
 
-                ! Adjust the fluxes for the v-momentum equation
-                !x-direction
                 weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
                 if(vv_dp_flux_deficit(1)*nxl < 0.0) &
                     weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(1,k,iquad) = vdp_flux(1,k,iquad) + weight * vv_dp_flux_deficit(1)
 
-                !y-direction
                 weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
                 if(vv_dp_flux_deficit(2)*nyl < 0.0) &
                     weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(2,k,iquad) = vdp_flux(2,k,iquad) + weight * vv_dp_flux_deficit(2)
             end do
 
-            z_face = 0.0 ; p_face = 0.0
-            z_edge_plus = 0.0 ; z_edge_minus = 0.0
+            z_face = 0.0; p_face = 0.0
+            z_edge_plus = 0.0; z_edge_minus = 0.0
             p_edge_plus = 0.0; p_edge_minus = 0.0
 
-            !Store Left Side Variables
-            ope_l = sqrt(ope2_face_ave(1,iquad,iface))
-            ope_r = sqrt(ope2_face_ave(2,iquad,iface))
+            ope_l = sqrt(btp%ope2_face_ave(1,iquad,iface))
+            ope_r = sqrt(btp%ope2_face_ave(2,iquad,iface))
             p_face(1,1) = 0.0
             p_face(2,1) = 0.0
-            do k=1,nlayers
+            do k = 1, inp%nlayers
                 p_face(1,k+1) = p_face(1,k) + ope_l * ql(1,k)
                 p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,k)
             end do
 
-            one_plus_eta_edge = sqrt(one_plus_eta_edge_2_ave(iquad,iface))
-            z_face(1,nlayers+1) = zbot_face(1,iquad,iface)
-            z_face(2,nlayers+1) = zbot_face(2,iquad,iface)
-            z_edge_plus(nlayers+1) = zbot_face(1,iquad,iface)
-            z_edge_minus(nlayers+1) = zbot_face(2,iquad,iface)
-            do k=nlayers,1,-1
-                z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,k))
-                z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,k))
-                z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
-                                                    (one_plus_eta_edge * ql(1,k))
-                z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
-                                                    (one_plus_eta_edge * qr(1,k))
+            one_plus_eta_edge = sqrt(btp%one_plus_eta_edge_2_ave(iquad,iface))
+            z_face(1,inp%nlayers+1)    = init%zbot_face(1,iquad,iface)
+            z_face(2,inp%nlayers+1)    = init%zbot_face(2,iquad,iface)
+            z_edge_plus(inp%nlayers+1) = init%zbot_face(1,iquad,iface)
+            z_edge_minus(inp%nlayers+1)= init%zbot_face(2,iquad,iface)
+            do k = inp%nlayers, 1, -1
+                z_face(1,k)    = z_face(1,k+1)    + alpha_over_g(k) * (ope_l * ql(1,k))
+                z_face(2,k)    = z_face(2,k+1)    + alpha_over_g(k) * (ope_r * qr(1,k))
+                z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * (one_plus_eta_edge * ql(1,k))
+                z_edge_minus(k)= z_edge_minus(k+1)+ alpha_over_g(k) * (one_plus_eta_edge * qr(1,k))
             end do
 
-            p_edge_plus(2) = one_plus_eta_edge * ql(1,1)
+            p_edge_plus(2)  = one_plus_eta_edge * ql(1,1)
             p_edge_minus(2) = one_plus_eta_edge * qr(1,1)
-            do k = 2,nlayers
-                p_edge_plus(k+1) = p_edge_plus(k) + one_plus_eta_edge * ql(1,k)
+            do k = 2, inp%nlayers
+                p_edge_plus(k+1)  = p_edge_plus(k)  + one_plus_eta_edge * ql(1,k)
                 p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,k)
             end do
 
-            do k = 1, nlayers
+            do k = 1, inp%nlayers
 
-                ! Computation from + side for layer k
-                H_r_plus = 0.5*alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
+                H_r_plus = 0.5*init%alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
 
-                ! Computation from - side for layer k
                 H_r_minus = 0.0
-                do ktemp = 1, nlayers
-
-                    z_intersect_top = min(z_edge_minus(ktemp), z_edge_plus(k))
+                do ktemp = 1, inp%nlayers
+                    z_intersect_top = min(z_edge_minus(ktemp),   z_edge_plus(k))
                     z_intersect_bot = max(z_edge_minus(ktemp+1), z_edge_plus(k+1))
-                    dz_intersect = z_intersect_top - z_intersect_bot
-
+                    dz_intersect    = z_intersect_top - z_intersect_bot
                     if (dz_intersect > 0.0) then
                         p_intersect_bot = p_edge_minus(ktemp+1) &
                                 - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
                         p_intersect_top = p_edge_minus(ktemp+1) &
                                 - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
                         H_r_minus = H_r_minus + &
-                                0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
-
+                                0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
                     end if
                 end do
-                H_face(1,k,iquad) = 0.5*(H_r_plus + H_r_minus) !computation of H_r for the left side
-                ! Computation from - side for layer k
-                H_r_minus = 0.5*alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
+                H_face(1,k,iquad) = 0.5*(H_r_plus + H_r_minus)
 
-                ! Computation from + side for layer k
+                H_r_minus = 0.5*init%alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
+
                 H_r_plus = 0.0
-                do ktemp = 1, nlayers
-
-                    z_intersect_top = min(z_edge_plus(ktemp), z_edge_minus(k))
+                do ktemp = 1, inp%nlayers
+                    z_intersect_top = min(z_edge_plus(ktemp),   z_edge_minus(k))
                     z_intersect_bot = max(z_edge_plus(ktemp+1), z_edge_minus(k+1))
-                    dz_intersect = z_intersect_top - z_intersect_bot
-
+                    dz_intersect    = z_intersect_top - z_intersect_bot
                     if (dz_intersect > 0.0) then
                         p_intersect_bot = p_edge_plus(ktemp+1) &
                             - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_plus(ktemp+1))
                         p_intersect_top = p_edge_plus(ktemp+1) &
                             - g_over_alpha(ktemp)*(z_intersect_top - z_edge_plus(ktemp+1))
                         H_r_plus = H_r_plus &
-                            + 0.5*alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                            + 0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
                     end if
                 end do
-                H_face(2,k,iquad) = 0.5*(H_r_plus + H_r_minus) ! H_r for the right side
-            end do !k
+                H_face(2,k,iquad) = 0.5*(H_r_plus + H_r_minus)
+            end do
 
-            ! Wall Boundary conditions
             if(er == -4) then
-                p2l = 0.0 ; p2r = 0.0
-                do k = 1,nlayers
+                p2l = 0.0; p2r = 0.0
+                do k = 1, inp%nlayers
                     p2l(k+1) = p_face(1,k+1)
-                    H_face(1,k,iquad) = 0.5*alpha_mlswe(k)*(p2l(k+1)**2 - p2l(k)**2)
+                    H_face(1,k,iquad) = 0.5*init%alpha_mlswe(k)*(p2l(k+1)**2 - p2l(k)**2)
                     p2r(k+1) = p_face(2,k+1)
-                    H_face(2,k,iquad) = 0.5*alpha_mlswe(k)*(p2r(k+1)**2 - p2r(k)**2)
-
+                    H_face(2,k,iquad) = 0.5*init%alpha_mlswe(k)*(p2r(k+1)**2 - p2r(k)**2)
                 end do
             end if
 
             if(er /= -4) then
-                do k = 1, nlayers-1          ! interface at the bottom of layer k
-                    ! Corrections at the left side of a face.
-                    p_inc1 = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-                    H_corr1 = 0.5 * alpha_mlswe(k) * (p_inc1**2 - p_face(1,k+1)**2)
-                    H_face(1,k,iquad) = H_face(1,k,iquad) - H_corr1
+                do k = 1, inp%nlayers-1
+                    p_inc1  = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+                    H_corr1 = 0.5*init%alpha_mlswe(k)*(p_inc1**2 - p_face(1,k+1)**2)
+                    H_face(1,k,iquad)   = H_face(1,k,iquad)   - H_corr1
                     H_face(1,k+1,iquad) = H_face(1,k+1,iquad) + H_corr1
 
-                    ! Corrections at the right side of a face.
-                    p_inc2 = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
-                    H_corr2 = 0.5 * alpha_mlswe(k) * (p_inc2**2 - p_face(2,k+1)**2)
-                    H_face(2,k,iquad) = H_face(2,k,iquad) - H_corr2
+                    p_inc2  = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
+                    H_corr2 = 0.5*init%alpha_mlswe(k)*(p_inc2**2 - p_face(2,k+1)**2)
+                    H_face(2,k,iquad)   = H_face(2,k,iquad)   - H_corr2
                     H_face(2,k+1,iquad) = H_face(2,k+1,iquad) + H_corr2
-
                 end do
             end if
 
-            ! Adjust the values of  H_k, at element faces, so that the vertical sum of
-            ! H_k  over all layers equals the time average of the barotropic forcing  H 
-            ! over all barotropic substeps of the baroclinic
-            ! time interval.
-
-            ! The difference between the time-averaged  H  and the vertical sum of
-            ! H_k  must be distributed over the layers via some sort of
-            ! weighting scheme.
-            ! Weight according to the current value of H_k.
-            !   That is, the weight for layer k is
-            !   H_k / (sum of H_s over all layers s).
-            !   The adjusted  H_k  is then
-            !   (H_k)_adjusted  =   H_k + [ H_k/(sum H_s)] * [ H_ave - sum(H_s) ]
-            !                       =   H_k +   H_k * H_ave/(sum H_s)  -  H_k
-            !                       =   H_k * H_ave/(sum H_s)
-            !   Therefore, at each quadrature point and cell edge, multiply
-            !   the current value of  H_r  by the layer-independent ratio
-            !   H_ave/(sum H_s),  which should be approximately equal to  1.
-
-            ! Left side of face
             weight = 1.0
             acceleration = sum(H_face(1,:,iquad))
-            if(acceleration > 0.0) weight = H_face_ave(iquad,iface) / acceleration
+            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(1,:,iquad) = H_face(1,:,iquad) * weight
 
-            ! Right side of face
             weight = 1.0
             acceleration = sum(H_face(2,:,iquad))
-            if(acceleration > 0.0) weight = H_face_ave(iquad,iface) / acceleration
+            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(2,:,iquad) = H_face(2,:,iquad) * weight
 
-            ! Do Gauss-Lobatto Integration
+            wq = mf%jac_faceq(iquad,1,iface)
 
-            wq = jac_faceq(iquad,1,iface)
-
-            do k = 1,nlayers
+            do k = 1, inp%nlayers
 
                 flux = nxl*dp_flux(1,k,iquad) + nyl*dp_flux(2,k,iquad)
 
@@ -1345,175 +1104,159 @@ module mod_create_rhs_mlswe
 
                 flux_xl = nxl*(udp_flux(1,k,iquad) + hl) + nyl*udp_flux(2,k,iquad)
                 flux_xr = nxl*(udp_flux(1,k,iquad) + hr) + nyl*udp_flux(2,k,iquad)
-
                 flux_yl = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + hl)
                 flux_yr = nxl*vdp_flux(1,k,iquad) + nyl*(vdp_flux(2,k,iquad) + hr)
 
-                do n = 1, ngl
-
-                    hi = psiq(n,iquad)
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-                    I = intma(il,jl,kl,el)
-
+                do n = 1, b%ngl
+                    hi = b%psiq(n,iquad)
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
                     rhs(1,I,k) = rhs(1,I,k) - wq*hi*flux
                     rhs(2,I,k) = rhs(2,I,k) - wq*hi*flux_xl
                     rhs(3,I,k) = rhs(3,I,k) - wq*hi*flux_yl
-                enddo
+                end do
 
                 if(er > 0) then
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-                        I = intma(ir,jr,kr,er)
-
+                    do n = 1, b%ngl
+                        hi = b%psiq(n,iquad)
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
                         rhs(1,I,k) = rhs(1,I,k) + wq*hi*flux
                         rhs(2,I,k) = rhs(2,I,k) + wq*hi*flux_xr
                         rhs(3,I,k) = rhs(3,I,k) + wq*hi*flux_yr
                     end do
                 end if
             end do
-        end do ! iface, iquad
+        end do
 
     end subroutine Apply_bcl_fluxes
 
-    subroutine create_layers_volume_mass(dp_advec, qprime_df)
-
-        use mod_grid, only : npoin_q, npoin, intma_dg_quad, intma
-        use mod_basis, only: npts
-        use mod_input, only: nlayers, dry_cutoff
-        use mod_constants, only: gravity
-        use mod_initial, only: psih, dpsidx,dpsidy, indexq, wjac, alpha_mlswe
-        use mod_variables, only: uvb_ave, ope_ave, sum_layer_mass_flux, btp_mass_flux_ave
+    subroutine create_layers_volume_mass(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
 
         implicit none
 
-        real, dimension(3,npoin,nlayers), intent(in) :: qprime_df
-        real, dimension(npoin,nlayers), intent(out) :: dp_advec
+        type(grid),      intent(in)    :: G
+        type(input),     intent(in)    :: inp
+        type(basis),     intent(in)    :: b
+        type(btp_CS),    intent(in)    :: btp
+        type(bcl_CS),    intent(inout) :: bcl
+        type(initial),   intent(in)    :: init
+        type(tensor_CS), intent(in)    :: tsp
 
-        real :: wq, hi, dhde, dhdn
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df
+        real, dimension(G%npoin, inp%nlayers),    intent(out) :: dp_advec
+
+        real :: wq, hi, dp_temp
         integer :: k, I, Iq, ip
-        real :: dp_temp, dp, u, v, opeq, flux(2)
         real, dimension(3) :: qp, qb
         real, parameter :: eps = 1.0e-10
-        real, dimension(nlayers) :: dpp, udp, vdp
+        real, dimension(inp%nlayers) :: dpp, udp, vdp
+        real :: flux(2)
 
         dp_advec = 0.0
-        sum_layer_mass_flux = 0.0
+        bcl%sum_layer_mass_flux = 0.0
 
-        do concurrent(Iq = 1:npoin_q)
+        do concurrent(Iq = 1:G%npoin_q)
 
-            qb(1) = ope_ave(Iq)
-            qb(2) = uvb_ave(1,Iq)
-            qb(3) = uvb_ave(2,Iq)
-            wq = wjac(Iq)
+            qb(1) = btp%ope_ave(Iq)
+            qb(2) = btp%uvb_ave(1,Iq)
+            qb(3) = btp%uvb_ave(2,Iq)
+            wq    = tsp%wjac(Iq)
 
-            do k=1,nlayers
-
+            do k = 1, inp%nlayers
                 qp = 0.0
-                do ip = 1,npts
-                    I = indexq(ip,Iq)
-                    hi = psih(ip,Iq)
+                do ip = 1, b%npts
+                    I  = tsp%indexq(ip,Iq)
+                    hi = tsp%psih(ip,Iq)
                     qp(:) = qp(:) + hi*qprime_df(:,I,k)
-                enddo
+                end do
+                dpp(k)  = qp(1) * qb(1)
+                dp_temp = dpp(k)
+                udp(k)  = (qp(2) + qb(2)) * dp_temp
+                vdp(k)  = (qp(3) + qb(3)) * dp_temp
+            end do
 
-                dpp(k) = qp(1) * qb(1)
-                dp_temp = qp(1) * qb(1)
-                udp(k) = (qp(2) + qb(2)) * dp_temp
-                vdp(k) = (qp(3) + qb(3)) * dp_temp
-            enddo
-
-            do k = 1, nlayers
-
-                flux(1) = udp(k) + (dpp(k)/sum(dpp(:)))*(btp_mass_flux_ave(1,Iq) - sum(udp(:)))
-                flux(2) = vdp(k) + (dpp(k)/sum(dpp(:)))*(btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
-
-                do ip = 1, npts
-
-                    I = indexq(ip,Iq)
-                    dp_advec(I,k) = dp_advec(I,k) + wq*(dpsidx(ip,Iq)*flux(1) + dpsidy(ip,Iq)*flux(2))
-
+            do k = 1, inp%nlayers
+                flux(1) = udp(k) + (dpp(k)/sum(dpp(:))) * (btp%btp_mass_flux_ave(1,Iq) - sum(udp(:)))
+                flux(2) = vdp(k) + (dpp(k)/sum(dpp(:))) * (btp%btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
+                do ip = 1, b%npts
+                    I = tsp%indexq(ip,Iq)
+                    dp_advec(I,k) = dp_advec(I,k) + wq*(tsp%dpsidx(ip,Iq)*flux(1) + tsp%dpsidy(ip,Iq)*flux(2))
                 end do
             end do
-        end do ! Iq
+        end do
 
     end subroutine create_layers_volume_mass
 
-    subroutine create_layer_mass_flux(dp_advec, qprime_df)
-
-        use mod_basis, only: nq, psiq, ngl
-        use mod_grid, only:  npoin_q, intma,  nface, face, face_type
-        use mod_input, only: nlayers, dry_cutoff
-        use mod_face, only: imapl, imapr, normal_vector_q, jac_faceq
-        use mod_variables, only: sum_layer_mass_flux_face, ope_face_ave, uvb_face_ave, btp_mass_flux_face_ave
-        use mod_constants, only : gravity
-        use mod_initial, only : alpha_mlswe
+    subroutine create_layer_mass_flux(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
 
         implicit none
 
-        real, dimension(npoin, nlayers), intent(inout) :: dp_advec
-        real, dimension(3, npoin, nlayers), intent(in) :: qprime_df
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(basis),   intent(in)    :: b
+        type(face_CS), intent(in)    :: mf
+        type(btp_CS),  intent(in)    :: btp
+        type(bcl_CS),  intent(inout) :: bcl
+        type(initial), intent(in)    :: init
 
-        integer :: k, iface, iquad, el, er, il, jl, ir, jr, I
-        integer :: kl, kr, jquad, n, m
+        real, dimension(G%npoin, inp%nlayers),    intent(inout) :: dp_advec
+        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+
+        integer :: k, iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
         real :: wq, nxl, nyl, hi
-        real, dimension(nq,nlayers) :: flux_edge_u, flux_edge_v, flux_dp
-        real :: dpl, dpr, uu, vv, flux, un, ul, ur, vl, vr, weight, dp_lr(2,nlayers), dp_deficit(2)
-        real, dimension(3) :: ql, qr
-        real, dimension(3) :: qbl, qbr
+        real, dimension(b%nq, inp%nlayers) :: flux_edge_u, flux_edge_v, flux_dp
+        real :: dpl, dpr, uu, vv, flux, un, ul, ur, vl, vr, weight, dp_deficit(2)
+        real :: dp_lr(2,inp%nlayers)
+        real, dimension(3) :: ql, qr, qbl, qbr
         real, parameter :: eps = 1.0e-10
         real :: flux_u, flux_v
 
-        sum_layer_mass_flux_face = 0.0
+        bcl%sum_layer_mass_flux_face = 0.0
 
-        do concurrent(iface = 1:nface, iquad = 1:nq)
+        do concurrent(iface = 1:G%nface, iquad = 1:b%nq)
 
-            if (face_type(iface) == 2) cycle
+            if (G%face_type(iface) == 2) cycle
 
-            !Store Left Side Variables
-            el = face(7,iface)
-            er = face(8,iface)
+            el = G%face(7,iface)
+            er = G%face(8,iface)
 
-            qbl(1) = ope_face_ave(1,iquad,iface)
-            qbl(2) = uvb_face_ave(1,1,iquad,iface)
-            qbl(3) = uvb_face_ave(2,1,iquad,iface)
-            qbr(1) = ope_face_ave(2,iquad,iface)
-            qbr(2) = uvb_face_ave(1,2,iquad,iface)
-            qbr(3) = uvb_face_ave(2,2,iquad,iface)
+            qbl(1) = btp%ope_face_ave(1,iquad,iface)
+            qbl(2) = btp%uvb_face_ave(1,1,iquad,iface)
+            qbl(3) = btp%uvb_face_ave(2,1,iquad,iface)
+            qbr(1) = btp%ope_face_ave(2,iquad,iface)
+            qbr(2) = btp%uvb_face_ave(1,2,iquad,iface)
+            qbr(3) = btp%uvb_face_ave(2,2,iquad,iface)
 
-            nxl = normal_vector_q(1,iquad,1,iface)
-            nyl = normal_vector_q(2,iquad,1,iface)
+            nxl = mf%normal_vector_q(1,iquad,1,iface)
+            nyl = mf%normal_vector_q(2,iquad,1,iface)
 
-            do k = 1, nlayers
+            do k = 1, inp%nlayers
 
                 ql = 0.0; qr = 0.0
-                do n = 1, ngl
-
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-                    I = intma(il,jl,kl,el)
-                    hi = psiq(n,iquad)
-
+                do n = 1, b%ngl
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
+                    hi = b%psiq(n,iquad)
                     ql(:) = ql(:) + hi*qprime_df(:,I,k)
-                enddo
+                end do
 
                 if (er > 0) then
-                    do n = 1, ngl
-
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-                        I = intma(ir,jr,kr,er)
-                        hi = psiq(n,iquad)
-
+                    do n = 1, b%ngl
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
+                        hi = b%psiq(n,iquad)
                         qr(:) = qr(:) + hi*qprime_df(:,I,k)
-                    enddo
-                else 
+                    end do
+                else
                     qr(:) = ql(:)
                     if (er == -4) then
                         un = ql(2)*nxl + ql(3)*nyl
@@ -1522,14 +1265,8 @@ module mod_create_rhs_mlswe
                     elseif (er == -2) then
                         qr(2) = -ql(2)
                         qr(3) = -ql(3)
-                    endif
-                endif
-
-                ! In the following computation of fluxes at element faces,
-                ! flux_edge iface a numerical approximation to the mass flux at element 
-                ! faces (each face has nq quadrature points)
-                ! Here we are using centered fluxes, so we need to compute the fluxes 
-                ! at the left and right edges of each face
+                    end if
+                end if
 
                 dpl = qbl(1) * ql(1)
                 dpr = qbr(1) * qr(1)
@@ -1549,28 +1286,27 @@ module mod_create_rhs_mlswe
                     flux_edge_u(iquad,k) = uu * dpl
                 else
                     flux_edge_u(iquad,k) = uu * dpr
-                endif
+                end if
 
                 if(vv*nyl > 0.0) then
                     flux_edge_v(iquad,k) = vv * dpl
                 else
                     flux_edge_v(iquad,k) = vv * dpr
-                endif
+                end if
 
                 flux_dp(iquad,k) = nxl*flux_edge_u(iquad,k) + nyl*flux_edge_v(iquad,k)
 
-            end do ! k
+            end do
 
-            dp_deficit(1) = btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_edge_u(iquad,:))
-            dp_deficit(2) = btp_mass_flux_face_ave(2,iquad,iface) - sum(flux_edge_v(iquad,:))
+            dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_edge_u(iquad,:))
+            dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(flux_edge_v(iquad,:))
 
-            ! Do Gauss-Lobatto Integration
-            wq = jac_faceq(iquad,1,iface)
+            wq = mf%jac_faceq(iquad,1,iface)
 
-            do k = 1, nlayers
+            do k = 1, inp%nlayers
 
-                nxl = normal_vector_q(1,iquad,1,iface)
-                nyl = normal_vector_q(2,iquad,1,iface)
+                nxl = mf%normal_vector_q(1,iquad,1,iface)
+                nyl = mf%normal_vector_q(2,iquad,1,iface)
 
                 weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps))
                 if (dp_deficit(1)*nxl < 0.0) &
@@ -1584,32 +1320,28 @@ module mod_create_rhs_mlswe
 
                 flux = nxl*flux_u + nyl*flux_v
 
-                do n = 1, ngl
-
-                    hi = psiq(n,iquad)
-                    il = imapl(1,n,1,iface)
-                    jl = imapl(2,n,1,iface)
-                    kl = imapl(3,n,1,iface)
-                    I = intma(il,jl,kl,el)
-
+                do n = 1, b%ngl
+                    hi = b%psiq(n,iquad)
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
                     dp_advec(I,k) = dp_advec(I,k) - wq*hi*flux
                 end do
 
                 if(er > 0) then
-                    do n = 1, ngl
-
-                        hi = psiq(n,iquad)
-                        ir = imapr(1,n,1,iface)
-                        jr = imapr(2,n,1,iface)
-                        kr = imapr(3,n,1,iface)
-                        I = intma(ir,jr,kr,er)
-
+                    do n = 1, b%ngl
+                        hi = b%psiq(n,iquad)
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
                         dp_advec(I,k) = dp_advec(I,k) + wq*hi*flux
                     end do
-
                 end if
+
             end do
-        end do ! iface, iquad
+        end do
 
     end subroutine create_layer_mass_flux
 

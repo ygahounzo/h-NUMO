@@ -1,37 +1,33 @@
 !-------------------------------------------------
 !>@brief Create NORMALS and PMATRIX which are used for NFBC
 !-------------------------------------------------
-subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
+subroutine create_nfbc_vector(G, b, mf, normals, ipoin_bound, npoin_bound, ldirichlet)
 
-  use mod_basis, only: nglx, ngly, nglz, is_2d
-  use mod_constants, only: tol
-  use mod_face, only: normal_vector, imapl
-  use mod_global_grid, only: xmin, xmax, ymin, ymax, zmin, zmax, iboundary
-  use mod_grid, only: intma, intma_dg_to_cg, npoin, coord, sigma, face, nface, &
-                        mod_grid_get_face_ngl
-  use mod_initial, only: kvector
-  use mod_input, only: space_method
-  use mod_parallel, only: num_send_recv_total
+  use mod_grid,  only: grid, mod_grid_get_face_ngl
+  use mod_basis, only: basis
+  use mod_face,  only: face_CS
 
   implicit none
 
+  type(grid),    intent(in) :: G
+  type(basis),   intent(in) :: b
+  type(face_CS), intent(in) :: mf
+
   !global arrays
-  real, intent(out)    :: normals(3,npoin)
-  integer, intent(out) :: ipoin_bound(npoin)
+  real,    intent(out) :: normals(3,G%npoin)
+  integer, intent(out) :: ipoin_bound(G%npoin)
   integer, intent(out) :: npoin_bound
   logical, intent(out) :: ldirichlet
 
   !local array
-  real, dimension(:,:), allocatable :: recv_data_matrix
-  real, dimension(:),   allocatable :: recv_data_vector, ipoin
+  real, dimension(:), allocatable :: ipoin
   integer :: AllocateStatus
   real :: rnx, rny, rnz, rnr
   real :: x, y, z, s
   integer :: iface, iel, ier, ilocl, ilocr, ip, jp, ipcg, i, j, il, jl, kl
   integer :: nbb, xflag, yflag, zflag, ngl_i, ngl_j, plane_ij, ip_g, jp_g
 
-  allocate (ipoin(npoin), recv_data_vector(num_send_recv_total),&
-       recv_data_matrix(3,num_send_recv_total), stat=AllocateStatus )
+  allocate(ipoin(G%npoin), stat=AllocateStatus)
   if (AllocateStatus /= 0) stop "** Not Enough Memory - CREATE_PMATRIX **"
 
   !Initialize
@@ -41,27 +37,27 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
   ldirichlet=.false.
 
   !Modify Normal Vectors
-  do iface=1,nface
-     iel=face(7,iface)
-     ier=face(8,iface)
-     ilocl=face(5,iface)
+  do iface=1,G%nface
+     iel=G%face(7,iface)
+     ier=G%face(8,iface)
+     ilocl=G%face(5,iface)
 
      if (ier == -4 .or. ier == -8) then !n*U=0
 
-        call mod_grid_get_face_ngl(ilocl, ngl_i, ngl_j, plane_ij)
+        call mod_grid_get_face_ngl(b, ilocl, ngl_i, ngl_j, plane_ij)
 
         do j=1,ngl_j
            do i=1,ngl_i
 
-              il=imapl(1,i,j,iface)
-              jl=imapl(2,i,j,iface)
-              kl=imapl(3,i,j,iface)
-              ip=intma(il,jl,kl,iel)
+              il=mf%imapl(1,i,j,iface)
+              jl=mf%imapl(2,i,j,iface)
+              kl=mf%imapl(3,i,j,iface)
+              ip=G%intma(il,jl,kl,iel)
 
               !Store Normals
-              rnx=normal_vector(1,i,j,iface)
-              rny=normal_vector(2,i,j,iface)
-              rnz=normal_vector(3,i,j,iface)
+              rnx=mf%normal_vector(1,i,j,iface)
+              rny=mf%normal_vector(2,i,j,iface)
+              rnz=mf%normal_vector(3,i,j,iface)
               ipoin(ip)=ipoin(ip) + 1
 
               !Store Normals
@@ -75,14 +71,8 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
 
   end do !iface
 
-  !Perform Global Assembly for the Normal Vectors and
-  if (space_method == 'cgc') then
-     call create_global_rhs(normals,recv_data_matrix,3,0)
-     call create_global_rhs(ipoin,recv_data_matrix,1,0)
-  end if
-
   nbb=0
-  do i=1,npoin
+  do i=1,G%npoin
      if (ipoin(i) /= 0) then
         nbb=nbb + 1
         ipoin_bound(nbb)=i
@@ -98,6 +88,6 @@ subroutine create_nfbc_vector(normals,ipoin_bound,npoin_bound,ldirichlet)
   end do
   npoin_bound=nbb
 
-  deallocate (ipoin, recv_data_vector, recv_data_matrix)
+  deallocate(ipoin)
 
 end subroutine create_nfbc_vector
