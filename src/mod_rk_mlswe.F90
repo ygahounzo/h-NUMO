@@ -55,9 +55,6 @@ contains
       integer :: mstep, ik
       real    :: N_inv, a0, a1, a2, dtt
 
-      write(*,*) 'DEBUG ENTRY ti_barotropic_ssprk_mlswe N_btp=', init%N_btp
-      flush(6)
-
       ! Zero-initialise all accumulation buffers
       btp%one_plus_eta_edge_2_ave = 0.0;  btp%uvb_ave             = 0.0
       btp%uvb_ave_df              = 0.0;  btp%ope_ave             = 0.0

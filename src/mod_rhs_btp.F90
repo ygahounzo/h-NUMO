@@ -81,236 +81,13 @@ contains
 
    end subroutine create_rhs_btp
 
-
-   !===========================================================================
-   subroutine create_rhs_btp_volume_qdf(G, b, inp, init, btp, tsp, &
-      rhs_btp, qb_df, qprime_df)
+   subroutine create_rhs_btp_volume_qdf(G, b, inp, init, btp, tsp, rhs_btp, qb_df, qprime_df)
       !===========================================================================
       !  Volume contribution to the barotropic RHS (DG weak form, interior).
       !
-      !  GPU parallelism: one gang per quadrature point Iq.  All inner loops
-      !  (ip over basis nodes, k over layers) are sequential within the gang.
-      !
-      !  Data assumptions:
-      !    - rhs, qb_df, qprime_df : entered by the caller via '!$acc enter data'
-      !    - all module arrays      : entered once via openacc_enter_data
-      !    - scalar module variables (botfr, cd_mlswe, gravity, nlayers) :
-      !      implicitly firstprivate in the parallel region; no present clause needed.
-      !
-      !  Race conditions: Iq is unique per node (each node has exactly one owning
-      !  Iq), so different gangs scatter to disjoint rhs indices. No atomics needed.
-      !===========================================================================
-      use mod_grid,      only: grid
-      use mod_basis,     only: basis
-      use mod_constants, only: gravity
-      use mod_initial,   only: initial
-      use mod_variables, only: btp_CS
-      use mod_input,     only: input
-      use mod_tensor,    only: tensor_CS
-
-      implicit none
-
-      type(grid),      intent(in)    :: G
-      type(basis),     intent(in)    :: b
-      type(input),     intent(in)    :: inp
-      type(initial),   intent(in)    :: init
-      type(btp_CS),    intent(inout) :: btp
-      type(tensor_CS), intent(in)    :: tsp
-
-      real, dimension(4,G%npoin),             intent(in)    :: qb_df
-      real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
-      real, dimension(3,G%npoin),             intent(out) :: rhs_btp
-
-      real :: sc_x, sc_y, Hq, Qu1, Qu2, Qv1, Qv2
-      real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, ope2, grav_dp
-      real :: dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq
-      real :: pp_k, up_k, vp_k, pprime_k, pprime_k1
-      real :: sum_up2, sum_uv, sum_vp2
-      real :: wq_udp, wq_vdp, wq_scx, wq_scy, wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2
-      integer :: Iq, ip, k, I
-      integer :: npts_v, npoin_q_v, nlayers_v, botfr_v
-      real    :: cd_mlswe_v
-
-      ! Capture scalar struct members as plain HOST assignments so the parallel
-      ! region can use them as firstprivate scalars.
-      npts_v     = b%npts
-      npoin_q_v  = G%npoin_q
-      nlayers_v  = inp%nlayers
-      botfr_v    = inp%botfr
-      cd_mlswe_v = real(inp%cd_mlswe)
-
-      !$acc data present(init, tsp, btp,                                             &
-      !$acc               rhs_btp, qb_df, qprime_df,                                &
-      !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
-      !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
-      !$acc               tsp%indexq, tsp%wjac, init%pbprime_df,                    &
-      !$acc               init%coriolis_quad, init%alpha_mlswe,                     &
-      !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
-      !$acc               btp%Qv_ave, btp%ope_ave,                                  &
-      !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave)
-
-      ! Zero rhs_btp on device.
-      !$acc kernels
-      rhs_btp = 0.0
-      !$acc end kernels
-
-      !$acc parallel loop gang                                                    &
-      !$acc   private(dp, dpp, udp, vdp, pbq, hi, Hq, wq, ub, vb,               &
-      !$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y,                   &
-      !$acc           ope, ope2, grav_dp,                                         &
-      !$acc           pp_k, up_k, vp_k, pprime_k, pprime_k1,                     &
-      !$acc           Qu1, Qu2, Qv1, Qv2,                                        &
-      !$acc           dhdx, dhdy, sum_up2, sum_uv, sum_vp2,                      &
-      !$acc           wq_udp, wq_vdp, wq_scx, wq_scy,                            &
-      !$acc           wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2,                           &
-      !$acc           ip, k)
-      do Iq = 1, npoin_q_v
-
-         wq = tsp%wjac(Iq)
-
-         ! Barotropic projection
-         dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  pbq = 0.0
-         !$acc loop seq
-         do ip = 1, npts_v
-            I = tsp%indexq(ip, Iq)
-            hi = tsp%psih(ip, Iq)
-            dp  = dp  + hi * qb_df(1, I)
-            dpp = dpp + hi * qb_df(2, I)
-            udp = udp + hi * qb_df(3, I)
-            vdp = vdp + hi * qb_df(4, I)
-            pbq = pbq + hi * init%pbprime_df(I)
-         end do
-
-         ub = udp / dp
-         vb = vdp / dp
-
-         ! Layer projections, Hq, momentum-flux sums
-         Hq = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
-         pprime_k = 0.0     ! pprime_0 = 0 at sea surface
-
-         !$acc loop seq
-         do k = 1, nlayers_v
-            pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
-            !$acc loop seq
-            do ip = 1, npts_v
-               I = tsp%indexq(ip, Iq)
-               hi = tsp%psih(ip, Iq)
-               pp_k = pp_k + hi * qprime_df(1, I, k)
-               up_k = up_k + hi * qprime_df(2, I, k)
-               vp_k = vp_k + hi * qprime_df(3, I, k)
-            end do
-
-            pprime_k1 = pprime_k + pp_k
-
-            ! Diff-of-squares: pprime_{k+1}^2 - pprime_k^2
-            !   = (pprime_{k+1} + pprime_k) * pp_k
-            Hq      = Hq      + 0.5 * init%alpha_mlswe(k) * (pprime_k1 + pprime_k) * pp_k
-            sum_up2 = sum_up2 + up_k * up_k * pp_k
-            sum_uv  = sum_uv  + up_k * vp_k * pp_k
-            sum_vp2 = sum_vp2 + vp_k * vp_k * pp_k
-
-            pprime_k = pprime_k1
-         end do
-
-         ! Bottom friction
-         tb_u = 0.0;  tb_v = 0.0
-         if (botfr_v /= 0) then
-            ubot = up_k + ub
-            vbot = vp_k + vb
-            if (botfr_v == 1) then
-               spd = (cd_mlswe_v / gravity) * pp_k
-            else
-               spd = (cd_mlswe_v / init%alpha_mlswe(nlayers_v)) * sqrt(ubot**2 + vbot**2)
-            end if
-            tb_u = spd * ubot
-            tb_v = spd * vbot
-         end if
-
-         ! Free-surface factor
-         ope  = 1.0 + (dpp / pbq)
-         ope2 = ope * ope
-         Hq   = ope2 * Hq
-
-         ! Source terms
-         grav_dp = gravity * dp
-         sc_x =  init%coriolis_quad(Iq) * vdp                              &
-            + gravity * (init%tau_wind(1,Iq) - tb_u)                   &
-            - grav_dp * init%grad_zbot_quad(1,Iq)
-         sc_y = -init%coriolis_quad(Iq) * udp                              &
-            + gravity * (init%tau_wind(2,Iq) - tb_v)                   &
-            - grav_dp * init%grad_zbot_quad(2,Iq)
-
-         ! Flux tensors
-         Qu1 = ub * udp + ope * sum_up2
-         Qu2 = vb * udp + ope * sum_uv
-         Qv1 = ub * vdp + ope * sum_uv
-         Qv2 = vb * vdp + ope * sum_vp2
-
-         ! Time-average accumulators
-         btp%H_ave(Iq)               = btp%H_ave(Iq)               + Hq
-         btp%Qu_ave(Iq)              = btp%Qu_ave(Iq)              + Qu1
-         btp%Qv_ave(Iq)              = btp%Qv_ave(Iq)              + Qv1
-         btp%Quv_ave(Iq)             = btp%Quv_ave(Iq)             + Qu2
-         btp%tau_bot_ave(1,Iq)       = btp%tau_bot_ave(1,Iq)       + tb_u
-         btp%tau_bot_ave(2,Iq)       = btp%tau_bot_ave(2,Iq)       + tb_v
-         btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope
-         btp%ope2_ave(Iq)            = btp%ope2_ave(Iq)            + ope2
-         btp%btp_mass_flux_ave(1,Iq) = btp%btp_mass_flux_ave(1,Iq) + udp
-         btp%btp_mass_flux_ave(2,Iq) = btp%btp_mass_flux_ave(2,Iq) + vdp
-         btp%uvb_ave(1,Iq)           = btp%uvb_ave(1,Iq)           + ub
-         btp%uvb_ave(2,Iq)           = btp%uvb_ave(2,Iq)           + vb
-
-         ! Add hydrostatic pressure to the diagonal flux components.
-         Qu1 = Qu1 + Hq
-         Qv2 = Qv2 + Hq
-
-         ! ── Weight by quadrature Jacobian ─────────────────────────────────
-         wq_udp = wq * udp;   wq_vdp = wq * vdp
-         wq_scx = wq * sc_x;  wq_scy = wq * sc_y
-         wq_Qu1 = wq * Qu1;   wq_Qu2 = wq * Qu2
-         wq_Qv1 = wq * Qv1;   wq_Qv2 = wq * Qv2
-
-         ! Volume RHS
-         ! Atomics protect against gangs from different Iq within the same element
-         ! writing to shared nodes.
-         !$acc loop seq
-         do ip = 1, npts_v
-            I = tsp%indexq(ip, Iq)
-            hi = tsp%psih(ip, Iq)
-            dhdx = tsp%dpsidx(ip, Iq)
-            dhdy = tsp%dpsidy(ip, Iq)
-            !$acc atomic update
-            rhs_btp(1, I) = rhs_btp(1, I) + (dhdx*wq_udp + dhdy*wq_vdp)
-            !$acc atomic update
-            rhs_btp(2, I) = rhs_btp(2, I) + (hi*wq_scx + dhdx*wq_Qu1 + dhdy*wq_Qu2)
-            !$acc atomic update
-            rhs_btp(3, I) = rhs_btp(3, I) + (hi*wq_scy + dhdx*wq_Qv1 + dhdy*wq_Qv2)
-         end do
-
-      end do
-      !$acc end data
-
-   end subroutine create_rhs_btp_volume_qdf
-
-   !===========================================================================
-   subroutine create_rhs_btp_volume_qdf_v1(G, b, inp, init, btp, tsp, &
-      rhs_btp, qb_df, qprime_df)
-      !===========================================================================
-      !  Volume contribution to the barotropic RHS (DG weak form, interior).
-      !
-      !  GPU parallelism: one gang per quadrature point Iq.  All inner loops
-      !  (ip over basis nodes, k over layers) are sequential within the gang.
-      !
-      !  Data assumptions:
-      !    - rhs, qb_df, qprime_df : entered by the caller via '!$acc enter data'
-      !    - all module arrays      : entered once via openacc_enter_data
-      !    - scalar module variables (botfr, cd_mlswe, gravity, nlayers) :
-      !      implicitly firstprivate in the parallel region; no present clause needed.
-      !
-      !  Race conditions: intma_dg_quad is element-contiguous, so element ie owns
-      !  Iq = (ie-1)*nqx*nqy+1 .. ie*nqx*nqy.  One gang per element processes all
-      !  its nqx*nqy quad points sequentially, accumulates into a gang-private
-      !  rhs_loc(3,npts), then scatters to global rhs_btp once with no atomics.
+      !  One gang per element processes all its nqx*nqy quad points sequentially, 
+      !  accumulates into a gang-private rhs_loc(3,npts), then scatters to global
+      !  rhs_btp once with no atomics.
       !  DG nodes are element-local so the final scatter has no race conditions.
       !  Time-average arrays (btp%*_ave) are indexed by Iq which is unique per gang.
       !===========================================================================
@@ -343,25 +120,23 @@ contains
       real :: wq_udp, wq_vdp, wq_scx, wq_scy, wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2
       real :: rhs_loc(3, b%npts)
       integer :: Iq, ie, iquad, jquad, ip, k, I, ijq
-      integer :: npts_v, nqx_v, nqy_v, nelem_v, nlayers_v, botfr_v, npts_q
-      real    :: cd_mlswe_v
+      integer :: npts_l, nqx_l, nqy_l, nelem_l, nlayers_l, botfr_l, npts_q
+      real    :: cd_mlswe_l
 
-      ! Capture scalar struct members as plain HOST assignments so the parallel
-      ! region can use them as firstprivate scalars.
-      npts_v     = b%npts
-      nqx_v      = b%nqx
-      nqy_v      = b%nqy
-      nelem_v    = G%nelem
-      nlayers_v  = inp%nlayers
-      botfr_v    = inp%botfr
-      cd_mlswe_v = real(inp%cd_mlswe)
+      npts_l     = b%npts
+      nqx_l      = b%nqx
+      nqy_l      = b%nqy
+      nelem_l    = G%nelem
+      nlayers_l  = inp%nlayers
+      botfr_l    = inp%botfr
+      cd_mlswe_l = real(inp%cd_mlswe)
       npts_q = b%npts_quad
 
       !$acc data present(init, tsp, btp,                                             &
       !$acc               rhs_btp, qb_df, qprime_df,                                &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
-      !$acc               tsp%indexq, tsp%indexq_e, tsp%wjac, init%pbprime_df,                    &
+      !$acc               tsp%indexq, tsp%indexq_e, tsp%wjac, init%pbprime_df,      &
       !$acc               init%coriolis_quad, init%alpha_mlswe,                     &
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
@@ -383,11 +158,11 @@ contains
       !$acc           wq_udp, wq_vdp, wq_scx, wq_scy,                            &
       !$acc           wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2,                           &
       !$acc           Iq, iquad, jquad, ip, k, I, ijq)
-      do ie = 1, nelem_v
+      do ie = 1, nelem_l
 
          ! Zero gang-private accumulator for this element's nodes.
          !$acc loop seq
-         do ip = 1, npts_v
+         do ip = 1, npts_l
             rhs_loc(1, ip) = 0.0
             rhs_loc(2, ip) = 0.0
             rhs_loc(3, ip) = 0.0
@@ -403,7 +178,7 @@ contains
             ! Barotropic projection
             dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  pbq = 0.0
             !$acc loop seq
-            do ip = 1, npts_v
+            do ip = 1, npts_l
                I = tsp%indexq(ip, Iq)
                hi = tsp%psih(ip, Iq)
                dp  = dp  + hi * qb_df(1, I)
@@ -421,10 +196,10 @@ contains
             pprime_k = 0.0     ! pprime_0 = 0 at sea surface
 
             !$acc loop seq
-            do k = 1, nlayers_v
+            do k = 1, nlayers_l
                pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
                !$acc loop seq
-               do ip = 1, npts_v
+               do ip = 1, npts_l
                   I = tsp%indexq(ip, Iq)
                   hi = tsp%psih(ip, Iq)
                   pp_k = pp_k + hi * qprime_df(1, I, k)
@@ -446,13 +221,13 @@ contains
 
             ! Bottom friction
             tb_u = 0.0;  tb_v = 0.0
-            if (botfr_v /= 0) then
+            if (botfr_l /= 0) then
                ubot = up_k + ub
                vbot = vp_k + vb
-               if (botfr_v == 1) then
-                  spd = (cd_mlswe_v / gravity) * pp_k
+               if (botfr_l == 1) then
+                  spd = (cd_mlswe_l / gravity) * pp_k
                else
-                  spd = (cd_mlswe_v / init%alpha_mlswe(nlayers_v)) * sqrt(ubot**2 + vbot**2)
+                  spd = (cd_mlswe_l / init%alpha_mlswe(nlayers_l)) * sqrt(ubot**2 + vbot**2)
                end if
                tb_u = spd * ubot
                tb_v = spd * vbot
@@ -465,12 +240,10 @@ contains
 
             ! Source terms
             grav_dp = gravity * dp
-            sc_x =  init%coriolis_quad(Iq) * vdp                           &
-               + gravity * (init%tau_wind(1,Iq) - tb_u)                  &
-               - grav_dp * init%grad_zbot_quad(1,Iq)
-            sc_y = -init%coriolis_quad(Iq) * udp                           &
-               + gravity * (init%tau_wind(2,Iq) - tb_v)                  &
-               - grav_dp * init%grad_zbot_quad(2,Iq)
+            sc_x =  init%coriolis_quad(Iq) * vdp + gravity * (init%tau_wind(1,Iq) - tb_u) &
+                     - grav_dp * init%grad_zbot_quad(1,Iq)
+            sc_y = -init%coriolis_quad(Iq) * udp + gravity * (init%tau_wind(2,Iq) - tb_v) &
+                     - grav_dp * init%grad_zbot_quad(2,Iq)
 
             ! Flux tensors
             Qu1 = ub * udp + ope * sum_up2
@@ -501,9 +274,9 @@ contains
             wq_Qu1 = wq * Qu1;   wq_Qu2 = wq * Qu2
             wq_Qv1 = wq * Qv1;   wq_Qv2 = wq * Qv2
 
-            ! Accumulate into gang-private array (no race: one gang per element).
+            ! Accumulate into gang-private array (avoid race condition: one gang per element).
             !$acc loop seq
-            do ip = 1, npts_v
+            do ip = 1, npts_l
                hi   = tsp%psih(ip, Iq)
                dhdx = tsp%dpsidx(ip, Iq)
                dhdy = tsp%dpsidy(ip, Iq)
@@ -515,11 +288,10 @@ contains
          end do
 
          ! Scatter local accumulator to global rhs_btp.
-         ! No atomics: DG nodes belong to exactly one element.
          ! tsp%indexq(ip, Iq) returns the same global I for any Iq in element ie.
          Iq = tsp%indexq_e(1, ie)
          !$acc loop seq
-         do ip = 1, npts_v
+         do ip = 1, npts_l
             I = tsp%indexq(ip, Iq)
             rhs_btp(1, I) = rhs_loc(1, ip)
             rhs_btp(2, I) = rhs_loc(2, ip)
@@ -529,9 +301,9 @@ contains
       end do
       !$acc end data
 
-   end subroutine create_rhs_btp_volume_qdf_v1
+   end subroutine create_rhs_btp_volume_qdf
 
-   !===========================================================================
+
    subroutine create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb, qprime_df)
       !===========================================================================
       !  Face flux contribution to the barotropic RHS (Riemann solver).
