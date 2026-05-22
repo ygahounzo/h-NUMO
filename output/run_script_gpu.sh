@@ -2,12 +2,13 @@
 
 #SBATCH --job-name="test"
 #SBATCH --ntasks=1
-#SBATCH --mail-type="ALL"
 #SBATCH -t 1:00
 #SBATCH --gres=gpu:1
 #SBATCH -A backfill2
 #SBATCH -o out.log
+#SBATCH -e err.log
 #SBATCH --mail-type=NONE
+
 
 
 module load nvhpc/23.11
@@ -26,4 +27,4 @@ cp ../bin/numo3d .
 # mpirun --version
 # ompi_info | head -20
 
-srun -n 1 ./numo3d
+srun -n 2 ./numo3d

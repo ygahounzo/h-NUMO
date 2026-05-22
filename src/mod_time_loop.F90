@@ -186,8 +186,8 @@ contains
             print *, "Begin Time Integration: "
         end if
 
-        call openacc_initialize()
-        call openacc_enter_data(G, b, mf, btp, bcl, init, tsp, mt)
+        call openacc_initialize(par)
+        call openacc_enter_data(G, b, mf, btp, bcl, init, tsp, mt, par, ref)
 
         ! Time Loop
 
