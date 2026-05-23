@@ -20,8 +20,8 @@ subroutine unpack_data_dg_general_quad(G, b, par, q_send, q_recv, send_data, rec
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, dimension(nvarb,b%nq,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension(nvarb*b%nq*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(nvarb,b%nq,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*b%nq*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
@@ -65,8 +65,8 @@ subroutine unpack_data_dg_general_df(G, b, par, q_send, q_recv, send_data, recv_
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, dimension(nvarb,b%ngl,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension(nvarb*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(nvarb,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
@@ -109,8 +109,8 @@ subroutine unpack_data_dg_general_lap(G, b, par, q_send, q_recv, send_data, recv
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, dimension(10,b%ngl,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension(10*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(10,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(10*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
@@ -154,8 +154,8 @@ subroutine unpack_data_dg_general_bcl(G, b, inp, par, q_send, q_recv, send_data,
     type(input),       intent(in) :: inp
     type(parallel_CS), intent(in) :: par
 
-    real, dimension(3*inp%nlayers,b%ngl,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension(3*inp%nlayers*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(3*inp%nlayers,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(3*inp%nlayers*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, index, ll
@@ -201,8 +201,8 @@ subroutine unpack_data_dg_general_lap_bcl(G, b, par, q_send, q_recv, send_data, 
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nlayers
 
-    real, dimension(5*nlayers,b%ngl,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension(5*nlayers*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(5*nlayers,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(5*nlayers*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, ll, index
@@ -248,8 +248,8 @@ subroutine unpack_data_dg_general_consistency(G, b, par, q_send, q_recv, send_da
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nlayers
 
-    real, dimension(nlayers+1,b%ngl,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension((nlayers+1)*b%ngl*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(nlayers+1,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension((nlayers+1)*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
@@ -290,8 +290,8 @@ subroutine unpack_data_dg_general_quad_layer(G, par, q_send, q_recv, send_data, 
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb, nlayers, nq
 
-    real, dimension(nvarb,nq,G%nboun,nlayers), intent(out) :: q_send, q_recv
-    real, dimension(nvarb*nq*G%nboun*nlayers), intent(in)  :: send_data, recv_data
+    real, dimension(nvarb,nq,par%num_send_recv_total,nlayers), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*nq*par%num_send_recv_total*nlayers), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, ll
@@ -336,8 +336,8 @@ subroutine unpack_data_dg_general_quad_1v(G, b, par, q_send, q_recv, send_data, 
     type(basis),       intent(in) :: b
     type(parallel_CS), intent(in) :: par
 
-    real, dimension(b%nq,G%nboun), intent(out) :: q_send, q_recv
-    real, dimension(b%nq*G%nboun), intent(in)  :: send_data, recv_data
+    real, dimension(b%nq,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(b%nq*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
     integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
     integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
@@ -380,7 +380,7 @@ subroutine pack_data_dg_quad(G, b, par, q_send, q_face, nvarb)
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, intent(out) :: q_send(nvarb*b%nq*G%nboun)
+    real, intent(out) :: q_send(nvarb*b%nq*par%num_send_recv_total)
     real, intent(in)  :: q_face(nvarb,2,b%nq,G%nface)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -431,7 +431,7 @@ subroutine pack_data_dg_df(G, b, mf, init, par, q_send, q_face, nvarb)
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, intent(out) :: q_send(5*b%ngl*G%nboun)
+    real, intent(out) :: q_send(5*b%ngl*par%num_send_recv_total)
     real, intent(in)  :: q_face(nvarb,2,b%ngl,G%nface)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -495,7 +495,7 @@ subroutine pack_data_dg_df_btp(G, inp, b, mf, init, par, ref, q_send, q, qprime_
     type(mref),        intent(in) :: ref
     integer,           intent(in) :: nvarb
 
-    real, intent(out) :: q_send(ref%nbtp_var*b%ngl*G%nboun)
+    real, intent(out) :: q_send(ref%nbtp_var*b%ngl*par%num_send_recv_total)
     real, intent(in)  :: q(nvarb,G%npoin)
     real, intent(in)  :: qprime_df(3,G%npoin,inp%nlayers)
 
@@ -563,7 +563,7 @@ subroutine pack_data_dg_df_btp_lap(G, b, mf, init, par, q_send, q, btp_dpp_gradu
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, intent(out) :: q_send(10*b%ngl*G%nboun)
+    real, intent(out) :: q_send(10*b%ngl*par%num_send_recv_total)
     real, intent(in)  :: q(nvarb,G%npoin)
     real, intent(in)  :: btp_dpp_graduv(4,G%npoin)
     real, intent(in)  :: pbprime_visc(G%npoin)
@@ -631,7 +631,7 @@ subroutine pack_data_dg_df_bcl(G, inp, b, mf, par, q_send, q)
     type(input),       intent(in) :: inp
     type(parallel_CS), intent(in) :: par
 
-    real, intent(out) :: q_send(3*inp%nlayers*b%ngl*G%nboun)
+    real, intent(out) :: q_send(3*inp%nlayers*b%ngl*par%num_send_recv_total)
     real, intent(in)  :: q(3,G%npoin,inp%nlayers)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -688,7 +688,7 @@ subroutine pack_data_dg_df_bcl_lap(G, b, mf, par, q_send, dpp_graduv, dpprime_vi
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nlayers
 
-    real, intent(out) :: q_send(5*nlayers*b%ngl*G%nboun)
+    real, intent(out) :: q_send(5*nlayers*b%ngl*par%num_send_recv_total)
     real, intent(in)  :: dpp_graduv(4,G%npoin,nlayers)
     real, intent(in)  :: dpprime_visc(G%npoin,nlayers)
 
@@ -753,7 +753,7 @@ subroutine pack_data_dg_consistency(G, b, mf, init, par, q_send, dprime_df, nlay
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nlayers
 
-    real, intent(out) :: q_send((nlayers+1)*b%ngl*G%nboun)
+    real, intent(out) :: q_send((nlayers+1)*b%ngl*par%num_send_recv_total)
     real, intent(in)  :: dprime_df(G%npoin,nlayers)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -808,7 +808,7 @@ subroutine pack_data_dg_quad_all(G, b, par, q_send, q_face, grad_face, nvarb)
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, intent(out) :: q_send(2*nvarb*b%nq*G%nboun)
+    real, intent(out) :: q_send(2*nvarb*b%nq*par%num_send_recv_total)
     real, intent(in)  :: q_face(nvarb,2,b%nq,G%nface)
     real, intent(in)  :: grad_face(nvarb,2,b%nq,G%nface)
 
@@ -864,7 +864,7 @@ subroutine pack_data_dg_quad_lap(G, b, mf, par, q_send, grad_uvdp, nvarb)
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb
 
-    real, intent(out) :: q_send(nvarb*b%nq*G%nboun)
+    real, intent(out) :: q_send(nvarb*b%nq*par%num_send_recv_total)
     real, intent(in)  :: grad_uvdp(nvarb,G%npoin_q)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -916,7 +916,7 @@ subroutine pack_data_dg_quad_layer(G, par, q_send, q_face, nvarb, nlayers, nq)
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb, nlayers, nq
 
-    real, intent(out) :: q_send(nvarb*nq*G%nboun*nlayers)
+    real, intent(out) :: q_send(nvarb*nq*par%num_send_recv_total*nlayers)
     real, intent(in)  :: q_face(nvarb,2,nq,G%nface,nlayers)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -965,7 +965,7 @@ subroutine pack_data_dg_quad_layer_all(G, b, par, q_send, q_face, qprime_face, n
     type(parallel_CS), intent(in) :: par
     integer,           intent(in) :: nvarb, nlayers
 
-    real, intent(out) :: q_send(2*nvarb*b%nq*G%nboun*nlayers)
+    real, intent(out) :: q_send(2*nvarb*b%nq*par%num_send_recv_total*nlayers)
     real, dimension(nvarb,2,b%nq,G%nface,nlayers), intent(in) :: q_face, qprime_face
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -1020,7 +1020,7 @@ subroutine pack_data_dg_quad_1v(G, b, par, q_send, q_face)
     type(basis),       intent(in) :: b
     type(parallel_CS), intent(in) :: par
 
-    real, intent(out) :: q_send(b%nq*G%nboun)
+    real, intent(out) :: q_send(b%nq*par%num_send_recv_total)
     real, intent(in)  :: q_face(2,b%nq,G%nface)
 
     integer :: ii, jj, i, inbh, ib, iface, imulti, el, il, jl, kl, ivar
@@ -1081,8 +1081,8 @@ subroutine send_bound_dg_general(G, b, par, send_data, recv_data, nsize, nreq, i
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nsize
 
-    real, intent(in)  :: send_data(nsize*b%ngl*b%ngl*G%nboun)
-    real, intent(out) :: recv_data(nsize*b%ngl*b%ngl*G%nboun)
+    real, intent(in)  :: send_data(nsize*b%ngl*b%ngl*par%num_send_recv_total)
+    real, intent(out) :: recv_data(nsize*b%ngl*b%ngl*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1151,8 +1151,8 @@ subroutine send_bound_dg_general_quad(G, b, par, send_data, recv_data, nvarb, nr
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nvarb
 
-    real, intent(in)  :: send_data(nvarb*b%nq*G%nboun)
-    real, intent(out) :: recv_data(nvarb*b%nq*G%nboun)
+    real, intent(in)  :: send_data(nvarb*b%nq*par%num_send_recv_total)
+    real, intent(out) :: recv_data(nvarb*b%nq*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1219,8 +1219,8 @@ subroutine send_bound_dg_general_df(G, b, par, send_data, recv_data, nvarb, nreq
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nvarb
 
-    real, intent(in)  :: send_data(nvarb*b%ngl*G%nboun)
-    real, intent(out) :: recv_data(nvarb*b%ngl*G%nboun)
+    real, intent(in)  :: send_data(nvarb*b%ngl*par%num_send_recv_total)
+    real, intent(out) :: recv_data(nvarb*b%ngl*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1286,8 +1286,8 @@ subroutine send_bound_dg_general_lap(G, b, par, send_data, recv_data, nvarb, nre
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nvarb
 
-    real, intent(in)  :: send_data(10*b%ngl*G%nboun)
-    real, intent(out) :: recv_data(10*b%ngl*G%nboun)
+    real, intent(in)  :: send_data(10*b%ngl*par%num_send_recv_total)
+    real, intent(out) :: recv_data(10*b%ngl*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1354,8 +1354,8 @@ subroutine send_bound_dg_general_bcl(G, b, inp, par, send_data, recv_data, nreq,
     type(input),       intent(in)  :: inp
     type(parallel_CS), intent(in)  :: par
 
-    real, intent(in)  :: send_data(3*inp%nlayers*b%ngl*G%nboun)
-    real, intent(out) :: recv_data(3*inp%nlayers*b%ngl*G%nboun)
+    real, intent(in)  :: send_data(3*inp%nlayers*b%ngl*par%num_send_recv_total)
+    real, intent(out) :: recv_data(3*inp%nlayers*b%ngl*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1421,8 +1421,8 @@ subroutine send_bound_dg_general_lap_bcl(G, b, par, send_data, recv_data, nlayer
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nlayers
 
-    real, intent(in)  :: send_data(5*nlayers*b%ngl*G%nboun)
-    real, intent(out) :: recv_data(5*nlayers*b%ngl*G%nboun)
+    real, intent(in)  :: send_data(5*nlayers*b%ngl*par%num_send_recv_total)
+    real, intent(out) :: recv_data(5*nlayers*b%ngl*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1488,8 +1488,8 @@ subroutine send_bound_dg_general_consistency(G, b, par, send_data, recv_data, nl
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nlayers
 
-    real, intent(in)  :: send_data((nlayers+1)*b%ngl*G%nboun)
-    real, intent(out) :: recv_data((nlayers+1)*b%ngl*G%nboun)
+    real, intent(in)  :: send_data((nlayers+1)*b%ngl*par%num_send_recv_total)
+    real, intent(out) :: recv_data((nlayers+1)*b%ngl*par%num_send_recv_total)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)
@@ -1555,8 +1555,8 @@ subroutine send_bound_dg_general_quad_layer(G, b, par, send_data, recv_data, nva
     type(parallel_CS), intent(in)  :: par
     integer,           intent(in)  :: nvarb, nlayers, nq
 
-    real, intent(in)  :: send_data(nvarb*nq*G%nboun*nlayers)
-    real, intent(out) :: recv_data(nvarb*nq*G%nboun*nlayers)
+    real, intent(in)  :: send_data(nvarb*nq*par%num_send_recv_total*nlayers)
+    real, intent(out) :: recv_data(nvarb*nq*par%num_send_recv_total*nlayers)
     integer, intent(out) :: nreq
     integer, intent(out) :: ireq(2*par%num_nbh)
     integer, intent(out) :: status(mpi_status_size,2*par%num_nbh)

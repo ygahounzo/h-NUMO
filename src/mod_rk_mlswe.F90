@@ -70,8 +70,11 @@ contains
       btp%graduvb_ave             = 0.0
 
       ! Push zeroed accumulators to the device so GPU accumulation starts from 0.
-      !$acc update device(btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%tau_bot_ave, &
-      !$acc               btp%ope_ave, btp%ope2_ave, btp%btp_mass_flux_ave, btp%uvb_ave)
+      !$acc update device(btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%tau_bot_ave,  &
+      !$acc               btp%ope_ave, btp%ope2_ave, btp%btp_mass_flux_ave, btp%uvb_ave,     &
+      !$acc               btp%H_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,                  &
+      !$acc               btp%ope_face_ave, btp%ope2_face_ave, btp%btp_mass_flux_face_ave,   &
+      !$acc               btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave)
 
       qb2_df = 0.0
 
@@ -117,9 +120,12 @@ contains
 
       end do
 
-      ! Update on the host GPU-accumulated averaging variables to host before normalisation.
-      !$acc update host(btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%tau_bot_ave, &
-      !$acc             btp%ope_ave, btp%ope2_ave, btp%btp_mass_flux_ave, btp%uvb_ave)
+      ! Download GPU-accumulated averaging variables to host before normalisation.
+      !$acc update host(btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%tau_bot_ave,  &
+      !$acc             btp%ope_ave, btp%ope2_ave, btp%btp_mass_flux_ave, btp%uvb_ave,     &
+      !$acc             btp%H_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,                  &
+      !$acc             btp%ope_face_ave, btp%ope2_face_ave, btp%btp_mass_flux_face_ave,   &
+      !$acc             btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave)
 
       ! Normalise accumulators to get time averages
       N_inv = 1.0 / real(inp%kstages * init%N_btp)

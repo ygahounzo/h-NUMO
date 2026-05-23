@@ -94,30 +94,30 @@ contains
             ref%grad_rho_ref(3,G%npoin), ref%grad_theta_ref(3,G%npoin), &
             ref%grad_salinity_ref(3,G%npoin), ref%div_u_ref(G%npoin), &
             ref%grad_bathy(3,G%npoin), &
-            ref%q_recv_quad(4,b%nq,G%nboun), ref%q_send_quad(4,b%nq,G%nboun), &
+            ref%q_recv_quad(4,b%nq,par%num_send_recv_total), ref%q_send_quad(4,b%nq,par%num_send_recv_total), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
         if(allocated(ref%lap_q_recv_df1)) then
             deallocate(ref%lap_q_recv_df1, ref%lap_q_send_df1)
         endif
-        allocate(ref%lap_q_recv_df1(5,b%ngl,G%nboun), ref%lap_q_send_df1(5,b%ngl,G%nboun), &
+        allocate(ref%lap_q_recv_df1(5,b%ngl,par%num_send_recv_total), ref%lap_q_send_df1(5,b%ngl,par%num_send_recv_total), &
             stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
         if(allocated(ref%lap_recv_data_dg_df1)) then
             deallocate(ref%lap_recv_data_dg_df1, ref%lap_send_data_dg_df1)
         endif
-        allocate(ref%lap_recv_data_dg_df1(5*b%ngl*G%nboun), &
-            ref%lap_send_data_dg_df1(5*b%ngl*G%nboun), &
+        allocate(ref%lap_recv_data_dg_df1(5*b%ngl*par%num_send_recv_total), &
+            ref%lap_send_data_dg_df1(5*b%ngl*par%num_send_recv_total), &
             stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
         if(allocated(ref%q_send)) then
             deallocate(ref%q_send, ref%q_recv, ref%q_send_lap, ref%q_recv_lap)
         endif
-        allocate(ref%q_send(ref%nbtp_var,b%ngl,G%nboun), ref%q_recv(ref%nbtp_var,b%ngl,G%nboun), &
-            ref%q_send_lap(10,b%ngl,G%nboun), ref%q_recv_lap(10,b%ngl,G%nboun), &
+        allocate(ref%q_send(ref%nbtp_var,b%ngl,par%num_send_recv_total), ref%q_recv(ref%nbtp_var,b%ngl,par%num_send_recv_total), &
+            ref%q_send_lap(10,b%ngl,par%num_send_recv_total), ref%q_recv_lap(10,b%ngl,par%num_send_recv_total), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
@@ -126,18 +126,18 @@ contains
                 deallocate(ref%recv_data_dg, ref%send_data_dg, &
                     ref%recv_data_dg_lap, ref%send_data_dg_lap)
             endif
-            allocate( ref%recv_data_dg(ref%nbtp_var*b%ngl*G%nboun), &
-                ref%send_data_dg(ref%nbtp_var*b%ngl*G%nboun), &
-                ref%recv_data_dg_lap(10*b%ngl*G%nboun), &
-                ref%send_data_dg_lap(10*b%ngl*G%nboun), &
+            allocate( ref%recv_data_dg(ref%nbtp_var*b%ngl*par%num_send_recv_total), &
+                ref%send_data_dg(ref%nbtp_var*b%ngl*par%num_send_recv_total), &
+                ref%recv_data_dg_lap(10*b%ngl*par%num_send_recv_total), &
+                ref%send_data_dg_lap(10*b%ngl*par%num_send_recv_total), &
                 stat=AllocateStatus )
             if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 
             if(allocated(ref%recv_data_dg_quad)) then
                 deallocate(ref%recv_data_dg_quad, ref%send_data_dg_quad)
             endif
-            allocate(ref%recv_data_dg_quad(4*b%nq*G%nboun), &
-                ref%send_data_dg_quad(4*b%nq*G%nboun), &
+            allocate(ref%recv_data_dg_quad(4*b%nq*par%num_send_recv_total), &
+                ref%send_data_dg_quad(4*b%nq*par%num_send_recv_total), &
                 stat=AllocateStatus )
             if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
         ! end if
@@ -145,10 +145,10 @@ contains
         if(allocated(ref%q_send_bcl)) then
             deallocate(ref%q_send_bcl, ref%q_recv_bcl, ref%q_send_lap_bcl, ref%q_recv_lap_bcl)
         endif
-        allocate(ref%q_send_bcl(3*inp%nlayers,b%ngl,G%nboun), &
-            ref%q_recv_bcl(3*inp%nlayers,b%ngl,G%nboun), &
-            ref%q_send_lap_bcl(5*inp%nlayers,b%ngl,G%nboun), &
-            ref%q_recv_lap_bcl(5*inp%nlayers,b%ngl,G%nboun), &
+        allocate(ref%q_send_bcl(3*inp%nlayers,b%ngl,par%num_send_recv_total), &
+            ref%q_recv_bcl(3*inp%nlayers,b%ngl,par%num_send_recv_total), &
+            ref%q_send_lap_bcl(5*inp%nlayers,b%ngl,par%num_send_recv_total), &
+            ref%q_recv_lap_bcl(5*inp%nlayers,b%ngl,par%num_send_recv_total), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
@@ -156,26 +156,26 @@ contains
             deallocate(ref%recv_data_bcl, ref%send_data_bcl, &
                 ref%recv_data_lap_bcl, ref%send_data_lap_bcl)
         endif
-        allocate( ref%recv_data_bcl(3*inp%nlayers*b%ngl*G%nboun), &
-            ref%send_data_bcl(3*inp%nlayers*b%ngl*G%nboun), &
-            ref%recv_data_lap_bcl(5*inp%nlayers*b%ngl*G%nboun), &
-            ref%send_data_lap_bcl(5*inp%nlayers*b%ngl*G%nboun), &
+        allocate( ref%recv_data_bcl(3*inp%nlayers*b%ngl*par%num_send_recv_total), &
+            ref%send_data_bcl(3*inp%nlayers*b%ngl*par%num_send_recv_total), &
+            ref%recv_data_lap_bcl(5*inp%nlayers*b%ngl*par%num_send_recv_total), &
+            ref%send_data_lap_bcl(5*inp%nlayers*b%ngl*par%num_send_recv_total), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 
         if(allocated(ref%q_send_csty)) then
             deallocate(ref%q_send_csty, ref%q_recv_csty)
         endif
-        allocate(ref%q_send_csty(inp%nlayers+1,b%ngl,G%nboun), &
-            ref%q_recv_csty(inp%nlayers+1,b%ngl,G%nboun), &
+        allocate(ref%q_send_csty(inp%nlayers+1,b%ngl,par%num_send_recv_total), &
+            ref%q_recv_csty(inp%nlayers+1,b%ngl,par%num_send_recv_total), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
         if(allocated(ref%recv_data_csty)) then
             deallocate(ref%recv_data_csty, ref%send_data_csty)
         endif
-        allocate( ref%recv_data_csty((inp%nlayers+1)*b%ngl*G%nboun), &
-            ref%send_data_csty((inp%nlayers+1)*b%ngl*G%nboun), &
+        allocate( ref%recv_data_csty((inp%nlayers+1)*b%ngl*par%num_send_recv_total), &
+            ref%send_data_csty((inp%nlayers+1)*b%ngl*par%num_send_recv_total), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 

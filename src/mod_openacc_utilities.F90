@@ -148,13 +148,16 @@ contains
       !$acc                   bcl%dpp_uvp)
 
       ! mod_ref
-      ! recv_data is a receive buffer: allocate on device, no initial copy needed
+      ! recv_data is a receive buffer: allocate on device, no initial copy needed.
+      ! q_send/q_recv hold packed MPI boundary data; updated each sub-step via
+      ! !$acc update device after unpack so create_nbhs_face_df can run on GPU.
       !$acc enter data copyin(ref)
       !$acc enter data create(ref%recv_data)
+      !$acc enter data copyin(ref%q_send, ref%q_recv)
 
       ! mod_parallel
       !$acc enter data copyin(par)
-      !$acc enter data copyin(par%nbh_send_recv)
+      !$acc enter data copyin(par%nbh_send_recv, par%num_send_recv_total)
 
       ! mod_bc
       !$acc enter data copyin(bc_count, bc_list)

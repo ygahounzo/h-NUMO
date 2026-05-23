@@ -4,10 +4,15 @@
 !> populates q_send and q_recv
 !>@author James F. Kelly
 !>@date 16 November 2010
-!>@date September 7, 2015 by F.X. Giraldo to reuse new ELEMENTAL_FLUX and RUSANOV 
+!>@date September 7, 2015 by F.X. Giraldo to reuse new ELEMENTAL_FLUX and RUSANOV
 !>routines that use long vectors
-!>@date January 2016 by M.A. Kopera - accounts for non-conforming faces 
+!>@date January 2016 by M.A. Kopera - accounts for non-conforming faces
 !>@date April 2024 modified by Yao Gahounzo
+!>@date May 2026 GPU port by Yao Gahounzo
+!>  One gang per MPI boundary face.  q_send/q_recv must be present on device
+!>  before calling (upload via !$acc update device after mpi_waitall + unpack).
+!>  rhs and btp%*_face_ave are already on device.  rhs is scattered with
+!>  atomics; face_ave entries are (iquad,iface)-unique per gang — no atomics.
 !----------------------------------------------------------------------!
 
  subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, nvarb)
@@ -31,197 +36,244 @@
    type(btp_CS),      intent(inout) :: btp
    type(initial),     intent(in)    :: init
 
-   !global arrays
    integer, intent(in) :: nvarb
-   real, intent(in)    :: q_send(nvarb, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(nvarb, b%ngl, G%nboun)
+   real, intent(in)    :: q_send(nvarb, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(nvarb, b%ngl, par%num_send_recv_total)
    real, intent(inout) :: rhs(3, G%npoin)
- 
-   !local variables
- 
-   integer :: jj, imm, inbh, ib, kk, ii
-   integer :: imulti
-   integer :: iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
-   real :: wq, hi, nxl, nyl, nxr, nyr, un
-   real :: ul, ur, vl, vr, pbl, pbr, clam, one_eta
-   real :: pU_L, pU_R, pbpert_edge
-   real :: qbl(4), qbr(4), flux(3,b%nq)
-   real :: c_minus, c_plus
-   real :: ppl, ppr, upl, upr, vpl, vpr
-   real, dimension(inp%nlayers+1) :: pprime_l, pprime_r
-   integer :: itype, k
-   real :: H_bcl_ql, H_bcl_qr, H_bcl_q, flux_pb, flux_u, flux_v, fxl, fxr, flux_edge_x, flux_edge_y
-   real, dimension(2) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr
 
-   jj=1
-   kk=1
-   imm = 0
+   integer :: jj, iface, iquad, el, il, jl, kl, I, n, k
+   real    :: wq, hi, nxl, nyl
+   real    :: ul, ur, vl, vr, pbl, pbr, clam, one_eta, one_eta2
+   real    :: pU_L, pU_R, pbpert_edge, half_clam, quarter_clam, half_clam_dqb2
+   real    :: qbl(4), qbr(4)
+   real    :: c_minus, c_plus
+   real    :: H_bcl_ql, H_bcl_qr, H_bcl_q, oe2_Hql, oe2_Hqr
+   real    :: Qu_ql1, Qu_ql2, Qu_qr1, Qu_qr2
+   real    :: Qv_ql1, Qv_ql2, Qv_qr1, Qv_qr2
+   real    :: flux_edge_x, flux_edge_y, flux_pb, flux_u, flux_v
+   real    :: pprime_lk, pprime_rk, pprime_lk1, pprime_rk1
+   real    :: pkl, pkr, ukl, ukr, vkl, vkr
+   real    :: ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r
+   real    :: opl, opr, wq_flux_pb, wq_flux_u, wq_flux_v
+   real,    dimension(b%ngl) :: hi_c
+   integer, dimension(b%ngl) :: I_l
 
-   do inbh = 1, par%num_nbh
-      do ib=1,par%num_send_recv(inbh)
-         iface = par%nbh_send_recv(jj)
-         imulti = par%nbh_send_recv_multi(jj)
+   ! Capture derived-type scalars for GPU firstprivate.
+   integer :: ngl_f, nq_f, nlayers_f, nboun_f
+   ngl_f     = b%ngl
+   nq_f      = b%nq
+   nlayers_f = inp%nlayers
+   nboun_f   = par%num_send_recv_total
 
-         el = G%face(7,iface)
-         er = G%face(8,iface)
- 
-         !-------------------------------------
-         !Store Left Side Variables
-         !-------------------------------------
+   if (nboun_f == 0) return
 
-         do iquad = 1, b%nq
+   !$acc data present(btp, rhs, G%face, G%intma, par%nbh_send_recv,         &
+   !$acc              mf%imapl, mf%normal_vector_q, mf%jac_faceq,           &
+   !$acc              b%psiq, init%alpha_mlswe,                              &
+   !$acc              btp%H_face_ave, btp%ope_face_ave, btp%ope2_face_ave,   &
+   !$acc              btp%btp_mass_flux_face_ave, btp%Qu_face_ave,           &
+   !$acc              btp%Qv_face_ave, btp%one_plus_eta_edge_2_ave,          &
+   !$acc              btp%uvb_face_ave, q_send, q_recv)
 
-            nxl = mf%normal_vector_q(1,iquad,1,iface)
-            nyl = mf%normal_vector_q(2,iquad,1,iface)
+   !$acc parallel loop gang                                                   &
+   !$acc   private(iface, el, il, jl, kl, I, n, k,                           &
+   !$acc           I_l, hi_c,                                                 &
+   !$acc           qbl, qbr, pbl, pbr,                                        &
+   !$acc           nxl, nyl, wq, hi,                                          &
+   !$acc           clam, one_eta, one_eta2, half_clam, quarter_clam,          &
+   !$acc           pU_L, pU_R, half_clam_dqb2, pbpert_edge,                   &
+   !$acc           c_minus, c_plus, ul, ur, vl, vr, opl, opr,                 &
+   !$acc           H_bcl_ql, H_bcl_qr, H_bcl_q, oe2_Hql, oe2_Hqr,           &
+   !$acc           Qu_ql1, Qu_ql2, Qu_qr1, Qu_qr2,                           &
+   !$acc           Qv_ql1, Qv_ql2, Qv_qr1, Qv_qr2,                           &
+   !$acc           flux_edge_x, flux_edge_y, flux_pb, flux_u, flux_v,         &
+   !$acc           pprime_lk, pprime_rk, pprime_lk1, pprime_rk1,              &
+   !$acc           pkl, pkr, ukl, ukr, vkl, vkr,                              &
+   !$acc           ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r,             &
+   !$acc           wq_flux_pb, wq_flux_u, wq_flux_v)
+   do jj = 1, nboun_f
 
-            nxr = -nxl; nyr = -nyl
+      iface = par%nbh_send_recv(jj)
+      el    = G%face(7, iface)
 
-            qbl = 0.0; qbr = 0.0 ; pbl = 0.0; pbr = 0.0
-            do n = 1,b%ngl
-               hi = b%psiq(n,iquad)
-               !Left Element
-               qbl(1:4) = qbl(1:4) + hi*q_send(1:4,n,kk)
-               pbl = pbl + hi*q_send(5,n,kk)
-               !Right Element
-               qbr(1:4) = qbr(1:4) + hi*q_recv(1:4,n,kk)
-               pbr = pbr + hi*q_recv(5,n,kk)
-            end do
-
-            pU_L = nxl * qbl(3) + nyl * qbl(4)
-            pU_R = nxr * qbr(3) + nyr * qbr(4)
-
-            c_minus = sqrt(init%alpha_mlswe(inp%nlayers) * pbr)
-            c_plus  = sqrt(init%alpha_mlswe(inp%nlayers) * pbl)
-            clam = max(c_minus, c_plus)
-
-            pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam) * (pU_L + pU_R)
-            one_eta = 1.0 + (pbpert_edge/pbl)
-
-            ul = qbl(3)/qbl(1); ur = qbr(3)/qbr(1)
-            vl = qbl(4)/qbl(1); vr = qbr(4)/qbr(1)
-
-            Qu_ql(1) = ul*qbl(3) ; Qu_ql(2) = vl*qbl(3)
-            Qu_qr(1) = ur*qbr(3) ; Qu_qr(2) = vr*qbr(3)
-
-            Qv_ql(1) = ul*qbl(4) ; Qv_ql(2) = vl*qbl(4)
-            Qv_qr(1) = ur*qbr(4) ; Qv_qr(2) = vr*qbr(4)
-
-            pprime_l(:) = 0.0; pprime_r(:) = 0.0 ; H_bcl_q = 0.0
-            H_bcl_ql = 0.0 ; H_bcl_qr = 0.0
-            do k = 1, inp%nlayers
-               ppl = 0.0; ppr = 0.0 ; upl = 0.0; upr = 0.0 ; vpl = 0.0; vpr = 0.0
-
-               ii = 5 + (k-1)*3
-               do n = 1, b%ngl
-                  il = mf%imapl(1,n,1,iface)
-                  jl = mf%imapl(2,n,1,iface)
-                  kl = mf%imapl(3,n,1,iface)
-                  I = G%intma(il,jl,kl,el)
-
-                  hi = b%psiq(n,iquad)
-                  ppl = ppl + hi*q_send(ii+1,n,kk)
-                  ppr = ppr + hi*q_recv(ii+1,n,kk)
-
-                  upl = upl + hi*q_send(ii+2,n,kk)
-                  upr = upr + hi*q_recv(ii+2,n,kk)
-
-                  vpl = vpl + hi*q_send(ii+3,n,kk)
-                  vpr = vpr + hi*q_recv(ii+3,n,kk)
-               enddo
-
-               Qu_ql(1) = Qu_ql(1) + (upl*(upl*(one_eta*ppl)))
-               Qu_qr(1) = Qu_qr(1) + (upr*(upr*(one_eta*ppr)))
-               Qu_ql(2) = Qu_ql(2) + (vpl*(upl*(one_eta*ppl)))
-               Qu_qr(2) = Qu_qr(2) + (vpr*(upr*(one_eta*ppr)))
-
-               Qv_ql(1) = Qv_ql(1) + (upl*(vpl*(one_eta*ppl)))
-               Qv_qr(1) = Qv_qr(1) + (upr*(vpr*(one_eta*ppr)))
-               Qv_ql(2) = Qv_ql(2) + (vpl*(vpl*(one_eta*ppl)))
-               Qv_qr(2) = Qv_qr(2) + (vpr*(vpr*(one_eta*ppr)))
-
-               pprime_l(k+1) = pprime_l(k) + ppl
-               pprime_r(k+1) = pprime_r(k) + ppr
-
-               H_bcl_ql  = H_bcl_ql + 0.5*init%alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
-               H_bcl_qr  = H_bcl_qr + 0.5*init%alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
-            end do
-
-            ! Compute mass fluxes at each element face.
-
-            flux_edge_x = 0.5*(qbl(3) + qbr(3)) + (0.5*clam)*(nxl * qbl(2) + nxr * qbr(2))
-            flux_edge_y = 0.5*(qbl(4) + qbr(4)) + (0.5*clam)*(nyl * qbl(2) + nyr * qbr(2))
-            flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y
-
-            ! Compute pressure forcing H_face at each element face.
-            H_bcl_q = (one_eta**2) * (0.5 * (H_bcl_ql + H_bcl_qr))
-
-            ! Accumulate sums for time averaging
-
-            btp%btp_mass_flux_face_ave(1,iquad,iface) = btp%btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
-            btp%btp_mass_flux_face_ave(2,iquad,iface) = btp%btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
-
-            btp%H_face_ave(iquad,iface) = btp%H_face_ave(iquad,iface) + H_bcl_q
-            btp%Qu_face_ave(1,iquad,iface) = btp%Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1) + Qu_qr(1))
-            btp%Qu_face_ave(2,iquad,iface) = btp%Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql(2) + Qu_qr(2))
-            btp%Qv_face_ave(1,iquad,iface) = btp%Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql(1) + Qv_qr(1))
-            btp%Qv_face_ave(2,iquad,iface) = btp%Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql(2) + Qv_qr(2))
-            btp%ope_face_ave(1,iquad,iface) = btp%ope_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))
-            btp%ope_face_ave(2,iquad,iface) = btp%ope_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))
-            btp%ope2_face_ave(1,iquad,iface) = btp%ope2_face_ave(1,iquad,iface) + (1.0 + (qbl(2)/pbl))**2
-            btp%ope2_face_ave(2,iquad,iface) = btp%ope2_face_ave(2,iquad,iface) + (1.0 + (qbr(2)/pbr))**2
-            btp%one_plus_eta_edge_2_ave(iquad,iface) = btp%one_plus_eta_edge_2_ave(iquad,iface) &
-                                                + one_eta**2
-            btp%uvb_face_ave(1,1,iquad,iface) = btp%uvb_face_ave(1,1,iquad,iface) + ul
-            btp%uvb_face_ave(1,2,iquad,iface) = btp%uvb_face_ave(1,2,iquad,iface) + ur
-            btp%uvb_face_ave(2,1,iquad,iface) = btp%uvb_face_ave(2,1,iquad,iface) + vl
-            btp%uvb_face_ave(2,2,iquad,iface) = btp%uvb_face_ave(2,2,iquad,iface) + vr
-
-            Qu_ql(1) = Qu_ql(1) + (one_eta**2)*H_bcl_ql
-            Qu_qr(1) = Qu_qr(1) + (one_eta**2)*H_bcl_qr
-
-            fxl = nxl*Qu_ql(1) + nyl*Qu_ql(2)
-            fxr = nxr*Qu_qr(1) + nyr*Qu_qr(2)
-
-            flux(2,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(3) - qbl(3))
-
-            Qv_ql(2) = Qv_ql(2) + (one_eta**2)*H_bcl_ql
-            Qv_qr(2) = Qv_qr(2) + (one_eta**2)*H_bcl_qr
-
-            fxl = nxl*Qv_ql(1) + nyl*Qv_ql(2)
-            fxr = nxr*Qv_qr(1) + nyr*Qv_qr(2)
-
-            flux(3,iquad) = 0.5*(fxl - fxr) - (0.25*clam)*(qbr(4) - qbl(4))
-
-         end do !iquad
-
-         do iquad = 1, b%nq
-
-            wq = mf%jac_faceq(iquad,1,iface)
-
-            flux_pb = flux(1,iquad)
-            flux_u = flux(2,iquad)
-            flux_v = flux(3,iquad)
-
-            do n = 1, b%ngl
-
-               hi = b%psiq(n,iquad)
-               il = mf%imapl(1,n,1,iface)
-               jl = mf%imapl(2,n,1,iface)
-               kl = mf%imapl(3,n,1,iface)
-               I = G%intma(il,jl,kl,el)
-
-               rhs(1,I) = rhs(1,I) - wq*hi*flux_pb
-               rhs(2,I) = rhs(2,I) - wq*hi*flux_u
-               rhs(3,I) = rhs(3,I) - wq*hi*flux_v
-            end do
-         end do !iquad
-
-         kk=kk+1
-         jj=jj+1
+      ! Precompute left element node indices once per face.
+      !$acc loop seq
+      do n = 1, ngl_f
+         il     = mf%imapl(1, n, 1, iface)
+         jl     = mf%imapl(2, n, 1, iface)
+         kl     = mf%imapl(3, n, 1, iface)
+         I_l(n) = G%intma(il, jl, kl, el)
       end do
- 
-   end do !iface
- 
+
+      !$acc loop seq
+      do iquad = 1, nq_f
+
+         nxl = mf%normal_vector_q(1, iquad, 1, iface)
+         nyl = mf%normal_vector_q(2, iquad, 1, iface)
+
+         !$acc loop seq
+         do n = 1, ngl_f
+            hi_c(n) = b%psiq(n, iquad)
+         end do
+
+         ! Project LEFT state from packed send buffer (this processor's boundary data).
+         qbl(1) = 0.0;  qbl(2) = 0.0;  qbl(3) = 0.0;  qbl(4) = 0.0
+         pbl = 0.0
+         !$acc loop seq
+         do n = 1, ngl_f
+            hi     = hi_c(n)
+            qbl(1) = qbl(1) + hi * q_send(1, n, jj)
+            qbl(2) = qbl(2) + hi * q_send(2, n, jj)
+            qbl(3) = qbl(3) + hi * q_send(3, n, jj)
+            qbl(4) = qbl(4) + hi * q_send(4, n, jj)
+            pbl    = pbl    + hi * q_send(5, n, jj)
+         end do
+
+         ! Project RIGHT state from receive buffer (neighbour's boundary data).
+         qbr(1) = 0.0;  qbr(2) = 0.0;  qbr(3) = 0.0;  qbr(4) = 0.0
+         pbr = 0.0
+         !$acc loop seq
+         do n = 1, ngl_f
+            hi     = hi_c(n)
+            qbr(1) = qbr(1) + hi * q_recv(1, n, jj)
+            qbr(2) = qbr(2) + hi * q_recv(2, n, jj)
+            qbr(3) = qbr(3) + hi * q_recv(3, n, jj)
+            qbr(4) = qbr(4) + hi * q_recv(4, n, jj)
+            pbr    = pbr    + hi * q_recv(5, n, jj)
+         end do
+
+         ! Wave speeds.
+         pU_L = nxl*qbl(3) + nyl*qbl(4)
+         pU_R = -(nxl*qbr(3) + nyl*qbr(4))
+
+         c_minus      = sqrt(init%alpha_mlswe(nlayers_f) * pbr)
+         c_plus       = sqrt(init%alpha_mlswe(nlayers_f) * pbl)
+         clam         = max(c_minus, c_plus)
+         half_clam    = 0.5  * clam
+         quarter_clam = 0.25 * clam
+
+         pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam)*(pU_L + pU_R)
+         one_eta     = 1.0 + pbpert_edge / pbl
+         one_eta2    = one_eta * one_eta
+
+         ul = qbl(3) / qbl(1);  ur = qbr(3) / qbr(1)
+         vl = qbl(4) / qbl(1);  vr = qbr(4) / qbr(1)
+
+         ! Initialise flux tensors from barotropic state.
+         Qu_ql1 = ul * qbl(3);  Qu_ql2 = vl * qbl(3)
+         Qu_qr1 = ur * qbr(3);  Qu_qr2 = vr * qbr(3)
+         Qv_ql1 = ul * qbl(4);  Qv_ql2 = vl * qbl(4)
+         Qv_qr1 = ur * qbr(4);  Qv_qr2 = vr * qbr(4)
+         H_bcl_ql  = 0.0;  H_bcl_qr  = 0.0
+         pprime_lk = 0.0;  pprime_rk = 0.0
+
+         ! Layer projection + flux accumulation.
+         !$acc loop seq
+         do k = 1, nlayers_f
+            pkl = 0.0;  pkr = 0.0
+            ukl = 0.0;  ukr = 0.0
+            vkl = 0.0;  vkr = 0.0
+            !$acc loop seq
+            do n = 1, ngl_f
+               hi  = hi_c(n)
+               pkl = pkl + hi * q_send(5 + (k-1)*3 + 1, n, jj)
+               pkr = pkr + hi * q_recv(5 + (k-1)*3 + 1, n, jj)
+               ukl = ukl + hi * q_send(5 + (k-1)*3 + 2, n, jj)
+               ukr = ukr + hi * q_recv(5 + (k-1)*3 + 2, n, jj)
+               vkl = vkl + hi * q_send(5 + (k-1)*3 + 3, n, jj)
+               vkr = vkr + hi * q_recv(5 + (k-1)*3 + 3, n, jj)
+            end do
+
+            ope_ppl_k  = one_eta * pkl
+            ope_ppr_k  = one_eta * pkr
+            uv_cross_l = ukl * vkl * ope_ppl_k
+            uv_cross_r = ukr * vkr * ope_ppr_k
+
+            Qu_ql1 = Qu_ql1 + ukl * ukl * ope_ppl_k
+            Qu_ql2 = Qu_ql2 + uv_cross_l
+            Qv_ql1 = Qv_ql1 + uv_cross_l
+            Qv_ql2 = Qv_ql2 + vkl * vkl * ope_ppl_k
+
+            Qu_qr1 = Qu_qr1 + ukr * ukr * ope_ppr_k
+            Qu_qr2 = Qu_qr2 + uv_cross_r
+            Qv_qr1 = Qv_qr1 + uv_cross_r
+            Qv_qr2 = Qv_qr2 + vkr * vkr * ope_ppr_k
+
+            pprime_lk1 = pprime_lk + pkl
+            pprime_rk1 = pprime_rk + pkr
+            H_bcl_ql   = H_bcl_ql + 0.5*init%alpha_mlswe(k) * (pprime_lk1 + pprime_lk) * pkl
+            H_bcl_qr   = H_bcl_qr + 0.5*init%alpha_mlswe(k) * (pprime_rk1 + pprime_rk) * pkr
+            pprime_lk  = pprime_lk1
+            pprime_rk  = pprime_rk1
+         end do  ! k
+
+         H_bcl_q = 0.5 * (H_bcl_ql + H_bcl_qr)
+
+         half_clam_dqb2 = half_clam * (qbl(2) - qbr(2))
+         flux_edge_x    = 0.5*(qbl(3) + qbr(3)) + nxl * half_clam_dqb2
+         flux_edge_y    = 0.5*(qbl(4) + qbr(4)) + nyl * half_clam_dqb2
+         flux_pb        = nxl*flux_edge_x + nyl*flux_edge_y
+
+         H_bcl_q = one_eta2 * H_bcl_q
+
+         ! Time-average accumulators — (iquad,iface) unique per gang, no atomics.
+         btp%btp_mass_flux_face_ave(1,iquad,iface) = btp%btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+         btp%btp_mass_flux_face_ave(2,iquad,iface) = btp%btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
+         btp%H_face_ave(iquad,iface)    = btp%H_face_ave(iquad,iface)    + H_bcl_q
+         btp%Qu_face_ave(1,iquad,iface) = btp%Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql1 + Qu_qr1)
+         btp%Qu_face_ave(2,iquad,iface) = btp%Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql2 + Qu_qr2)
+         btp%Qv_face_ave(1,iquad,iface) = btp%Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql1 + Qv_qr1)
+         btp%Qv_face_ave(2,iquad,iface) = btp%Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql2 + Qv_qr2)
+         opl = 1.0 + qbl(2)/pbl
+         opr = 1.0 + qbr(2)/pbr
+         btp%ope_face_ave(1,iquad,iface)  = btp%ope_face_ave(1,iquad,iface)  + opl
+         btp%ope_face_ave(2,iquad,iface)  = btp%ope_face_ave(2,iquad,iface)  + opr
+         btp%ope2_face_ave(1,iquad,iface) = btp%ope2_face_ave(1,iquad,iface) + opl*opl
+         btp%ope2_face_ave(2,iquad,iface) = btp%ope2_face_ave(2,iquad,iface) + opr*opr
+         btp%one_plus_eta_edge_2_ave(iquad,iface) = btp%one_plus_eta_edge_2_ave(iquad,iface) + one_eta2
+         btp%uvb_face_ave(1,1,iquad,iface) = btp%uvb_face_ave(1,1,iquad,iface) + ul
+         btp%uvb_face_ave(1,2,iquad,iface) = btp%uvb_face_ave(1,2,iquad,iface) + ur
+         btp%uvb_face_ave(2,1,iquad,iface) = btp%uvb_face_ave(2,1,iquad,iface) + vl
+         btp%uvb_face_ave(2,2,iquad,iface) = btp%uvb_face_ave(2,2,iquad,iface) + vr
+
+         ! Momentum fluxes.
+         oe2_Hql = one_eta2 * H_bcl_ql
+         oe2_Hqr = one_eta2 * H_bcl_qr
+
+         Qu_ql1 = Qu_ql1 + oe2_Hql
+         Qu_qr1 = Qu_qr1 + oe2_Hqr
+         flux_u = 0.5*(nxl*(Qu_ql1 + Qu_qr1) + nyl*(Qu_ql2 + Qu_qr2)) &
+            - quarter_clam * (qbr(3) - qbl(3))
+
+         Qv_ql2 = Qv_ql2 + oe2_Hql
+         Qv_qr2 = Qv_qr2 + oe2_Hqr
+         flux_v = 0.5*(nxl*(Qv_ql1 + Qv_qr1) + nyl*(Qv_ql2 + Qv_qr2)) &
+            - quarter_clam * (qbr(4) - qbl(4))
+
+         wq         = mf%jac_faceq(iquad, 1, iface)
+         wq_flux_pb = wq * flux_pb
+         wq_flux_u  = wq * flux_u
+         wq_flux_v  = wq * flux_v
+
+         ! RHS scatter — left element only (right element is on the MPI neighbour).
+         ! Atomics: different MPI boundary faces of the same element share nodes.
+         !$acc loop seq
+         do n = 1, ngl_f
+            hi = hi_c(n)
+            I  = I_l(n)
+            !$acc atomic update
+            rhs(1,I) = rhs(1,I) - hi * wq_flux_pb
+            !$acc atomic update
+            rhs(2,I) = rhs(2,I) - hi * wq_flux_u
+            !$acc atomic update
+            rhs(3,I) = rhs(3,I) - hi * wq_flux_v
+         end do
+
+      end do  ! iquad
+
+   end do  ! jj (MPI boundary faces)
+   !$acc end data
+
  end subroutine create_nbhs_face_df
 
  subroutine create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, q_send, q_recv, nvarb)
@@ -243,8 +295,8 @@
    !global arrays
    integer, intent(in) :: nvarb
    real, intent(inout) :: rhs(2, G%npoin)
-   real, intent(in)    :: q_send(10, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(10, b%ngl, G%nboun)
+   real, intent(in)    :: q_send(10, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(10, b%ngl, par%num_send_recv_total)
  
    !local variables
  
@@ -373,8 +425,8 @@
 
    !global arrays
    real, intent(inout) :: rhs(3, G%npoin, inp%nlayers)
-   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, G%nboun)
+   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, par%num_send_recv_total)
  
    !local variables
  
@@ -674,8 +726,8 @@
 
    !global arrays
    real, intent(inout) :: rhs(G%npoin, inp%nlayers)
-   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, G%nboun)
+   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, par%num_send_recv_total)
 
    !local variables
 
@@ -832,8 +884,8 @@
 
    !global arrays
    real, intent(inout) :: rhs(2, G%npoin, inp%nlayers)
-   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, G%nboun)
+   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, par%num_send_recv_total)
 
    !local variables
 
@@ -1111,8 +1163,8 @@
 
    !global arrays
    real, intent(inout) :: rhs(2, G%npoin, nlayers)
-   real, intent(in)    :: q_send(5*nlayers, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(5*nlayers, b%ngl, G%nboun)
+   real, intent(in)    :: q_send(5*nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(5*nlayers, b%ngl, par%num_send_recv_total)
 
    !local variables
 
@@ -1232,8 +1284,8 @@
    !global arrays
    integer, intent(in) :: nvarb, nlayers, nq
    real, intent(inout) :: q_face(nvarb, 2, nq, G%nface, nlayers)
-   real, intent(in)    :: q_send(nvarb, nq, G%nboun, nlayers)
-   real, intent(in)    :: q_recv(nvarb, nq, G%nboun, nlayers)
+   real, intent(in)    :: q_send(nvarb, nq, par%num_send_recv_total, nlayers)
+   real, intent(in)    :: q_recv(nvarb, nq, par%num_send_recv_total, nlayers)
 
    !local variables
 
