@@ -41,11 +41,7 @@ subroutine btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, q, qp
 
     ! DG - Discontinuous communicator
 
-    !Load all the boundary data into a vector
-    call pack_data_dg_df_btp(G, inp, b, mf, init, par, ref, ref%send_data_dg, q, qprime_df, nvarb)
-
-    !non-blocking sends-receives: message size=nmessage
-    call send_bound_dg_general_df(G, b, par, ref%send_data_dg, ref%recv_data_dg, ref%nbtp_var, mpic%nreq, mpic%ireq, mpic%status)
+    call pack_and_send_df_btp(G, inp, b, mf, init, par, ref, ref%send_data_dg, ref%recv_data_dg, q, qprime_df, nvarb, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_create_precommunicator
 
@@ -186,8 +182,6 @@ subroutine btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic,
     !To build inter-processor fluxes, All Procs Must Wait
     call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
     call unpack_data_dg_general_df(G, b, par, ref%q_send, ref%q_recv, ref%send_data_dg, ref%recv_data_dg, ref%nbtp_var)
-    ! Upload unpacked MPI boundary data so the GPU kernel can read it.
-    !$acc update device(ref%q_send, ref%q_recv)
     call create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, ref%q_send, ref%q_recv, ref%nbtp_var)
 
 end subroutine btp_create_postcommunicator

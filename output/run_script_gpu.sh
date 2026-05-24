@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #SBATCH --job-name="test"
-#SBATCH --ntasks=1
-#SBATCH -t 1:00
-#SBATCH --gres=gpu:1
+#SBATCH --ntasks=2
+#SBATCH -t 10:00
+#SBATCH --gres=gpu:2
 #SBATCH -A backfill2
 #SBATCH -o out.log
 #SBATCH -e err.log

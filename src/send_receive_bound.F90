@@ -68,24 +68,33 @@ subroutine unpack_data_dg_general_df(G, b, par, q_send, q_recv, send_data, recv_
     real, dimension(nvarb,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
     real, dimension(nvarb*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
-    integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-    integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype
+    integer :: ii, jj, kk, inbh, ib, inode, ivar, iface, imulti
+    integer :: ngl_f, nvarb_f
 
-    ii = 0
+    ngl_f   = b%ngl
+    nvarb_f = nvarb
+
     jj = 1
     kk = 1
 
+    ! Outer inbh/ib loops navigate the neighbor list sequentially (seq).
+    ! ii replaced by computed offset from kk so the inner inode/ivar loops
+    ! have no loop-carried dependence and can run in parallel (vector).
+    !$acc parallel default(present) private(jj, kk, iface, imulti) &
+    !$acc    firstprivate(ngl_f, nvarb_f)
+    !$acc loop seq
     do inbh = 1, par%num_nbh
+        !$acc loop seq
         do ib = 1, par%num_send_recv(inbh)
             iface  = par%nbh_send_recv(jj)
             imulti = par%nbh_send_recv_multi(jj)
-
             if (G%face_type(iface) == 2 .and. imulti > 0) then
-                do inode = 1, b%ngl
-                    do ivar = 1, nvarb
-                        ii = ii + 1
-                        q_send(ivar,inode,kk) = send_data(ii)
-                        q_recv(ivar,inode,kk) = recv_data(ii)
+                !$acc loop vector collapse(2)
+                do inode = 1, ngl_f
+                    do ivar = 1, nvarb_f
+                        ii = (kk-1)*ngl_f*nvarb_f + (inode-1)*nvarb_f + ivar
+                        q_send(ivar, inode, kk) = send_data(ii)
+                        q_recv(ivar, inode, kk) = recv_data(ii)
                     end do
                 end do
                 kk = kk + 1
@@ -93,8 +102,49 @@ subroutine unpack_data_dg_general_df(G, b, par, q_send, q_recv, send_data, recv_
             jj = jj + 1
         end do
     end do
+    !$acc end parallel
 
 end subroutine unpack_data_dg_general_df
+
+subroutine unpack_data_dg_general_df_v0(G, b, par, q_send, q_recv, send_data, recv_data, nvarb)
+
+    use mod_basis,    only: basis
+    use mod_grid,     only: grid
+    use mod_parallel, only: parallel_CS
+
+    implicit none
+
+    type(grid),        intent(in) :: G
+    type(basis),       intent(in) :: b
+    type(parallel_CS), intent(in) :: par
+    integer,           intent(in) :: nvarb
+
+    real, dimension(nvarb,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
+    real, dimension(nvarb*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
+
+    integer :: jj, inode, ivar, ii, ngl_f, nvarb_f, nboun_f
+
+    ! All num_send_recv_total faces have face_type==2 and imulti==1 (no AMR),
+    ! so the flat offset (jj-1)*ngl*nvarb mirrors the GPU pack stride exactly.
+    ngl_f   = b%ngl
+    nvarb_f = nvarb
+    nboun_f = par%num_send_recv_total
+    
+    !$acc parallel loop gang vector collapse(3) &
+    !$acc    present(q_send, q_recv, send_data, recv_data) &
+    !$acc    firstprivate(ngl_f, nvarb_f, nboun_f)
+    do jj = 1, nboun_f
+        do inode = 1, ngl_f
+            do ivar = 1, nvarb_f
+                ii = (jj-1)*ngl_f*nvarb_f + (inode-1)*nvarb_f + ivar
+                q_send(ivar, inode, jj) = send_data(ii)
+                q_recv(ivar, inode, jj) = recv_data(ii)
+            end do
+        end do
+    end do
+    !$acc end parallel loop
+
+end subroutine unpack_data_dg_general_df_v0
 
 subroutine unpack_data_dg_general_lap(G, b, par, q_send, q_recv, send_data, recv_data, nvarb)
 
@@ -1270,6 +1320,229 @@ subroutine send_bound_dg_general_df(G, b, par, send_data, recv_data, nvarb, nreq
     end do
 
 end subroutine send_bound_dg_general_df
+
+subroutine pack_and_send_df_btp(G, inp, b, mf, init, par, ref, send_data_dg, recv_data_dg, q, qprime_df, nvarb, nreq, ireq, status)
+
+    use mod_basis,         only: basis
+    use mod_face,          only: face_CS
+    use mod_grid,          only: grid
+    use mod_initial,       only: initial
+    use mod_parallel,      only: parallel_CS
+    use mod_input,         only: input
+    use mod_ref,           only: mref
+    use mpi
+    use mod_mpi_utilities, only: MPI_PRECISION
+
+    implicit none
+
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(face_CS),     intent(in)  :: mf
+    type(initial),     intent(in)  :: init
+    type(input),       intent(in)  :: inp
+    type(parallel_CS), intent(in)  :: par
+    type(mref),        intent(in)  :: ref
+    integer,           intent(in)  :: nvarb
+    real,              intent(out) :: send_data_dg(ref%nbtp_var*b%ngl*par%num_send_recv_total)
+    real,              intent(out) :: recv_data_dg(ref%nbtp_var*b%ngl*par%num_send_recv_total)
+    real,              intent(in)  :: q(nvarb, G%npoin)
+    real,              intent(in)  :: qprime_df(3, G%npoin, inp%nlayers)
+    integer,           intent(out) :: nreq
+    integer,           intent(out) :: ireq(2*par%num_nbh)
+    integer,           intent(out) :: status(mpi_status_size, 2*par%num_nbh)
+
+    integer :: jj, i, inbh, ib, iface, imulti, el, ivar
+    integer :: inode, ip, ll, ioff
+    integer :: nqp, istart, iend, idest, ierr
+    integer :: ngl_f, nbtp_var_f, nlayers_f
+
+    ngl_f      = b%ngl
+    nbtp_var_f = ref%nbtp_var
+    nlayers_f  = inp%nlayers
+
+    ! GPU pack, keeping inbh/ib outer loop structure.
+    ! Outer loops are seq (sequential jj/kk counters); inode is vectorised.
+    jj = 1
+    !$acc parallel default(present) private(jj, iface, imulti, el, ip, ioff) &
+    !$acc    firstprivate(nvarb, ngl_f, nbtp_var_f, nlayers_f)
+    !$acc loop seq
+    do inbh = 1, par%num_nbh
+        !$acc loop seq
+        do ib = 1, par%num_send_recv(inbh)
+            iface  = par%nbh_send_recv(jj)
+            imulti = par%nbh_send_recv_multi(jj)
+            if (G%face_type(iface) == 2 .and. imulti > 0) then
+                el = G%face(7, iface)
+                !$acc loop vector
+                do inode = 1, ngl_f
+                    ip   = G%intma(mf%imapl(1,inode,1,iface), &
+                                    mf%imapl(2,inode,1,iface), &
+                                    mf%imapl(3,inode,1,iface), el)
+                    ioff = (jj-1)*ngl_f*nbtp_var_f + (inode-1)*nbtp_var_f
+                    !$acc loop seq
+                    do ivar = 1, nvarb
+                        send_data_dg(ioff+ivar) = q(ivar, ip)
+                    end do
+                    send_data_dg(ioff+nvarb+1) = init%pbprime_df(ip)
+                    !$acc loop seq
+                    do ll = 1, nlayers_f
+                        !$acc loop seq
+                        do ivar = 1, 3
+                            send_data_dg(ioff+nvarb+1+(ll-1)*3+ivar) = qprime_df(ivar, ip, ll)
+                        end do
+                    end do
+                end do
+            end if
+            jj = jj + 1
+        end do
+    end do
+    !$acc end parallel
+
+    ! GPU-direct non-blocking send/recv per neighbor.
+    nreq   = 0
+    iend   = 0
+    jj     = 1
+    status = 0
+
+    !$acc host_data use_device(send_data_dg, recv_data_dg)
+    do inbh = 1, par%num_nbh
+        nqp = 0
+        do ib = 1, par%num_send_recv(inbh)
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * ref%nbtp_var
+            end do
+            jj = jj + 1
+        end do
+
+        idest  = par%nbh_proc(inbh)
+        nreq   = nreq + 1
+        istart = iend + 1
+        iend   = istart + nqp - 1
+
+        if (nqp > 0) then
+            call mpi_irecv(recv_data_dg(istart:iend), nqp, &
+                MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq), ierr)
+            call mpi_isend(send_data_dg(istart:iend), nqp, &
+                MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq+1), ierr)
+        else
+            ireq(nreq)   = MPI_REQUEST_NULL
+            ireq(nreq+1) = MPI_REQUEST_NULL
+        end if
+        nreq = nreq + 1
+    end do
+    !$acc end host_data
+
+end subroutine pack_and_send_df_btp
+
+subroutine pack_and_send_df_btp_v0(G, inp, b, mf, init, par, ref, send_data_dg, recv_data_dg, q, qprime_df, nvarb, nreq, ireq, status)
+
+    use mod_basis,         only: basis
+    use mod_face,          only: face_CS
+    use mod_grid,          only: grid
+    use mod_initial,       only: initial
+    use mod_parallel,      only: parallel_CS
+    use mod_input,         only: input
+    use mod_ref,           only: mref
+    use mpi
+    use mod_mpi_utilities, only: MPI_PRECISION
+
+    implicit none
+
+    type(grid),        intent(in)  :: G
+    type(basis),       intent(in)  :: b
+    type(face_CS),     intent(in)  :: mf
+    type(initial),     intent(in)  :: init
+    type(input),       intent(in)  :: inp
+    type(parallel_CS), intent(in)  :: par
+    type(mref),        intent(in)  :: ref
+    integer,           intent(in)  :: nvarb
+    real,              intent(out) :: send_data_dg(ref%nbtp_var*b%ngl*par%num_send_recv_total)
+    real,              intent(out) :: recv_data_dg(ref%nbtp_var*b%ngl*par%num_send_recv_total)
+    real,              intent(in)  :: q(nvarb, G%npoin)
+    real,              intent(in)  :: qprime_df(3, G%npoin, inp%nlayers)
+    integer,           intent(out) :: nreq
+    integer,           intent(out) :: ireq(2*par%num_nbh)
+    integer,           intent(out) :: status(mpi_status_size, 2*par%num_nbh)
+
+    integer :: jj, inbh, ib, iface, el, ivar, i
+    integer :: inode, ip, ll, ioff
+    integer :: nqp, istart, iend, idest, ierr
+    integer :: ngl_f, nbtp_var_f, nlayers_f, nboun_f
+
+    ngl_f      = b%ngl
+    nbtp_var_f = ref%nbtp_var
+    nlayers_f  = inp%nlayers
+    nboun_f    = par%num_send_recv_total
+
+    ! GPU pack — one gang per MPI boundary face.
+    ! Offset (jj-1)*ngl_f*nbtp_var_f is valid because every entry in
+    ! nbh_send_recv has face_type==2 and imulti==1 (no AMR).
+    !$acc parallel loop gang &
+    !$acc    present(G%face_type, G%face, G%intma, par%nbh_send_recv, &
+    !$acc            mf%imapl, init%pbprime_df, q, qprime_df, send_data_dg) &
+    !$acc    firstprivate(nvarb, ngl_f, nbtp_var_f, nlayers_f)
+    do jj = 1, nboun_f
+        iface = par%nbh_send_recv(jj)
+        if (G%face_type(iface) == 2) then
+            el = G%face(7, iface)
+            !$acc loop seq
+            do inode = 1, ngl_f
+                ip   = G%intma(mf%imapl(1,inode,1,iface), &
+                                mf%imapl(2,inode,1,iface), &
+                                mf%imapl(3,inode,1,iface), el)
+                ioff = (jj-1)*ngl_f*nbtp_var_f + (inode-1)*nbtp_var_f
+                !$acc loop seq
+                do ivar = 1, nvarb
+                    send_data_dg(ioff+ivar) = q(ivar, ip)
+                end do
+                send_data_dg(ioff+nvarb+1) = init%pbprime_df(ip)
+                !$acc loop seq
+                do ll = 1, nlayers_f
+                    !$acc loop seq
+                    do ivar = 1, 3
+                        send_data_dg(ioff+nvarb+1+(ll-1)*3+ivar) = qprime_df(ivar, ip, ll)
+                    end do
+                end do
+            end do
+        end if
+    end do
+    !$acc end parallel loop
+
+    ! GPU-direct non-blocking send/recv per neighbor.
+    nreq  = 0
+    iend  = 0
+    jj    = 1
+    status = 0
+
+    !$acc host_data use_device(send_data_dg, recv_data_dg)
+    do inbh = 1, par%num_nbh
+        nqp = 0
+        do ib = 1, par%num_send_recv(inbh)
+            do i = 1, par%nbh_send_recv_multi(jj)
+                nqp = nqp + b%ngl * ref%nbtp_var
+            end do
+            jj = jj + 1
+        end do
+
+        idest  = par%nbh_proc(inbh)
+        nreq   = nreq + 1
+        istart = iend + 1
+        iend   = istart + nqp - 1
+
+        if (nqp > 0) then
+            call mpi_irecv(recv_data_dg(istart:iend), nqp, &
+                MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq), ierr)
+            call mpi_isend(send_data_dg(istart:iend), nqp, &
+                MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq+1), ierr)
+        else
+            ireq(nreq)   = MPI_REQUEST_NULL
+            ireq(nreq+1) = MPI_REQUEST_NULL
+        end if
+        nreq = nreq + 1
+    end do
+    !$acc end host_data
+
+end subroutine pack_and_send_df_btp_v0
 
 subroutine send_bound_dg_general_lap(G, b, par, send_data, recv_data, nvarb, nreq, ireq, status)
 

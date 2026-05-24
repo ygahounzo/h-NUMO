@@ -154,10 +154,12 @@ contains
       !$acc enter data copyin(ref)
       !$acc enter data create(ref%recv_data)
       !$acc enter data copyin(ref%q_send, ref%q_recv)
+      !$acc enter data create(ref%send_data_dg)
+      !$acc enter data create(ref%recv_data_dg)
 
       ! mod_parallel
       !$acc enter data copyin(par)
-      !$acc enter data copyin(par%nbh_send_recv, par%num_send_recv_total)
+      !$acc enter data copyin(par%nbh_send_recv, par%num_send_recv)
 
       ! mod_bc
       !$acc enter data copyin(bc_count, bc_list)
