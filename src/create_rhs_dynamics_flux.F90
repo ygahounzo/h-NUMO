@@ -46,14 +46,18 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
    ! flux(3,nq) is private to the parallel region so both iquad passes share it.
    ! rhs scatter uses atomic: different iquad lanes and different faces can
    ! write to the same volume node through imapl.
-   !$acc parallel default(present) private(jj, kk, iface, el, flux) &
-   !$acc    firstprivate(nq_f, ngl_f, nlayers_f, nvarb)
+   !$acc parallel default(present) private(iface, el, flux) &
+   !$acc    firstprivate(jj, kk, nq_f, ngl_f, nlayers_f)
    !$acc loop seq
    do inbh = 1, par%num_nbh
       !$acc loop seq
       do ib = 1, par%num_send_recv(inbh)
          iface = par%nbh_send_recv(jj)
-         el    = G%face(7, iface)
+         if (G%face_type(iface) /= 2) then
+            jj = jj + 1
+            cycle
+         end if
+         el = G%face(7, iface)
 
          ! --- Pass 1: compute fluxes and accumulate face-averaged quantities ---
          !$acc loop vector &

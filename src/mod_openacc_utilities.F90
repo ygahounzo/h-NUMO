@@ -159,7 +159,7 @@ contains
 
       ! mod_parallel
       !$acc enter data copyin(par)
-      !$acc enter data copyin(par%nbh_send_recv, par%num_send_recv)
+      !$acc enter data copyin(par%nbh_send_recv, par%num_send_recv, par%nbh_send_recv_multi)
 
       ! mod_bc
       !$acc enter data copyin(bc_count, bc_list)
