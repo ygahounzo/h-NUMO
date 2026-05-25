@@ -156,6 +156,7 @@ contains
       !$acc enter data copyin(ref%q_send, ref%q_recv)
       !$acc enter data create(ref%send_data_dg)
       !$acc enter data create(ref%recv_data_dg)
+      !$acc enter data copyin(ref%face_pack_list)
 
       ! mod_parallel
       !$acc enter data copyin(par)

@@ -1,4 +1,4 @@
-subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, nvarb)
+subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
 
    use mod_grid,      only: grid
    use mod_input,     only: input
@@ -7,6 +7,7 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
    use mod_parallel,  only: parallel_CS
    use mod_variables, only: btp_CS
    use mod_initial,   only: initial
+   use mod_ref,       only: mref
 
    implicit none
 
@@ -17,13 +18,11 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
    type(parallel_CS), intent(in)    :: par
    type(btp_CS),      intent(inout) :: btp
    type(initial),     intent(in)    :: init
+   type(mref),        intent(in)    :: ref
 
-   integer,        intent(in)    :: nvarb
-   real,           intent(in)    :: q_send(nvarb, b%ngl, G%nboun)
-   real,           intent(in)    :: q_recv(nvarb, b%ngl, G%nboun)
    real,           intent(inout) :: rhs(3, G%npoin)
 
-   integer :: jj, kk, inbh, ib, iface, iquad, el, il, jl, I, kl, n, k, ii
+   integer :: kk, iface, iquad, el, il, jl, I, kl, n, k, ii, nboun_valid
    real :: wq, hi, nxl, nyl, nxr, nyr
    real :: ul, ur, vl, vr, pbl, pbr, clam, one_eta
    real :: pU_L, pU_R, pbpert_edge, c_minus, c_plus
@@ -34,30 +33,25 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
    real, dimension(2) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr
    integer :: nq_f, ngl_f, nlayers_f
 
-   nq_f      = b%nq
-   ngl_f     = b%ngl
-   nlayers_f = inp%nlayers
+   nq_f       = b%nq
+   ngl_f      = b%ngl
+   nlayers_f  = inp%nlayers
+   nboun_valid = ref%nboun_valid
 
-   jj = 1
-   kk = 1
-
-   ! Outer inbh/ib loops navigate the neighbor list sequentially (seq).
-   ! iquad is vectorised over GPU vector lanes within each face.
-   ! flux(3,nq) is private to the parallel region so both iquad passes share it.
+   ! One gang per valid MPI face; iquad is vectorised within each face.
    ! rhs scatter uses atomic: different iquad lanes and different faces can
    ! write to the same volume node through imapl.
-   !$acc parallel default(present) private(iface, el, flux) &
-   !$acc    firstprivate(jj, kk, nq_f, ngl_f, nlayers_f)
-   !$acc loop seq
-   do inbh = 1, par%num_nbh
-      !$acc loop seq
-      do ib = 1, par%num_send_recv(inbh)
-         iface = par%nbh_send_recv(jj)
-         if (G%face_type(iface) /= 2) then
-            jj = jj + 1
-            cycle
-         end if
-         el = G%face(7, iface)
+   !$acc parallel loop gang private(iface, el, flux) &
+   !$acc    present(G%face, G%intma, mf%normal_vector_q, mf%jac_faceq, mf%imapl, &
+   !$acc            b%psiq, init%alpha_mlswe, ref%q_send, ref%q_recv, rhs, &
+   !$acc            btp%btp_mass_flux_face_ave, btp%H_face_ave, &
+   !$acc            btp%Qu_face_ave, btp%Qv_face_ave, btp%ope_face_ave, &
+   !$acc            btp%ope2_face_ave, btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave, &
+   !$acc            ref%face_pack_list) &
+   !$acc    firstprivate(nq_f, ngl_f, nlayers_f, nboun_valid)
+   do kk = 1, nboun_valid
+      iface = ref%face_pack_list(kk)
+      el    = G%face(7, iface)
 
          ! --- Pass 1: compute fluxes and accumulate face-averaged quantities ---
          !$acc loop vector &
@@ -72,10 +66,10 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
             !$acc loop seq
             do n = 1, ngl_f
                hi       = b%psiq(n,iquad)
-               qbl(1:4) = qbl(1:4) + hi*q_send(1:4,n,kk)
-               pbl      = pbl      + hi*q_send(5,n,kk)
-               qbr(1:4) = qbr(1:4) + hi*q_recv(1:4,n,kk)
-               pbr      = pbr      + hi*q_recv(5,n,kk)
+               qbl(1:4) = qbl(1:4) + hi*ref%q_send(1:4,n,kk)
+               pbl      = pbl      + hi*ref%q_send(5,n,kk)
+               qbr(1:4) = qbr(1:4) + hi*ref%q_recv(1:4,n,kk)
+               pbr      = pbr      + hi*ref%q_recv(5,n,kk)
             end do
 
             pU_L = nxl*qbl(3) + nyl*qbl(4)
@@ -106,12 +100,12 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
                !$acc loop seq
                do n = 1, ngl_f
                   hi  = b%psiq(n,iquad)
-                  ppl = ppl + hi*q_send(ii+1,n,kk)
-                  ppr = ppr + hi*q_recv(ii+1,n,kk)
-                  upl = upl + hi*q_send(ii+2,n,kk)
-                  upr = upr + hi*q_recv(ii+2,n,kk)
-                  vpl = vpl + hi*q_send(ii+3,n,kk)
-                  vpr = vpr + hi*q_recv(ii+3,n,kk)
+                  ppl = ppl + hi*ref%q_send(ii+1,n,kk)
+                  ppr = ppr + hi*ref%q_recv(ii+1,n,kk)
+                  upl = upl + hi*ref%q_send(ii+2,n,kk)
+                  upr = upr + hi*ref%q_recv(ii+2,n,kk)
+                  vpl = vpl + hi*ref%q_send(ii+3,n,kk)
+                  vpr = vpr + hi*ref%q_recv(ii+3,n,kk)
                end do
 
                Qu_ql(1) = Qu_ql(1) + upl*(upl*(one_eta*ppl))
@@ -191,11 +185,8 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, rhs, q_send, q_rec
             end do
          end do ! iquad pass 2
 
-         kk = kk + 1
-         jj = jj + 1
-      end do
-   end do ! inbh
-   !$acc end parallel
+   end do
+   !$acc end parallel loop
 
 end subroutine create_nbhs_face_df
 
@@ -238,8 +229,8 @@ end subroutine create_nbhs_face_df
    type(initial),     intent(in)    :: init
 
    integer, intent(in) :: nvarb
-   real, intent(in)    :: q_send(nvarb, b%ngl, par%num_send_recv_total)
-   real, intent(in)    :: q_recv(nvarb, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_send(nvarb, b%ngl, G%nboun)
+   real, intent(in)    :: q_recv(nvarb, b%ngl, G%nboun)
    real, intent(inout) :: rhs(3, G%npoin)
 
    integer :: jj, iface, iquad, el, il, jl, kl, I, n, k
@@ -264,7 +255,7 @@ end subroutine create_nbhs_face_df
    ngl_f     = b%ngl
    nq_f      = b%nq
    nlayers_f = inp%nlayers
-   nboun_f   = par%num_send_recv_total
+   nboun_f   = G%nboun
 
    if (nboun_f == 0) return
 

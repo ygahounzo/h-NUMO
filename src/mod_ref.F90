@@ -42,7 +42,8 @@ module mod_ref
         real, dimension(:),     allocatable :: lap_recv_data_dg_df1, lap_send_data_dg_df1
         real, dimension(:,:,:), allocatable :: q_send_csty, q_recv_csty
         real, dimension(:),     allocatable :: recv_data_csty, send_data_csty
-        integer :: nmessage, nbtp_var
+        integer :: nmessage, nbtp_var, nboun_valid
+        integer, allocatable :: face_pack_list(:)
     end type mref
 
     public :: mod_ref_create, mref
@@ -62,7 +63,7 @@ contains
         type(basis), intent(in) :: b
         type(mref), intent(inout) :: ref
 
-        integer i, j, ix, iz, ip, k
+        integer i, j, ix, iz, ip, k, jj, inbh, ib, iface, imulti
         integer AllocateStatus
 
         real, dimension(:,:), allocatable :: f, dfdz, q_tempv
@@ -73,6 +74,24 @@ contains
         ref%nmessage = 2*init%nvar + 4 !nvar+3 for inviscid dynamics
         if(inp%is_mlswe) ref%nmessage = 6 ! 2 for uv-momentum
         ref%nbtp_var = 3*inp%nlayers + 5 ! 3*nlayers for baroclinic variables + 5 for barotropic variables
+
+        ! Compact list of valid MPI faces (face_type==2, imulti>0) in nbh_send_recv order.
+        ! Computed once here so pack/unpack GPU kernels need no per-call pre-scans.
+        if (allocated(ref%face_pack_list)) deallocate(ref%face_pack_list)
+        allocate(ref%face_pack_list(G%nboun))
+        ref%nboun_valid = 0
+        jj = 1
+        do inbh = 1, par%num_nbh
+            do ib = 1, par%num_send_recv(inbh)
+                iface  = par%nbh_send_recv(jj)
+                imulti = par%nbh_send_recv_multi(jj)
+                if (G%face_type(iface) == 2 .and. imulti > 0) then
+                    ref%nboun_valid = ref%nboun_valid + 1
+                    ref%face_pack_list(ref%nboun_valid) = iface
+                end if
+                jj = jj + 1
+            end do
+        end do
 
         if(allocated(ref%qb)) then
             deallocate(ref%qb, ref%press_ref, ref%press, ref%dens_var, ref%recv_data, &
