@@ -1,6 +1,6 @@
 &gridnl
-nelx  = 10,
-nely  = 10,
+nelx  = 100,
+nely  = 100,
 nopx  = 4,
 nopy  = 4,
 xdims = 0.0,2e3,
@@ -22,10 +22,10 @@ lread_external_grid = F,  ! Read external grid file
 /
 
 &input_nml
-dt= 100,
-dt_btp = 1.8,
+dt= 10,
+dt_btp = 0.18,
 time_initial = 0.0,
-time_final   = 10800,
+time_final   = 10,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 !lrestart_file = .true.,
@@ -35,7 +35,7 @@ time_scale = 1, !1=seconds, 3600=hours, 86400=days
 ad_mlswe = 0.0,
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 0.0, ! cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
-method_visc = 0,  ! 0=no viscosity
+method_visc = 1,  ! 0=no viscosity
 visc_mlswe = 0.5, ! horizontal viscosity
 dg_integ_exact = F,
 dump_data = T,    ! write output files

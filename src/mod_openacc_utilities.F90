@@ -86,6 +86,7 @@ contains
       !$acc enter data copyin(b%dpsix, b%dpsiy, b%dpsiz,                       &
       !$acc                   b%dpsix_tr, b%dpsiy_tr, b%dpsiz_tr)
       !$acc enter data copyin(b%dpsiqx, b%dpsiqy, b%dpsiqz, b%psiq)
+      !$acc enter data copyin(b%psi)
 
       ! mod_grid
       !$acc enter data copyin(G)
@@ -96,7 +97,7 @@ contains
       !$acc enter data copyin(tsp%wjac, tsp%psih, tsp%dpsidx, tsp%dpsidy,     &
       !$acc                   tsp%indexq,  tsp%indexq_e,                       &
       !$acc                   tsp%wjac_df, tsp%psih_df, tsp%dpsidx_df,         &
-      !$acc                   tsp%dpsidy_df, tsp%index_df)
+      !$acc                   tsp%dpsidy_df, tsp%index_df, tsp%index_df_elt)
 
       ! mod_initial
       !$acc enter data copyin(init)
@@ -123,11 +124,11 @@ contains
       ! mod_face
       !$acc enter data copyin(mf)
       !$acc enter data copyin(mf%imapl, mf%imapr, mf%normal_vector,           &
-      !$acc                   mf%normal_vector_q, mf%jac_faceq)
+      !$acc                   mf%normal_vector_q, mf%jac_faceq, mf%jac_face)
 
       ! mod_variables (btp_CS)
       !$acc enter data copyin(btp)
-      !$acc enter data copyin(btp%qb_df, btp%rhs_btp)
+      !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
       !$acc enter data copyin(btp%ope_ave, btp%H_ave, btp%Qu_ave, btp%Qv_ave, &
       !$acc                   btp%Quv_ave, btp%ope2_ave, btp%ope2_ave_df,      &
       !$acc                   btp%btp_mass_flux_ave, btp%uvb_ave,              &
@@ -156,6 +157,9 @@ contains
       !$acc enter data copyin(ref%q_send, ref%q_recv)
       !$acc enter data create(ref%send_data_dg)
       !$acc enter data create(ref%recv_data_dg)
+      !$acc enter data create(ref%send_data_dg_lap)
+      !$acc enter data create(ref%recv_data_dg_lap)
+      !$acc enter data create(ref%q_send_lap, ref%q_recv_lap)
       !$acc enter data copyin(ref%face_pack_list)
 
       ! mod_parallel

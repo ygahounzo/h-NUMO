@@ -42,9 +42,7 @@ contains
       real, dimension(4,G%npoin),             intent(in)    :: qb_df
       real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
-      real, dimension(2,G%npoin) :: rhs_visc_btp
-
-      rhs_visc_btp = 0.0
+      btp%rhs_btp_visc = 0.0
 
       ! 1. MPI halo exchange (host).
       call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, 4)
@@ -63,14 +61,14 @@ contains
       ! 5. Download complete rhs_btp (local + MPI boundary contributions).
       !$acc update host(rhs_btp)
 
-      ! 5. Viscosity (host; not yet GPU-ported).
+      ! 6. Viscosity (GPU-ported)
       if (inp%method_visc > 0) &
-         call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, rhs_visc_btp, qb_df)
+         call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, btp%rhs_btp_visc, qb_df)
 
-      ! 6. Mass-matrix inverse scaling.
+      ! 7. Mass-matrix inverse scaling.
       rhs_btp(1,:) = mt%massinv(:) * rhs_btp(1,:)
-      rhs_btp(2,:) = mt%massinv(:) * (rhs_btp(2,:) + rhs_visc_btp(1,:))
-      rhs_btp(3,:) = mt%massinv(:) * (rhs_btp(3,:) + rhs_visc_btp(2,:))
+      rhs_btp(2,:) = mt%massinv(:) * (rhs_btp(2,:) + inp%visc_mlswe*btp%rhs_btp_visc(1,:))
+      rhs_btp(3,:) = mt%massinv(:) * (rhs_btp(3,:) + inp%visc_mlswe*btp%rhs_btp_visc(2,:))
 
    end subroutine create_rhs_btp
 

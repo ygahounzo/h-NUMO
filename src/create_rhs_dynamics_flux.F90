@@ -53,137 +53,137 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
 
-         ! --- Pass 1: compute fluxes and accumulate face-averaged quantities ---
-         !$acc loop vector &
-         !$acc    private(qbl, qbr, pprime_l, pprime_r, Qu_ql, Qu_qr, Qv_ql, Qv_qr)
-         do iquad = 1, nq_f
+      ! --- Pass 1: compute fluxes and accumulate face-averaged quantities ---
+      !$acc loop vector &
+      !$acc    private(qbl, qbr, pprime_l, pprime_r, Qu_ql, Qu_qr, Qv_ql, Qv_qr)
+      do iquad = 1, nq_f
 
-            nxl = mf%normal_vector_q(1,iquad,1,iface)
-            nyl = mf%normal_vector_q(2,iquad,1,iface)
-            nxr = -nxl; nyr = -nyl
+         nxl = mf%normal_vector_q(1,iquad,1,iface)
+         nyl = mf%normal_vector_q(2,iquad,1,iface)
+         nxr = -nxl; nyr = -nyl
 
-            qbl = 0.0; qbr = 0.0; pbl = 0.0; pbr = 0.0
+         qbl = 0.0; qbr = 0.0; pbl = 0.0; pbr = 0.0
+         !$acc loop seq
+         do n = 1, ngl_f
+            hi       = b%psiq(n,iquad)
+            qbl(1:4) = qbl(1:4) + hi*ref%q_send(1:4,n,kk)
+            pbl      = pbl      + hi*ref%q_send(5,n,kk)
+            qbr(1:4) = qbr(1:4) + hi*ref%q_recv(1:4,n,kk)
+            pbr      = pbr      + hi*ref%q_recv(5,n,kk)
+         end do
+
+         pU_L = nxl*qbl(3) + nyl*qbl(4)
+         pU_R = nxr*qbr(3) + nyr*qbr(4)
+
+         c_minus = sqrt(init%alpha_mlswe(nlayers_f) * pbr)
+         c_plus  = sqrt(init%alpha_mlswe(nlayers_f) * pbl)
+         clam    = max(c_minus, c_plus)
+
+         pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam)*(pU_L + pU_R)
+         one_eta     = 1.0 + (pbpert_edge/pbl)
+
+         ul = qbl(3)/qbl(1); ur = qbr(3)/qbr(1)
+         vl = qbl(4)/qbl(1); vr = qbr(4)/qbr(1)
+
+         Qu_ql(1) = ul*qbl(3); Qu_ql(2) = vl*qbl(3)
+         Qu_qr(1) = ur*qbr(3); Qu_qr(2) = vr*qbr(3)
+         Qv_ql(1) = ul*qbl(4); Qv_ql(2) = vl*qbl(4)
+         Qv_qr(1) = ur*qbr(4); Qv_qr(2) = vr*qbr(4)
+
+         pprime_l(:) = 0.0; pprime_r(:) = 0.0
+         H_bcl_ql    = 0.0; H_bcl_qr   = 0.0; H_bcl_q = 0.0
+
+         !$acc loop seq
+         do k = 1, nlayers_f
+            ppl = 0.0; ppr = 0.0; upl = 0.0; upr = 0.0; vpl = 0.0; vpr = 0.0
+            ii = 5 + (k-1)*3
             !$acc loop seq
             do n = 1, ngl_f
-               hi       = b%psiq(n,iquad)
-               qbl(1:4) = qbl(1:4) + hi*ref%q_send(1:4,n,kk)
-               pbl      = pbl      + hi*ref%q_send(5,n,kk)
-               qbr(1:4) = qbr(1:4) + hi*ref%q_recv(1:4,n,kk)
-               pbr      = pbr      + hi*ref%q_recv(5,n,kk)
+               hi  = b%psiq(n,iquad)
+               ppl = ppl + hi*ref%q_send(ii+1,n,kk)
+               ppr = ppr + hi*ref%q_recv(ii+1,n,kk)
+               upl = upl + hi*ref%q_send(ii+2,n,kk)
+               upr = upr + hi*ref%q_recv(ii+2,n,kk)
+               vpl = vpl + hi*ref%q_send(ii+3,n,kk)
+               vpr = vpr + hi*ref%q_recv(ii+3,n,kk)
             end do
 
-            pU_L = nxl*qbl(3) + nyl*qbl(4)
-            pU_R = nxr*qbr(3) + nyr*qbr(4)
+            Qu_ql(1) = Qu_ql(1) + upl*(upl*(one_eta*ppl))
+            Qu_qr(1) = Qu_qr(1) + upr*(upr*(one_eta*ppr))
+            Qu_ql(2) = Qu_ql(2) + vpl*(upl*(one_eta*ppl))
+            Qu_qr(2) = Qu_qr(2) + vpr*(upr*(one_eta*ppr))
+            Qv_ql(1) = Qv_ql(1) + upl*(vpl*(one_eta*ppl))
+            Qv_qr(1) = Qv_qr(1) + upr*(vpr*(one_eta*ppr))
+            Qv_ql(2) = Qv_ql(2) + vpl*(vpl*(one_eta*ppl))
+            Qv_qr(2) = Qv_qr(2) + vpr*(vpr*(one_eta*ppr))
 
-            c_minus = sqrt(init%alpha_mlswe(nlayers_f) * pbr)
-            c_plus  = sqrt(init%alpha_mlswe(nlayers_f) * pbl)
-            clam    = max(c_minus, c_plus)
+            pprime_l(k+1) = pprime_l(k) + ppl
+            pprime_r(k+1) = pprime_r(k) + ppr
 
-            pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam)*(pU_L + pU_R)
-            one_eta     = 1.0 + (pbpert_edge/pbl)
+            H_bcl_ql = H_bcl_ql + 0.5*init%alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
+            H_bcl_qr = H_bcl_qr + 0.5*init%alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
+         end do
 
-            ul = qbl(3)/qbl(1); ur = qbr(3)/qbr(1)
-            vl = qbl(4)/qbl(1); vr = qbr(4)/qbr(1)
+         flux_edge_x  = 0.5*(qbl(3)+qbr(3)) + (0.5*clam)*(nxl*qbl(2)+nxr*qbr(2))
+         flux_edge_y  = 0.5*(qbl(4)+qbr(4)) + (0.5*clam)*(nyl*qbl(2)+nyr*qbr(2))
+         flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y
 
-            Qu_ql(1) = ul*qbl(3); Qu_ql(2) = vl*qbl(3)
-            Qu_qr(1) = ur*qbr(3); Qu_qr(2) = vr*qbr(3)
-            Qv_ql(1) = ul*qbl(4); Qv_ql(2) = vl*qbl(4)
-            Qv_qr(1) = ur*qbr(4); Qv_qr(2) = vr*qbr(4)
+         H_bcl_q = (one_eta**2) * (0.5*(H_bcl_ql + H_bcl_qr))
 
-            pprime_l(:) = 0.0; pprime_r(:) = 0.0
-            H_bcl_ql    = 0.0; H_bcl_qr   = 0.0; H_bcl_q = 0.0
+         btp%btp_mass_flux_face_ave(1,iquad,iface) = btp%btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
+         btp%btp_mass_flux_face_ave(2,iquad,iface) = btp%btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
+         btp%H_face_ave(iquad,iface)               = btp%H_face_ave(iquad,iface) + H_bcl_q
+         btp%Qu_face_ave(1,iquad,iface)            = btp%Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1)+Qu_qr(1))
+         btp%Qu_face_ave(2,iquad,iface)            = btp%Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql(2)+Qu_qr(2))
+         btp%Qv_face_ave(1,iquad,iface)            = btp%Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql(1)+Qv_qr(1))
+         btp%Qv_face_ave(2,iquad,iface)            = btp%Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql(2)+Qv_qr(2))
+         btp%ope_face_ave(1,iquad,iface)           = btp%ope_face_ave(1,iquad,iface) + (1.0 + qbl(2)/pbl)
+         btp%ope_face_ave(2,iquad,iface)           = btp%ope_face_ave(2,iquad,iface) + (1.0 + qbr(2)/pbr)
+         btp%ope2_face_ave(1,iquad,iface)          = btp%ope2_face_ave(1,iquad,iface) + (1.0+qbl(2)/pbl)**2
+         btp%ope2_face_ave(2,iquad,iface)          = btp%ope2_face_ave(2,iquad,iface) + (1.0+qbr(2)/pbr)**2
+         btp%one_plus_eta_edge_2_ave(iquad,iface)  = btp%one_plus_eta_edge_2_ave(iquad,iface) + one_eta**2
+         btp%uvb_face_ave(1,1,iquad,iface)         = btp%uvb_face_ave(1,1,iquad,iface) + ul
+         btp%uvb_face_ave(1,2,iquad,iface)         = btp%uvb_face_ave(1,2,iquad,iface) + ur
+         btp%uvb_face_ave(2,1,iquad,iface)         = btp%uvb_face_ave(2,1,iquad,iface) + vl
+         btp%uvb_face_ave(2,2,iquad,iface)         = btp%uvb_face_ave(2,2,iquad,iface) + vr
 
-            !$acc loop seq
-            do k = 1, nlayers_f
-               ppl = 0.0; ppr = 0.0; upl = 0.0; upr = 0.0; vpl = 0.0; vpr = 0.0
-               ii = 5 + (k-1)*3
-               !$acc loop seq
-               do n = 1, ngl_f
-                  hi  = b%psiq(n,iquad)
-                  ppl = ppl + hi*ref%q_send(ii+1,n,kk)
-                  ppr = ppr + hi*ref%q_recv(ii+1,n,kk)
-                  upl = upl + hi*ref%q_send(ii+2,n,kk)
-                  upr = upr + hi*ref%q_recv(ii+2,n,kk)
-                  vpl = vpl + hi*ref%q_send(ii+3,n,kk)
-                  vpr = vpr + hi*ref%q_recv(ii+3,n,kk)
-               end do
+         Qu_ql(1) = Qu_ql(1) + (one_eta**2)*H_bcl_ql
+         Qu_qr(1) = Qu_qr(1) + (one_eta**2)*H_bcl_qr
+         fxl = nxl*Qu_ql(1) + nyl*Qu_ql(2)
+         fxr = nxr*Qu_qr(1) + nyr*Qu_qr(2)
+         flux(2,iquad) = 0.5*(fxl-fxr) - (0.25*clam)*(qbr(3)-qbl(3))
 
-               Qu_ql(1) = Qu_ql(1) + upl*(upl*(one_eta*ppl))
-               Qu_qr(1) = Qu_qr(1) + upr*(upr*(one_eta*ppr))
-               Qu_ql(2) = Qu_ql(2) + vpl*(upl*(one_eta*ppl))
-               Qu_qr(2) = Qu_qr(2) + vpr*(upr*(one_eta*ppr))
-               Qv_ql(1) = Qv_ql(1) + upl*(vpl*(one_eta*ppl))
-               Qv_qr(1) = Qv_qr(1) + upr*(vpr*(one_eta*ppr))
-               Qv_ql(2) = Qv_ql(2) + vpl*(vpl*(one_eta*ppl))
-               Qv_qr(2) = Qv_qr(2) + vpr*(vpr*(one_eta*ppr))
+         Qv_ql(2) = Qv_ql(2) + (one_eta**2)*H_bcl_ql
+         Qv_qr(2) = Qv_qr(2) + (one_eta**2)*H_bcl_qr
+         fxl = nxl*Qv_ql(1) + nyl*Qv_ql(2)
+         fxr = nxr*Qv_qr(1) + nyr*Qv_qr(2)
+         flux(3,iquad) = 0.5*(fxl-fxr) - (0.25*clam)*(qbr(4)-qbl(4))
 
-               pprime_l(k+1) = pprime_l(k) + ppl
-               pprime_r(k+1) = pprime_r(k) + ppr
+      end do ! iquad pass 1
 
-               H_bcl_ql = H_bcl_ql + 0.5*init%alpha_mlswe(k)*(pprime_l(k+1)**2 - pprime_l(k)**2)
-               H_bcl_qr = H_bcl_qr + 0.5*init%alpha_mlswe(k)*(pprime_r(k+1)**2 - pprime_r(k)**2)
-            end do
-
-            flux_edge_x  = 0.5*(qbl(3)+qbr(3)) + (0.5*clam)*(nxl*qbl(2)+nxr*qbr(2))
-            flux_edge_y  = 0.5*(qbl(4)+qbr(4)) + (0.5*clam)*(nyl*qbl(2)+nyr*qbr(2))
-            flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y
-
-            H_bcl_q = (one_eta**2) * (0.5*(H_bcl_ql + H_bcl_qr))
-
-            btp%btp_mass_flux_face_ave(1,iquad,iface) = btp%btp_mass_flux_face_ave(1,iquad,iface) + flux_edge_x
-            btp%btp_mass_flux_face_ave(2,iquad,iface) = btp%btp_mass_flux_face_ave(2,iquad,iface) + flux_edge_y
-            btp%H_face_ave(iquad,iface)               = btp%H_face_ave(iquad,iface) + H_bcl_q
-            btp%Qu_face_ave(1,iquad,iface)            = btp%Qu_face_ave(1,iquad,iface) + 0.5*(Qu_ql(1)+Qu_qr(1))
-            btp%Qu_face_ave(2,iquad,iface)            = btp%Qu_face_ave(2,iquad,iface) + 0.5*(Qu_ql(2)+Qu_qr(2))
-            btp%Qv_face_ave(1,iquad,iface)            = btp%Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql(1)+Qv_qr(1))
-            btp%Qv_face_ave(2,iquad,iface)            = btp%Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql(2)+Qv_qr(2))
-            btp%ope_face_ave(1,iquad,iface)           = btp%ope_face_ave(1,iquad,iface) + (1.0 + qbl(2)/pbl)
-            btp%ope_face_ave(2,iquad,iface)           = btp%ope_face_ave(2,iquad,iface) + (1.0 + qbr(2)/pbr)
-            btp%ope2_face_ave(1,iquad,iface)          = btp%ope2_face_ave(1,iquad,iface) + (1.0+qbl(2)/pbl)**2
-            btp%ope2_face_ave(2,iquad,iface)          = btp%ope2_face_ave(2,iquad,iface) + (1.0+qbr(2)/pbr)**2
-            btp%one_plus_eta_edge_2_ave(iquad,iface)  = btp%one_plus_eta_edge_2_ave(iquad,iface) + one_eta**2
-            btp%uvb_face_ave(1,1,iquad,iface)         = btp%uvb_face_ave(1,1,iquad,iface) + ul
-            btp%uvb_face_ave(1,2,iquad,iface)         = btp%uvb_face_ave(1,2,iquad,iface) + ur
-            btp%uvb_face_ave(2,1,iquad,iface)         = btp%uvb_face_ave(2,1,iquad,iface) + vl
-            btp%uvb_face_ave(2,2,iquad,iface)         = btp%uvb_face_ave(2,2,iquad,iface) + vr
-
-            Qu_ql(1) = Qu_ql(1) + (one_eta**2)*H_bcl_ql
-            Qu_qr(1) = Qu_qr(1) + (one_eta**2)*H_bcl_qr
-            fxl = nxl*Qu_ql(1) + nyl*Qu_ql(2)
-            fxr = nxr*Qu_qr(1) + nyr*Qu_qr(2)
-            flux(2,iquad) = 0.5*(fxl-fxr) - (0.25*clam)*(qbr(3)-qbl(3))
-
-            Qv_ql(2) = Qv_ql(2) + (one_eta**2)*H_bcl_ql
-            Qv_qr(2) = Qv_qr(2) + (one_eta**2)*H_bcl_qr
-            fxl = nxl*Qv_ql(1) + nyl*Qv_ql(2)
-            fxr = nxr*Qv_qr(1) + nyr*Qv_qr(2)
-            flux(3,iquad) = 0.5*(fxl-fxr) - (0.25*clam)*(qbr(4)-qbl(4))
-
-         end do ! iquad pass 1
-
-         ! --- Pass 2: scatter flux into rhs ---
-         ! Implicit barrier after pass 1 ensures flux is fully written before read.
-         !$acc loop vector
-         do iquad = 1, nq_f
-            wq      = mf%jac_faceq(iquad,1,iface)
-            flux_pb = flux(1,iquad)
-            flux_u  = flux(2,iquad)
-            flux_v  = flux(3,iquad)
-            !$acc loop seq
-            do n = 1, ngl_f
-               hi = b%psiq(n,iquad)
-               il = mf%imapl(1,n,1,iface)
-               jl = mf%imapl(2,n,1,iface)
-               kl = mf%imapl(3,n,1,iface)
-               I  = G%intma(il,jl,kl,el)
-               !$acc atomic update
-               rhs(1,I) = rhs(1,I) - wq*hi*flux_pb
-               !$acc atomic update
-               rhs(2,I) = rhs(2,I) - wq*hi*flux_u
-               !$acc atomic update
-               rhs(3,I) = rhs(3,I) - wq*hi*flux_v
-            end do
-         end do ! iquad pass 2
+      ! --- Pass 2: scatter flux into rhs ---
+      ! Implicit barrier after pass 1 ensures flux is fully written before read.
+      !$acc loop vector
+      do iquad = 1, nq_f
+         wq      = mf%jac_faceq(iquad,1,iface)
+         flux_pb = flux(1,iquad)
+         flux_u  = flux(2,iquad)
+         flux_v  = flux(3,iquad)
+         !$acc loop seq
+         do n = 1, ngl_f
+            hi = b%psiq(n,iquad)
+            il = mf%imapl(1,n,1,iface)
+            jl = mf%imapl(2,n,1,iface)
+            kl = mf%imapl(3,n,1,iface)
+            I  = G%intma(il,jl,kl,el)
+            !$acc atomic update
+            rhs(1,I) = rhs(1,I) - wq*hi*flux_pb
+            !$acc atomic update
+            rhs(2,I) = rhs(2,I) - wq*hi*flux_u
+            !$acc atomic update
+            rhs(3,I) = rhs(3,I) - wq*hi*flux_v
+         end do
+      end do ! iquad pass 2
 
    end do
    !$acc end parallel loop
@@ -207,7 +207,7 @@ end subroutine create_nbhs_face_df
 !>  atomics; face_ave entries are (iquad,iface)-unique per gang — no atomics.
 !----------------------------------------------------------------------!
 
- subroutine create_nbhs_face_df_v0(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, nvarb)
+subroutine create_nbhs_face_df_v0(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, nvarb)
 
    use mod_grid,      only: grid
    use mod_input,     only: input
@@ -466,15 +466,16 @@ end subroutine create_nbhs_face_df
    end do  ! jj (MPI boundary faces)
    !$acc end data
 
- end subroutine create_nbhs_face_df_v0
+end subroutine create_nbhs_face_df_v0
 
- subroutine create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, q_send, q_recv, nvarb)
+subroutine create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, ref, nvarb)
 
    use mod_grid,      only: grid
    use mod_basis,     only: basis
    use mod_face,      only: face_CS
    use mod_parallel,  only: parallel_CS
    use mod_variables, only: btp_CS
+   use mod_ref,       only: mref
 
    implicit none
 
@@ -483,118 +484,97 @@ end subroutine create_nbhs_face_df
    type(face_CS),     intent(in)    :: mf
    type(parallel_CS), intent(in)    :: par
    type(btp_CS),      intent(inout) :: btp
+   type(mref),        intent(in)    :: ref
 
    !global arrays
    integer, intent(in) :: nvarb
    real, intent(inout) :: rhs(2, G%npoin)
-   real, intent(in)    :: q_send(10, b%ngl, par%num_send_recv_total)
-   real, intent(in)    :: q_recv(10, b%ngl, par%num_send_recv_total)
- 
+
    !local variables
- 
-   real :: wq, iflux
-   integer ::iface,k
-   integer :: iel, ier, ilocl, ilocr
-   integer :: ifaceb, nq_i, nq_j, plane_ij
- 
-   integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar
-   integer :: ftype, pface, subface, imulti
-   real :: nxl, nyl, nxr, nyr
-   integer :: el, iquad, n, I, il, jl, kl, er, itype, ip
+
+   integer :: kk, ivar, iquad, i, ip, iface, el, il, jl, kl
+   integer :: ngl_f, nboun_f
+   real :: wq, iflux, alpha, beta, nxl, nyl, hi, flux_qu, flux_qv
 
    real, dimension(2) :: qu_mean, qv_mean
    real, dimension(4,2) :: flux_uv_visc_face
-   real, dimension(2) :: qul,qur
-   real, dimension(2) :: qvl,qvr
+   real, dimension(2) :: qul, qur, qvl, qvr
    real, dimension(5) :: grad_uvb_pb_l, grad_uvb_pb_r
-   real :: flux_qu, flux_qv, hi, mul, mur,c_jump, alpha, beta
 
-   jj=1
-   kk=1
-   imm = 0
+   ngl_f   = b%ngl
+   nboun_f = G%nboun
+   beta    = 0.5
+   alpha   = 1.0 - beta
+   iflux   = 0.0
 
-   beta = 0.5
-   alpha = 1.0 - beta
-   iflux = 0.0
+   !$acc parallel loop gang                                                  &
+   !$acc    private(iface, el, iquad, i, ip, ivar,                           &
+   !$acc            nxl, nyl, wq, hi, flux_qu, flux_qv,                      &
+   !$acc            qu_mean, qv_mean, flux_uv_visc_face,                     &
+   !$acc            qul, qur, qvl, qvr, grad_uvb_pb_l, grad_uvb_pb_r,       &
+   !$acc            il, jl, kl)                                              &
+   !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector,             &
+   !$acc            mf%jac_face, b%psi,                                      &
+   !$acc            par%nbh_send_recv,                                       &
+   !$acc            ref%q_send_lap, ref%q_recv_lap,                          &
+   !$acc            btp%graduvb_face_ave, rhs)                               &
+   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux)
+   do kk = 1, nboun_f
+      iface = par%nbh_send_recv(kk)
+      el    = G%face(7, iface)
 
-   do inbh = 1, par%num_nbh
-      do ib=1,par%num_send_recv(inbh)
-         iface = par%nbh_send_recv(jj)
-         imulti = par%nbh_send_recv_multi(jj)
+      !$acc loop seq
+      do iquad = 1, ngl_f
 
-         el=G%face(7,iface)
-         er=G%face(8,iface)
-         
-         do iquad = 1,b%ngl
+         do ivar = 6, 10
+            grad_uvb_pb_l(ivar-5) = ref%q_send_lap(ivar, iquad, kk)
+            grad_uvb_pb_r(ivar-5) = ref%q_recv_lap(ivar, iquad, kk)
+         end do
 
-            do ivar = 6, 10
-               grad_uvb_pb_l(ivar-5) =  q_send(ivar,iquad,kk)
-               grad_uvb_pb_r(ivar-5) =  q_recv(ivar,iquad,kk)
-            end do
+         do ivar = 1, 4
+            flux_uv_visc_face(ivar,1) = grad_uvb_pb_l(5)*ref%q_send_lap(ivar,iquad,kk) + grad_uvb_pb_l(ivar)
+            flux_uv_visc_face(ivar,2) = grad_uvb_pb_r(5)*ref%q_recv_lap(ivar,iquad,kk) + grad_uvb_pb_r(ivar)
+            btp%graduvb_face_ave(ivar,1,iquad,iface) = btp%graduvb_face_ave(ivar,1,iquad,iface) + ref%q_send_lap(ivar,iquad,kk)
+            btp%graduvb_face_ave(ivar,2,iquad,iface) = btp%graduvb_face_ave(ivar,2,iquad,iface) + ref%q_recv_lap(ivar,iquad,kk)
+         end do
 
-            do ivar = 1,4
-               flux_uv_visc_face(ivar,1) = grad_uvb_pb_l(5)* q_send(ivar,iquad,kk) + &
-                                          grad_uvb_pb_l(ivar)
+         nxl = mf%normal_vector(1, iquad, 1, iface)
+         nyl = mf%normal_vector(2, iquad, 1, iface)
 
-               flux_uv_visc_face(ivar,2) = grad_uvb_pb_r(5)* q_recv(ivar,iquad,kk) + &
-                                          grad_uvb_pb_r(ivar)
+         qul(1) = flux_uv_visc_face(1,1);  qul(2) = flux_uv_visc_face(2,1)
+         qvl(1) = flux_uv_visc_face(3,1);  qvl(2) = flux_uv_visc_face(4,1)
+         qur(1) = flux_uv_visc_face(1,2);  qur(2) = flux_uv_visc_face(2,2)
+         qvr(1) = flux_uv_visc_face(3,2);  qvr(2) = flux_uv_visc_face(4,2)
 
-               btp%graduvb_face_ave(ivar,1,iquad,iface) = btp%graduvb_face_ave(ivar,1,iquad,iface) + q_send(ivar,iquad,kk)
-               btp%graduvb_face_ave(ivar,2,iquad,iface) = btp%graduvb_face_ave(ivar,2,iquad,iface) + q_recv(ivar,iquad,kk)
+         ! Central flux (beta=0.5)
+         qu_mean(1) = alpha*qul(1) + beta*qur(1);  qu_mean(2) = alpha*qul(2) + beta*qur(2)
+         qv_mean(1) = alpha*qvl(1) + beta*qvr(1);  qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
 
-            end do
+         wq = mf%jac_face(iquad, 1, iface)
 
-            nxl = mf%normal_vector(1,iquad,1,iface)
-            nyl = mf%normal_vector(2,iquad,1,iface)
+         flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl
+         flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl
 
-            qul(1) = flux_uv_visc_face(1,1)
-            qul(2) = flux_uv_visc_face(2,1)
-            qvl(1) = flux_uv_visc_face(3,1)
-            qvl(2) = flux_uv_visc_face(4,1)
+         !$acc loop seq
+         do i = 1, ngl_f
+            hi = b%psi(i, iquad)
+            il = mf%imapl(1, i, 1, iface)
+            jl = mf%imapl(2, i, 1, iface)
+            kl = mf%imapl(3, i, 1, iface)
+            ip = G%intma(il, jl, kl, el)
+            !$acc atomic update
+            rhs(1, ip) = rhs(1, ip) + wq*hi*flux_qu
+            !$acc atomic update
+            rhs(2, ip) = rhs(2, ip) + wq*hi*flux_qv
+         end do
 
-            qur(1) = flux_uv_visc_face(1,2)
-            qur(2) = flux_uv_visc_face(2,2)
-            qvr(1) = flux_uv_visc_face(3,2)
-            qvr(2) = flux_uv_visc_face(4,2)
+      end do  ! iquad
+   end do  ! kk
+   !$acc end parallel loop
 
-            ! The Flip-Flop flux of Cockburn & Shu 
-            ! NOTE: beta=0.5 is the central flux
-            qu_mean(1) = alpha*qul(1) + beta*qur(1)
-            qu_mean(2) = alpha*qul(2) + beta*qur(2)
-            qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
-            qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
+end subroutine create_nbhs_face_df_lap
 
-            wq=mf%jac_face(iquad,1,iface)
-
-            flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl
-            flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl
-
-            !  Do Gauss-Lobatto Integration
-            do i=1,b%ngl
-
-               hi = b%psi(i,iquad)
-
-               il=mf%imapl(1,i,1,iface)
-               jl=mf%imapl(2,i,1,iface)
-               kl=mf%imapl(3,i,1,iface)
-               ip=G%intma(il,jl,kl,el)
-               
-               !Update Flux
-               rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
-               rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
-
-            end do !i
-         end do !iquad
-
-         kk=kk+1
-         jj=jj+1
-      end do
- 
-   end do !iface
- 
- end subroutine create_nbhs_face_df_lap
-
- subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv)
+subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv)
 
    use mod_grid,      only: grid
    use mod_input,     only: input
@@ -619,11 +599,11 @@ end subroutine create_nbhs_face_df
    real, intent(inout) :: rhs(3, G%npoin, inp%nlayers)
    real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, par%num_send_recv_total)
    real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, par%num_send_recv_total)
- 
+
    !local variables
- 
+
    integer :: isub, ic, jj, im, imm, inbh, ib, kk, ivar, imulti
-   
+
    real, dimension(inp%nlayers) :: alpha_over_g, g_over_alpha
    real, dimension(2,inp%nlayers+1) :: p_face, z_face
    real, dimension(inp%nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
@@ -798,9 +778,9 @@ end subroutine create_nbhs_face_df
                z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,k))
                z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,k))
                z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
-                                                   (one_plus_eta_edge * ql(1,k))
+                  (one_plus_eta_edge * ql(1,k))
                z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
-                                                   (one_plus_eta_edge * qr(1,k))
+                  (one_plus_eta_edge * qr(1,k))
             end do
 
             p_edge_plus(2) = one_plus_eta_edge * ql(1,1)
@@ -825,11 +805,11 @@ end subroutine create_nbhs_face_df
 
                   if (dz_intersect > 0.0) then
                      p_intersect_bot = p_edge_minus(ktemp+1) &
-                           - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
+                        - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
                      p_intersect_top = p_edge_minus(ktemp+1) &
-                           - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
+                        - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
                      H_r_minus = H_r_minus + &
-                           0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                        0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
 
                   end if
                end do
@@ -841,7 +821,7 @@ end subroutine create_nbhs_face_df
                ! Corrections at the left side of a face.
                p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
                H_corr1 = 0.5 * init%alpha_mlswe(k) * ((p_face(1,k+1) &
-                           + p_inc1)**2 - p_face(1,k+1)**2)
+                  + p_inc1)**2 - p_face(1,k+1)**2)
                H_face(iquad,k) = H_face(iquad,k) - H_corr1
                H_face(iquad,k+1) = H_face(iquad,k+1) + H_corr1
 
@@ -862,7 +842,7 @@ end subroutine create_nbhs_face_df
             enddo
 
          end do ! iquad
-         
+
          ! Do Gauss-Lobatto Integration
          do k = 1,inp%nlayers
 
@@ -892,12 +872,12 @@ end subroutine create_nbhs_face_df
          kk=kk+1
          jj=jj+1
       end do
- 
-   end do !iface
- 
- end subroutine create_nbhs_face_bcl
 
-  subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send, q_recv, multirate)
+   end do !iface
+
+end subroutine create_nbhs_face_bcl
+
+subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send, q_recv, multirate)
 
    use mod_grid,      only: grid
    use mod_input,     only: input
@@ -1050,9 +1030,9 @@ end subroutine create_nbhs_face_df
 
    end do !iface
 
- end subroutine create_nbhs_face_bcl_continuity
+end subroutine create_nbhs_face_bcl_continuity
 
- subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, multirate)
+subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, multirate)
 
    use mod_grid,      only: grid
    use mod_input,     only: input
@@ -1236,9 +1216,9 @@ end subroutine create_nbhs_face_df
                z_face(1,k) = z_face(1,k+1) + alpha_over_g(k) * (ope_l * ql(1,k))
                z_face(2,k) = z_face(2,k+1) + alpha_over_g(k) * (ope_r * qr(1,k))
                z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k) * &
-                                                   (one_plus_eta_edge * ql(1,k))
+                  (one_plus_eta_edge * ql(1,k))
                z_edge_minus(k) = z_edge_minus(k+1) + alpha_over_g(k) * &
-                                                   (one_plus_eta_edge * qr(1,k))
+                  (one_plus_eta_edge * qr(1,k))
             end do
 
             p_edge_plus(2) = one_plus_eta_edge * ql(1,1)
@@ -1263,11 +1243,11 @@ end subroutine create_nbhs_face_df
 
                   if (dz_intersect > 0.0) then
                      p_intersect_bot = p_edge_minus(ktemp+1) &
-                           - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
+                        - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
                      p_intersect_top = p_edge_minus(ktemp+1) &
-                           - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
+                        - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
                      H_r_minus = H_r_minus + &
-                           0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+                        0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
 
                   end if
                end do
@@ -1279,7 +1259,7 @@ end subroutine create_nbhs_face_df
                ! Corrections at the left side of a face.
                p_inc1 = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
                H_corr1 = 0.5 * init%alpha_mlswe(k) * ((p_face(1,k+1) &
-                           + p_inc1)**2 - p_face(1,k+1)**2)
+                  + p_inc1)**2 - p_face(1,k+1)**2)
                H_face(iquad,k) = H_face(iquad,k) - H_corr1
                H_face(iquad,k+1) = H_face(iquad,k+1) + H_corr1
 
@@ -1333,9 +1313,9 @@ end subroutine create_nbhs_face_df
 
    end do !iface
 
- end subroutine create_nbhs_face_bcl_momentum
+end subroutine create_nbhs_face_bcl_momentum
 
-  subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, rhs, q_send, q_recv, nlayers, multirate)
+subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, rhs, q_send, q_recv, nlayers, multirate)
 
    use mod_grid,      only: grid
    use mod_basis,     only: basis
@@ -1401,12 +1381,12 @@ end subroutine create_nbhs_face_df
 
                do ivar = 1,4
                   flux_uv_visc_face(ivar,1) = q_send(index+5,iquad,kk)* &
-                                                btp%graduvb_face_ave(ivar,1,iquad,iface) + &
-                                                q_send(index+ivar,iquad,kk)
+                     btp%graduvb_face_ave(ivar,1,iquad,iface) + &
+                     q_send(index+ivar,iquad,kk)
 
                   flux_uv_visc_face(ivar,2) = q_recv(index+5,iquad,kk)* &
-                                                btp%graduvb_face_ave(ivar,2,iquad,iface) + &
-                                                q_recv(index+ivar,iquad,kk)
+                     btp%graduvb_face_ave(ivar,2,iquad,iface) + &
+                     q_recv(index+ivar,iquad,kk)
 
                end do
 
@@ -1459,9 +1439,9 @@ end subroutine create_nbhs_face_df
 
    end do !iface
 
- end subroutine create_nbhs_face_df_lap_bcl
+end subroutine create_nbhs_face_df_lap_bcl
 
- subroutine create_nbhs_face_quad_layer(G, b, par, q_face, q_send, q_recv, nvarb, nlayers, nq)
+subroutine create_nbhs_face_quad_layer(G, b, par, q_face, q_send, q_recv, nvarb, nlayers, nq)
 
    use mod_grid,     only: grid, mod_grid_get_face_nq
    use mod_basis,    only: basis
@@ -1498,9 +1478,9 @@ end subroutine create_nbhs_face_df
 
          ftype = G%face_type(iface)
 
-            if (ftype==2) then
-               ilocl=G%face(5,iface)
-               iel=G%face(7,iface)
+         if (ftype==2) then
+            ilocl=G%face(5,iface)
+            iel=G%face(7,iface)
 
             !-------------------------------------
             !Store Left Side Variables
@@ -1520,10 +1500,10 @@ end subroutine create_nbhs_face_df
             end do
 
             kk=kk+1
-            end if
+         end if
          jj=jj+1
       end do
- 
+
    end do !iface
- 
- end subroutine create_nbhs_face_quad_layer
+
+end subroutine create_nbhs_face_quad_layer

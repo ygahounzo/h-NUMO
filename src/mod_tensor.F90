@@ -23,6 +23,7 @@ module mod_tensor
       real,    dimension(:,:), allocatable :: dpsidy_df  ! (npts, npoin)
       integer, dimension(:,:), allocatable :: index_df   ! (npts, npoin)
       real,    dimension(:),   allocatable :: wjac_df    ! (npoin)
+      integer, dimension(:,:), allocatable :: index_df_elt ! (npts, nelem)
 
    end type tensor_CS
 
@@ -69,6 +70,7 @@ contains
       allocate(tsp%dpsidx_df(npts, G%npoin))
       allocate(tsp%dpsidy_df(npts, G%npoin))
       allocate(tsp%index_df(npts, G%npoin))
+      allocate(tsp%index_df_elt(npts, G%nelem))
 
       ! Initialise quadrature arrays
       tsp%wjac   = 0.0
@@ -84,6 +86,7 @@ contains
       tsp%dpsidx_df = 0.0
       tsp%dpsidy_df = 0.0
       tsp%index_df  = 0
+      tsp%index_df_elt = 0
 
       !  Quadrature-point tensor product  (npoin_q grid)
       do e = 1, G%nelem
@@ -126,33 +129,40 @@ contains
       end do ! e, jquad, iquad
 
       !  DOF tensor product  (npoin grid)
-      do concurrent(e = 1:G%nelem, jquad = 1:b%ngly, iquad = 1:b%nglx)
+      do e = 1, G%nelem
+         ipq = 0
+         do jquad = 1, b%ngly
+            do iquad = 1, b%nglx
 
-         Iq = G%intma(iquad, jquad, 1, e)
+               Iq = G%intma(iquad, jquad, 1, e)
+               ipq = ipq + 1
+               tsp%index_df_elt(ipq,e) = Iq
 
-         tsp%wjac_df(Iq) = mt%jac(iquad, jquad, 1, e)
+               tsp%wjac_df(Iq) = mt%jac(iquad, jquad, 1, e)
 
-         e_x = mt%ksi_x(iquad, jquad, 1, e);  e_y = mt%ksi_y(iquad, jquad, 1, e)
-         n_x = mt%eta_x(iquad, jquad, 1, e);  n_y = mt%eta_y(iquad, jquad, 1, e)
+               e_x = mt%ksi_x(iquad, jquad, 1, e);  e_y = mt%ksi_y(iquad, jquad, 1, e)
+               n_x = mt%eta_x(iquad, jquad, 1, e);  n_y = mt%eta_y(iquad, jquad, 1, e)
 
-         ip = 0
-         do m = 1, b%ngly
-            do n = 1, b%nglx
+               ip = 0
+               do m = 1, b%ngly
+                  do n = 1, b%nglx
 
-               I  = G%intma(n, m, 1, e)
-               ip = ip + 1
+                     I  = G%intma(n, m, 1, e)
+                     ip = ip + 1
 
-               tsp%index_df(ip, Iq) = I
-               tsp%psih_df(ip, Iq)  = b%psix(n, iquad) * b%psiy(m, jquad)
+                     tsp%index_df(ip, Iq) = I
+                     tsp%psih_df(ip, Iq)  = b%psix(n, iquad) * b%psiy(m, jquad)
 
-               h_e = b%dpsix(n, iquad) * b%psiy(m, jquad)   ! Xi  derivative
-               h_n = b%psix(n, iquad)  * b%dpsiy(m, jquad)  ! Eta derivative
+                     h_e = b%dpsix(n, iquad) * b%psiy(m, jquad)   ! Xi  derivative
+                     h_n = b%psix(n, iquad)  * b%dpsiy(m, jquad)  ! Eta derivative
 
-               tsp%dpsidx_df(ip, Iq) = h_e * e_x + h_n * n_x
-               tsp%dpsidy_df(ip, Iq) = h_e * e_y + h_n * n_y
+                     tsp%dpsidx_df(ip, Iq) = h_e * e_x + h_n * n_x
+                     tsp%dpsidy_df(ip, Iq) = h_e * e_y + h_n * n_y
 
-            end do ! n
-         end do ! m
+                  end do ! n
+               end do ! m
+            enddo 
+         enddo 
 
       end do ! e, jquad, iquad
 
