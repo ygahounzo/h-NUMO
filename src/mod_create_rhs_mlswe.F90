@@ -634,17 +634,15 @@ contains
                 vdpl(k) = vl*dpl
                 vdpr(k) = vr*dpr
 
-                if(uu*nxl > 0.0) then
+                un = uu*nxl + vv*nyl
+                if(un > 0.0) then
                     udp_flux(1,k,iquad) = uu * (ul*dpl)
                     vdp_flux(1,k,iquad) = uu * (vl*dpl)
-                else
-                    udp_flux(1,k,iquad) = uu * (ur*dpr)
-                    vdp_flux(1,k,iquad) = uu * (vr*dpr)
-                end if
-                if(vv*nyl > 0.0) then
                     udp_flux(2,k,iquad) = vv * (ul*dpl)
                     vdp_flux(2,k,iquad) = vv * (vl*dpl)
                 else
+                    udp_flux(1,k,iquad) = uu * (ur*dpr)
+                    vdp_flux(1,k,iquad) = uu * (vr*dpr)
                     udp_flux(2,k,iquad) = vv * (ur*dpr)
                     vdp_flux(2,k,iquad) = vv * (vr*dpr)
                 end if
@@ -659,23 +657,15 @@ contains
             do k = 1, inp%nlayers
 
                 weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
-                if(uu_dp_flux_deficit(1)*nxl < 0.0) &
+                if ((uu_dp_flux_deficit(1)*nxl + uu_dp_flux_deficit(2)*nyl) < 0.0) &
                     weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + weight * uu_dp_flux_deficit(1)
-
-                weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
-                if(uu_dp_flux_deficit(2)*nyl < 0.0) &
-                    weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + weight * uu_dp_flux_deficit(2)
 
                 weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
-                if(vv_dp_flux_deficit(1)*nxl < 0.0) &
+                if ((vv_dp_flux_deficit(1)*nxl + vv_dp_flux_deficit(2)*nyl) < 0.0) &
                     weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(1,k,iquad) = vdp_flux(1,k,iquad) + weight * vv_dp_flux_deficit(1)
-
-                weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
-                if(vv_dp_flux_deficit(2)*nyl < 0.0) &
-                    weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(2,k,iquad) = vdp_flux(2,k,iquad) + weight * vv_dp_flux_deficit(2)
             end do
 
@@ -776,12 +766,12 @@ contains
 
             weight = 1.0
             acceleration = sum(H_face(1,:,iquad))
-            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
+            if(abs(acceleration) > eps1) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(1,:,iquad) = H_face(1,:,iquad) * weight
 
             weight = 1.0
             acceleration = sum(H_face(2,:,iquad))
-            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
+            if(abs(acceleration) > eps1) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(2,:,iquad) = H_face(2,:,iquad) * weight
 
             wq = mf%jac_faceq(iquad,1,iface)
@@ -926,20 +916,18 @@ contains
                 vdpl(k) = vl*dpl
                 vdpr(k) = vr*dpr
 
-                if(uu*nxl > 0.0) then
+                un = uu*nxl + vv*nyl
+                if(un > 0.0) then
                     dp_flux(1,k,iquad)  = uu * dpl
                     udp_flux(1,k,iquad) = uu * (ul*dpl)
                     vdp_flux(1,k,iquad) = uu * (vl*dpl)
-                else
-                    dp_flux(1,k,iquad)  = uu * dpr
-                    udp_flux(1,k,iquad) = uu * (ur*dpr)
-                    vdp_flux(1,k,iquad) = uu * (vr*dpr)
-                end if
-                if(vv*nyl > 0.0) then
                     dp_flux(2,k,iquad)  = vv * dpl
                     udp_flux(2,k,iquad) = vv * (ul*dpl)
                     vdp_flux(2,k,iquad) = vv * (vl*dpl)
                 else
+                    dp_flux(1,k,iquad)  = uu * dpr
+                    udp_flux(1,k,iquad) = uu * (ur*dpr)
+                    vdp_flux(1,k,iquad) = uu * (vr*dpr)
                     dp_flux(2,k,iquad)  = vv * dpr
                     udp_flux(2,k,iquad) = vv * (ur*dpr)
                     vdp_flux(2,k,iquad) = vv * (vr*dpr)
@@ -958,33 +946,21 @@ contains
             do k = 1, inp%nlayers
 
                 weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
-                if (dp_deficit(1)*nxl < 0.0) &
+                if ((dp_deficit(1)*nxl + dp_deficit(2)*nyl) < 0.0) &
                     weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
                 dp_flux(1,k,iquad) = dp_flux(1,k,iquad) + weight * dp_deficit(1)
-
-                weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
-                if (dp_deficit(2)*nyl < 0.0) &
-                    weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
                 dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + weight * dp_deficit(2)
 
                 weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
-                if(uu_dp_flux_deficit(1)*nxl < 0.0) &
+                if ((uu_dp_flux_deficit(1)*nxl + uu_dp_flux_deficit(2)*nyl) < 0.0) &
                     weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + weight * uu_dp_flux_deficit(1)
-
-                weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
-                if(uu_dp_flux_deficit(2)*nyl < 0.0) &
-                    weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
                 udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + weight * uu_dp_flux_deficit(2)
 
                 weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
-                if(vv_dp_flux_deficit(1)*nxl < 0.0) &
+                if ((vv_dp_flux_deficit(1)*nxl + vv_dp_flux_deficit(2)*nyl) < 0.0) &
                     weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(1,k,iquad) = vdp_flux(1,k,iquad) + weight * vv_dp_flux_deficit(1)
-
-                weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
-                if(vv_dp_flux_deficit(2)*nyl < 0.0) &
-                    weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
                 vdp_flux(2,k,iquad) = vdp_flux(2,k,iquad) + weight * vv_dp_flux_deficit(2)
             end do
 
@@ -1085,12 +1061,12 @@ contains
 
             weight = 1.0
             acceleration = sum(H_face(1,:,iquad))
-            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
+            if(abs(acceleration) > eps1) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(1,:,iquad) = H_face(1,:,iquad) * weight
 
             weight = 1.0
             acceleration = sum(H_face(2,:,iquad))
-            if(acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
+            if(abs(acceleration) > eps1) weight = btp%H_face_ave(iquad,iface) / acceleration
             H_face(2,:,iquad) = H_face(2,:,iquad) * weight
 
             wq = mf%jac_faceq(iquad,1,iface)
@@ -1282,15 +1258,12 @@ contains
                 uu = 0.5*(ul + ur)
                 vv = 0.5*(vl + vr)
 
-                if(uu*nxl > 0.0) then
+                un = uu*nxl + vv*nyl
+                if(un > 0.0) then
                     flux_edge_u(iquad,k) = uu * dpl
-                else
-                    flux_edge_u(iquad,k) = uu * dpr
-                end if
-
-                if(vv*nyl > 0.0) then
                     flux_edge_v(iquad,k) = vv * dpl
                 else
+                    flux_edge_u(iquad,k) = uu * dpr
                     flux_edge_v(iquad,k) = vv * dpr
                 end if
 
@@ -1309,13 +1282,9 @@ contains
                 nyl = mf%normal_vector_q(2,iquad,1,iface)
 
                 weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps))
-                if (dp_deficit(1)*nxl < 0.0) &
+                if ((dp_deficit(1)*nxl + dp_deficit(2)*nyl) < 0.0) &
                     weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps))
                 flux_u = flux_edge_u(iquad,k) + weight*dp_deficit(1)
-
-                weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps))
-                if (dp_deficit(2)*nyl < 0.0) &
-                    weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps))
                 flux_v = flux_edge_v(iquad,k) + weight*dp_deficit(2)
 
                 flux = nxl*flux_u + nyl*flux_v

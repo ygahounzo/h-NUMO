@@ -31,44 +31,42 @@ module mod_barotropic_terms
 
         real, intent(inout) :: qb(4,G%npoin)
 
-        integer :: iface, ilr, m, il, jl, el, er, ilocl, ilocr, I, kl, n
-        real :: nx, ny, unl, upnl
+        integer :: iface, il, jl, el, er, I, kl, n
+        real :: nx, ny, unl
 
+        !$acc parallel loop present(G, b, mf, qb)
         do iface = 1, G%nface
 
             el = G%face(7,iface)
             er = G%face(8,iface)
 
             if (er == -4) then
+                !$acc loop seq
                 do n = 1, b%ngl
-
                     il = mf%imapl(1,n,1,iface)
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
-
                     nx = mf%normal_vector(1,n,1,iface)
                     ny = mf%normal_vector(2,n,1,iface)
-
-                    unl    = qb(3,I)*nx + qb(4,I)*ny
+                    unl     = qb(3,I)*nx + qb(4,I)*ny
                     qb(3,I) = qb(3,I) - unl*nx
                     qb(4,I) = qb(4,I) - unl*ny
                 end do
 
             elseif (er == -2) then
+                !$acc loop seq
                 do n = 1, b%ngl
-
                     il = mf%imapl(1,n,1,iface)
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
-
                     qb(3,I) = 0.0
                     qb(4,I) = 0.0
-
                 end do
             end if
         end do
+        !$acc end parallel loop
 
     end subroutine btp_mom_boundary_df
 

@@ -51,9 +51,10 @@ contains
       real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
       real, dimension(4,G%npoin) :: qb0_df, qb1_df, qb2_df
-      real, dimension(G%npoin)   :: inv_pb1
-      integer :: mstep, ik
+      integer :: mstep, ik, I
       real    :: N_inv, a0, a1, a2, dtt
+
+      !$acc declare create(qb0_df, qb1_df, qb2_df)
 
       ! Zero-initialise all accumulation buffers
       btp%one_plus_eta_edge_2_ave = 0.0;  btp%uvb_ave             = 0.0
@@ -75,16 +76,23 @@ contains
       !$acc               btp%H_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,                  &
       !$acc               btp%ope_face_ave, btp%ope2_face_ave, btp%btp_mass_flux_face_ave,   &
       !$acc               btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave,                     &
-      !$acc               btp%graduvb_face_ave)
+      !$acc               btp%graduvb_face_ave, btp%ope2_ave_df, btp%uvb_ave_df,             &
+      !$acc               btp%graduvb_ave)
 
       qb2_df = 0.0
+      !$acc update device(qb2_df)
 
       !$acc update device(qb_df)
 
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
-         qb0_df = qb_df
+         !$acc parallel loop present(qb0_df, qb_df)
+         do I = 1, G%npoin
+            qb0_df(1,I) = qb_df(1,I); qb0_df(2,I) = qb_df(2,I)
+            qb0_df(3,I) = qb_df(3,I); qb0_df(4,I) = qb_df(4,I)
+         end do
+         !$acc end parallel loop
 
          do ik = 1, inp%kstages
 
@@ -93,27 +101,46 @@ contains
             a2  = init%ssprk_a(ik,3)
             dtt = inp%dt_btp * init%ssprk_beta(ik)
 
-            ! Compute reciprocal of qb_df(1,:)
-            inv_pb1 = 1.0 / qb_df(1,:)
-
-            btp%ope2_ave_df     = btp%ope2_ave_df     + (1.0 + qb_df(2,:)/init%pbprime_df)**2
-            btp%uvb_ave_df(1,:) = btp%uvb_ave_df(1,:) + qb_df(3,:) * inv_pb1
-            btp%uvb_ave_df(2,:) = btp%uvb_ave_df(2,:) + qb_df(4,:) * inv_pb1
+            !$acc parallel loop present(btp, qb_df, init)
+            do I = 1, G%npoin
+               btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
+               btp%uvb_ave_df(1,I) = btp%uvb_ave_df(1,I) + qb_df(3,I) / qb_df(1,I)
+               btp%uvb_ave_df(2,I) = btp%uvb_ave_df(2,I) + qb_df(4,I) / qb_df(1,I)
+            end do
+            !$acc end parallel loop
 
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)
 
-            ! Update barotropic variables using SSPRK formula
-            qb1_df(2:4,:) = a0*qb0_df(2:4,:) + a1*qb_df(2:4,:) + a2*qb2_df(2:4,:) + dtt*btp%rhs_btp
-
-            qb1_df(1,:) = qb1_df(2,:) + init%pbprime_df
+            !$acc parallel loop present(qb0_df, qb1_df, qb_df, qb2_df, btp, init, mt)
+            do I = 1, G%npoin
+               qb1_df(2,I) = a0*qb0_df(2,I) + a1*qb_df(2,I) + a2*qb2_df(2,I) &
+                             + dtt * (mt%massinv(I) * btp%rhs_btp(1,I))
+               qb1_df(3,I) = a0*qb0_df(3,I) + a1*qb_df(3,I) + a2*qb2_df(3,I) &
+                             + dtt * (mt%massinv(I) * (btp%rhs_btp(2,I) + inp%visc_mlswe*btp%rhs_btp_visc(1,I)))
+               qb1_df(4,I) = a0*qb0_df(4,I) + a1*qb_df(4,I) + a2*qb2_df(4,I) &
+                             + dtt * (mt%massinv(I) * (btp%rhs_btp(3,I) + inp%visc_mlswe*btp%rhs_btp_visc(2,I)))
+               qb1_df(1,I) = qb1_df(2,I) + init%pbprime_df(I)
+            end do
+            !$acc end parallel loop
 
             call btp_mom_boundary_df(G, b, mf, qb1_df)
 
-            qb_df = qb1_df
-            !$acc update device(qb_df)
+            !$acc parallel loop present(qb_df, qb1_df)
+            do I = 1, G%npoin
+               qb_df(1,I) = qb1_df(1,I); qb_df(2,I) = qb1_df(2,I)
+               qb_df(3,I) = qb1_df(3,I); qb_df(4,I) = qb1_df(4,I)
+            end do
+            !$acc end parallel loop
 
-            if (inp%kstages == 5 .and. ik == 2) qb2_df = qb_df
+            if (inp%kstages == 5 .and. ik == 2) then
+               !$acc parallel loop present(qb2_df, qb_df)
+               do I = 1, G%npoin
+                  qb2_df(1,I) = qb_df(1,I); qb2_df(2,I) = qb_df(2,I)
+                  qb2_df(3,I) = qb_df(3,I); qb2_df(4,I) = qb_df(4,I)
+               end do
+               !$acc end parallel loop
+            end if
 
          end do
 
@@ -127,7 +154,9 @@ contains
       !$acc             btp%H_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,                  &
       !$acc             btp%ope_face_ave, btp%ope2_face_ave, btp%btp_mass_flux_face_ave,   &
       !$acc             btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave,                     &
-      !$acc             btp%graduvb_face_ave)
+      !$acc             btp%graduvb_face_ave, btp%ope2_ave_df, btp%uvb_ave_df,              &
+      !$acc             btp%graduvb_ave)
+      !$acc update host(qb_df)
 
       ! Normalise accumulators to get time averages
       N_inv = 1.0 / real(inp%kstages * init%N_btp)

@@ -58,17 +58,10 @@ contains
       !    and device btp%*_face_ave.  rhs_btp stays on device until step 5.
       call btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs_btp, 4)
 
-      ! 5. Download complete rhs_btp (local + MPI boundary contributions).
-      !$acc update host(rhs_btp)
-
-      ! 6. Viscosity (GPU-ported)
+      ! 5. Viscosity (GPU-ported)
       if (inp%method_visc > 0) &
          call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, btp%rhs_btp_visc, qb_df)
-
-      ! 7. Mass-matrix inverse scaling.
-      rhs_btp(1,:) = mt%massinv(:) * rhs_btp(1,:)
-      rhs_btp(2,:) = mt%massinv(:) * (rhs_btp(2,:) + inp%visc_mlswe*btp%rhs_btp_visc(1,:))
-      rhs_btp(3,:) = mt%massinv(:) * (rhs_btp(3,:) + inp%visc_mlswe*btp%rhs_btp_visc(2,:))
+      ! rhs_btp stays on device; mass-matrix scaling is fused into the SSPRK update in the caller.
 
    end subroutine create_rhs_btp
 

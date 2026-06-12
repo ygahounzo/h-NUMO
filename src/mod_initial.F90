@@ -40,8 +40,8 @@ module mod_initial
         real, dimension(:,:,:), allocatable :: zbot_face
         real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
 
-        real, dimension(:,:), allocatable :: ssprk_a
-        real, dimension(:),   allocatable :: ssprk_beta, alpha_mlswe
+        real, dimension(:,:), allocatable :: ssprk_a, ssprk_a_bcl
+        real, dimension(:),   allocatable :: ssprk_beta, ssprk_beta_bcl, alpha_mlswe
 
         real, dimension(:,:), allocatable :: z_init_flag, z_interface_initial, z_init_flag_elem
         real, dimension(:),   allocatable :: zbot_df_init
@@ -113,7 +113,7 @@ module mod_initial
             init%qb_df, init%alpha_mlswe, init%tau_wind, init%coriolis_quad, &
             init%coriolis_df, init%zbot, init%zbot_df, init%zbot_face, &
             init%grad_zbot_quad, init%tau_wind_df,&
-            init%ssprk_a,init%ssprk_beta, init%grad_zbot_df, &
+            init%ssprk_a,init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl, init%grad_zbot_df, &
             init%pbprime_df_face, init%z_interface, &
             init%z_init_flag, init%z_interface_initial,                     &
             init%z_init_flag_elem, init%zbot_df_init)
@@ -125,6 +125,7 @@ module mod_initial
             init%fdt_bcl(npoin), init%fdt2_bcl(npoin), init%a_bcl(npoin), &
             init%b_bcl(npoin), &
             init%tau_wind_df(2,npoin), init%ssprk_a(kstages,3), init%ssprk_beta(kstages), &
+            init%ssprk_a_bcl(inp%kstages_bcl,3), init%ssprk_beta_bcl(inp%kstages_bcl), &
             init%pbprime_df_face(2,b%ngl,nface),init%z_interface(npoin,nlayers+1), &
             init%z_init_flag(npoin,nlayers), init%z_interface_initial(npoin,nlayers+1),  &
             init%z_init_flag_elem(G%nelem,nlayers), init%zbot_df_init(npoin))
@@ -159,7 +160,8 @@ module mod_initial
 
             call  wind_stress_coriolis(b, G, inp, init%tau_wind, init%coriolis_df, init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
                 init%a_bcl, init%b_bcl, init%tau_wind_df)
-            call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta)
+            call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl)
+
         endif
 
         !Set-up Times

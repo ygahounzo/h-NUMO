@@ -26,7 +26,6 @@ contains
       use mod_ref,              only: mref
       use mod_mpi_communicator, only: mpi_communicator
       use mod_tensor,           only: tensor_CS
-      use mod_barotropic_terms, only: compute_gradient_uv
 
       implicit none
 
@@ -46,21 +45,55 @@ contains
 
       real, dimension(2,G%npoin) :: Uk
       real, dimension(4,G%npoin) :: graduv
+      integer :: I, Iq, ip
+      real    :: dhdx, dhdy
 
-      Uk(1,:) = qb_df(3,:)/qb_df(1,:)
-      Uk(2,:) = qb_df(4,:)/qb_df(1,:)
+      !$acc data create(Uk, graduv)
 
-      call compute_gradient_uv(G, b, tsp, graduv, Uk)
+      ! Compute barotropic velocity — qb_df lives on device during the BTP loop.
+      !$acc parallel loop present(Uk, qb_df)
+      do I = 1, G%npoin
+         Uk(1,I) = qb_df(3,I) / qb_df(1,I)
+         Uk(2,I) = qb_df(4,I) / qb_df(1,I)
+      end do
+      !$acc end parallel loop
 
-      btp%graduvb_ave = btp%graduvb_ave + graduv
+      ! Compute velocity gradient (inlined from compute_gradient_uv).
+      !$acc kernels present(graduv)
+      graduv = 0.0
+      !$acc end kernels
 
-      ! btp%rhs_btp_visc is persistent on device (entered at start-up).
-      ! btp%btp_dpp_graduv and btp%pbprime_visc are read-only on device so
-      ! their host copies remain valid for the precommunicator's packing.
-      !$acc data copyin(graduv)
+      !$acc parallel loop present(graduv, Uk, tsp, b, G)
+      do Iq = 1, G%npoin
+         !$acc loop seq
+         do ip = 1, b%npts
+            I    = tsp%index_df(ip,Iq)
+            dhdx = tsp%dpsidx_df(ip,Iq)
+            dhdy = tsp%dpsidy_df(ip,Iq)
+            graduv(1,Iq) = graduv(1,Iq) + dhdx*Uk(1,I)
+            graduv(2,Iq) = graduv(2,Iq) + dhdy*Uk(1,I)
+            graduv(3,Iq) = graduv(3,Iq) + dhdx*Uk(2,I)
+            graduv(4,Iq) = graduv(4,Iq) + dhdy*Uk(2,I)
+         end do
+      end do
+      !$acc end parallel loop
+
+      ! Accumulate time-average on device.
+      !$acc parallel loop present(btp, graduv)
+      do I = 1, G%npoin
+         btp%graduvb_ave(1,I) = btp%graduvb_ave(1,I) + graduv(1,I)
+         btp%graduvb_ave(2,I) = btp%graduvb_ave(2,I) + graduv(2,I)
+         btp%graduvb_ave(3,I) = btp%graduvb_ave(3,I) + graduv(3,I)
+         btp%graduvb_ave(4,I) = btp%graduvb_ave(4,I) + graduv(4,I)
+      end do
+      !$acc end parallel loop
+
+      ! MPI precommunicator reads graduv from host — download once before packing.
+      !$acc update host(graduv)
 
       call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, 4)
 
+      ! graduv is already on device (from the create region above); no re-upload needed.
       !$acc kernels present(rhs_btp_visc)
       btp%rhs_btp_visc = 0.0
       !$acc end kernels
@@ -70,10 +103,7 @@ contains
 
       call create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs_btp_visc, 4)
 
-      ! Download rhs_btp_visc — needed immediately by the caller's mass-matrix scaling.
-      ! graduvb_face_ave stays on device; downloaded once after the full barotropic loop.
-      !$acc update host(btp%rhs_btp_visc)
-
+      ! rhs_btp_visc stays on device; read by the SSPRK GPU kernel in the caller.
       !$acc end data
 
    end subroutine btp_create_laplacian

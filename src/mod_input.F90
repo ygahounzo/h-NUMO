@@ -33,7 +33,7 @@ module mod_input
       real(kind=r8) :: time_dynamic_amr
       real(kind=r8) :: interval_end
       real(kind=r8) :: filter_mux, filter_muy, filter_muz
-      integer       :: kstages, ifilter
+      integer       :: kstages, kstages_bcl, ifilter
       integer       :: irestart_file_number
       character(len=8)   :: filter_basis_type
       character(len=4)   :: filter_weight_type
@@ -251,7 +251,7 @@ module mod_input
       real(kind=r8) :: time_dynamic_amr=0.0
       real(kind=r8) :: interval_end=0.0
       real(kind=r8) :: filter_mux, filter_muy, filter_muz
-      integer       :: kstages, ifilter
+      integer       :: kstages, kstages_bcl = 3, ifilter
       integer       :: irestart_file_number = 0
       character     :: filter_basis_type*8, filter_weight_type*4
       character     :: fname_root*150, out_type*5, fname_initial*100
@@ -459,6 +459,7 @@ module mod_input
          lrestart_file, test_case, &
          ti_method_btp, &
          kstages, &
+         kstages_bcl, &
          filter_mux, filter_muy, filter_muz, ifilter, &
          filter_weight_type, filter_basis_type, fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
          write_mesh, &
@@ -599,6 +600,7 @@ module mod_input
       inp%filter_muy                     = filter_muy
       inp%filter_muz                     = filter_muz
       inp%kstages                        = kstages
+      inp%kstages_bcl                    = kstages_bcl
       inp%ifilter                        = ifilter
       inp%irestart_file_number           = irestart_file_number
       inp%filter_basis_type              = filter_basis_type

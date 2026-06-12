@@ -232,12 +232,14 @@ module mod_initial_mlswe
 
     end subroutine wind_stress_coriolis
 
-    subroutine ssprk_coefficients(inp, ssprk_a,ssprk_beta)
+    subroutine ssprk_coefficients(inp, ssprk_a, ssprk_beta, ssprk_a_bcl, ssprk_beta_bcl)
         implicit none
 
         type(input), intent(in) :: inp
-        real, dimension(inp%kstages,3), intent(out) :: ssprk_a
-        real, dimension(inp%kstages), intent(out) :: ssprk_beta
+        real, dimension(inp%kstages,3),       intent(out) :: ssprk_a
+        real, dimension(inp%kstages),         intent(out) :: ssprk_beta
+        real, dimension(inp%kstages_bcl,3),   intent(out) :: ssprk_a_bcl
+        real, dimension(inp%kstages_bcl),     intent(out) :: ssprk_beta_bcl
 
         if(inp%ti_method_btp == 'lsrk') then
 
@@ -329,7 +331,17 @@ module mod_initial_mlswe
                 ssprk_a(5,1)=0.0; ssprk_a(5,2)=0.762406163401431; ssprk_a(5,3)=0.237593836598569
                 ssprk_beta(5)=0.287632146308408
             end select
-        endif 
+        endif
+
+        select case (inp%kstages_bcl)
+        case (2)    ! SSP(2,2)
+            ssprk_a_bcl(1,1)=1.0;       ssprk_a_bcl(1,2)=0.0;     ssprk_a_bcl(1,3)=0.0; ssprk_beta_bcl(1)=1.0
+            ssprk_a_bcl(2,1)=1.0/2.0;   ssprk_a_bcl(2,2)=1.0/2.0; ssprk_a_bcl(2,3)=0.0; ssprk_beta_bcl(2)=1.0/2.0
+        case (3)    ! SSP(3,3)
+            ssprk_a_bcl(1,1)=1.0;       ssprk_a_bcl(1,2)=0.0;       ssprk_a_bcl(1,3)=0.0; ssprk_beta_bcl(1)=1.0
+            ssprk_a_bcl(2,1)=3.0/4.0;   ssprk_a_bcl(2,2)=1.0/4.0;   ssprk_a_bcl(2,3)=0.0; ssprk_beta_bcl(2)=1.0/4.0
+            ssprk_a_bcl(3,1)=1.0/3.0;   ssprk_a_bcl(3,2)=2.0/3.0;   ssprk_a_bcl(3,3)=0.0; ssprk_beta_bcl(3)=2.0/3.0
+        end select
 
     end subroutine ssprk_coefficients
 

@@ -203,7 +203,7 @@ contains
 
             call cpu_time(time1)
 
-            call ti_rk_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
+            call ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
 
             call cpu_time(time2)
 

@@ -64,7 +64,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
     qbp_df = qb_df
 
-    do ik = 1, 3
+    do ik = 1, inp%kstages_bcl
 
         call extract_qprime_df_face(G, inp, init, qprime_df, q1_df, qb_df)
 
@@ -72,14 +72,14 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
         call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                         qb_df, qprime_df)
 
-        dtt = inp%dt * init%ssprk_beta(ik)
+        dtt = inp%dt * init%ssprk_beta_bcl(ik)
 
         call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q1_df)
 
         do k = 1, inp%nlayers
-            q_df(1,:,k) = init%ssprk_a(ik,1)*q0_df(1,:,k) + init%ssprk_a(ik,2)*q1_df(1,:,k) + init%ssprk_a(ik,3)*q2_df(1,:,k) + dtt*rhs(1,:,k)
-            q_df(2,:,k) = init%ssprk_a(ik,1)*q0_df(2,:,k) + init%ssprk_a(ik,2)*q1_df(2,:,k) + init%ssprk_a(ik,3)*q2_df(2,:,k) + dtt*rhs(2,:,k)
-            q_df(3,:,k) = init%ssprk_a(ik,1)*q0_df(3,:,k) + init%ssprk_a(ik,2)*q1_df(3,:,k) + init%ssprk_a(ik,3)*q2_df(3,:,k) + dtt*rhs(3,:,k)
+            q_df(1,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(1,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(1,:,k) + init%ssprk_a_bcl(ik,3)*q2_df(1,:,k) + dtt*rhs(1,:,k)
+            q_df(2,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(2,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(2,:,k) + init%ssprk_a_bcl(ik,3)*q2_df(2,:,k) + dtt*rhs(2,:,k)
+            q_df(3,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(3,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(3,:,k) + init%ssprk_a_bcl(ik,3)*q2_df(3,:,k) + dtt*rhs(3,:,k)
         end do
 
         call layer_mom_boundary_df(G, inp, b, mf, q_df)
@@ -92,56 +92,10 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
         end do
 
-        call layer_mom_boundary_df(G, inp, b, mf, q_df)
+        ! call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
         q1_df = q_df
-        if(ik == 5 .and. k == 2) q2_df = q_df
+        ! if(ik == 5 .and. k == 2) q2_df = q_df
 
     end do
-
-    ! ── Heun's Method (RK2) ─────────────────────────────────────────────────────
-    ! Stage 1 – Predictor: q1 = q0 + dt * f(q0)
-
-    ! call extract_qprime_df_face(G, inp, init, qprime_df, q0_df, qb_df)
-    ! call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, qprime_df)
-    ! call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, qprime_df)
-    ! call create_rhs_bcl(G, inp, b, mf, btp, bcl, init, tsp, mt, rhs, qprime_df, q0_df)
-
-    ! do k = 1, inp%nlayers
-    !     q_df(1,:,k) = q0_df(1,:,k) + inp%dt*rhs(1,:,k)
-    !     q_df(2,:,k) = q0_df(2,:,k) + inp%dt*rhs(2,:,k)
-    !     q_df(3,:,k) = q0_df(3,:,k) + inp%dt*rhs(3,:,k)
-    ! end do
-
-    ! call layer_mom_boundary_df(G, inp, b, mf, q_df)
-    ! call extract_velocity(G, inp, uv_df, q_df, qb_df)
-
-    ! do k = 1, inp%nlayers
-    !     q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
-    !     q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
-    ! end do
-
-    ! q1_df = q_df   ! save predictor solution
-
-    ! ! ── Stage 2 – Corrector: q_new = 0.5*q0 + 0.5*(q1 + dt*f(q1)) ──────────────
-
-    ! call extract_qprime_df_face(G, inp, init, qprime_df, q1_df, qb_df)
-    ! call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, qprime_df)
-    ! call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, qprime_df)
-    ! call create_rhs_bcl(G, inp, b, mf, btp, bcl, init, tsp, mt, rhs, qprime_df, q1_df)
-
-    ! do k = 1, inp%nlayers
-    !     q_df(1,:,k) = 0.5*q0_df(1,:,k) + 0.5*q1_df(1,:,k) + 0.5*inp%dt*rhs(1,:,k)
-    !     q_df(2,:,k) = 0.5*q0_df(2,:,k) + 0.5*q1_df(2,:,k) + 0.5*inp%dt*rhs(2,:,k)
-    !     q_df(3,:,k) = 0.5*q0_df(3,:,k) + 0.5*q1_df(3,:,k) + 0.5*inp%dt*rhs(3,:,k)
-    ! end do
-
-    ! call layer_mom_boundary_df(G, inp, b, mf, q_df)
-    ! call extract_velocity(G, inp, uv_df, q_df, qb_df)
-
-    ! do k = 1, inp%nlayers
-    !     q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
-    !     q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
-    ! end do
-
 end subroutine ti_rk3_bcl
