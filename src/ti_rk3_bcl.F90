@@ -51,7 +51,6 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q_df
 
     real, dimension(4,G%npoin)             :: qbp_df
-    real, dimension(3,G%npoin,inp%nlayers) :: qprime_df
     integer :: k, ik
     real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df, q2_df, rhs
     real, dimension(2,G%npoin,inp%nlayers) :: uv_df
@@ -60,26 +59,27 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     q0_df = q_df
     q1_df = q_df
     q2_df = 0.0
-    qprime_df = 0.0
 
     qbp_df = qb_df
 
     do ik = 1, inp%kstages_bcl
 
-        call extract_qprime_df_face(G, inp, init, qprime_df, q1_df, qb_df)
+        call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q1_df, qb_df)
+        call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
 
-        call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, qprime_df)
+        qb_df = qbp_df
+        !$acc update device(bcl%qprime_df)
         call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                        qb_df, qprime_df)
+                                        qb_df, bcl%qprime_df)
 
         dtt = inp%dt * init%ssprk_beta_bcl(ik)
 
-        call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q1_df)
+        call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, bcl%qprime_df, q1_df)
 
         do k = 1, inp%nlayers
-            q_df(1,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(1,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(1,:,k) + init%ssprk_a_bcl(ik,3)*q2_df(1,:,k) + dtt*rhs(1,:,k)
-            q_df(2,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(2,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(2,:,k) + init%ssprk_a_bcl(ik,3)*q2_df(2,:,k) + dtt*rhs(2,:,k)
-            q_df(3,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(3,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(3,:,k) + init%ssprk_a_bcl(ik,3)*q2_df(3,:,k) + dtt*rhs(3,:,k)
+            q_df(1,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(1,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(1,:,k) + dtt*rhs(1,:,k)
+            q_df(2,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(2,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(2,:,k) + dtt*rhs(2,:,k)
+            q_df(3,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(3,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(3,:,k) + dtt*rhs(3,:,k)
         end do
 
         call layer_mom_boundary_df(G, inp, b, mf, q_df)
@@ -95,7 +95,6 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
         ! call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
         q1_df = q_df
-        ! if(ik == 5 .and. k == 2) q2_df = q_df
 
     end do
 end subroutine ti_rk3_bcl

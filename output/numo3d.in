@@ -25,7 +25,7 @@ lread_external_grid = F,  ! Read external grid file
 dt= 10,
 dt_btp = 0.18,
 time_initial = 0.0,
-time_final   = 10,
+time_final   = 10800,
 time_restart = 10.0,
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 !lrestart_file = .true.,
@@ -51,6 +51,7 @@ test_case = 'bump',
 
 ti_method_btp = 'rk35', ! Default = 'explicit' which is a two step method
 kstages = 5,
+kstages_bcl = 3,
 
 space_method = 'dg', ! dg=discontinuous Galerkin
 

@@ -53,7 +53,7 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
 
-      ! --- Pass 1: compute fluxes and accumulate face-averaged quantities ---
+      ! Compute fluxes and accumulate face-averaged quantities
       !$acc loop vector &
       !$acc    private(qbl, qbr, pprime_l, pprime_r, Qu_ql, Qu_qr, Qv_ql, Qv_qr)
       do iquad = 1, nq_f
@@ -161,7 +161,7 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
 
       end do ! iquad pass 1
 
-      ! --- Pass 2: scatter flux into rhs ---
+      ! Scatter flux into rhs
       ! Implicit barrier after pass 1 ensures flux is fully written before read.
       !$acc loop vector
       do iquad = 1, nq_f
