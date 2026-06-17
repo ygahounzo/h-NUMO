@@ -203,7 +203,11 @@ contains
 
             call cpu_time(time1)
 
-            call ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
+            if (trim(inp%bcl_time_method) == 'rk3') then
+              call ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
+            else
+              call ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
+            endif
 
             call cpu_time(time2)
 

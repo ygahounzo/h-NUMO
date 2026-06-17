@@ -204,6 +204,10 @@ module mod_input
       integer :: nonlinear, balance_flag, output_flag, warp_grid
       character(len=100) :: mesh_file, bathymetry_file
 
+      character(len=20) :: bcl_time_method
+      logical :: rk_bcl_FS
+      logical :: rk_bcl_LS
+
       logical :: lout_tree
       logical :: lout_shoreline
       logical :: lread_external_bathy
@@ -447,7 +451,11 @@ module mod_input
       real :: limit_threshold = 1e-3
    
       logical llinear_pert
- 
+
+      character(len=20) :: bcl_time_method = '2levels'
+      logical :: rk_bcl_FS = .true.
+      logical :: rk_bcl_LS = .false.
+
      !Namelist Input
  
      namelist /eqnset/ eqn_set, is_mlswe
@@ -482,7 +490,8 @@ module mod_input
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff
+         f0, beta, dry_cutoff, &
+         bcl_time_method, rk_bcl_FS, rk_bcl_LS
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          nlayers, &
@@ -772,7 +781,10 @@ module mod_input
       inp%ydam_max                       = ydam_max
       inp%limit_threshold                = limit_threshold
       inp%llinear_pert                   = llinear_pert
- 
+      inp%bcl_time_method                = bcl_time_method
+      inp%rk_bcl_FS                      = rk_bcl_FS
+      inp%rk_bcl_LS                      = rk_bcl_LS
+
    end subroutine mod_input_create
  
  end module mod_input
