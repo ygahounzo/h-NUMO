@@ -52,8 +52,8 @@ test_case = 'bump',
 ti_method_btp = 'rk35', ! Default = 'explicit' which is a two step method
 kstages = 5,
 kstages_bcl = 3,
-bcl_time_method = 'rk3',
-rk_bcl_FS = T,
+bcl_time_method = 'lsrk3',
+!rk_bcl_FS = T,
 
 space_method = 'dg', ! dg=discontinuous Galerkin
 

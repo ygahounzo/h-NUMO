@@ -53,6 +53,9 @@ subroutine print_header(gg, inp, flag, numproc)
     write(*,'("space_method = ",a)') inp%space_method
     write(*,'("ti_method_btp = ",a)') inp%ti_method_btp
     write(*,'("kstages = ",1(i6,1x))') inp%kstages
+    write(*,'("bcl_time_method = ",a)') inp%bcl_time_method
+    if (trim(inp%bcl_time_method) == 'rk3' .or. trim(inp%bcl_time_method) == 'lsrk3') &
+        write(*,'("rk_bcl_FS = ",l1)') inp%rk_bcl_FS
     write(*,'("fname_root = ",a)') inp%fname_root
     write(*,'("out_type = ",a)') inp%out_type
 

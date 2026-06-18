@@ -410,6 +410,10 @@ contains
         real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
         real, parameter :: eps1 = 1.0e-20
         real :: flux(3,3)
+        real, dimension(inp%nlayers)   :: a_visc, bc_visc, c_visc
+        real, dimension(2,inp%nlayers) :: r_visc, uv_visc
+        real, dimension(inp%nlayers+1) :: tau_u, tau_v
+        real :: coeff, coeff1, mult
 
         rhs = 0.0
         bot_layer = 0.0
@@ -456,6 +460,47 @@ contains
 
                 pprime_temp(k+1) = pprime_temp(k) + qp(1)
             end do
+
+            if (inp%ad_mlswe > 0 .and. &
+                (trim(inp%bcl_time_method) == 'rk3' .or. trim(inp%bcl_time_method) == 'lsrk3')) then
+                coeff  = max(sqrt(0.5*init%coriolis_quad(Iq)*inp%ad_mlswe)/init%alpha_mlswe(1), &
+                             inp%ad_mlswe/(init%alpha_mlswe(1) * inp%max_shear_dz))
+                coeff1 = gravity * inp%dt * coeff
+
+                do k = 1, inp%nlayers
+                    a_visc(k)   = -coeff
+                    bc_visc(k)  = dp(k) + 2.0*coeff1
+                    c_visc(k)   = -coeff1
+                    r_visc(1,k) = udp(k)/dp(k)
+                    r_visc(2,k) = vdp(k)/dp(k)
+                end do
+
+                bc_visc(1)           = dp(1) + coeff1
+                bc_visc(inp%nlayers) = dp(inp%nlayers) + coeff1
+                a_visc(1)            = 0.0
+                c_visc(inp%nlayers)  = 0.0
+
+                do k = 2, inp%nlayers
+                    mult        = a_visc(k) / bc_visc(k-1)
+                    bc_visc(k)  = bc_visc(k) - mult*c_visc(k-1)
+                    r_visc(1,k) = r_visc(1,k) - mult*r_visc(1,k-1)
+                    r_visc(2,k) = r_visc(2,k) - mult*r_visc(2,k-1)
+                end do
+
+                uv_visc(1,inp%nlayers) = r_visc(1,inp%nlayers) / bc_visc(inp%nlayers)
+                uv_visc(2,inp%nlayers) = r_visc(2,inp%nlayers) / bc_visc(inp%nlayers)
+                do k = inp%nlayers-1, 1, -1
+                    uv_visc(1,k) = (r_visc(1,k) - c_visc(k)*uv_visc(1,k+1)) / bc_visc(k)
+                    uv_visc(2,k) = (r_visc(2,k) - c_visc(k)*uv_visc(2,k+1)) / bc_visc(k)
+                end do
+
+                tau_u(1) = 0.0;  tau_v(1) = 0.0
+                do k = 2, inp%nlayers
+                    tau_u(k) = coeff*(uv_visc(1,k-1) - uv_visc(1,k))
+                    tau_v(k) = coeff*(uv_visc(2,k-1) - uv_visc(2,k))
+                end do
+                tau_u(inp%nlayers+1) = 0.0;  tau_v(inp%nlayers+1) = 0.0
+            end if
 
             gradz(:,:) = 0.0; pbq = 0.0
             do ip = 1, b%npts
@@ -516,6 +561,16 @@ contains
                             p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1))
                 source_y = gravity*(tau_wind_v - tempbot*btp%tau_bot_ave(2,Iq) + &
                             p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1))
+
+                if (trim(inp%bcl_time_method) == 'rk3' .or. trim(inp%bcl_time_method) == 'lsrk3') then
+                  source_x = source_x + init%coriolis_quad(Iq) * vdp(k)
+                  source_y = source_y - init%coriolis_quad(Iq) * udp(k)
+
+                  if (inp%method_visc > 0) then
+                    source_x = source_x + gravity*(tau_u(k) - tau_u(k+1))
+                    source_y = source_y + gravity*(tau_v(k) - tau_v(k+1))
+                  end if
+                endif
 
                 do ip = 1, b%npts
                     I    = tsp%indexq(ip,Iq)
