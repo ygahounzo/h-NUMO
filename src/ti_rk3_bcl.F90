@@ -72,10 +72,12 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     !$acc update device(bcl%qprime_df)
 
     if (ik == 1 .and. inp%rk_bcl_FS) then
+      ! FS: BTP at stage 1 only, full N_btp
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
 
-    else
+    elseif (.not. inp%rk_bcl_FS) then
+      ! ES: BTP at every stage with N_btp scaled to the stage dt
       qb_df      = qbp_df
       init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &

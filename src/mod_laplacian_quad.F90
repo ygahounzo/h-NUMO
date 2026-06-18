@@ -93,11 +93,7 @@ contains
 
       call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, 4)
 
-      ! graduv is already on device (from the create region above); no re-upload needed.
-      !$acc kernels present(rhs_btp_visc)
-      btp%rhs_btp_visc = 0.0
-      !$acc end kernels
-
+      ! rhs_btp_visc already zeroed on device by caller (create_rhs_btp).
       call btp_compute_laplacian(G, b, btp, tsp, rhs_btp_visc, graduv)
       call create_rhs_laplacian_flux(G, b, mf, btp, rhs_btp_visc, graduv)
 
