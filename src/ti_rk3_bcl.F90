@@ -39,7 +39,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   type(basis),            intent(in)    :: b
   type(face_CS),          intent(in)    :: mf
   type(parallel_CS),      intent(in)    :: par
-  type(initial),          intent(in)    :: init
+  type(initial),          intent(inout) :: init
   type(mref),             intent(inout) :: ref
   type(mpi_communicator), intent(inout)    :: mpic
   type(metrics),          intent(in)    :: mt
@@ -52,28 +52,35 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
   real, dimension(4,G%npoin)             :: qbp_df
   integer :: k, ik
-  real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df, q2_df, rhs
+  real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df, rhs
   real, dimension(2,G%npoin,inp%nlayers) :: uv_df
   real :: dtt
 
   q0_df = q_df
   q1_df = q_df
-  q2_df = 0.0
 
   qbp_df = qb_df
 
   do ik = 1, inp%kstages_bcl
 
+    dtt = inp%dt * init%ssprk_beta_bcl(ik)
+
     call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q1_df, qb_df)
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
 
-    if ((ik == 1 .and. inp%rk_bcl_FS) .or. (ik == 3 .and. inp%rk_bcl_LS)) then
-      !$acc update device(bcl%qprime_df)
+    ! Always sync — create_rhs_bcl reads bcl%qprime_df from device every stage.
+    !$acc update device(bcl%qprime_df)
+
+    if (ik == 1 .and. inp%rk_bcl_FS) then
+      call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
+                                      qb_df, bcl%qprime_df)
+
+    else
+      qb_df      = qbp_df
+      init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
     endif
-
-    dtt = inp%dt * init%ssprk_beta_bcl(ik)
 
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, bcl%qprime_df, q1_df)
 
