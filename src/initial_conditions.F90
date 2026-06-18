@@ -294,8 +294,8 @@ subroutine initial_conditions(inp, G, b, mf, init)
    do e = 1, G%nelem
 
       ! x-direction edges of element e
-      do j = 1,b%ngl
-         
+      do j = 1, b%ngl
+
          I1 = G%intma(1,j,1,e)
          I2 = G%intma(b%ngl,j,1,e)
          dx = G%coord(1,I2) - G%coord(1,I1)
@@ -303,7 +303,7 @@ subroutine initial_conditions(inp, G, b, mf, init)
 
          do k = 2, inp%nlayers
             ztmp = z_interface_equil(k)
-            if ((init%zbot_df(I1)- ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
+            if ((init%zbot_df(I1) - ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
                xl = G%coord(1,I1)
                xr = G%coord(1,I2)
                xmid = 0.5*(xl + xr)
@@ -320,23 +320,23 @@ subroutine initial_conditions(inp, G, b, mf, init)
                   L = zl*(xr-x)/dx + zr*(x-xl)/dx
                   dLdx = (zr - zl)/dx
 
-                  if (init%zbot_df(I1) > ztmp) then
-                     slope_init_l = dzbot_dx
-                     slope_init_r = 0.0
-                  else
+                  if (init%zbot_df(I1) < ztmp) then
                      slope_init_l = 0.0
                      slope_init_r = dzbot_dx
+                  else
+                     slope_init_l = dzbot_dx
+                     slope_init_r = 0.0
                   end if
                   slope_edge_adjust = min(dLdx - slope_init_l, slope_init_r - dLdx)
-                  init%z_interface(ip,k) = L + slope_edge_adjust*((x - xmid)**2 - 0.25*(dx**2))/(dx)
-                  ! z_interface(ip,k) = max(z_interface(ip,k), z_interface(ip,k-1))
+                  init%z_interface(ip,k) = L + slope_edge_adjust*((x - xmid)**2/dx - 0.25*dx)
+                  init%z_interface(ip,k) = min(init%z_interface(ip,k), init%z_interface(ip,k-1))
                end do
             end if
          end do
       end do
 
-      ! y-direction edges of element e
-      do i = 1,b%ngl
+      ! y-direction edges of element e — skip nodes already set by the x-sweep
+      do i = 1, b%ngl
          I1 = G%intma(i,1,1,e)
          I2 = G%intma(i,b%ngl,1,e)
          dy = G%coord(2,I2) - G%coord(2,I1)
@@ -344,31 +344,35 @@ subroutine initial_conditions(inp, G, b, mf, init)
 
          do k = 2, inp%nlayers
             ztmp = z_interface_equil(k)
-            if ((init%zbot_df(I1)- ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
+            if ((init%zbot_df(I1) - ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
                yl = G%coord(2,I1)
                yr = G%coord(2,I2)
                ymid = 0.5*(yl + yr)
                zl = max(init%zbot_df(I1), ztmp)
                zr = max(init%zbot_df(I2), ztmp)
 
+               init%z_init_flag_elem(e,k) = 0
+
                do j = 1, b%ngl
                   ip = G%intma(i,j,1,e)
-                  init%z_init_flag(ip,k) = 0
+                  if (init%z_init_flag(ip,k) == 1) then
+                     init%z_init_flag(ip,k) = 0
 
-                  y = G%coord(2,ip)
-                  L = zl*(yr-y)/dy + zr*(y-yl)/dy
-                  dLdy = (zr - zl)/dy
+                     y = G%coord(2,ip)
+                     L = zl*(yr-y)/dy + zr*(y-yl)/dy
+                     dLdy = (zr - zl)/dy
 
-                  if (init%zbot_df(I1) > ztmp) then
-                     slope_init_l = dzbot_dy
-                     slope_init_r = 0.0
-                  else
-                     slope_init_l = 0.0
-                     slope_init_r = dzbot_dy
+                     if (init%zbot_df(I1) < ztmp) then
+                        slope_init_l = 0.0
+                        slope_init_r = dzbot_dy
+                     else
+                        slope_init_l = dzbot_dy
+                        slope_init_r = 0.0
+                     end if
+                     slope_edge_adjust = min(dLdy - slope_init_l, slope_init_r - dLdy)
+                     init%z_interface(ip,k) = L + slope_edge_adjust*((y - ymid)**2/dy - 0.25*dy)
+                     init%z_interface(ip,k) = min(init%z_interface(ip,k), init%z_interface(ip,k-1))
                   end if
-                  slope_edge_adjust = min(dLdy - slope_init_l, slope_init_r - dLdy)
-                  init%z_interface(ip,k) = L + slope_edge_adjust*((y - ymid)**2 - 0.25*(dy**2))/(dy)
-                  ! z_interface(ip,k) = max(z_interface(ip,k), z_interface(ip,k-1))
                end do
             end if
          end do
