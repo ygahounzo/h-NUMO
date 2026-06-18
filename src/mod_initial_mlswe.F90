@@ -16,7 +16,7 @@ module mod_initial_mlswe
     public :: &
         bot_topo_derivatives, &
         interpolate_pbprime_init, wind_stress_coriolis, &
-        map_deriv, ssprk_coefficients
+        map_deriv, ssprk_coefficients, poslimiter
 
     private
 
@@ -344,5 +344,88 @@ module mod_initial_mlswe
         end select
 
     end subroutine ssprk_coefficients
+
+    subroutine poslimiter(b, G, inp, mt, q, alpha)
+
+        use mod_constants, only: gravity
+
+        implicit none
+
+        type(basis),   intent(in)    :: b
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(metrics), intent(in)    :: mt
+
+        real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q
+        real, dimension(inp%nlayers),           intent(in)    :: alpha
+
+        real    :: pmin, pavg, uavg, vavg, wsum, wjac, threshold
+        real    :: theta
+        integer :: I, k, n, m, e
+
+        do k = 1, inp%nlayers
+
+            threshold = (gravity / alpha(k)) * inp%dry_cutoff
+
+            do e = 1, G%nelem
+
+                pmin = 1.0e20
+                pavg = 0.0
+                uavg = 0.0
+                vavg = 0.0
+                wsum = 0.0
+                do m = 1, b%ngly
+                    do n = 1, b%nglx
+                        I = G%intma(n,m,1,e)
+                        if (q(1,I,k) < pmin) pmin = q(1,I,k)
+                        wjac = b%wglx(n) * b%wgly(m) * mt%jac(n,m,1,e)
+                        wsum = wsum + wjac
+                        pavg = pavg + wjac * q(1,I,k)
+                        uavg = uavg + wjac * q(2,I,k)
+                        vavg = vavg + wjac * q(3,I,k)
+                    end do
+                end do
+                pavg = pavg / wsum
+                uavg = uavg / wsum
+                vavg = vavg / wsum
+
+                if (pavg <= threshold) then
+                    ! Entire element is dry — set to minimum and zero momentum.
+                    do m = 1, b%ngly
+                        do n = 1, b%nglx
+                            I = G%intma(n,m,1,e)
+                            q(1,I,k) = threshold
+                            q(2,I,k) = 0.0
+                            q(3,I,k) = 0.0
+                        end do
+                    end do
+                else if (pmin < threshold) then
+                    ! Zhang-Shu limiter: scale toward element average so min = threshold.
+                    theta = min(1.0, safe_div(pavg - threshold, pavg - pmin, 0.0))
+                    do m = 1, b%ngly
+                        do n = 1, b%nglx
+                            I = G%intma(n,m,1,e)
+                            q(1,I,k) = theta * (q(1,I,k) - pavg) + pavg
+                            q(2,I,k) = theta * (q(2,I,k) - uavg) + uavg
+                            q(3,I,k) = theta * (q(3,I,k) - vavg) + vavg
+                        end do !n
+                    end do !m
+                end if
+
+            end do !e
+        end do !k
+
+    end subroutine poslimiter
+
+    function safe_div(n, d, altv) result(q)
+        implicit none
+        real, intent(in) :: n, d, altv
+        real :: q
+        if (exponent(n) - exponent(d) >= maxexponent(n) .or. d == 0.0) then
+            q = altv
+        else
+            q = n / d
+        end if
+    end function safe_div
 
 end module mod_initial_mlswe

@@ -31,6 +31,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
+  use mod_initial_mlswe,    only: poslimiter
 
   implicit none
 
@@ -102,7 +103,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
       q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
     end do
 
-    ! call layer_mom_boundary_df(G, inp, b, mf, q_df)
+    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
     q1_df = q_df
 
