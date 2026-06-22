@@ -387,6 +387,12 @@ contains
     end subroutine create_rhs_dynamics_volume_layers
 
     subroutine create_rhs_dynamics_volume_bcl(G, inp, b, btp, bcl, init, tsp, rhs, qprime_df, q_df)
+       !===========================================================================
+       !  Volume contribution to the BCL RHS (DG weak form, interior).
+       !
+       !  One element at a time: accumulates into a local rhs_loc(3,npts,nlayers)
+       !  then scatters to global rhs once with no race conditions.
+       !===========================================================================
 
         implicit none
 
