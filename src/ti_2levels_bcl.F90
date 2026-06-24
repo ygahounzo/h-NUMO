@@ -23,6 +23,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    use mod_rk_mlswe,         only: ti_barotropic_ssprk_mlswe
    use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
    use mod_layer_terms,      only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
+   use mod_initial_mlswe,   only: find_dry_elements
    use mod_create_rhs_mlswe, only: layer_mass_rhs
 
    implicit none
@@ -56,7 +57,10 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    qb_df_n = qb_df
 
-   call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q_df, qb_df_n)
+   call find_dry_elements(G, inp, b, tsp, btp%ope2_ave_df, q_df, &
+                          init%alpha_mlswe, bcl%dry_flg)
+
+   call extract_qprime_df_face(G, inp, b, mt, init, bcl, bcl%qprime_df, q_df, qb_df_n)
 
    qprime_df_n = bcl%qprime_df
 
@@ -71,7 +75,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    call layer_mom_boundary_df(G, inp, b, mf, q_df_pred)
 
    ! Enforce barotropic-baroclinic velocity consistency on the predicted state.
-   call extract_velocity(G, inp, uv_df, q_df_pred, qb_df)
+   call extract_velocity(G, inp, b, mt, init, bcl, uv_df, q_df_pred, qb_df)
    q_df_pred(2,:,:) = uv_df(1,:,:) * q_df_pred(1,:,:)
    q_df_pred(3,:,:) = uv_df(2,:,:) * q_df_pred(1,:,:)
 
@@ -82,7 +86,10 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    qb_df = qb_df_n
 
-   call extract_qprime_df_face(G, inp, init, qprime_df_pred, q_df_pred, qb_df)
+   call find_dry_elements(G, inp, b, tsp, btp%ope2_ave_df, q_df_pred, &
+                          init%alpha_mlswe, bcl%dry_flg)
+
+   call extract_qprime_df_face(G, inp, b, mt, init, bcl, qprime_df_pred, q_df_pred, qb_df)
 
    ! Centre-in-time average of the baroclinic layer-thickness forcing.
    bcl%qprime_df = 0.5*(qprime_df_pred + bcl%qprime_df)
@@ -116,7 +123,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
    ! Enforce barotropic-baroclinic velocity consistency on the corrected state.
-   call extract_velocity(G, inp, uv_df, q_df, qb_df)
+   call extract_velocity(G, inp, b, mt, init, bcl, uv_df, q_df, qb_df)
    q_df(2,:,:) = uv_df(1,:,:) * q_df(1,:,:)
    q_df(3,:,:) = uv_df(2,:,:) * q_df(1,:,:)
 

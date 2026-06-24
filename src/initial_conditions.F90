@@ -4,25 +4,27 @@
 !>@date March 27, 2023
 !-----------------------------------------------------------------!
 
-subroutine initial_conditions(inp, G, b, mf, init)
-    
+subroutine initial_conditions(inp, G, b, mf, init, mt)
+
    use mod_input,         only: input
    use mod_grid,          only: grid
    use mod_basis,         only: basis
    use mod_initial,       only: initial
    use mod_constants,     only: gravity, pi
-   use mod_initial_mlswe, only: interpolate_pbprime_init
+   use mod_initial_mlswe, only: interpolate_pbprime_init, poslimiter
+   use mod_metrics,       only: metrics
    use mpi
    use mod_mpi_utilities, only: MPI_PRECISION
    use mod_face,    only: face_CS
 
    implicit none
 
-   type(input), intent(in) :: inp
-   type(grid), intent(in) :: G
-   type(basis), intent(in) :: b
-   type(face_CS), intent(in) :: mf
-   type(initial),intent(inout) :: init
+   type(input),   intent(in)           :: inp
+   type(grid),    intent(in)           :: G
+   type(basis),   intent(in)           :: b
+   type(face_CS), intent(in)           :: mf
+   type(initial), intent(inout)        :: init
+   type(metrics), intent(in), optional :: mt
    
    real, dimension(G%npoin, inp%nlayers) :: u_df, v_df
 
@@ -188,15 +190,14 @@ subroutine initial_conditions(inp, G, b, mf, init)
          !    end if
          ! end if
 
-         init%zbot_df(I1) = 500.0 + 0.5*(H_bot - 500.0)*(1.0 + tanh((x - 401.0)/60.0))
+         ! init%zbot_df(I1) = 500.0 + 0.5*(H_bot - 500.0)*(1.0 + tanh((x - 401.0)/60.0))
+         init%zbot_df(I1) = 500.0 + 0.5*(H_bot - 500.0)*(1.0 + tanh((x - 60.0)/20.0))
 
          init%zbot_df(I1) = - init%zbot_df(I1)
       end do
         
-      ! layer thicknesses (m) at global equilibrium
-      do k = 1, inp%nlayers
-        layer_dz_eq(k) = H_bot*(real(k)-0.5)/real(inp%nlayers-1)
-      enddo
+      ! layer thicknesses (m) at global equilibrium: equal-thickness layers
+      layer_dz_eq(:) = H_bot / real(inp%nlayers)
 
       do k = 2, inp%nlayers
          do I1 = 1,G%npoin
@@ -205,9 +206,9 @@ subroutine initial_conditions(inp, G, b, mf, init)
             y = G%coord(2,I1)/1.0e3
 
             ! if((650.0 <= y .and. y <= Ly/1.0e3) .and. (400.0 <= x .and. x <= 500.0)) then
-            if(x <= 200.0) then
+            if(x <= 20.0) then
                ! print*, x
-               z_init(I1,k) = 200.0 !max(-100.0, z_interface(I1,k))
+               z_init(I1,k) = 400.0 !max(-100.0, z_interface(I1,k))
             end if
 
          end do
@@ -291,94 +292,94 @@ subroutine initial_conditions(inp, G, b, mf, init)
    init%z_init_flag(:,:) = 1
    init%z_init_flag_elem(:,:) = 1
 
-   do e = 1, G%nelem
+   ! do e = 1, G%nelem
 
-      ! x-direction edges of element e
-      do j = 1, b%ngl
+   !    ! x-direction edges of element e
+   !    do j = 1, b%ngl
 
-         I1 = G%intma(1,j,1,e)
-         I2 = G%intma(b%ngl,j,1,e)
-         dx = G%coord(1,I2) - G%coord(1,I1)
-         dzbot_dx = (init%zbot_df(I2) - init%zbot_df(I1))/dx
+   !       I1 = G%intma(1,j,1,e)
+   !       I2 = G%intma(b%ngl,j,1,e)
+   !       dx = G%coord(1,I2) - G%coord(1,I1)
+   !       dzbot_dx = (init%zbot_df(I2) - init%zbot_df(I1))/dx
 
-         do k = 2, inp%nlayers
-            ztmp = z_interface_equil(k)
-            if ((init%zbot_df(I1) - ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
-               xl = G%coord(1,I1)
-               xr = G%coord(1,I2)
-               xmid = 0.5*(xl + xr)
-               zl = max(init%zbot_df(I1), ztmp)
-               zr = max(init%zbot_df(I2), ztmp)
+   !       do k = 2, inp%nlayers
+   !          ztmp = z_interface_equil(k)
+   !          if ((init%zbot_df(I1) - ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
+   !             xl = G%coord(1,I1)
+   !             xr = G%coord(1,I2)
+   !             xmid = 0.5*(xl + xr)
+   !             zl = max(init%zbot_df(I1), ztmp)
+   !             zr = max(init%zbot_df(I2), ztmp)
 
-               init%z_init_flag_elem(e,k) = 0
+   !             init%z_init_flag_elem(e,k) = 0
 
-               do i = 1, b%ngl
-                  ip = G%intma(i,j,1,e)
-                  init%z_init_flag(ip,k) = 0
+   !             do i = 1, b%ngl
+   !                ip = G%intma(i,j,1,e)
+   !                init%z_init_flag(ip,k) = 0
 
-                  x = G%coord(1,ip)
-                  L = zl*(xr-x)/dx + zr*(x-xl)/dx
-                  dLdx = (zr - zl)/dx
+   !                x = G%coord(1,ip)
+   !                L = zl*(xr-x)/dx + zr*(x-xl)/dx
+   !                dLdx = (zr - zl)/dx
 
-                  if (init%zbot_df(I1) < ztmp) then
-                     slope_init_l = 0.0
-                     slope_init_r = dzbot_dx
-                  else
-                     slope_init_l = dzbot_dx
-                     slope_init_r = 0.0
-                  end if
-                  slope_edge_adjust = min(dLdx - slope_init_l, slope_init_r - dLdx)
-                  init%z_interface(ip,k) = L + slope_edge_adjust*((x - xmid)**2/dx - 0.25*dx)
-                  init%z_interface(ip,k) = min(init%z_interface(ip,k), init%z_interface(ip,k-1))
-               end do
-            end if
-         end do
-      end do
+   !                if (init%zbot_df(I1) < ztmp) then
+   !                   slope_init_l = 0.0
+   !                   slope_init_r = dzbot_dx
+   !                else
+   !                   slope_init_l = dzbot_dx
+   !                   slope_init_r = 0.0
+   !                end if
+   !                slope_edge_adjust = min(dLdx - slope_init_l, slope_init_r - dLdx)
+   !                init%z_interface(ip,k) = L + slope_edge_adjust*((x - xmid)**2/dx - 0.25*dx)
+   !                init%z_interface(ip,k) = min(init%z_interface(ip,k), init%z_interface(ip,k-1))
+   !             end do
+   !          end if
+   !       end do
+   !    end do
 
-      ! y-direction edges of element e — skip nodes already set by the x-sweep
-      do i = 1, b%ngl
-         I1 = G%intma(i,1,1,e)
-         I2 = G%intma(i,b%ngl,1,e)
-         dy = G%coord(2,I2) - G%coord(2,I1)
-         dzbot_dy = (init%zbot_df(I2) - init%zbot_df(I1))/dy
+   !    ! y-direction edges of element e — skip nodes already set by the x-sweep
+   !    do i = 1, b%ngl
+   !       I1 = G%intma(i,1,1,e)
+   !       I2 = G%intma(i,b%ngl,1,e)
+   !       dy = G%coord(2,I2) - G%coord(2,I1)
+   !       dzbot_dy = (init%zbot_df(I2) - init%zbot_df(I1))/dy
 
-         do k = 2, inp%nlayers
-            ztmp = z_interface_equil(k)
-            if ((init%zbot_df(I1) - ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
-               yl = G%coord(2,I1)
-               yr = G%coord(2,I2)
-               ymid = 0.5*(yl + yr)
-               zl = max(init%zbot_df(I1), ztmp)
-               zr = max(init%zbot_df(I2), ztmp)
+   !       do k = 2, inp%nlayers
+   !          ztmp = z_interface_equil(k)
+   !          if ((init%zbot_df(I1) - ztmp) * (init%zbot_df(I2) - ztmp) < 0.0) then
+   !             yl = G%coord(2,I1)
+   !             yr = G%coord(2,I2)
+   !             ymid = 0.5*(yl + yr)
+   !             zl = max(init%zbot_df(I1), ztmp)
+   !             zr = max(init%zbot_df(I2), ztmp)
 
-               init%z_init_flag_elem(e,k) = 0
+   !             init%z_init_flag_elem(e,k) = 0
 
-               do j = 1, b%ngl
-                  ip = G%intma(i,j,1,e)
-                  if (init%z_init_flag(ip,k) == 1) then
-                     init%z_init_flag(ip,k) = 0
+   !             do j = 1, b%ngl
+   !                ip = G%intma(i,j,1,e)
+   !                if (init%z_init_flag(ip,k) == 1) then
+   !                   init%z_init_flag(ip,k) = 0
 
-                     y = G%coord(2,ip)
-                     L = zl*(yr-y)/dy + zr*(y-yl)/dy
-                     dLdy = (zr - zl)/dy
+   !                   y = G%coord(2,ip)
+   !                   L = zl*(yr-y)/dy + zr*(y-yl)/dy
+   !                   dLdy = (zr - zl)/dy
 
-                     if (init%zbot_df(I1) < ztmp) then
-                        slope_init_l = 0.0
-                        slope_init_r = dzbot_dy
-                     else
-                        slope_init_l = dzbot_dy
-                        slope_init_r = 0.0
-                     end if
-                     slope_edge_adjust = min(dLdy - slope_init_l, slope_init_r - dLdy)
-                     init%z_interface(ip,k) = L + slope_edge_adjust*((y - ymid)**2/dy - 0.25*dy)
-                     init%z_interface(ip,k) = min(init%z_interface(ip,k), init%z_interface(ip,k-1))
-                  end if
-               end do
-            end if
-         end do
+   !                   if (init%zbot_df(I1) < ztmp) then
+   !                      slope_init_l = 0.0
+   !                      slope_init_r = dzbot_dy
+   !                   else
+   !                      slope_init_l = dzbot_dy
+   !                      slope_init_r = 0.0
+   !                   end if
+   !                   slope_edge_adjust = min(dLdy - slope_init_l, slope_init_r - dLdy)
+   !                   init%z_interface(ip,k) = L + slope_edge_adjust*((y - ymid)**2/dy - 0.25*dy)
+   !                   init%z_interface(ip,k) = min(init%z_interface(ip,k), init%z_interface(ip,k-1))
+   !                end if
+   !             end do
+   !          end if
+   !       end do
 
-      end do
-   end do
+   !    end do
+   ! end do
 
    init%z_interface_initial = init%z_interface
 
@@ -428,7 +429,7 @@ subroutine initial_conditions(inp, G, b, mf, init)
       init%q_df(3,:,k) = v_df(:,k)*init%q_df(1,:,k)
    end do
 
-   ! call poslimiter(init%q_df,init%alpha_mlswe)  ! poslimiter not yet implemented
+   if (inp%lposlimiter .and. present(mt)) call poslimiter(b, G, inp, mt, init%q_df, init%alpha_mlswe)
 
    ! print*, "q_df:", q_df(2,:,2)
    ! stop

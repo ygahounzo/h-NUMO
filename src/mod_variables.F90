@@ -62,6 +62,9 @@ module mod_variables
       real, dimension(:,:,:), allocatable :: q_df       ! (3,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: qprime_df  ! (3,npoin,nlayers)
 
+      ! Dry-element flags: 0=fully wet, 1=semi-dry, 2=fully dry  (nelem,nlayers)
+      integer, dimension(:,:), allocatable :: dry_flg
+
    end type bcl_CS
 
    public :: mod_allocate_mlswe
@@ -167,8 +170,9 @@ contains
             bcl%dpp_uvp,              bcl%dpp_graduv,                      &
             bcl%graduv_dpp_face,                                           &
             bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
-            bcl%q_df,                 bcl%qprime_df,                     &
-            bcl%dpprime_visc,       bcl%dpprime_visc_q)
+            bcl%q_df,                 bcl%qprime_df,                       &
+            bcl%dpprime_visc,         bcl%dpprime_visc_q,                  &
+            bcl%dry_flg)
       end if
 
       allocate(                                                               &
@@ -181,6 +185,7 @@ contains
          bcl%qprime_df(3,G%npoin,inp%nlayers),                                    &
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
+         bcl%dry_flg(G%nelem,inp%nlayers),                                   &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 

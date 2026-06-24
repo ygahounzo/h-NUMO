@@ -144,7 +144,7 @@ module mod_initial
     
         if(inp%is_mlswe) then
 
-            call initial_conditions(inp, G, b, mf, init)
+            call initial_conditions(inp, G, b, mf, init, mt)
 
             init%zbot_df_init = init%zbot_df
                 

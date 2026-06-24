@@ -25,7 +25,8 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter
+  use mod_initial_mlswe,    only: poslimiter, find_dry_elements
+  use mod_constants,        only: gravity
 
   implicit none
 
@@ -46,7 +47,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   real, dimension(4,G%npoin)             :: qbp_df
-  integer :: k, ik
+  integer :: k, ik, I
   real, dimension(3,G%npoin,inp%nlayers) :: q0_df, rhs
   real, dimension(2,G%npoin,inp%nlayers) :: uv_df
   real :: dtt
@@ -59,7 +60,10 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
 
     dtt = inp%dt * lsrk3_beta(ik)
 
-    call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q_df, qb_df)
+    call find_dry_elements(G, inp, b, tsp, btp%ope2_ave_df, q_df, &
+                           init%alpha_mlswe, bcl%dry_flg)
+
+    call extract_qprime_df_face(G, inp, b, mt, init, bcl, bcl%qprime_df, q_df, qb_df)
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
 
     !$acc update device(bcl%qprime_df)
@@ -87,14 +91,25 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
 
     call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
-    call extract_velocity(G, inp, uv_df, q_df, qb_df)
+    if (inp%lposlimiter) call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+
+    ! Zero momentum at dry-threshold nodes to prevent large velocities
+    ! from pressure-gradient forces on nearly-dry cells in mixed elements.
+    do k = 1, inp%nlayers
+      do I = 1, G%npoin
+        if (q_df(1,I,k) <= (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+          q_df(2,I,k) = 0.0
+          q_df(3,I,k) = 0.0
+        end if
+      end do
+    end do
+
+    call extract_velocity(G, inp, b, mt, init, bcl, uv_df, q_df, qb_df)
 
     do k = 1, inp%nlayers
       q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
       q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
     end do
-
-    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
   end do
 end subroutine ti_lsrk3_bcl

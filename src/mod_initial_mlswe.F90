@@ -12,11 +12,12 @@ module mod_initial_mlswe
     use mod_metrics, only: metrics
     use mod_input,   only: input
     use mod_face,    only: face_CS
+    use mod_tensor,  only: tensor_CS
 
     public :: &
         bot_topo_derivatives, &
         interpolate_pbprime_init, wind_stress_coriolis, &
-        map_deriv, ssprk_coefficients, poslimiter
+        map_deriv, ssprk_coefficients, poslimiter, find_dry_elements
 
     private
 
@@ -416,6 +417,58 @@ module mod_initial_mlswe
         end do !k
 
     end subroutine poslimiter
+
+    !------------------------------------------------------------------!
+    ! Classify each element per layer:
+    !   0 = fully wet, 1 = semi-dry (mixed), 2 = fully dry
+    ! Call once per RK stage before the volume and surface RHS routines.
+    !------------------------------------------------------------------!
+    subroutine find_dry_elements(G, inp, b, tsp, ope2_ave_df, qprime_df, alpha, dry_flg)
+
+        use mod_constants, only: gravity
+
+        implicit none
+
+        type(grid),      intent(in) :: G
+        type(input),     intent(in) :: inp
+        type(basis),     intent(in) :: b
+        type(tensor_CS), intent(in) :: tsp
+
+        real,    dimension(G%npoin),              intent(in)  :: ope2_ave_df
+        real,    dimension(3,G%npoin,inp%nlayers), intent(in)  :: qprime_df
+        real,    dimension(inp%nlayers),           intent(in)  :: alpha
+        integer, dimension(G%nelem,inp%nlayers),   intent(out) :: dry_flg
+
+        integer :: ie, k, ip, I, Iq
+        real    :: threshold, dp_node
+        logical :: any_wet, any_dry
+
+        do ie = 1, G%nelem
+            Iq = tsp%indexq_e(1, ie)
+            do k = 1, inp%nlayers
+                threshold = (gravity / alpha(k)) * inp%dry_cutoff
+                any_wet = .false.
+                any_dry = .false.
+                do ip = 1, b%npts
+                    I = tsp%indexq(ip, Iq)
+                    dp_node = sqrt(ope2_ave_df(I)) * qprime_df(1, I, k)
+                    if (dp_node >= threshold) then
+                        any_wet = .true.
+                    else
+                        any_dry = .true.
+                    end if
+                end do
+                if (.not. any_dry) then
+                    dry_flg(ie, k) = 0
+                else if (any_wet) then
+                    dry_flg(ie, k) = 1
+                else
+                    dry_flg(ie, k) = 2
+                end if
+            end do
+        end do
+
+    end subroutine find_dry_elements
 
     function safe_div(n, d, altv) result(q)
         implicit none

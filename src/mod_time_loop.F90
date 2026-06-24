@@ -208,7 +208,7 @@ contains
             elseif (trim(inp%bcl_time_method) == 'lsrk3') then
               call ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
             else
-              call ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
+            !   call ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
             endif
 
             call cpu_time(time2)

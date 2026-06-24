@@ -177,8 +177,13 @@ contains
                pbq = pbq + hi * init%pbprime_df(I)
             end do
 
-            ub = udp / dp
-            vb = vdp / dp
+            ! if (dp > gravity * inp%dry_cutoff) then
+            !    ub = udp / dp
+            !    vb = vdp / dp
+            ! else
+            !    ub = 0.0
+            !    vb = 0.0
+            ! end if
 
             ! Layer projections, Hq, momentum-flux sums
             Hq = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
@@ -195,6 +200,11 @@ contains
                   up_k = up_k + hi * qprime_df(2, I, k)
                   vp_k = vp_k + hi * qprime_df(3, I, k)
                end do
+
+               if (pp_k < (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                  pp_k = 0.0 !(gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
+                  up_k = 0.0;  vp_k = 0.0
+               end if
 
                pprime_k1 = pprime_k + pp_k
 
@@ -220,8 +230,13 @@ contains
                tb_v = spd * vbot
             end if
 
-            ! Free-surface factor
-            ope  = 1.0 + (dpp / pbq)
+            ! Free-surface factor — clamped to physical range to avoid runaway
+            ! if (pbq > gravity * inp%dry_cutoff) then
+            !    ope = max(0.0, min(2.0, 1.0 + (dpp / pbq)))
+            ! else
+            !    ope = 1.0
+            ! end if
+            ope = 1.0 + (dpp / pbq)
             ope2 = ope * ope
             Hq   = ope2 * Hq
 
@@ -468,12 +483,29 @@ contains
             half_clam    = 0.5  * clam
             quarter_clam = 0.25 * clam
 
-            pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam)*(pU_L + pU_R)
-            one_eta     = 1.0 + pbpert_edge / pbl
+            ! if (clam > 0.0) then
+               pbpert_edge = 0.5*(qbl(2) + qbr(2)) + (0.5/clam)*(pU_L + pU_R)
+            ! else
+            !    pbpert_edge = 0.5*(qbl(2) + qbr(2))
+            ! end if
+            ! if (pbl > gravity * inp%dry_cutoff) then
+            !    one_eta = max(0.0, min(2.0, 1.0 + pbpert_edge / pbl))
+            ! else
+            !    one_eta = 1.0
+            ! end if
+            one_eta = 1.0 + pbpert_edge / pbl
             one_eta2    = one_eta * one_eta
 
-            ul = qbl(3) / qbl(1);  ur = qbr(3) / qbr(1)
-            vl = qbl(4) / qbl(1);  vr = qbr(4) / qbr(1)
+            ! if (qbl(1) > gravity * inp%dry_cutoff) then
+               ul = qbl(3) / qbl(1);  vl = qbl(4) / qbl(1)
+            ! else
+            !    ul = 0.0;  vl = 0.0
+            ! end if
+            ! if (qbr(1) > gravity * inp%dry_cutoff) then
+               ur = qbr(3) / qbr(1);  vr = qbr(4) / qbr(1)
+            ! else
+            !    ur = 0.0;  vr = 0.0
+            ! end if
 
             ! Initialise flux tensors from barotropic state
             Qu_ql1 = ul * qbl(3);  Qu_ql2 = vl * qbl(3)
@@ -520,6 +552,16 @@ contains
                   end if
                end if
 
+               ! Floor dry face states before flux accumulation
+               if (pkl < (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                  pkl = 0.0 !(gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
+                  ukl = 0.0;  vkl = 0.0
+               end if
+               if (pkr < (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                  pkr = 0.0 !(gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
+                  ukr = 0.0;  vkr = 0.0
+               end if
+
                ope_ppl_k  = one_eta * pkl
                ope_ppr_k  = one_eta * pkr
                uv_cross_l = ukl * vkl * ope_ppl_k
@@ -562,7 +604,17 @@ contains
             btp%Qv_face_ave(1,iquad,iface) = btp%Qv_face_ave(1,iquad,iface) + 0.5*(Qv_ql1 + Qv_qr1)
             btp%Qv_face_ave(2,iquad,iface) = btp%Qv_face_ave(2,iquad,iface) + 0.5*(Qv_ql2 + Qv_qr2)
 
+            ! if (pbl > gravity * inp%dry_cutoff) then
+            !    opl = max(0.0, min(2.0, 1.0 + qbl(2)/pbl))
+            ! else
+            !    opl = 1.0
+            ! end if
             opl = 1.0 + qbl(2)/pbl
+            ! if (pbr > gravity * inp%dry_cutoff) then
+            !    opr = max(0.0, min(2.0, 1.0 + qbr(2)/pbr))
+            ! else
+            !    opr = 1.0
+            ! end if
             opr = 1.0 + qbr(2)/pbr
             btp%ope_face_ave(1,iquad,iface)  = btp%ope_face_ave(1,iquad,iface)  + opl
             btp%ope_face_ave(2,iquad,iface)  = btp%ope_face_ave(2,iquad,iface)  + opr
@@ -592,6 +644,14 @@ contains
             wq_flux_pb = wq * flux_pb
             wq_flux_u  = wq * flux_u
             wq_flux_v  = wq * flux_v
+
+            ! Force strict double-precision store of wq_flux_u before the RHS scatter.
+            ! At -O2 the compiler may use extended-precision registers for wq*flux_u;
+            ! the runtime branch below forces a memory store that prevents cumulative
+            ! floating-point divergence from driving H_face_ave out of sync with the
+            ! BCL face flux, which causes instability after O(200) timesteps.
+            ! if (abs(wq_flux_u) > 1.0e20) wq_flux_u = sign(1.0e20_8, wq_flux_u)
+            ! if (abs(wq_flux_v) > 1.0e20) wq_flux_v = sign(1.0e20_8, wq_flux_v)
 
             ! RHS scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq

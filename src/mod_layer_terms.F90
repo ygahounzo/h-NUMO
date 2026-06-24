@@ -13,7 +13,9 @@ module mod_layer_terms
     use mod_input,     only: input
     use mod_initial,   only: initial
     use mod_face,      only: face_CS
+    use mod_constants, only: gravity
     use mod_tensor,    only: tensor_CS
+    use mod_metrics,   only: metrics
     use mod_variables, only: btp_CS, bcl_CS
 
     implicit none
@@ -192,77 +194,200 @@ contains
 
     end subroutine velocity_df
 
-    subroutine extract_velocity(G, inp, uv_df, q_df, qb_df)
+    subroutine extract_velocity(G, inp, b, mt, init, bcl, uv_df, q_df, qb_df)
 
         implicit none
 
-        type(grid),  intent(in)  :: G
-        type(input), intent(in)  :: inp
+        type(grid),    intent(in)  :: G
+        type(input),   intent(in)  :: inp
+        type(basis),   intent(in)  :: b
+        type(metrics), intent(in)  :: mt
+        type(initial), intent(in)  :: init
+        type(bcl_CS),  intent(in)  :: bcl
 
         real, dimension(2, G%npoin, inp%nlayers), intent(out) :: uv_df
         real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df
         real, dimension(4, G%npoin),              intent(in)  :: qb_df
 
-        real    :: ubar, vbar
-        integer :: I, k
+        real    :: ubar, vbar, wjac, wsum
+        integer :: I, k, e, n, m
+        real, parameter :: eps = 1.0e-20
+
+        real :: dp_avg(inp%nlayers), udp_avg(inp%nlayers), vdp_avg(inp%nlayers)
+        real :: dp_max(inp%nlayers), dp_min(inp%nlayers)
+        real :: dp_cutoff1(inp%nlayers), dp_cutoff2(inp%nlayers), dp_range(inp%nlayers)
+        real :: a(inp%nlayers), bc(inp%nlayers), c_td(inp%nlayers)
+        real :: r(inp%nlayers, 2)
+        real :: u_ave(inp%nlayers), v_ave(inp%nlayers)
+        real :: weight(inp%nlayers), mult
 
         uv_df = 0.0
 
+        ! Per-layer pressure thresholds: h_cutoff1/2 are thickness values,
+        ! converted to pressure consistently with dry_cutoff usage elsewhere.
         do k = 1, inp%nlayers
-            uv_df(1,:,k) = q_df(2,:,k) / q_df(1,:,k)
-            uv_df(2,:,k) = q_df(3,:,k) / q_df(1,:,k)
+            if (inp%h_cutoff1 < 1.0e-2) then
+                dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * 10.0
+                dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * 100.0
+            else
+                dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
+                dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
+            end if
+            dp_range(k)   = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
         end do
 
-        do I = 1, G%npoin
-            ubar = 0.0
-            vbar = 0.0
+        do e = 1, G%nelem
 
+            ! Element-averaged dp, udp, vdp and per-layer min/max dp
+            wsum   = 0.0
+            dp_avg = 0.0;  udp_avg = 0.0;  vdp_avg = 0.0
+            dp_max = -huge(1.0);  dp_min = huge(1.0)
+
+            do m = 1, b%ngly
+                do n = 1, b%nglx
+                    I    = G%intma(n, m, 1, e)
+                    wjac = b%wglx(n) * b%wgly(m) * mt%jac(n, m, 1, e)
+                    wsum = wsum + wjac
+                    do k = 1, inp%nlayers
+                        dp_avg(k)  = dp_avg(k)  + wjac * q_df(1,I,k)
+                        udp_avg(k) = udp_avg(k) + wjac * q_df(2,I,k)
+                        vdp_avg(k) = vdp_avg(k) + wjac * q_df(3,I,k)
+                        dp_max(k)  = max(dp_max(k), q_df(1,I,k))
+                        dp_min(k)  = min(dp_min(k), q_df(1,I,k))
+                    end do
+                end do
+            end do
+            dp_avg  = dp_avg  / wsum
+            udp_avg = udp_avg / wsum
+            vdp_avg = vdp_avg / wsum
+
+            ! Tridiagonal system for mass-weighted cell-average velocity.
+            ! weight(k) → 1 when layer is thick (use udp_avg/dp_avg directly);
+            ! weight(k) → 0 when thin (couple to adjacent layers via tridiagonal).
             do k = 1, inp%nlayers
-                ubar = ubar + (uv_df(1,I,k) * q_df(1,I,k))
-                vbar = vbar + (uv_df(2,I,k) * q_df(1,I,k))
+                weight(k) = (dp_max(k) - dp_cutoff1(k)) / dp_range(k)
+                weight(k) = max(min(weight(k), 1.0), 0.0)
+                bc(k)   = 1.0
+                r(k, 1) = weight(k) * udp_avg(k) / (dp_avg(k) + eps)
+                r(k, 2) = weight(k) * vdp_avg(k) / (dp_avg(k) + eps)
+            end do
+            a(1)              = 0.0
+            c_td(1)           = -(1.0 - weight(1))
+            a(inp%nlayers)    = -(1.0 - weight(inp%nlayers))
+            c_td(inp%nlayers) = 0.0
+            do k = 2, inp%nlayers - 1
+                a(k)    = -0.5 * (1.0 - weight(k))
+                c_td(k) = a(k)
             end do
 
-            if(qb_df(1,I) > 0.0) then
-                ubar = ubar / qb_df(1,I)
-                vbar = vbar / qb_df(1,I)
+            do k = 2, inp%nlayers
+                mult   = a(k) / bc(k-1)
+                bc(k)  = bc(k)  - mult * c_td(k-1)
+                r(k,1) = r(k,1) - mult * r(k-1,1)
+                r(k,2) = r(k,2) - mult * r(k-1,2)
+            end do
+            u_ave(inp%nlayers) = r(inp%nlayers,1) / bc(inp%nlayers)
+            v_ave(inp%nlayers) = r(inp%nlayers,2) / bc(inp%nlayers)
+            do k = inp%nlayers-1, 1, -1
+                u_ave(k) = (r(k,1) - c_td(k) * u_ave(k+1)) / bc(k)
+                v_ave(k) = (r(k,2) - c_td(k) * v_ave(k+1)) / bc(k)
+            end do
 
-                do k = 1, inp%nlayers
-                    uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
-                    uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
+            ! Blended pointwise velocity: pure division when wet, cell-average when thin
+            do k = 1, inp%nlayers
+                weight(k) = (dp_min(k) - dp_cutoff1(k)) / dp_range(k)
+                weight(k) = max(min(weight(k), 1.0), 0.0)
+            end do
+            do m = 1, b%ngly
+                do n = 1, b%nglx
+                    I = G%intma(n, m, 1, e)
+                    do k = 1, inp%nlayers
+                        uv_df(1,I,k) = weight(k) * q_df(2,I,k) / (q_df(1,I,k) + eps) &
+                                     + (1.0 - weight(k)) * u_ave(k)
+                        uv_df(2,I,k) = weight(k) * q_df(3,I,k) / (q_df(1,I,k) + eps) &
+                                     + (1.0 - weight(k)) * v_ave(k)
+                    end do
                 end do
-            else
-                uv_df(:,I,:) = 0.0
-            end if
+            end do
+
+        end do
+
+        ! Barotropic consistency correction: skip dry/semi-dry layers to avoid
+        ! injecting spurious momentum via mass-weighted averaging of near-zero dp.
+        do e = 1, G%nelem
+            do m = 1, b%ngly
+                do n = 1, b%nglx
+                    I = G%intma(n, m, 1, e)
+                    ubar = 0.0;  vbar = 0.0
+                    do k = 1, inp%nlayers
+                        if (bcl%dry_flg(e, k) == 2) cycle
+                        ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
+                        vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
+                    end do
+                    if (qb_df(1,I) > 0.0) then
+                        ubar = ubar / qb_df(1,I)
+                        vbar = vbar / qb_df(1,I)
+                        do k = 1, inp%nlayers
+                            if (bcl%dry_flg(e, k) == 2) cycle
+                            uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
+                            uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
+                        end do
+                    else
+                        uv_df(:,I,:) = 0.0
+                    end if
+                end do
+            end do
         end do
 
     end subroutine extract_velocity
 
-    subroutine extract_qprime_df_face(G, inp, init, qprime_df, q_df, qb_df)
+    subroutine extract_qprime_df_face(G, inp, b, mt, init, bcl, qprime_df, q_df, qb_df)
 
         implicit none
 
         type(grid),    intent(in) :: G
         type(input),   intent(in) :: inp
+        type(basis),   intent(in) :: b
+        type(metrics), intent(in) :: mt
         type(initial), intent(in) :: init
+        type(bcl_CS),  intent(in) :: bcl
 
         real, dimension(3, G%npoin, inp%nlayers), intent(out) :: qprime_df
         real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df
         real, dimension(4, G%npoin),              intent(in)  :: qb_df
 
-        integer :: k, I
+        integer :: k, I, e, n, m
         real    :: ope
         real    :: uv_df(2, G%npoin, inp%nlayers)
 
         qprime_df = 0.0
 
-        call extract_velocity(G, inp, uv_df, q_df, qb_df)
+        call extract_velocity(G, inp, b, mt, init, bcl, uv_df, q_df, qb_df)
 
         do k = 1, inp%nlayers
-            do I = 1, G%npoin
-                ope = sum(q_df(1,I,:)) / init%pbprime_df(I)
-                qprime_df(1,I,k) = q_df(1,I,k) / ope
-                qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
-                qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
+            do e = 1, G%nelem
+                do m = 1, b%ngly
+                    do n = 1, b%nglx
+                        I = G%intma(n, m, 1, e)
+                        if (bcl%dry_flg(e, k) == 2) then
+                            qprime_df(1,I,k) = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+                            qprime_df(2,I,k) = 0.0
+                            qprime_df(3,I,k) = 0.0
+                        else
+                            ope = sum(q_df(1,I,:)) / init%pbprime_df(I)
+                            qprime_df(1,I,k) = q_df(1,I,k) / ope
+                            qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
+                            qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
+                            ! if (bcl%dry_flg(e, k) == 1) then
+                            !     if (qprime_df(2,I,k)**2 + qprime_df(3,I,k)**2 > &
+                            !         min((10.0)**2 * init%alpha_mlswe(k) * qprime_df(1,I,k), 200.0**2)) then
+                            !         qprime_df(2,I,k) = 0.0
+                            !         qprime_df(3,I,k) = 0.0
+                            !     end if
+                            ! end if
+                        end if
+                    end do
+                end do
             end do
         end do
 

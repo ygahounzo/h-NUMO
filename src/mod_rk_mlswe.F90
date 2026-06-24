@@ -103,9 +103,15 @@ contains
 
             !$acc parallel loop present(btp, qb_df, init)
             do I = 1, G%npoin
-               btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
-               btp%uvb_ave_df(1,I) = btp%uvb_ave_df(1,I) + qb_df(3,I) / qb_df(1,I)
-               btp%uvb_ave_df(2,I) = btp%uvb_ave_df(2,I) + qb_df(4,I) / qb_df(1,I)
+               if (init%pbprime_df(I) > 0.0) then
+                  btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
+               else
+                  btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + 1.0
+               end if
+               if (qb_df(1,I) > 0.0) then
+                  btp%uvb_ave_df(1,I) = btp%uvb_ave_df(1,I) + qb_df(3,I) / qb_df(1,I)
+                  btp%uvb_ave_df(2,I) = btp%uvb_ave_df(2,I) + qb_df(4,I) / qb_df(1,I)
+               end if
             end do
             !$acc end parallel loop
 

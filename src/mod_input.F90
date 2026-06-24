@@ -63,6 +63,8 @@ module mod_input
       real(kind=r8) :: f0
       real(kind=r8) :: beta
       real(kind=r8) :: dry_cutoff
+      real(kind=r8) :: h_cutoff1
+      real(kind=r8) :: h_cutoff2
 
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -206,6 +208,7 @@ module mod_input
 
       character(len=20) :: bcl_time_method
       logical :: rk_bcl_FS
+      logical :: lposlimiter
 
       logical :: lout_tree
       logical :: lout_shoreline
@@ -279,7 +282,9 @@ module mod_input
       real(kind=r8) :: max_shear_dz = 0.0
       real(kind=r8) :: f0 = 0.0
       real(kind=r8) :: beta = 0.0
-      real(kind=r8) :: dry_cutoff = 1.0e-10
+      real(kind=r8) :: dry_cutoff  = 1.0e-10
+      real(kind=r8) :: h_cutoff1  = 0.0   ! 0 → derived as 10 * dry_cutoff after read
+      real(kind=r8) :: h_cutoff2  = 0.0   ! 0 → derived as 100 * dry_cutoff after read
    
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -453,6 +458,7 @@ module mod_input
 
       character(len=20) :: bcl_time_method = '2levels'
       logical :: rk_bcl_FS = .false.
+      logical :: lposlimiter = .false.
 
      !Namelist Input
  
@@ -488,8 +494,8 @@ module mod_input
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, &
-         bcl_time_method, rk_bcl_FS
+         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, &
+         bcl_time_method, rk_bcl_FS, lposlimiter
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          nlayers, &
@@ -636,6 +642,10 @@ module mod_input
       inp%f0                             = f0
       inp%beta                           = beta
       inp%dry_cutoff                     = dry_cutoff
+      inp%h_cutoff1                     = h_cutoff1
+      inp%h_cutoff2                     = h_cutoff2
+      if (inp%h_cutoff1 <= 0.0) inp%h_cutoff1 = 10.0  * inp%dry_cutoff
+      if (inp%h_cutoff2 <= 0.0) inp%h_cutoff2 = 100.0 * inp%dry_cutoff
       inp%xdims                          = xdims
       inp%ydims                          = ydims
       inp%ztop                           = ztop
@@ -781,6 +791,7 @@ module mod_input
       inp%llinear_pert                   = llinear_pert
       inp%bcl_time_method                = bcl_time_method
       inp%rk_bcl_FS                      = rk_bcl_FS
+      inp%lposlimiter                    = lposlimiter
 
    end subroutine mod_input_create
  

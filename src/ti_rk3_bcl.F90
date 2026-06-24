@@ -31,7 +31,9 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter
+  use mod_initial_mlswe,    only: poslimiter, find_dry_elements
+  use mod_constants,        only: gravity
+  use ieee_arithmetic,      only: ieee_is_nan
 
   implicit none
 
@@ -52,7 +54,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   real, dimension(4,G%npoin)             :: qbp_df
-  integer :: k, ik
+  integer :: k, ik, I
   real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df, rhs
   real, dimension(2,G%npoin,inp%nlayers) :: uv_df
   real :: dtt
@@ -66,7 +68,11 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
     dtt = inp%dt * init%ssprk_beta_bcl(ik)
 
-    call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q1_df, qb_df)
+    call find_dry_elements(G, inp, b, tsp, btp%ope2_ave_df, bcl%q_df, &
+                           init%alpha_mlswe, bcl%dry_flg)
+
+    call extract_qprime_df_face(G, inp, b, mt, init, bcl, bcl%qprime_df, q1_df, qb_df)
+
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
 
     ! Always sync — create_rhs_bcl reads bcl%qprime_df from device every stage.
@@ -95,15 +101,40 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
     call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
+    ! Limit dp before velocity extraction so dry-cell nodes with nonzero momentum
+    ! from the DG integral do not produce large velocities via division.
+    if (inp%lposlimiter) call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+
+    ! Zero momentum wherever the velocity after the BCL update would be unphysical.
+    ! Use the same combined cap as the qprime clamp above:
+    !   smaller of (10x local wave speed) or (200 m/s absolute).
+    ! For q_df: u = q(2)/q(1), c^2 = alpha*q(1), so u^2 > (10c)^2 means
+    !   q(2)^2 + q(3)^2 > (10c)^2 * q(1)^2 = 100 * alpha * q(1)^3.
+    ! do k = 1, inp%nlayers
+    !   do ie = 1, G%nelem
+    !     if (bcl%dry_flg(ie, k) == 2) cycle
+    !     Iq = tsp%indexq_e(1, ie)
+    !     do ip = 1, b%npts
+    !       I = tsp%indexq(ip, Iq)
+    !       if (q_df(1,I,k) > 0.0) then
+    !         if (q_df(2,I,k)**2 + q_df(3,I,k)**2 > &
+    !             min((10.0)**2 * init%alpha_mlswe(k) * q_df(1,I,k)**3, &
+    !                 (200.0 * q_df(1,I,k))**2)) then
+    !           q_df(2,I,k) = 0.0
+    !           q_df(3,I,k) = 0.0
+    !         end if
+    !       end if
+    !     end do
+    !   end do
+    ! end do
+
     ! Compute dpprime, uprime and vprime at the quad and nodal points
-    call extract_velocity(G, inp, uv_df, q_df, qb_df)
+    call extract_velocity(G, inp, b, mt, init, bcl, uv_df, q_df, qb_df)
 
     do k = 1,inp%nlayers
       q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
       q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
     end do
-
-    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
     q1_df = q_df
 
