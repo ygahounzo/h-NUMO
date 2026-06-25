@@ -87,6 +87,7 @@ contains
       !$acc                   b%dpsix_tr, b%dpsiy_tr, b%dpsiz_tr)
       !$acc enter data copyin(b%dpsiqx, b%dpsiqy, b%dpsiqz, b%psiq)
       !$acc enter data copyin(b%psi)
+      !$acc enter data copyin(b%wglx, b%wgly)
 
       ! mod_grid
       !$acc enter data copyin(G)
@@ -145,6 +146,8 @@ contains
 
       ! mod_variables (bcl_CS)
       !$acc enter data copyin(bcl)
+      !$acc enter data create(bcl%rhs_bcl)
+      !$acc enter data create(bcl%rhs_visc_bcl)
       !$acc enter data copyin(bcl%qprime_df, bcl%dpprime_visc, bcl%dpp_graduv, &
       !$acc                   bcl%dpp_uvp)
 
@@ -161,6 +164,10 @@ contains
       !$acc enter data create(ref%recv_data_dg_lap)
       !$acc enter data create(ref%q_send_lap, ref%q_recv_lap)
       !$acc enter data copyin(ref%face_pack_list)
+      !$acc enter data create(ref%send_data_bcl, ref%recv_data_bcl)
+      !$acc enter data create(ref%q_send_bcl, ref%q_recv_bcl)
+      !$acc enter data create(ref%send_data_lap_bcl, ref%recv_data_lap_bcl)
+      !$acc enter data create(ref%q_send_lap_bcl, ref%q_recv_lap_bcl)
 
       ! mod_parallel
       !$acc enter data copyin(par)

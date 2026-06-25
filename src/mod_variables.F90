@@ -62,6 +62,10 @@ module mod_variables
       real, dimension(:,:,:), allocatable :: q_df       ! (3,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: qprime_df  ! (3,npoin,nlayers)
 
+      ! RHS buffers (persistent device allocations)
+      real, dimension(:,:,:), allocatable :: rhs_bcl      ! (3,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: rhs_visc_bcl ! (2,npoin,nlayers)
+
    end type bcl_CS
 
    public :: mod_allocate_mlswe
@@ -168,7 +172,8 @@ contains
             bcl%graduv_dpp_face,                                           &
             bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
             bcl%q_df,                 bcl%qprime_df,                     &
-            bcl%dpprime_visc,       bcl%dpprime_visc_q)
+            bcl%dpprime_visc,         bcl%dpprime_visc_q,                 &
+            bcl%rhs_bcl,              bcl%rhs_visc_bcl)
       end if
 
       allocate(                                                               &
@@ -181,6 +186,8 @@ contains
          bcl%qprime_df(3,G%npoin,inp%nlayers),                                    &
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
+         bcl%rhs_bcl(3,G%npoin,inp%nlayers),                                      &
+         bcl%rhs_visc_bcl(2,G%npoin,inp%nlayers),                               &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 

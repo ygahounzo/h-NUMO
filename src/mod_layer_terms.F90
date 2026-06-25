@@ -204,36 +204,48 @@ contains
         real, dimension(4, G%npoin),              intent(in)  :: qb_df
 
         real    :: ubar, vbar
-        integer :: I, k
+        integer :: I, k, npoin_l, nlayers_l
 
-        uv_df = 0.0
+        npoin_l   = G%npoin
+        nlayers_l = inp%nlayers
 
-        do k = 1, inp%nlayers
-            uv_df(1,:,k) = q_df(2,:,k) / q_df(1,:,k)
-            uv_df(2,:,k) = q_df(3,:,k) / q_df(1,:,k)
-        end do
-
-        do I = 1, G%npoin
-            ubar = 0.0
-            vbar = 0.0
-
-            do k = 1, inp%nlayers
-                ubar = ubar + (uv_df(1,I,k) * q_df(1,I,k))
-                vbar = vbar + (uv_df(2,I,k) * q_df(1,I,k))
+        ! Gang over nodes; each gang accumulates its barotropic velocity privately.
+        !$acc parallel loop gang &
+        !$acc    present(uv_df, q_df, qb_df) &
+        !$acc    firstprivate(npoin_l, nlayers_l) &
+        !$acc    private(ubar, vbar)
+        do I = 1, npoin_l
+            !$acc loop seq
+            do k = 1, nlayers_l
+                uv_df(1,I,k) = q_df(2,I,k) / q_df(1,I,k)
+                uv_df(2,I,k) = q_df(3,I,k) / q_df(1,I,k)
             end do
 
-            if(qb_df(1,I) > 0.0) then
+            ubar = 0.0
+            vbar = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+                ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
+                vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
+            end do
+
+            if (qb_df(1,I) > 0.0) then
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
-
-                do k = 1, inp%nlayers
+                !$acc loop seq
+                do k = 1, nlayers_l
                     uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
                     uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
                 end do
             else
-                uv_df(:,I,:) = 0.0
+                !$acc loop seq
+                do k = 1, nlayers_l
+                    uv_df(1,I,k) = 0.0
+                    uv_df(2,I,k) = 0.0
+                end do
             end if
         end do
+        !$acc end parallel loop
 
     end subroutine extract_velocity
 
@@ -249,22 +261,44 @@ contains
         real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df
         real, dimension(4, G%npoin),              intent(in)  :: qb_df
 
-        integer :: k, I
+        integer :: k, I, npoin_l, nlayers_l
         real    :: ope
         real    :: uv_df(2, G%npoin, inp%nlayers)
 
+        npoin_l   = G%npoin
+        nlayers_l = inp%nlayers
+
+        !$acc data create(uv_df)
+
+        !$acc kernels present(qprime_df)
         qprime_df = 0.0
+        !$acc end kernels
 
         call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
-        do k = 1, inp%nlayers
-            do I = 1, G%npoin
-                ope = sum(q_df(1,I,:)) / init%pbprime_df(I)
+        ! Gang over nodes: accumulate ope = sum_k(h_k)/H0 sequentially, then
+        ! write qprime.  No cross-node dependency — no atomics needed.
+        !$acc parallel loop gang &
+        !$acc    present(qprime_df, q_df, qb_df, uv_df, init%pbprime_df) &
+        !$acc    firstprivate(npoin_l, nlayers_l) private(ope)
+        do I = 1, npoin_l
+            ope = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+                ope = ope + q_df(1,I,k)
+            end do
+            ope = ope / init%pbprime_df(I)
+
+            !$acc loop seq
+            do k = 1, nlayers_l
                 qprime_df(1,I,k) = q_df(1,I,k) / ope
                 qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
                 qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
             end do
         end do
+        !$acc end parallel loop
+
+        !$acc end data
 
     end subroutine extract_qprime_df_face
 

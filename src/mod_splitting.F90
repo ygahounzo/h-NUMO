@@ -196,17 +196,17 @@ contains
         real, dimension(4, G%npoin),              intent(in)    :: qb_df
 
         real, dimension(2, G%npoin,   inp%nlayers) :: uv_df, rhs_stress
-        real, dimension(3, G%npoin,   inp%nlayers) :: q_df3, rhs, q_df_temp
+        real, dimension(3, G%npoin,   inp%nlayers) :: q_df3, q_df_temp
         real, dimension(3, G%npoin_q, inp%nlayers) :: q
         real, dimension(G%npoin) :: tempu, tempv
         integer :: k, I
 
-        call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
+        call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, qprime_df, q_df)
 
         do k = 1, inp%nlayers
-            q_df_temp(1,:,k) = q_df(1,:,k) + inp%dt*rhs(1,:,k)
-            q_df_temp(2,:,k) = q_df(2,:,k) + inp%dt*rhs(2,:,k)
-            q_df_temp(3,:,k) = q_df(3,:,k) + inp%dt*rhs(3,:,k)
+            q_df_temp(1,:,k) = q_df(1,:,k) + inp%dt*bcl%rhs_bcl(1,:,k)
+            q_df_temp(2,:,k) = q_df(2,:,k) + inp%dt*bcl%rhs_bcl(2,:,k)
+            q_df_temp(3,:,k) = q_df(3,:,k) + inp%dt*bcl%rhs_bcl(3,:,k)
 
             if(any(q_df(1,:,k) < 0.0)) then
                 write(*,*) 'Negative mass in thickness at some points'
@@ -276,18 +276,18 @@ contains
         real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
         real, dimension(2, G%npoin, inp%nlayers), intent(out) :: rhs_mom
 
-        real, dimension(2, G%npoin, inp%nlayers) :: rhs_visc_bcl
         integer :: k
 
-        rhs_visc_bcl = 0.0
+        bcl%rhs_visc_bcl = 0.0
 
-        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, rhs_visc_bcl)
+        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
+        ! bcl_create_laplacian downloads rhs_visc_bcl to host internally; host copy is valid here.
 
         call layer_momentum_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs_mom, qprime_df, q_df)
 
         do k = 1, inp%nlayers
-            rhs_mom(1,:,k) = mt%massinv(:)*rhs_mom(1,:,k) + rhs_visc_bcl(1,:,k)
-            rhs_mom(2,:,k) = mt%massinv(:)*rhs_mom(2,:,k) + rhs_visc_bcl(2,:,k)
+            rhs_mom(1,:,k) = mt%massinv(:)*rhs_mom(1,:,k) + bcl%rhs_visc_bcl(1,:,k)
+            rhs_mom(2,:,k) = mt%massinv(:)*rhs_mom(2,:,k) + bcl%rhs_visc_bcl(2,:,k)
         end do
 
     end subroutine rhs_momentum
@@ -315,20 +315,32 @@ contains
         real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
         real, dimension(3, G%npoin, inp%nlayers), intent(out) :: rhs
 
-        real, dimension(2, G%npoin, inp%nlayers) :: rhs_visc_bcl
-        integer :: k
+        integer :: k, I, nlayers_l, npoin_l
 
-        rhs_visc_bcl = 0.0
+        nlayers_l = inp%nlayers
+        npoin_l   = G%npoin
 
-        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, rhs_visc_bcl)
+        !$acc kernels present(bcl%rhs_visc_bcl)
+        bcl%rhs_visc_bcl = 0.0
+        !$acc end kernels
+
+        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
 
         call bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
+        ! rhs stays on device; apply mass scaling and viscous term on GPU.
 
-        do k = 1, inp%nlayers
-            rhs(1,:,k) = mt%massinv(:)*rhs(1,:,k)
-            rhs(2,:,k) = mt%massinv(:)*rhs(2,:,k) + rhs_visc_bcl(1,:,k)
-            rhs(3,:,k) = mt%massinv(:)*rhs(3,:,k) + rhs_visc_bcl(2,:,k)
+        !$acc parallel loop gang collapse(2) &
+        !$acc    present(rhs, bcl%rhs_visc_bcl, mt%massinv) firstprivate(nlayers_l, npoin_l)
+        do k = 1, nlayers_l
+            do I = 1, npoin_l
+                rhs(1,I,k) = mt%massinv(I)*rhs(1,I,k)
+                rhs(2,I,k) = mt%massinv(I)*rhs(2,I,k) + bcl%rhs_visc_bcl(1,I,k)
+                rhs(3,I,k) = mt%massinv(I)*rhs(3,I,k) + bcl%rhs_visc_bcl(2,I,k)
+            end do
         end do
+        !$acc end parallel loop
+
+        !$acc update host(rhs)
 
     end subroutine create_rhs_bcl
 

@@ -47,7 +47,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
 
   real, dimension(4,G%npoin)             :: qbp_df
   integer :: k, ik
-  real, dimension(3,G%npoin,inp%nlayers) :: q0_df, rhs
+  real, dimension(3,G%npoin,inp%nlayers) :: q0_df
   real, dimension(2,G%npoin,inp%nlayers) :: uv_df
   real :: dtt
   real, parameter :: lsrk3_beta(3) = (/ 1.0/3.0, 1.0/2.0, 1.0 /)
@@ -77,12 +77,12 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
                                       qb_df, bcl%qprime_df)
     endif
 
-    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, bcl%qprime_df, q_df)
+    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
     do k = 1, inp%nlayers
-      q_df(1,:,k) = q0_df(1,:,k) + dtt * rhs(1,:,k)
-      q_df(2,:,k) = q0_df(2,:,k) + dtt * rhs(2,:,k)
-      q_df(3,:,k) = q0_df(3,:,k) + dtt * rhs(3,:,k)
+      q_df(1,:,k) = q0_df(1,:,k) + dtt * bcl%rhs_bcl(1,:,k)
+      q_df(2,:,k) = q0_df(2,:,k) + dtt * bcl%rhs_bcl(2,:,k)
+      q_df(3,:,k) = q0_df(3,:,k) + dtt * bcl%rhs_bcl(3,:,k)
     end do
 
     call layer_mom_boundary_df(G, inp, b, mf, q_df)

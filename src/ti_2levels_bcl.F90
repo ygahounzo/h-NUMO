@@ -44,7 +44,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    real, dimension(4, G%npoin),              intent(inout) :: qb_df
 
    real, dimension(4, G%npoin)              :: qb_df_n
-   real, dimension(3, G%npoin, inp%nlayers) :: qprime_df_n, qprime_df_pred, q_df_pred, rhs
+   real, dimension(3, G%npoin, inp%nlayers) :: qprime_df_n, qprime_df_pred, q_df_pred
    real, dimension(2, G%npoin, inp%nlayers) :: uv_df, rhs_mom
    real, dimension(G%npoin, inp%nlayers)    :: rhs_dp
    real, dimension(G%npoin)                 :: dp_norm_inv
@@ -64,9 +64,9 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    !$acc update device(bcl%qprime_df)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df)
-   call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, bcl%qprime_df, q_df)
+   call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
-   q_df_pred = q_df + inp%dt*rhs
+   q_df_pred = q_df + inp%dt*bcl%rhs_bcl
 
    call layer_mom_boundary_df(G, inp, b, mf, q_df_pred)
 

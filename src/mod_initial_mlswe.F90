@@ -359,26 +359,38 @@ module mod_initial_mlswe
         real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q
         real, dimension(inp%nlayers),           intent(in)    :: alpha
 
-        real    :: pmin, pavg, uavg, vavg, wsum, wjac, threshold
-        real    :: theta
-        integer :: I, k, n, m, e
+        real    :: pmin, pavg, uavg, vavg, wsum, wjac, threshold, theta, denom
+        integer :: I, k, n, m, e, nelem_l, nlayers_l, nglx_l, ngly_l
+        real    :: dry_cutoff_l
 
-        do k = 1, inp%nlayers
+        nelem_l      = G%nelem
+        nlayers_l    = inp%nlayers
+        nglx_l       = b%nglx
+        ngly_l       = b%ngly
+        dry_cutoff_l = inp%dry_cutoff
 
-            threshold = (gravity / alpha(k)) * inp%dry_cutoff
+        ! DG elements own their nodes exclusively — no cross-element races on q.
+        !$acc parallel loop gang collapse(2) &
+        !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q, alpha) &
+        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l) &
+        !$acc    private(pmin, pavg, uavg, vavg, wsum, wjac, threshold, theta, denom, I)
+        do k = 1, nlayers_l
+            do e = 1, nelem_l
 
-            do e = 1, G%nelem
+                threshold = (gravity / alpha(k)) * dry_cutoff_l
 
                 pmin = 1.0e20
                 pavg = 0.0
                 uavg = 0.0
                 vavg = 0.0
                 wsum = 0.0
-                do m = 1, b%ngly
-                    do n = 1, b%nglx
-                        I = G%intma(n,m,1,e)
-                        if (q(1,I,k) < pmin) pmin = q(1,I,k)
+                !$acc loop seq
+                do m = 1, ngly_l
+                    !$acc loop seq
+                    do n = 1, nglx_l
+                        I    = G%intma(n,m,1,e)
                         wjac = b%wglx(n) * b%wgly(m) * mt%jac(n,m,1,e)
+                        if (q(1,I,k) < pmin) pmin = q(1,I,k)
                         wsum = wsum + wjac
                         pavg = pavg + wjac * q(1,I,k)
                         uavg = uavg + wjac * q(2,I,k)
@@ -390,9 +402,11 @@ module mod_initial_mlswe
                 vavg = vavg / wsum
 
                 if (pavg <= threshold) then
-                    ! Entire element is dry — set to minimum and zero momentum.
-                    do m = 1, b%ngly
-                        do n = 1, b%nglx
+                    ! Entire element dry — clamp to minimum, zero momentum.
+                    !$acc loop seq
+                    do m = 1, ngly_l
+                        !$acc loop seq
+                        do n = 1, nglx_l
                             I = G%intma(n,m,1,e)
                             q(1,I,k) = threshold
                             q(2,I,k) = 0.0
@@ -400,10 +414,13 @@ module mod_initial_mlswe
                         end do
                     end do
                 else if (pmin < threshold) then
-                    ! Zhang-Shu limiter: scale toward element average so min = threshold.
-                    theta = min(1.0, safe_div(pavg - threshold, pavg - pmin, 0.0))
-                    do m = 1, b%ngly
-                        do n = 1, b%nglx
+                    ! Zhang-Shu: scale toward element average so min(h) = threshold.
+                    denom = pavg - pmin
+                    theta = merge(min(1.0, (pavg - threshold) / denom), 0.0, denom /= 0.0)
+                    !$acc loop seq
+                    do m = 1, ngly_l
+                        !$acc loop seq
+                        do n = 1, nglx_l
                             I = G%intma(n,m,1,e)
                             q(1,I,k) = theta * (q(1,I,k) - pavg) + pavg
                             q(2,I,k) = theta * (q(2,I,k) - uavg) + uavg
@@ -414,6 +431,7 @@ module mod_initial_mlswe
 
             end do !e
         end do !k
+        !$acc end parallel loop
 
     end subroutine poslimiter
 

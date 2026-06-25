@@ -135,12 +135,16 @@ contains
 
       integer :: k
 
+      ! Pre-comm GPU pack reads dpp_graduv/dpprime_visc directly from device.
+      ! rhs_lap is created on device; all kernels run GPU-to-GPU.
+      !$acc data create(rhs_lap)
       call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduv, bcl%dpprime_visc)
-
       call bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, rhs_lap)
       call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, rhs_lap)
-
+      ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
       call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, rhs_lap)
+      !$acc update host(rhs_lap)
+      !$acc end data
 
       do k = 1, inp%nlayers
          rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
@@ -240,26 +244,69 @@ contains
 
       real, intent(out) :: lap_q(2,G%npoin,inp%nlayers)
 
-      integer :: Iq, I, ip, k
+      integer :: ie, iq_local, Iq, I, ip, k
+      integer :: npts_l, nelem_l, nlayers_l
       real :: wq, qq(4)
+      real :: lap_loc(2, b%npts, inp%nlayers)
 
+      npts_l    = b%npts
+      nelem_l   = G%nelem
+      nlayers_l = inp%nlayers
+
+      !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%indexq, &
+      !$acc              btp%graduvb_ave, bcl%dpprime_visc, bcl%dpp_graduv, lap_q)
+
+      !$acc kernels present(lap_q)
       lap_q = 0.0
+      !$acc end kernels
 
-      do concurrent(k = 1:inp%nlayers, Iq = 1:G%npoin)
+      !$acc parallel loop gang                                                    &
+      !$acc   private(lap_loc, qq, wq, Iq, I, ip, k, iq_local)                  &
+      !$acc   firstprivate(npts_l, nelem_l, nlayers_l)
+      do ie = 1, nelem_l
 
-         wq = tsp%wjac_df(Iq)
-
-         qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduv(1,Iq,k)
-         qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduv(2,Iq,k)
-         qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduv(3,Iq,k)
-         qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduv(4,Iq,k)
-
-         do ip = 1, b%npts
-            I = tsp%index_df(ip,Iq)
-            lap_q(1,I,k) = lap_q(1,I,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
-            lap_q(2,I,k) = lap_q(2,I,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(3) + tsp%dpsidy_df(ip,Iq)*qq(4))
+         !$acc loop seq
+         do k = 1, nlayers_l
+            !$acc loop seq
+            do ip = 1, npts_l
+               lap_loc(1,ip,k) = 0.0
+               lap_loc(2,ip,k) = 0.0
+            end do
          end do
+
+         !$acc loop seq
+         do k = 1, nlayers_l
+            !$acc loop seq
+            do iq_local = 1, npts_l
+               Iq = tsp%indexq(iq_local, ie)
+               wq = tsp%wjac_df(Iq)
+               qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduv(1,Iq,k)
+               qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduv(2,Iq,k)
+               qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduv(3,Iq,k)
+               qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduv(4,Iq,k)
+               !$acc loop seq
+               do ip = 1, npts_l
+                  lap_loc(1,ip,k) = lap_loc(1,ip,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
+                  lap_loc(2,ip,k) = lap_loc(2,ip,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(3) + tsp%dpsidy_df(ip,Iq)*qq(4))
+               end do
+            end do
+         end do
+
+         ! Elements are disjoint — scatter without atomics.
+         !$acc loop seq
+         do k = 1, nlayers_l
+            !$acc loop seq
+            do ip = 1, npts_l
+               I = tsp%indexq(ip, ie)
+               lap_q(1,I,k) = lap_loc(1,ip,k)
+               lap_q(2,I,k) = lap_loc(2,ip,k)
+            end do
+         end do
+
       end do
+      !$acc end parallel loop
+
+      !$acc end data
 
    end subroutine bcl_compute_laplacian
 
@@ -509,120 +556,138 @@ contains
       real, dimension(2) :: qul, qur
       real, dimension(2) :: qvl, qvr
 
-      real :: nx, ny, nz
-      real :: wq, un
-      integer :: iface, i, j, il, jl, kl, ir, jr, kr, el, er
-      integer :: iel, ier, ilocl, ilocr, ip
-      integer :: iquad, jquad, ivar, k
-      real :: flux_qu, flux_qv, hi, mul, mur, c_jump, alpha, beta, iflux
-      real, dimension(5,b%ngl) :: ql, qr
+      real :: nx, ny, un
+      real :: wq
+      integer :: iface, i, il, jl, kl, ir, jr, kr
+      integer :: iel, ier, ip
+      integer :: iquad, ivar, k
+      real :: flux_qu, flux_qv, hi, alpha, beta, iflux
+      real :: ql_cur(5), qr_cur(5)
+      integer :: ngl_f, nlayers_f, nface_f
 
       beta  = 0.5
       alpha = 1.0 - beta
       iflux = 0.0
 
-      do concurrent(k = 1:inp%nlayers, iface=1:G%nface, iquad=1:b%ngl)
+      ngl_f     = b%ngl
+      nlayers_f = inp%nlayers
+      nface_f   = G%nface
+
+      !$acc data present(G%face, G%face_type, G%intma,                          &
+      !$acc              mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face,     &
+      !$acc              b%psi,                                                   &
+      !$acc              btp%graduvb_face_ave,                                   &
+      !$acc              bcl%dpp_graduv, bcl%dpprime_visc,                       &
+      !$acc              rhs)
+
+      !$acc parallel loop gang                                                    &
+      !$acc   private(ql_cur, qr_cur, flux_uv_visc_face, qul, qur, qvl, qvr,   &
+      !$acc           qu_mean, qv_mean,                                           &
+      !$acc           nx, ny, un, wq, flux_qu, flux_qv, hi,                      &
+      !$acc           iel, ier, ip, il, jl, kl, ir, jr, kr, iquad, k, i, ivar)  &
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f)
+      do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
 
          iel = G%face(7,iface)
          ier = G%face(8,iface)
 
-         nx = mf%normal_vector(1,iquad,1,iface)
-         ny = mf%normal_vector(2,iquad,1,iface)
+         !$acc loop seq
+         do k = 1, nlayers_f
+            !$acc loop seq
+            do iquad = 1, ngl_f
 
-         il = mf%imapl(1,iquad,1,iface)
-         jl = mf%imapl(2,iquad,1,iface)
-         kl = mf%imapl(3,iquad,1,iface)
-         ip = G%intma(il,jl,kl,iel)
+               nx = mf%normal_vector(1,iquad,1,iface)
+               ny = mf%normal_vector(2,iquad,1,iface)
 
-         ql(1,iquad) = bcl%dpp_graduv(1,ip,k)
-         ql(2,iquad) = bcl%dpp_graduv(2,ip,k)
-         ql(3,iquad) = bcl%dpp_graduv(3,ip,k)
-         ql(4,iquad) = bcl%dpp_graduv(4,ip,k)
-         ql(5,iquad) = bcl%dpprime_visc(ip,k)
+               il = mf%imapl(1,iquad,1,iface)
+               jl = mf%imapl(2,iquad,1,iface)
+               kl = mf%imapl(3,iquad,1,iface)
+               ip = G%intma(il,jl,kl,iel)
 
-         if (ier > 0) then
+               ql_cur(1) = bcl%dpp_graduv(1,ip,k)
+               ql_cur(2) = bcl%dpp_graduv(2,ip,k)
+               ql_cur(3) = bcl%dpp_graduv(3,ip,k)
+               ql_cur(4) = bcl%dpp_graduv(4,ip,k)
+               ql_cur(5) = bcl%dpprime_visc(ip,k)
 
-            ir = mf%imapr(1,iquad,1,iface)
-            jr = mf%imapr(2,iquad,1,iface)
-            kr = mf%imapr(3,iquad,1,iface)
-            ip = G%intma(ir,jr,kr,ier)
+               if (ier > 0) then
+                  ir = mf%imapr(1,iquad,1,iface)
+                  jr = mf%imapr(2,iquad,1,iface)
+                  kr = mf%imapr(3,iquad,1,iface)
+                  ip = G%intma(ir,jr,kr,ier)
+                  qr_cur(1) = bcl%dpp_graduv(1,ip,k)
+                  qr_cur(2) = bcl%dpp_graduv(2,ip,k)
+                  qr_cur(3) = bcl%dpp_graduv(3,ip,k)
+                  qr_cur(4) = bcl%dpp_graduv(4,ip,k)
+                  qr_cur(5) = bcl%dpprime_visc(ip,k)
+               else
+                  qr_cur = ql_cur
+                  if (ier == -4) then
+                     un = ql_cur(1)*nx + ql_cur(2)*ny
+                     qr_cur(1) = ql_cur(1) - 2.0*un*nx
+                     qr_cur(2) = ql_cur(2) - 2.0*un*ny
+                     un = ql_cur(3)*nx + ql_cur(4)*ny
+                     qr_cur(3) = ql_cur(3) - 2.0*un*nx
+                     qr_cur(4) = ql_cur(4) - 2.0*un*ny
+                  end if
+               end if
 
-            qr(1,iquad) = bcl%dpp_graduv(1,ip,k)
-            qr(2,iquad) = bcl%dpp_graduv(2,ip,k)
-            qr(3,iquad) = bcl%dpp_graduv(3,ip,k)
-            qr(4,iquad) = bcl%dpp_graduv(4,ip,k)
-            qr(5,iquad) = bcl%dpprime_visc(ip,k)
+               !$acc loop seq
+               do ivar = 1, 4
+                  flux_uv_visc_face(ivar,1) = ql_cur(5)*btp%graduvb_face_ave(ivar,1,iquad,iface) + ql_cur(ivar)
+                  flux_uv_visc_face(ivar,2) = qr_cur(5)*btp%graduvb_face_ave(ivar,2,iquad,iface) + qr_cur(ivar)
+               end do
 
-         else
-            qr(1,iquad) = ql(1,iquad)
-            qr(2,iquad) = ql(2,iquad)
-            qr(3,iquad) = ql(3,iquad)
-            qr(4,iquad) = ql(4,iquad)
-            qr(5,iquad) = ql(5,iquad)
+               qul(1) = flux_uv_visc_face(1,1);  qul(2) = flux_uv_visc_face(2,1)
+               qvl(1) = flux_uv_visc_face(3,1);  qvl(2) = flux_uv_visc_face(4,1)
+               qur(1) = flux_uv_visc_face(1,2);  qur(2) = flux_uv_visc_face(2,2)
+               qvr(1) = flux_uv_visc_face(3,2);  qvr(2) = flux_uv_visc_face(4,2)
 
-            if (ier == -4) then
+               qu_mean(1) = alpha*qul(1) + beta*qur(1)
+               qu_mean(2) = alpha*qul(2) + beta*qur(2)
+               qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
+               qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
 
-               un = ql(1,iquad)*nx + ql(2,iquad)*ny
-               qr(1,iquad) = ql(1,iquad) - 2.0*un*nx
-               qr(2,iquad) = ql(2,iquad) - 2.0*un*ny
+               wq = mf%jac_face(iquad,1,iface)
+               flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny
+               flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny
 
-               un = ql(3,iquad)*nx + ql(4,iquad)*ny
-               qr(3,iquad) = ql(3,iquad) - 2.0*un*nx
-               qr(4,iquad) = ql(4,iquad) - 2.0*un*ny
-            end if
-         end if
+               !$acc loop seq
+               do i = 1, ngl_f
+                  hi = b%psi(i,iquad)
+                  il = mf%imapl(1,i,1,iface)
+                  jl = mf%imapl(2,i,1,iface)
+                  kl = mf%imapl(3,i,1,iface)
+                  ip = G%intma(il,jl,kl,iel)
+                  !$acc atomic update
+                  rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
+                  !$acc atomic update
+                  rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
+               end do
 
-         do ivar = 1, 4
-            flux_uv_visc_face(ivar,1) = ql(5,iquad)*btp%graduvb_face_ave(ivar,1,iquad,iface) + ql(ivar,iquad)
-            flux_uv_visc_face(ivar,2) = qr(5,iquad)*btp%graduvb_face_ave(ivar,2,iquad,iface) + qr(ivar,iquad)
-         end do
+               if (ier > 0) then
+                  !$acc loop seq
+                  do i = 1, ngl_f
+                     hi = b%psi(i,iquad)
+                     ir = mf%imapr(1,i,1,iface)
+                     jr = mf%imapr(2,i,1,iface)
+                     kr = mf%imapr(3,i,1,iface)
+                     ip = G%intma(ir,jr,kr,ier)
+                     !$acc atomic update
+                     rhs(1,ip,k) = rhs(1,ip,k) - wq*hi*flux_qu
+                     !$acc atomic update
+                     rhs(2,ip,k) = rhs(2,ip,k) - wq*hi*flux_qv
+                  end do
+               end if
 
-         qul(1) = flux_uv_visc_face(1,1)
-         qul(2) = flux_uv_visc_face(2,1)
-         qvl(1) = flux_uv_visc_face(3,1)
-         qvl(2) = flux_uv_visc_face(4,1)
+            end do !iquad
+         end do !k
+      end do !iface
+      !$acc end parallel loop
 
-         qur(1) = flux_uv_visc_face(1,2)
-         qur(2) = flux_uv_visc_face(2,2)
-         qvr(1) = flux_uv_visc_face(3,2)
-         qvr(2) = flux_uv_visc_face(4,2)
-
-         qu_mean(1) = alpha*qul(1) + beta*qur(1)
-         qu_mean(2) = alpha*qul(2) + beta*qur(2)
-         qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
-         qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
-
-         wq = mf%jac_face(iquad,1,iface)
-
-         flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny
-         flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny
-
-         do i = 1, b%ngl
-            hi = b%psi(i,iquad)
-            il = mf%imapl(1,i,1,iface)
-            jl = mf%imapl(2,i,1,iface)
-            kl = mf%imapl(3,i,1,iface)
-            ip = G%intma(il,jl,kl,iel)
-
-            rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
-            rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
-         end do !i
-
-         if (ier > 0) then
-            do i = 1, b%ngl
-               hi = b%psi(i,iquad)
-               ir = mf%imapr(1,i,1,iface)
-               jr = mf%imapr(2,i,1,iface)
-               kr = mf%imapr(3,i,1,iface)
-               ip = G%intma(ir,jr,kr,ier)
-
-               rhs(1,ip,k) = rhs(1,ip,k) - wq*hi*flux_qu
-               rhs(2,ip,k) = rhs(2,ip,k) - wq*hi*flux_qv
-            end do !i
-         end if !ier
-      end do !k, iface, iquad
+      !$acc end data
 
    end subroutine bcl_create_rhs_laplacian_flux
 

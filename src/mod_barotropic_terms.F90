@@ -12,7 +12,6 @@ module mod_barotropic_terms
 
     public :: &
                 btp_mom_boundary_df, &
-                compute_gradient_uv, &
                 btp_bcl_coeffs_qdf
 
     contains
@@ -93,21 +92,54 @@ module mod_barotropic_terms
         real, dimension(3,G%npoin,inp%nlayers), intent(in) :: qprime_df
 
         real, dimension(4,G%npoin) :: graduv
-        real, dimension(2,G%npoin) :: uv
-        integer :: k, I
+        integer :: k, I, Iq, ip, npoin_l, nlayers_l, npts_l
+        real :: dhdx, dhdy
 
-        btp%btp_dpp_graduv = 0.0
-        btp%pbprime_visc   = 0.0
+        npoin_l   = G%npoin
+        nlayers_l = inp%nlayers
+        npts_l    = b%npts
 
+        !$acc data create(graduv) &
+        !$acc      present(bcl%dpprime_visc, bcl%dpp_graduv, bcl%dpp_uvp, &
+        !$acc              btp%btp_dpp_graduv, btp%pbprime_visc, qprime_df)
+
+        !$acc kernels present(btp%btp_dpp_graduv, btp%pbprime_visc, bcl%dpprime_visc, qprime_df)
+        btp%btp_dpp_graduv    = 0.0
+        btp%pbprime_visc      = 0.0
         bcl%dpprime_visc(:,:) = qprime_df(1,:,:)
+        !$acc end kernels
 
-        do k = 1, inp%nlayers
+        ! Sequential over k: each GPU kernel completes before the next k starts.
+        ! Accumulation into btp% arrays is correct — no concurrent k-iterations.
+        do k = 1, nlayers_l
 
-            uv = qprime_df(2:3,:,k)
-            call compute_gradient_uv(G, b, tsp, graduv, uv)
+            ! Gather velocity gradient directly from qprime_df — no races on graduv.
+            !$acc kernels present(graduv)
+            graduv = 0.0
+            !$acc end kernels
 
-            do I = 1, G%npoin
+            !$acc parallel loop gang &
+            !$acc    present(graduv, qprime_df, tsp%index_df, tsp%dpsidx_df, tsp%dpsidy_df) &
+            !$acc    firstprivate(npoin_l, npts_l, k) private(I, dhdx, dhdy)
+            do Iq = 1, npoin_l
+                !$acc loop seq
+                do ip = 1, npts_l
+                    I    = tsp%index_df(ip,Iq)
+                    dhdx = tsp%dpsidx_df(ip,Iq)
+                    dhdy = tsp%dpsidy_df(ip,Iq)
+                    graduv(1,Iq) = graduv(1,Iq) + dhdx*qprime_df(2,I,k)
+                    graduv(2,Iq) = graduv(2,Iq) + dhdy*qprime_df(2,I,k)
+                    graduv(3,Iq) = graduv(3,Iq) + dhdx*qprime_df(3,I,k)
+                    graduv(4,Iq) = graduv(4,Iq) + dhdy*qprime_df(3,I,k)
+                end do
+            end do
+            !$acc end parallel loop
 
+            !$acc parallel loop gang &
+            !$acc    present(bcl%dpp_graduv, bcl%dpprime_visc, bcl%dpp_uvp, &
+            !$acc            btp%btp_dpp_graduv, btp%pbprime_visc, graduv, qprime_df) &
+            !$acc    firstprivate(npoin_l, k)
+            do I = 1, npoin_l
                 bcl%dpp_graduv(1,I,k) = bcl%dpprime_visc(I,k)*graduv(1,I)
                 bcl%dpp_graduv(2,I,k) = bcl%dpprime_visc(I,k)*graduv(2,I)
                 bcl%dpp_graduv(3,I,k) = bcl%dpprime_visc(I,k)*graduv(3,I)
@@ -116,49 +148,18 @@ module mod_barotropic_terms
                 bcl%dpp_uvp(1,I,k) = bcl%dpprime_visc(I,k)*qprime_df(2,I,k)
                 bcl%dpp_uvp(2,I,k) = bcl%dpprime_visc(I,k)*qprime_df(3,I,k)
 
-                btp%btp_dpp_graduv(:,I) = btp%btp_dpp_graduv(:,I) + bcl%dpp_graduv(:,I,k)
-                btp%pbprime_visc(I)     = btp%pbprime_visc(I) + bcl%dpprime_visc(I,k)
+                btp%btp_dpp_graduv(1,I) = btp%btp_dpp_graduv(1,I) + bcl%dpp_graduv(1,I,k)
+                btp%btp_dpp_graduv(2,I) = btp%btp_dpp_graduv(2,I) + bcl%dpp_graduv(2,I,k)
+                btp%btp_dpp_graduv(3,I) = btp%btp_dpp_graduv(3,I) + bcl%dpp_graduv(3,I,k)
+                btp%btp_dpp_graduv(4,I) = btp%btp_dpp_graduv(4,I) + bcl%dpp_graduv(4,I,k)
+                btp%pbprime_visc(I)     = btp%pbprime_visc(I)     + bcl%dpprime_visc(I,k)
             end do
+            !$acc end parallel loop
+
         end do
+
+        !$acc end data
 
     end subroutine btp_bcl_coeffs_qdf
-
-    subroutine compute_gradient_uv(G, b, tsp, grad_uv, uv)
-
-        use mod_grid,   only: grid
-        use mod_basis,  only: basis
-        use mod_tensor, only: tensor_CS
-
-        implicit none
-
-        type(grid),      intent(in)  :: G
-        type(basis),     intent(in)  :: b
-        type(tensor_CS), intent(in)  :: tsp
-
-        real, dimension(2,G%npoin), intent(in)  :: uv
-        real, dimension(4,G%npoin), intent(out) :: grad_uv
-
-        integer :: Iq, I, ip
-        real :: dhdx, dhdy
-
-        grad_uv = 0.0
-
-        do concurrent(Iq = 1:G%npoin)
-
-            do ip = 1, b%npts
-
-                I    = tsp%index_df(ip,Iq)
-                dhdx = tsp%dpsidx_df(ip,Iq)
-                dhdy = tsp%dpsidy_df(ip,Iq)
-
-                grad_uv(1,Iq) = grad_uv(1,Iq) + dhdx*uv(1,I)
-                grad_uv(2,Iq) = grad_uv(2,Iq) + dhdy*uv(1,I)
-                grad_uv(3,Iq) = grad_uv(3,Iq) + dhdx*uv(2,I)
-                grad_uv(4,Iq) = grad_uv(4,Iq) + dhdy*uv(2,I)
-
-            end do
-        end do
-
-    end subroutine compute_gradient_uv
 
 end module mod_barotropic_terms

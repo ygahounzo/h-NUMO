@@ -102,11 +102,7 @@ subroutine bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
 
    ! DG - Discontinuous communicator
 
-   !Load all the boundary data into a vector
-   call pack_data_dg_df_bcl(G, inp, b, mf, par, ref%send_data_bcl, qprime_df)
-
-   !non-blocking sends-receives: message size=nmessage
-   call send_bound_dg_general_bcl(G, b, inp, par, ref%send_data_bcl, ref%recv_data_bcl, mpic%nreq, mpic%ireq, mpic%status)
+   call pack_and_send_df_bcl(G, inp, b, mf, par, ref, ref%send_data_bcl, ref%recv_data_bcl, qprime_df, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine bcl_create_precommunicator
 
@@ -134,14 +130,9 @@ subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_gra
    real, dimension(5, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
    real, dimension(G%npoin, inp%nlayers),    intent(in) :: dpprime_visc
 
-   ! DG - Discontinuous communicator
-
-   !Load all the boundary data into a vector
-   call pack_data_dg_df_bcl_lap(G, b, mf, par, ref%send_data_lap_bcl, dpp_graduv, dpprime_visc, inp%nlayers)
-
-   !non-blocking sends-receives: message size=nmessage
-   call send_bound_dg_general_lap_bcl(G, b, par, ref%send_data_lap_bcl, ref%recv_data_lap_bcl, inp%nlayers, &
-      mpic%nreq, mpic%ireq, mpic%status)
+   ! GPU pack + GPU-direct MPI non-blocking send/receive.
+   call pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, ref%send_data_lap_bcl, ref%recv_data_lap_bcl, &
+      dpp_graduv, dpprime_visc, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine bcl_lap_create_precommunicator
 
@@ -253,10 +244,10 @@ subroutine bcl_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic,
    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
    !Map Recv buffer to the boundary of the Receiver (unpack data)
-   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl)
+   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl, ref%nboun_valid)
 
    !Build Inviscid Fluxes On Element Boundary
-   call create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl)
+   call create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, ref%q_send_bcl, ref%q_recv_bcl)
 
 end subroutine bcl_create_postcommunicator
 
@@ -291,7 +282,7 @@ subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, ref, 
    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
    !Map Recv buffer to the boundary of the Receiver (unpack data)
-   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl)
+   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl, ref%nboun_valid)
 
    !Build Inviscid Fluxes On Element Boundary
    call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
@@ -331,7 +322,7 @@ subroutine bcl_create_postcommunicator_momentum(G, inp, b, mf, par, btp, init, r
    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
    !Map Recv buffer to the boundary of the Receiver (unpack data)
-   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl)
+   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl, ref%nboun_valid)
 
    !Build Inviscid Fluxes On Element Boundary
    call create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
@@ -368,12 +359,12 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
    !To build inter-processor fluxes, All Procs Must Wait
    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
-   !Map Recv buffer to the boundary of the Receiver (unpack data)
+   ! GPU unpack from flat MPI buffer into q_send/q_recv.
    call unpack_data_dg_general_lap_bcl(G, b, par, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, ref%send_data_lap_bcl, &
-      ref%recv_data_lap_bcl, inp%nlayers)
+      ref%recv_data_lap_bcl, inp%nlayers, ref%nboun_valid)
 
-   !Build Inviscid Fluxes On Element Boundary
-   call create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, inp%nlayers, 0)
+   ! GPU face-gang scatter into rhs on device.
+   call create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, inp%nlayers, 0)
 
 end subroutine bcl_create_rhs_lap_postcommunicator_df
 

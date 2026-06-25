@@ -170,7 +170,7 @@ subroutine unpack_data_dg_general_lap(G, b, par, q_send, q_recv, send_data, recv
 
 end subroutine unpack_data_dg_general_lap
 
-subroutine unpack_data_dg_general_bcl(G, b, inp, par, q_send, q_recv, send_data, recv_data)
+subroutine unpack_data_dg_general_bcl(G, b, inp, par, q_send, q_recv, send_data, recv_data, nboun_valid)
 
    use mod_basis,    only: basis
    use mod_grid,     only: grid
@@ -183,42 +183,42 @@ subroutine unpack_data_dg_general_bcl(G, b, inp, par, q_send, q_recv, send_data,
    type(basis),       intent(in) :: b
    type(input),       intent(in) :: inp
    type(parallel_CS), intent(in) :: par
+   integer,           intent(in) :: nboun_valid
 
    real, dimension(3*inp%nlayers,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
    real, dimension(3*inp%nlayers*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
-   integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-   integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, index, ll
+   integer :: kk, inode, ivar, ll
+   integer :: ngl_f, nlayers_f
+   integer :: ii
 
-   ii = 0
-   jj = 1
-   kk = 1
+   ngl_f     = b%ngl
+   nlayers_f = inp%nlayers
 
-   do inbh = 1, par%num_nbh
-      do ib = 1, par%num_send_recv(inbh)
-         iface  = par%nbh_send_recv(jj)
-         imulti = par%nbh_send_recv_multi(jj)
-
-         if (G%face_type(iface) == 2 .and. imulti > 0) then
-            do ll = 1, inp%nlayers
-               index = (ll-1)*3
-               do inode = 1, b%ngl
-                  do ivar = 1, 3
-                     ii = ii + 1
-                     q_send(index+ivar,inode,kk) = send_data(ii)
-                     q_recv(index+ivar,inode,kk) = recv_data(ii)
-                  end do
-               end do
+   ! Each gang unpacks one boundary face using the same flat-buffer index
+   ! formula as pack_and_send_df_bcl: (kk-1)*nlayers*ngl*3 + (ll-1)*ngl*3 + (inode-1)*3 + ivar
+   !$acc parallel loop gang &
+   !$acc    present(send_data, recv_data, q_send, q_recv) &
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid)
+   do kk = 1, nboun_valid
+      !$acc loop seq
+      do ll = 1, nlayers_f
+         !$acc loop vector private(ii)
+         do inode = 1, ngl_f
+            !$acc loop seq
+            do ivar = 1, 3
+               ii = (kk-1)*nlayers_f*ngl_f*3 + (ll-1)*ngl_f*3 + (inode-1)*3 + ivar
+               q_send((ll-1)*3+ivar, inode, kk) = send_data(ii)
+               q_recv((ll-1)*3+ivar, inode, kk) = recv_data(ii)
             end do
-            kk = kk + 1
-         end if
-         jj = jj + 1
+         end do
       end do
    end do
+   !$acc end parallel loop
 
 end subroutine unpack_data_dg_general_bcl
 
-subroutine unpack_data_dg_general_lap_bcl(G, b, par, q_send, q_recv, send_data, recv_data, nlayers)
+subroutine unpack_data_dg_general_lap_bcl(G, b, par, q_send, q_recv, send_data, recv_data, nlayers, nboun_valid)
 
    use mod_basis,    only: basis
    use mod_grid,     only: grid
@@ -229,39 +229,35 @@ subroutine unpack_data_dg_general_lap_bcl(G, b, par, q_send, q_recv, send_data, 
    type(grid),        intent(in) :: G
    type(basis),       intent(in) :: b
    type(parallel_CS), intent(in) :: par
-   integer,           intent(in) :: nlayers
+   integer,           intent(in) :: nlayers, nboun_valid
 
    real, dimension(5*nlayers,b%ngl,par%num_send_recv_total), intent(out) :: q_send, q_recv
    real, dimension(5*nlayers*b%ngl*par%num_send_recv_total), intent(in)  :: send_data, recv_data
 
-   integer :: ii, jj, kk, i, inbh, ib, ifaces, inode, jnode, ivar, ilocl, ilocr
-   integer :: nq_i, nq_j, plane_ij, iface, imulti, ftype, ll, index
+   integer :: kk, ll, inode, ivar
+   integer :: ngl_f, nlayers_f, nboun_valid_f
 
-   ii = 0
-   jj = 1
-   kk = 1
+   ngl_f         = b%ngl
+   nlayers_f     = nlayers
+   nboun_valid_f = nboun_valid
 
-   do inbh = 1, par%num_nbh
-      do ib = 1, par%num_send_recv(inbh)
-         iface  = par%nbh_send_recv(jj)
-         imulti = par%nbh_send_recv_multi(jj)
-
-         if (G%face_type(iface) == 2 .and. imulti > 0) then
-            do ll = 1, nlayers
-               index = (ll-1)*5
-               do inode = 1, b%ngl
-                  do ivar = 1, 5
-                     ii = ii + 1
-                     q_send(index+ivar,inode,kk) = send_data(ii)
-                     q_recv(index+ivar,inode,kk) = recv_data(ii)
-                  end do
-               end do
+   !$acc parallel loop gang &
+   !$acc    present(send_data, recv_data, q_send, q_recv) &
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f)
+   do kk = 1, nboun_valid_f
+      !$acc loop seq
+      do ll = 1, nlayers_f
+         !$acc loop vector
+         do inode = 1, ngl_f
+            !$acc loop seq
+            do ivar = 1, 5
+               q_send((ll-1)*5+ivar, inode, kk) = send_data((kk-1)*nlayers_f*ngl_f*5 + (ll-1)*ngl_f*5 + (inode-1)*5 + ivar)
+               q_recv((ll-1)*5+ivar, inode, kk) = recv_data((kk-1)*nlayers_f*ngl_f*5 + (ll-1)*ngl_f*5 + (inode-1)*5 + ivar)
             end do
-            kk = kk + 1
-         end if
-         jj = jj + 1
+         end do
       end do
    end do
+   !$acc end parallel loop
 
 end subroutine unpack_data_dg_general_lap_bcl
 
@@ -1752,6 +1748,197 @@ subroutine send_bound_dg_general_bcl(G, b, inp, par, send_data, recv_data, nreq,
    end do
 
 end subroutine send_bound_dg_general_bcl
+
+subroutine pack_and_send_df_bcl(G, inp, b, mf, par, ref, send_data, recv_data, q, nreq, ireq, status)
+
+   use mod_basis,         only: basis
+   use mod_face,          only: face_CS
+   use mod_grid,          only: grid
+   use mod_parallel,      only: parallel_CS
+   use mod_input,         only: input
+   use mod_ref,           only: mref
+   use mpi
+   use mod_mpi_utilities, only: MPI_PRECISION
+
+   implicit none
+
+   type(grid),        intent(in)  :: G
+   type(basis),       intent(in)  :: b
+   type(face_CS),     intent(in)  :: mf
+   type(input),       intent(in)  :: inp
+   type(parallel_CS), intent(in)  :: par
+   type(mref),        intent(in)  :: ref
+
+   real, intent(out) :: send_data(3*inp%nlayers*b%ngl*par%num_send_recv_total)
+   real, intent(out) :: recv_data(3*inp%nlayers*b%ngl*par%num_send_recv_total)
+   real, intent(in)  :: q(3, G%npoin, inp%nlayers)
+   integer, intent(out) :: nreq
+   integer, intent(out) :: ireq(2*par%num_nbh)
+   integer, intent(out) :: status(mpi_status_size, 2*par%num_nbh)
+
+   integer :: kk, jj, i, inbh, ib, iface, el, ivar, inode, ip, ll
+   integer :: ngl_f, nlayers_f, nboun_valid_f
+   integer :: nqp, istart, iend, idest, ierr
+
+   ngl_f         = b%ngl
+   nlayers_f     = inp%nlayers
+   nboun_valid_f = ref%nboun_valid
+
+   ! GPU pack: each gang handles one boundary face from the precomputed list.
+   !$acc parallel loop gang &
+   !$acc    present(G%face, G%intma, mf%imapl, q, send_data, ref%face_pack_list) &
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f)
+   do kk = 1, nboun_valid_f
+      iface = ref%face_pack_list(kk)
+      el    = G%face(7, iface)
+      !$acc loop seq
+      do ll = 1, nlayers_f
+         !$acc loop vector private(ip)
+         do inode = 1, ngl_f
+            ip = G%intma(mf%imapl(1,inode,1,iface), &
+                         mf%imapl(2,inode,1,iface), &
+                         mf%imapl(3,inode,1,iface), el)
+            !$acc loop seq
+            do ivar = 1, 3
+               send_data((kk-1)*nlayers_f*ngl_f*3 + (ll-1)*ngl_f*3 + (inode-1)*3 + ivar) = q(ivar,ip,ll)
+            end do
+         end do
+      end do
+   end do
+   !$acc end parallel loop
+
+   ! GPU-direct non-blocking send/receive per neighbor.
+   nreq   = 0
+   iend   = 0
+   jj     = 1
+   status = 0
+
+   !$acc host_data use_device(send_data, recv_data)
+   do inbh = 1, par%num_nbh
+      nqp = 0
+      do ib = 1, par%num_send_recv(inbh)
+         do i = 1, par%nbh_send_recv_multi(jj)
+            nqp = nqp + ngl_f * (3*nlayers_f)
+         end do
+         jj = jj + 1
+      end do
+
+      idest  = par%nbh_proc(inbh)
+      nreq   = nreq + 1
+      istart = iend + 1
+      iend   = istart + nqp - 1
+
+      if (nqp > 0) then
+         call mpi_irecv(recv_data(istart:iend), nqp, &
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq), ierr)
+         call mpi_isend(send_data(istart:iend), nqp, &
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq+1), ierr)
+      else
+         ireq(nreq)   = MPI_REQUEST_NULL
+         ireq(nreq+1) = MPI_REQUEST_NULL
+      end if
+      nreq = nreq + 1
+   end do
+   !$acc end host_data
+
+end subroutine pack_and_send_df_bcl
+
+subroutine pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, send_data, recv_data, &
+                                     dpp_graduv, dpprime_visc, nreq, ireq, status)
+
+   use mod_basis,         only: basis
+   use mod_face,          only: face_CS
+   use mod_grid,          only: grid
+   use mod_parallel,      only: parallel_CS
+   use mod_input,         only: input
+   use mod_ref,           only: mref
+   use mpi
+   use mod_mpi_utilities, only: MPI_PRECISION
+
+   implicit none
+
+   type(grid),        intent(in)  :: G
+   type(basis),       intent(in)  :: b
+   type(face_CS),     intent(in)  :: mf
+   type(input),       intent(in)  :: inp
+   type(parallel_CS), intent(in)  :: par
+   type(mref),        intent(in)  :: ref
+
+   real, intent(out) :: send_data(5*inp%nlayers*b%ngl*par%num_send_recv_total)
+   real, intent(out) :: recv_data(5*inp%nlayers*b%ngl*par%num_send_recv_total)
+   real, intent(in)  :: dpp_graduv(4, G%npoin, inp%nlayers)
+   real, intent(in)  :: dpprime_visc(G%npoin, inp%nlayers)
+   integer, intent(out) :: nreq
+   integer, intent(out) :: ireq(2*par%num_nbh)
+   integer, intent(out) :: status(mpi_status_size, 2*par%num_nbh)
+
+   integer :: kk, jj, i, inbh, ib, iface, el, ivar, ip, ll, inode
+   integer :: ngl_f, nlayers_f, nboun_valid_f
+   integer :: nqp, istart, iend, idest, ierr
+
+   ngl_f         = b%ngl
+   nlayers_f     = inp%nlayers
+   nboun_valid_f = ref%nboun_valid
+
+   ! GPU pack: each gang handles one boundary face; 5 vars per node
+   ! (ivar=1..4 from dpp_graduv, ivar=5 from dpprime_visc).
+   !$acc parallel loop gang &
+   !$acc    present(G%face, G%intma, mf%imapl, dpp_graduv, dpprime_visc, send_data, ref%face_pack_list) &
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f)
+   do kk = 1, nboun_valid_f
+      iface = ref%face_pack_list(kk)
+      el    = G%face(7, iface)
+      !$acc loop seq
+      do ll = 1, nlayers_f
+         !$acc loop vector private(ip)
+         do inode = 1, ngl_f
+            ip = G%intma(mf%imapl(1,inode,1,iface), &
+                         mf%imapl(2,inode,1,iface), &
+                         mf%imapl(3,inode,1,iface), el)
+            !$acc loop seq
+            do ivar = 1, 4
+               send_data((kk-1)*nlayers_f*ngl_f*5 + (ll-1)*ngl_f*5 + (inode-1)*5 + ivar) = dpp_graduv(ivar,ip,ll)
+            end do
+            send_data((kk-1)*nlayers_f*ngl_f*5 + (ll-1)*ngl_f*5 + (inode-1)*5 + 5) = dpprime_visc(ip,ll)
+         end do
+      end do
+   end do
+   !$acc end parallel loop
+
+   nreq   = 0
+   iend   = 0
+   jj     = 1
+   status = 0
+
+   !$acc host_data use_device(send_data, recv_data)
+   do inbh = 1, par%num_nbh
+      nqp = 0
+      do ib = 1, par%num_send_recv(inbh)
+         do i = 1, par%nbh_send_recv_multi(jj)
+            nqp = nqp + ngl_f * (5*nlayers_f)
+         end do
+         jj = jj + 1
+      end do
+
+      idest  = par%nbh_proc(inbh)
+      nreq   = nreq + 1
+      istart = iend + 1
+      iend   = istart + nqp - 1
+
+      if (nqp > 0) then
+         call mpi_irecv(recv_data(istart:iend), nqp, &
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq), ierr)
+         call mpi_isend(send_data(istart:iend), nqp, &
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq+1), ierr)
+      else
+         ireq(nreq)   = MPI_REQUEST_NULL
+         ireq(nreq+1) = MPI_REQUEST_NULL
+      end if
+      nreq = nreq + 1
+   end do
+   !$acc end host_data
+
+end subroutine pack_and_send_df_bcl_lap
 
 subroutine send_bound_dg_general_lap_bcl(G, b, par, send_data, recv_data, nlayers, nreq, ireq, status)
 

@@ -53,59 +53,93 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
   real, dimension(4,G%npoin)             :: qbp_df
   integer :: k, ik
-  real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df, rhs
+  real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df
   real, dimension(2,G%npoin,inp%nlayers) :: uv_df
-  real :: dtt
+  real :: dtt, a1, a2
+  !$acc declare create(q0_df, q1_df, uv_df)
 
+  ! qbp_df saves the initial qb_df on host for the ES branch reset each stage.
+  qbp_df = qb_df
+
+  ! Upload q_df and qb_df; keep them resident for the full integrator.
+  !$acc data copyin(q_df, qb_df)
+
+  ! Initialise stage arrays on device.
+  !$acc kernels present(q0_df, q1_df, q_df)
   q0_df = q_df
   q1_df = q_df
-
-  qbp_df = qb_df
+  !$acc end kernels
 
   do ik = 1, inp%kstages_bcl
 
+    ! Read SSPRK coefficients on CPU; they become firstprivate scalars in kernels.
     dtt = inp%dt * init%ssprk_beta_bcl(ik)
+    a1  = init%ssprk_a_bcl(ik,1)
+    a2  = init%ssprk_a_bcl(ik,2)
 
+    ! GPU: compute baroclinic primed variables from the current stage state.
+    ! Writes bcl%qprime_df on device — no host upload needed before create_rhs_bcl.
     call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q1_df, qb_df)
+
+    ! GPU: compute bcl/btp coefficient arrays (dpp_graduv, dpprime_visc, etc.).
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
 
-    ! Always sync — create_rhs_bcl reads bcl%qprime_df from device every stage.
-    !$acc update device(bcl%qprime_df)
-
     if (ik == 1 .and. inp%rk_bcl_FS) then
-      ! FS: BTP at stage 1 only, full N_btp
+      ! FS: BTP at stage 1 only, full N_btp.
+      ! ti_barotropic_ssprk_mlswe uploads qb_df internally before use.
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
 
     elseif (.not. inp%rk_bcl_FS) then
-      ! ES: BTP at every stage with N_btp scaled to the stage dt
+      ! ES: restore qb_df to the stage-0 value on host; BTP re-uploads it.
       qb_df      = qbp_df
       init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
     endif
+    ! After ti_barotropic_ssprk_mlswe: qb_df host and device are both current.
 
-    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, bcl%qprime_df, q1_df)
+    ! GPU: build baroclinic RHS; rhs_bcl downloaded to host inside but device copy valid.
+    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q1_df)
 
+    ! GPU SSPRK combination: q_df = a1*q0 + a2*q1 + dt*rhs.
+    !$acc kernels present(q_df, q0_df, q1_df, bcl%rhs_bcl)
     do k = 1, inp%nlayers
-      q_df(1,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(1,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(1,:,k) + dtt*rhs(1,:,k)
-      q_df(2,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(2,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(2,:,k) + dtt*rhs(2,:,k)
-      q_df(3,:,k) = init%ssprk_a_bcl(ik,1)*q0_df(3,:,k) + init%ssprk_a_bcl(ik,2)*q1_df(3,:,k) + dtt*rhs(3,:,k)
+      q_df(1,:,k) = a1*q0_df(1,:,k) + a2*q1_df(1,:,k) + dtt*bcl%rhs_bcl(1,:,k)
+      q_df(2,:,k) = a1*q0_df(2,:,k) + a2*q1_df(2,:,k) + dtt*bcl%rhs_bcl(2,:,k)
+      q_df(3,:,k) = a1*q0_df(3,:,k) + a2*q1_df(3,:,k) + dtt*bcl%rhs_bcl(3,:,k)
     end do
+    !$acc end kernels
 
+    ! Wall BC: potential race at shared corner nodes prevents GPU port.
+    ! Download q_df, apply on CPU, re-upload.
+    !$acc update host(q_df)
     call layer_mom_boundary_df(G, inp, b, mf, q_df)
+    !$acc update device(q_df)
 
-    ! Compute dpprime, uprime and vprime at the quad and nodal points
+    ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
-    do k = 1,inp%nlayers
+    ! GPU: reconstruct momentum from corrected velocity.
+    !$acc kernels present(q_df, uv_df)
+    do k = 1, inp%nlayers
       q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
       q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
     end do
+    !$acc end kernels
 
+    ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
+    ! GPU: save stage result for next stage.
+    !$acc kernels present(q1_df, q_df)
     q1_df = q_df
+    !$acc end kernels
 
   end do
+
+  ! Download final state for the caller.
+  !$acc update host(q_df, qb_df)
+  !$acc end data
+
 end subroutine ti_rk3_bcl

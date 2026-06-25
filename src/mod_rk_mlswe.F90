@@ -56,7 +56,15 @@ contains
 
       !$acc declare create(qb0_df, qb1_df, qb2_df)
 
-      ! Zero-initialise all accumulation buffers
+      ! Zero-initialise all accumulation buffers on device.
+      !$acc kernels present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
+      !$acc                  btp%ope_ave, btp%btp_mass_flux_ave, btp%H_ave,                &
+      !$acc                  btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%ope2_ave_df,        &
+      !$acc                  btp%uvb_face_ave, btp%ope_face_ave, btp%ope2_face_ave,        &
+      !$acc                  btp%btp_mass_flux_face_ave, btp%H_face_ave, btp%Qu_face_ave,  &
+      !$acc                  btp%Qv_face_ave, btp%Quv_face_ave, btp%tau_wind_ave,          &
+      !$acc                  btp%tau_bot_ave, btp%ope2_ave, btp%graduvb_face_ave,          &
+      !$acc                  btp%graduvb_ave)
       btp%one_plus_eta_edge_2_ave = 0.0;  btp%uvb_ave             = 0.0
       btp%uvb_ave_df              = 0.0;  btp%ope_ave             = 0.0
       btp%btp_mass_flux_ave       = 0.0;  btp%H_ave               = 0.0
@@ -69,18 +77,11 @@ contains
       btp%tau_wind_ave            = 0.0;  btp%tau_bot_ave         = 0.0
       btp%ope2_ave                = 0.0;  btp%graduvb_face_ave    = 0.0
       btp%graduvb_ave             = 0.0
+      !$acc end kernels
 
-      ! Push zeroed accumulators to the device so GPU accumulation starts from 0.
-      !$acc update device(btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%tau_bot_ave,  &
-      !$acc               btp%ope_ave, btp%ope2_ave, btp%btp_mass_flux_ave, btp%uvb_ave,     &
-      !$acc               btp%H_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,                  &
-      !$acc               btp%ope_face_ave, btp%ope2_face_ave, btp%btp_mass_flux_face_ave,   &
-      !$acc               btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave,                     &
-      !$acc               btp%graduvb_face_ave, btp%ope2_ave_df, btp%uvb_ave_df,             &
-      !$acc               btp%graduvb_ave)
-
+      !$acc kernels present(qb2_df)
       qb2_df = 0.0
-      !$acc update device(qb2_df)
+      !$acc end kernels
 
       !$acc update device(qb_df)
 
@@ -148,19 +149,16 @@ contains
 
       end do
 
-      ! Download GPU-accumulated averaging variables to host before normalisation.
-      !$acc update host(btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%tau_bot_ave,  &
-      !$acc             btp%ope_ave, btp%ope2_ave, btp%btp_mass_flux_ave, btp%uvb_ave,     &
-      !$acc             btp%H_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,                  &
-      !$acc             btp%ope_face_ave, btp%ope2_face_ave, btp%btp_mass_flux_face_ave,   &
-      !$acc             btp%one_plus_eta_edge_2_ave, btp%uvb_face_ave,                     &
-      !$acc             btp%graduvb_face_ave, btp%ope2_ave_df, btp%uvb_ave_df,              &
-      !$acc             btp%graduvb_ave)
-      !$acc update host(qb_df)
-
-      ! Normalise accumulators to get time averages
+      ! Normalise accumulators on GPU — no host round-trip needed.
       N_inv = 1.0 / real(inp%kstages * init%N_btp)
 
+      !$acc kernels present(btp%uvb_ave_df, btp%graduvb_face_ave, btp%graduvb_ave,         &
+      !$acc                  btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,                   &
+      !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave,               &
+      !$acc                  btp%btp_mass_flux_ave, btp%tau_bot_ave,                        &
+      !$acc                  btp%ope_face_ave, btp%ope2_face_ave, btp%H_face_ave,           &
+      !$acc                  btp%Qu_face_ave, btp%Qv_face_ave, btp%btp_mass_flux_face_ave, &
+      !$acc                  btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_face_ave)
       btp%uvb_ave_df               = N_inv * btp%uvb_ave_df
       btp%graduvb_face_ave         = N_inv * btp%graduvb_face_ave
       btp%graduvb_ave              = N_inv * btp%graduvb_ave
@@ -182,8 +180,14 @@ contains
       btp%one_plus_eta_edge_2_ave  = N_inv * btp%one_plus_eta_edge_2_ave
       btp%uvb_ave                  = N_inv * btp%uvb_ave
       btp%uvb_face_ave             = N_inv * btp%uvb_face_ave
+      !$acc end kernels
 
+      !$acc kernels present(btp%tau_wind_ave)
       btp%tau_wind_ave = btp%tau_wind_ave / real(init%N_btp)
+      !$acc end kernels
+
+      ! qb_df was updated on GPU; callers use it on CPU after this returns.
+      !!$acc update host(qb_df)
 
    end subroutine ti_barotropic_ssprk_mlswe
 
