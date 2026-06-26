@@ -50,11 +50,11 @@ contains
       real, dimension(4,G%npoin),             intent(inout) :: qb_df
       real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
-      real, dimension(4,G%npoin) :: qb0_df, qb1_df, qb2_df
+      real, dimension(4,G%npoin) :: qb0_df, qb2_df
       integer :: mstep, ik, I
       real    :: N_inv, a0, a1, a2, dtt
 
-      !$acc declare create(qb0_df, qb1_df, qb2_df)
+      !$acc declare create(qb0_df, qb2_df)
 
       ! Zero-initialise all accumulation buffers on device.
       !$acc kernels present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
@@ -102,52 +102,44 @@ contains
             a2  = init%ssprk_a(ik,3)
             dtt = inp%dt_btp * init%ssprk_beta(ik)
 
-            !$acc parallel loop present(btp, qb_df, init)
+            call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
+               btp%rhs_btp, qb_df, qprime_df)
+
+            ! Fused: accumulate averages from old qb_df, then SSPRK update in-place.
+            ! Reading qb_df(I) for averages and a1-coefficient happens before the
+            ! write to qb_df(I) within the same thread — no race across nodes.
+            !$acc parallel loop present(qb0_df, qb_df, qb2_df, btp, init, mt) &
+            !$acc    firstprivate(a0, a1, a2, dtt)
             do I = 1, G%npoin
                btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
                btp%uvb_ave_df(1,I) = btp%uvb_ave_df(1,I) + qb_df(3,I) / qb_df(1,I)
                btp%uvb_ave_df(2,I) = btp%uvb_ave_df(2,I) + qb_df(4,I) / qb_df(1,I)
+               qb_df(2,I) = a0*qb0_df(2,I) + a1*qb_df(2,I) + a2*qb2_df(2,I) &
+                            + dtt * (mt%massinv(I) * btp%rhs_btp(1,I))
+               qb_df(3,I) = a0*qb0_df(3,I) + a1*qb_df(3,I) + a2*qb2_df(3,I) &
+                            + dtt * (mt%massinv(I) * (btp%rhs_btp(2,I) + inp%visc_mlswe*btp%rhs_btp_visc(1,I)))
+               qb_df(4,I) = a0*qb0_df(4,I) + a1*qb_df(4,I) + a2*qb2_df(4,I) &
+                            + dtt * (mt%massinv(I) * (btp%rhs_btp(3,I) + inp%visc_mlswe*btp%rhs_btp_visc(2,I)))
+               qb_df(1,I) = qb_df(2,I) + init%pbprime_df(I)
             end do
             !$acc end parallel loop
 
-            call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
-               btp%rhs_btp, qb_df, qprime_df)
-
-            !$acc parallel loop present(qb0_df, qb1_df, qb_df, qb2_df, btp, init, mt)
-            do I = 1, G%npoin
-               qb1_df(2,I) = a0*qb0_df(2,I) + a1*qb_df(2,I) + a2*qb2_df(2,I) &
-                             + dtt * (mt%massinv(I) * btp%rhs_btp(1,I))
-               qb1_df(3,I) = a0*qb0_df(3,I) + a1*qb_df(3,I) + a2*qb2_df(3,I) &
-                             + dtt * (mt%massinv(I) * (btp%rhs_btp(2,I) + inp%visc_mlswe*btp%rhs_btp_visc(1,I)))
-               qb1_df(4,I) = a0*qb0_df(4,I) + a1*qb_df(4,I) + a2*qb2_df(4,I) &
-                             + dtt * (mt%massinv(I) * (btp%rhs_btp(3,I) + inp%visc_mlswe*btp%rhs_btp_visc(2,I)))
-               qb1_df(1,I) = qb1_df(2,I) + init%pbprime_df(I)
-            end do
-            !$acc end parallel loop
-
-            call btp_mom_boundary_df(G, b, mf, qb1_df)
-
-            !$acc parallel loop present(qb_df, qb1_df)
-            do I = 1, G%npoin
-               qb_df(1,I) = qb1_df(1,I); qb_df(2,I) = qb1_df(2,I)
-               qb_df(3,I) = qb1_df(3,I); qb_df(4,I) = qb1_df(4,I)
-            end do
-            !$acc end parallel loop
+            call btp_mom_boundary_df(G, b, mf, qb_df)
 
             if (inp%kstages == 5 .and. ik == 2) then
-               !$acc parallel loop present(qb2_df, qb_df)
-               do I = 1, G%npoin
-                  qb2_df(1,I) = qb_df(1,I); qb2_df(2,I) = qb_df(2,I)
-                  qb2_df(3,I) = qb_df(3,I); qb2_df(4,I) = qb_df(4,I)
-               end do
-               !$acc end parallel loop
+               !$acc kernels present(qb2_df, qb_df)
+               qb2_df = qb_df
+               !$acc end kernels
             end if
 
          end do
 
-         btp%tau_wind_ave = btp%tau_wind_ave + init%tau_wind
-
       end do
+
+      ! tau_wind is constant over sub-steps; skip the broken CPU accumulation loop.
+      !$acc kernels present(btp%tau_wind_ave, init%tau_wind)
+      btp%tau_wind_ave = init%tau_wind
+      !$acc end kernels
 
       ! Normalise accumulators on GPU — no host round-trip needed.
       N_inv = 1.0 / real(inp%kstages * init%N_btp)
@@ -180,10 +172,6 @@ contains
       btp%one_plus_eta_edge_2_ave  = N_inv * btp%one_plus_eta_edge_2_ave
       btp%uvb_ave                  = N_inv * btp%uvb_ave
       btp%uvb_face_ave             = N_inv * btp%uvb_face_ave
-      !$acc end kernels
-
-      !$acc kernels present(btp%tau_wind_ave)
-      btp%tau_wind_ave = btp%tau_wind_ave / real(init%N_btp)
       !$acc end kernels
 
       ! qb_df was updated on GPU; callers use it on CPU after this returns.

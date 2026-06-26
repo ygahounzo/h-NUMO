@@ -359,47 +359,66 @@ contains
 
         real, intent(inout) :: q(3, G%npoin, inp%nlayers)
 
-        integer :: iface, n, il, jl, el, er, ilocl, ilocr, I, kl, k
-        real    :: nx, ny, upnl(inp%nlayers)
+        integer :: iface, n, il, jl, kl, el, er, I, k
+        integer :: nface_l, ngl_l, nlayers_l
+        real    :: nx, ny, upnl_k
 
-        do iface = 1, G%nface
+        nface_l   = G%nface
+        ngl_l     = b%ngl
+        nlayers_l = inp%nlayers
 
-            ilocl = G%face(5,iface)
-            ilocr = G%face(6,iface)
-            el    = G%face(7,iface)
-            er    = G%face(8,iface)
+        ! Gang over faces; seq over face nodes and layers.
+        ! Atomics guard writes at corner nodes shared between two wall faces.
+        !$acc data copy(q)
 
-            if(er == -4) then
-                do n = 1, b%ngl
+        !$acc parallel loop gang &
+        !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector, q) &
+        !$acc    firstprivate(nface_l, ngl_l, nlayers_l) &
+        !$acc    private(il, jl, kl, el, er, I, nx, ny, upnl_k)
+        do iface = 1, nface_l
 
+            el = G%face(7,iface)
+            er = G%face(8,iface)
+
+            if (er == -4) then
+                !$acc loop seq
+                do n = 1, ngl_l
                     il = mf%imapl(1,n,1,iface)
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
-
                     nx = mf%normal_vector(1,n,1,iface)
                     ny = mf%normal_vector(2,n,1,iface)
-
-                    upnl     = q(2,I,:)*nx + q(3,I,:)*ny
-                    q(2,I,:) = q(2,I,:) - upnl*nx
-                    q(3,I,:) = q(3,I,:) - upnl*ny
-
+                    !$acc loop seq
+                    do k = 1, nlayers_l
+                        upnl_k = q(2,I,k)*nx + q(3,I,k)*ny
+                        !$acc atomic update
+                        q(2,I,k) = q(2,I,k) - upnl_k*nx
+                        !$acc atomic update
+                        q(3,I,k) = q(3,I,k) - upnl_k*ny
+                    end do
                 end do
 
-            elseif(er == -2) then
-                do n = 1, b%ngl
-
+            elseif (er == -2) then
+                !$acc loop seq
+                do n = 1, ngl_l
                     il = mf%imapl(1,n,1,iface)
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
-
-                    q(2,I,:) = 0.0
-                    q(3,I,:) = 0.0
-
+                    !$acc loop seq
+                    do k = 1, nlayers_l
+                        !$acc atomic write
+                        q(2,I,k) = 0.0
+                        !$acc atomic write
+                        q(3,I,k) = 0.0
+                    end do
                 end do
             end if
         end do
+        !$acc end parallel loop
+
+        !$acc end data
 
     end subroutine layer_mom_boundary_df
 

@@ -33,7 +33,8 @@ module mod_barotropic_terms
         integer :: iface, il, jl, el, er, I, kl, n
         real :: nx, ny, unl
 
-        !$acc parallel loop present(G, b, mf, qb)
+        !$acc parallel loop present(G%face, G%intma, mf%imapl, mf%normal_vector, qb) &
+        !$acc    private(il, jl, kl, el, er, I, nx, ny, unl)
         do iface = 1, G%nface
 
             el = G%face(7,iface)
@@ -48,8 +49,10 @@ module mod_barotropic_terms
                     I  = G%intma(il,jl,kl,el)
                     nx = mf%normal_vector(1,n,1,iface)
                     ny = mf%normal_vector(2,n,1,iface)
-                    unl     = qb(3,I)*nx + qb(4,I)*ny
+                    unl = qb(3,I)*nx + qb(4,I)*ny
+                    !$acc atomic update
                     qb(3,I) = qb(3,I) - unl*nx
+                    !$acc atomic update
                     qb(4,I) = qb(4,I) - unl*ny
                 end do
 
@@ -60,7 +63,9 @@ module mod_barotropic_terms
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
+                    !$acc atomic write
                     qb(3,I) = 0.0
+                    !$acc atomic write
                     qb(4,I) = 0.0
                 end do
             end if
@@ -91,74 +96,65 @@ module mod_barotropic_terms
 
         real, dimension(3,G%npoin,inp%nlayers), intent(in) :: qprime_df
 
-        real, dimension(4,G%npoin) :: graduv
-        integer :: k, I, Iq, ip, npoin_l, nlayers_l, npts_l
-        real :: dhdx, dhdy
+        integer :: Iq, ip, k, npoin_l, nlayers_l, npts_l, I
+        real :: dhdx, dhdy, dpp
+        real :: du_dx, du_dy, dv_dx, dv_dy
+        real :: btg1, btg2, btg3, btg4, pbps
 
         npoin_l   = G%npoin
         nlayers_l = inp%nlayers
         npts_l    = b%npts
 
-        !$acc data create(graduv) &
-        !$acc      present(bcl%dpprime_visc, bcl%dpp_graduv, bcl%dpp_uvp, &
-        !$acc              btp%btp_dpp_graduv, btp%pbprime_visc, qprime_df)
+        ! Fused single kernel: gang over nodes, seq over layers and neighbours.
+        ! Eliminates the graduv temporary and the sequential k-loop with its
+        ! 3*nlayers kernel launches.  btp sums accumulated privately per node.
+        !$acc parallel loop gang &
+        !$acc    present(bcl%dpprime_visc, bcl%dpp_graduv, bcl%dpp_uvp, &
+        !$acc            btp%btp_dpp_graduv, btp%pbprime_visc, qprime_df, &
+        !$acc            tsp%index_df, tsp%dpsidx_df, tsp%dpsidy_df) &
+        !$acc    firstprivate(npoin_l, nlayers_l, npts_l) &
+        !$acc    private(dhdx, dhdy, dpp, du_dx, du_dy, dv_dx, dv_dy, &
+        !$acc            btg1, btg2, btg3, btg4, pbps, I)
+        do Iq = 1, npoin_l
+            btg1 = 0.0; btg2 = 0.0; btg3 = 0.0; btg4 = 0.0; pbps = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+                dpp = qprime_df(1,Iq,k)
+                bcl%dpprime_visc(Iq,k) = dpp
 
-        !$acc kernels present(btp%btp_dpp_graduv, btp%pbprime_visc, bcl%dpprime_visc, qprime_df)
-        btp%btp_dpp_graduv    = 0.0
-        btp%pbprime_visc      = 0.0
-        bcl%dpprime_visc(:,:) = qprime_df(1,:,:)
-        !$acc end kernels
-
-        ! Sequential over k: each GPU kernel completes before the next k starts.
-        ! Accumulation into btp% arrays is correct — no concurrent k-iterations.
-        do k = 1, nlayers_l
-
-            ! Gather velocity gradient directly from qprime_df — no races on graduv.
-            !$acc kernels present(graduv)
-            graduv = 0.0
-            !$acc end kernels
-
-            !$acc parallel loop gang &
-            !$acc    present(graduv, qprime_df, tsp%index_df, tsp%dpsidx_df, tsp%dpsidy_df) &
-            !$acc    firstprivate(npoin_l, npts_l, k) private(I, dhdx, dhdy)
-            do Iq = 1, npoin_l
+                du_dx = 0.0; du_dy = 0.0; dv_dx = 0.0; dv_dy = 0.0
                 !$acc loop seq
                 do ip = 1, npts_l
                     I    = tsp%index_df(ip,Iq)
                     dhdx = tsp%dpsidx_df(ip,Iq)
                     dhdy = tsp%dpsidy_df(ip,Iq)
-                    graduv(1,Iq) = graduv(1,Iq) + dhdx*qprime_df(2,I,k)
-                    graduv(2,Iq) = graduv(2,Iq) + dhdy*qprime_df(2,I,k)
-                    graduv(3,Iq) = graduv(3,Iq) + dhdx*qprime_df(3,I,k)
-                    graduv(4,Iq) = graduv(4,Iq) + dhdy*qprime_df(3,I,k)
+                    du_dx = du_dx + dhdx*qprime_df(2,I,k)
+                    du_dy = du_dy + dhdy*qprime_df(2,I,k)
+                    dv_dx = dv_dx + dhdx*qprime_df(3,I,k)
+                    dv_dy = dv_dy + dhdy*qprime_df(3,I,k)
                 end do
+
+                bcl%dpp_graduv(1,Iq,k) = dpp*du_dx
+                bcl%dpp_graduv(2,Iq,k) = dpp*du_dy
+                bcl%dpp_graduv(3,Iq,k) = dpp*dv_dx
+                bcl%dpp_graduv(4,Iq,k) = dpp*dv_dy
+
+                bcl%dpp_uvp(1,Iq,k) = dpp*qprime_df(2,Iq,k)
+                bcl%dpp_uvp(2,Iq,k) = dpp*qprime_df(3,Iq,k)
+
+                btg1 = btg1 + bcl%dpp_graduv(1,Iq,k)
+                btg2 = btg2 + bcl%dpp_graduv(2,Iq,k)
+                btg3 = btg3 + bcl%dpp_graduv(3,Iq,k)
+                btg4 = btg4 + bcl%dpp_graduv(4,Iq,k)
+                pbps = pbps + dpp
             end do
-            !$acc end parallel loop
-
-            !$acc parallel loop gang &
-            !$acc    present(bcl%dpp_graduv, bcl%dpprime_visc, bcl%dpp_uvp, &
-            !$acc            btp%btp_dpp_graduv, btp%pbprime_visc, graduv, qprime_df) &
-            !$acc    firstprivate(npoin_l, k)
-            do I = 1, npoin_l
-                bcl%dpp_graduv(1,I,k) = bcl%dpprime_visc(I,k)*graduv(1,I)
-                bcl%dpp_graduv(2,I,k) = bcl%dpprime_visc(I,k)*graduv(2,I)
-                bcl%dpp_graduv(3,I,k) = bcl%dpprime_visc(I,k)*graduv(3,I)
-                bcl%dpp_graduv(4,I,k) = bcl%dpprime_visc(I,k)*graduv(4,I)
-
-                bcl%dpp_uvp(1,I,k) = bcl%dpprime_visc(I,k)*qprime_df(2,I,k)
-                bcl%dpp_uvp(2,I,k) = bcl%dpprime_visc(I,k)*qprime_df(3,I,k)
-
-                btp%btp_dpp_graduv(1,I) = btp%btp_dpp_graduv(1,I) + bcl%dpp_graduv(1,I,k)
-                btp%btp_dpp_graduv(2,I) = btp%btp_dpp_graduv(2,I) + bcl%dpp_graduv(2,I,k)
-                btp%btp_dpp_graduv(3,I) = btp%btp_dpp_graduv(3,I) + bcl%dpp_graduv(3,I,k)
-                btp%btp_dpp_graduv(4,I) = btp%btp_dpp_graduv(4,I) + bcl%dpp_graduv(4,I,k)
-                btp%pbprime_visc(I)     = btp%pbprime_visc(I)     + bcl%dpprime_visc(I,k)
-            end do
-            !$acc end parallel loop
-
+            btp%btp_dpp_graduv(1,Iq) = btg1
+            btp%btp_dpp_graduv(2,Iq) = btg2
+            btp%btp_dpp_graduv(3,Iq) = btg3
+            btp%btp_dpp_graduv(4,Iq) = btg4
+            btp%pbprime_visc(Iq)     = pbps
         end do
-
-        !$acc end data
+        !$acc end parallel loop
 
     end subroutine btp_bcl_coeffs_qdf
 

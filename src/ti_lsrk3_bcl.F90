@@ -51,50 +51,74 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, dimension(2,G%npoin,inp%nlayers) :: uv_df
   real :: dtt
   real, parameter :: lsrk3_beta(3) = (/ 1.0/3.0, 1.0/2.0, 1.0 /)
+  !$acc declare create(q0_df, uv_df)
 
-  q0_df  = q_df
+  ! qbp_df saves the initial qb_df on host for the ES branch reset each stage.
   qbp_df = qb_df
+
+  ! Upload q_df and qb_df; keep them resident for the full integrator.
+  !$acc data copyin(q_df, qb_df)
+
+  ! Initialise stage array on device.
+  !$acc kernels present(q0_df, q_df)
+  q0_df = q_df
+  !$acc end kernels
 
   do ik = 1, 3
 
     dtt = inp%dt * lsrk3_beta(ik)
 
+    ! GPU: compute baroclinic primed variables from the current stage state.
     call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q_df, qb_df)
+    ! GPU: compute bcl/btp coefficient arrays (fused single kernel).
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
 
-    !$acc update device(bcl%qprime_df)
-
     if (ik == 1 .and. inp%rk_bcl_FS) then
-      ! FS: BTP at stage 1 only, full N_btp
+      ! FS: BTP at stage 1 only, full N_btp.
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
 
     elseif (.not. inp%rk_bcl_FS) then
-      ! ES: BTP at every stage with N_btp scaled to the stage dt
+      ! ES: restore qb_df to the stage-0 value on host; BTP re-uploads it.
       qb_df      = qbp_df
       init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
     endif
 
+    ! GPU: build baroclinic RHS; rhs_bcl downloaded to host inside but device copy valid.
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
+    ! GPU LSRK3 update: q = q0 + dt * rhs.
+    !$acc kernels present(q_df, q0_df, bcl%rhs_bcl)
     do k = 1, inp%nlayers
       q_df(1,:,k) = q0_df(1,:,k) + dtt * bcl%rhs_bcl(1,:,k)
       q_df(2,:,k) = q0_df(2,:,k) + dtt * bcl%rhs_bcl(2,:,k)
       q_df(3,:,k) = q0_df(3,:,k) + dtt * bcl%rhs_bcl(3,:,k)
     end do
+    !$acc end kernels
 
+    ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
+    ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
+    ! GPU: reconstruct momentum from corrected velocity.
+    !$acc kernels present(q_df, uv_df)
     do k = 1, inp%nlayers
       q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
       q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
     end do
+    !$acc end kernels
 
+    ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
   end do
+
+  ! Download final state for the caller.
+  !$acc update host(q_df, qb_df)
+  !$acc end data
+
 end subroutine ti_lsrk3_bcl

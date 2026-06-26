@@ -111,11 +111,8 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     end do
     !$acc end kernels
 
-    ! Wall BC: potential race at shared corner nodes prevents GPU port.
-    ! Download q_df, apply on CPU, re-upload.
-    !$acc update host(q_df)
+    ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, q_df)
-    !$acc update device(q_df)
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, uv_df, q_df, qb_df)

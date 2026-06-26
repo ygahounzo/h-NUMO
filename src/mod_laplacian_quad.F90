@@ -143,13 +143,17 @@ contains
       call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, rhs_lap)
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
       call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, rhs_lap)
-      !$acc update host(rhs_lap)
-      !$acc end data
 
+      ! GPU: apply viscous mass-inverse scaling while rhs_lap is still on device.
+      !$acc kernels present(rhs_lap, mt%massinv)
       do k = 1, inp%nlayers
          rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
          rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
       end do
+      !$acc end kernels
+
+      !$acc update host(rhs_lap)
+      !$acc end data
 
    end subroutine bcl_create_laplacian
 
