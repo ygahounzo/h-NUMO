@@ -130,6 +130,7 @@ contains
       ! mod_variables (btp_CS)
       !$acc enter data copyin(btp)
       !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
+      !$acc enter data create(btp%qb0_df, btp%qb2_df)
       !$acc enter data copyin(btp%ope_ave, btp%H_ave, btp%Qu_ave, btp%Qv_ave, &
       !$acc                   btp%Quv_ave, btp%ope2_ave, btp%ope2_ave_df,      &
       !$acc                   btp%btp_mass_flux_ave, btp%uvb_ave,              &
@@ -148,8 +149,10 @@ contains
       !$acc enter data copyin(bcl)
       !$acc enter data create(bcl%rhs_bcl)
       !$acc enter data create(bcl%rhs_visc_bcl)
+      !$acc enter data copyin(bcl%q_df)
       !$acc enter data copyin(bcl%qprime_df, bcl%dpprime_visc, bcl%dpp_graduv, &
       !$acc                   bcl%dpp_uvp)
+      !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
 
       ! mod_ref
       ! recv_data is a receive buffer: allocate on device, no initial copy needed.

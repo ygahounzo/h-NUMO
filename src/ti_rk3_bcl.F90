@@ -51,23 +51,18 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   real, dimension(4,G%npoin),             intent(inout) :: qb_df
   real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q_df
 
-  real, dimension(4,G%npoin)             :: qbp_df
   integer :: k, ik
-  real, dimension(3,G%npoin,inp%nlayers) :: q0_df, q1_df
-  real, dimension(2,G%npoin,inp%nlayers) :: uv_df
   real :: dtt, a1, a2
-  !$acc declare create(q0_df, q1_df, uv_df)
 
-  ! qbp_df saves the initial qb_df on host for the ES branch reset each stage.
-  qbp_df = qb_df
-
-  ! Upload q_df and qb_df; keep them resident for the full integrator.
-  !$acc data copyin(q_df, qb_df)
+  ! Save stage-0 qb_df on GPU for the ES branch reset each stage.
+  !$acc kernels present(bcl%qbp_df, qb_df)
+  bcl%qbp_df = qb_df
+  !$acc end kernels
 
   ! Initialise stage arrays on device.
-  !$acc kernels present(q0_df, q1_df, q_df)
-  q0_df = q_df
-  q1_df = q_df
+  !$acc kernels present(bcl%q0_df, bcl%q1_df, q_df)
+  bcl%q0_df = q_df
+  bcl%q1_df = q_df
   !$acc end kernels
 
   do ik = 1, inp%kstages_bcl
@@ -79,7 +74,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
     ! GPU: compute baroclinic primed variables from the current stage state.
     ! Writes bcl%qprime_df on device — no host upload needed before create_rhs_bcl.
-    call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q1_df, qb_df)
+    call extract_qprime_df_face(G, inp, init, bcl%qprime_df, bcl%q1_df, qb_df)
 
     ! GPU: compute bcl/btp coefficient arrays (dpp_graduv, dpprime_visc, etc.).
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
@@ -91,23 +86,25 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
                                       qb_df, bcl%qprime_df)
 
     elseif (.not. inp%rk_bcl_FS) then
-      ! ES: restore qb_df to the stage-0 value on host; BTP re-uploads it.
-      qb_df      = qbp_df
+      ! ES: restore qb_df to the stage-0 value on GPU.
+      !$acc kernels present(qb_df, bcl%qbp_df)
+      qb_df      = bcl%qbp_df
+      !$acc end kernels
       init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
                                       qb_df, bcl%qprime_df)
     endif
-    ! After ti_barotropic_ssprk_mlswe: qb_df host and device are both current.
+    ! After ti_barotropic_ssprk_mlswe: qb_df device copy is current.
 
     ! GPU: build baroclinic RHS; rhs_bcl downloaded to host inside but device copy valid.
-    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q1_df)
+    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, bcl%q1_df)
 
     ! GPU SSPRK combination: q_df = a1*q0 + a2*q1 + dt*rhs.
-    !$acc kernels present(q_df, q0_df, q1_df, bcl%rhs_bcl)
+    !$acc kernels present(q_df, bcl%q0_df, bcl%q1_df, bcl%rhs_bcl)
     do k = 1, inp%nlayers
-      q_df(1,:,k) = a1*q0_df(1,:,k) + a2*q1_df(1,:,k) + dtt*bcl%rhs_bcl(1,:,k)
-      q_df(2,:,k) = a1*q0_df(2,:,k) + a2*q1_df(2,:,k) + dtt*bcl%rhs_bcl(2,:,k)
-      q_df(3,:,k) = a1*q0_df(3,:,k) + a2*q1_df(3,:,k) + dtt*bcl%rhs_bcl(3,:,k)
+      q_df(1,:,k) = a1*bcl%q0_df(1,:,k) + a2*bcl%q1_df(1,:,k) + dtt*bcl%rhs_bcl(1,:,k)
+      q_df(2,:,k) = a1*bcl%q0_df(2,:,k) + a2*bcl%q1_df(2,:,k) + dtt*bcl%rhs_bcl(2,:,k)
+      q_df(3,:,k) = a1*bcl%q0_df(3,:,k) + a2*bcl%q1_df(3,:,k) + dtt*bcl%rhs_bcl(3,:,k)
     end do
     !$acc end kernels
 
@@ -115,13 +112,13 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     call layer_mom_boundary_df(G, inp, b, mf, q_df)
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
-    call extract_velocity(G, inp, uv_df, q_df, qb_df)
+    call extract_velocity(G, inp, bcl%uv_df, q_df, qb_df)
 
     ! GPU: reconstruct momentum from corrected velocity.
-    !$acc kernels present(q_df, uv_df)
+    !$acc kernels present(q_df, bcl%uv_df)
     do k = 1, inp%nlayers
-      q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
-      q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+      q_df(2,:,k) = bcl%uv_df(1,:,k) * q_df(1,:,k)
+      q_df(3,:,k) = bcl%uv_df(2,:,k) * q_df(1,:,k)
     end do
     !$acc end kernels
 
@@ -129,14 +126,10 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
     ! GPU: save stage result for next stage.
-    !$acc kernels present(q1_df, q_df)
-    q1_df = q_df
+    !$acc kernels present(bcl%q1_df, q_df)
+    bcl%q1_df = q_df
     !$acc end kernels
 
   end do
-
-  ! Download final state for the caller.
-  !$acc update host(q_df, qb_df)
-  !$acc end data
 
 end subroutine ti_rk3_bcl

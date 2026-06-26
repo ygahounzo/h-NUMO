@@ -44,6 +44,10 @@ module mod_variables
       real, dimension(:,:),     allocatable :: rhs_btp_visc  ! (2,npoin)
       real, dimension(:,:),     allocatable :: qb_df         ! (4,npoin)
 
+      ! BTP time integrator work arrays (persistent GPU allocations)
+      real, dimension(:,:),     allocatable :: qb0_df        ! (4,npoin)
+      real, dimension(:,:),     allocatable :: qb2_df        ! (4,npoin)
+
    end type btp_CS
 
    !  Baroclinic control structure
@@ -65,6 +69,12 @@ module mod_variables
       ! RHS buffers (persistent device allocations)
       real, dimension(:,:,:), allocatable :: rhs_bcl      ! (3,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: rhs_visc_bcl ! (2,npoin,nlayers)
+
+      ! Time integrator work arrays (persistent GPU allocations, no per-call malloc)
+      real, dimension(:,:,:), allocatable :: q0_df    ! (3,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: q1_df    ! (3,npoin,nlayers) rk3 only
+      real, dimension(:,:,:), allocatable :: uv_df    ! (2,npoin,nlayers)
+      real, dimension(:,:),   allocatable :: qbp_df   ! (4,npoin)
 
    end type bcl_CS
 
@@ -105,7 +115,8 @@ contains
             btp%Qu_face_ave,        btp%Qv_face_ave,   btp%Quv_face_ave,  &
             btp%uvb_face_ave,                                              &
             btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
-            btp%rhs_btp,            btp%rhs_btp_visc,       btp%qb_df)
+            btp%rhs_btp,            btp%rhs_btp_visc,       btp%qb_df,  &
+            btp%qb0_df,             btp%qb2_df)
       end if
 
       ! 1-D volume arrays
@@ -159,6 +170,8 @@ contains
          btp%rhs_btp(3,G%npoin),                                              &
          btp%rhs_btp_visc(2,G%npoin),                                         &
          btp%qb_df(4,G%npoin),                                                &
+         btp%qb0_df(4,G%npoin),                                               &
+         btp%qb2_df(4,G%npoin),                                               &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp buffers)"
 
@@ -173,7 +186,9 @@ contains
             bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
             bcl%q_df,                 bcl%qprime_df,                     &
             bcl%dpprime_visc,         bcl%dpprime_visc_q,                 &
-            bcl%rhs_bcl,              bcl%rhs_visc_bcl)
+            bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
+            bcl%q0_df,                bcl%q1_df,                         &
+            bcl%uv_df,                bcl%qbp_df)
       end if
 
       allocate(                                                               &
@@ -188,6 +203,10 @@ contains
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
          bcl%rhs_bcl(3,G%npoin,inp%nlayers),                                      &
          bcl%rhs_visc_bcl(2,G%npoin,inp%nlayers),                               &
+         bcl%q0_df(3,G%npoin,inp%nlayers),                                       &
+         bcl%q1_df(3,G%npoin,inp%nlayers),                                       &
+         bcl%uv_df(2,G%npoin,inp%nlayers),                                       &
+         bcl%qbp_df(4,G%npoin),                                                  &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 

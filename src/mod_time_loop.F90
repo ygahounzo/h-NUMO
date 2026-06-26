@@ -218,6 +218,8 @@ contains
             if (mod(itime, irestart) == 0 .and. inp%dump_data) then
                 inorm = inorm + 1
 
+                !$acc update host(bcl%q_df, btp%qb_df)
+
                 ifnp = inorm
                 write(fnp1,'(i4)') ifnp
                 iloop = 3 - int(log10(real(ifnp)))

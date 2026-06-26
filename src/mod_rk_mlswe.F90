@@ -50,11 +50,8 @@ contains
       real, dimension(4,G%npoin),             intent(inout) :: qb_df
       real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
-      real, dimension(4,G%npoin) :: qb0_df, qb2_df
       integer :: mstep, ik, I
       real    :: N_inv, a0, a1, a2, dtt
-
-      !$acc declare create(qb0_df, qb2_df)
 
       ! Zero-initialise all accumulation buffers on device.
       !$acc kernels present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
@@ -79,19 +76,17 @@ contains
       btp%graduvb_ave             = 0.0
       !$acc end kernels
 
-      !$acc kernels present(qb2_df)
-      qb2_df = 0.0
+      !$acc kernels present(btp%qb2_df)
+      btp%qb2_df = 0.0
       !$acc end kernels
-
-      !$acc update device(qb_df)
 
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
-         !$acc parallel loop present(qb0_df, qb_df)
+         !$acc parallel loop present(btp%qb0_df, qb_df)
          do I = 1, G%npoin
-            qb0_df(1,I) = qb_df(1,I); qb0_df(2,I) = qb_df(2,I)
-            qb0_df(3,I) = qb_df(3,I); qb0_df(4,I) = qb_df(4,I)
+            btp%qb0_df(1,I) = qb_df(1,I); btp%qb0_df(2,I) = qb_df(2,I)
+            btp%qb0_df(3,I) = qb_df(3,I); btp%qb0_df(4,I) = qb_df(4,I)
          end do
          !$acc end parallel loop
 
@@ -108,17 +103,17 @@ contains
             ! Fused: accumulate averages from old qb_df, then SSPRK update in-place.
             ! Reading qb_df(I) for averages and a1-coefficient happens before the
             ! write to qb_df(I) within the same thread — no race across nodes.
-            !$acc parallel loop present(qb0_df, qb_df, qb2_df, btp, init, mt) &
+            !$acc parallel loop present(btp%qb0_df, qb_df, btp%qb2_df, btp, init, mt) &
             !$acc    firstprivate(a0, a1, a2, dtt)
             do I = 1, G%npoin
                btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
                btp%uvb_ave_df(1,I) = btp%uvb_ave_df(1,I) + qb_df(3,I) / qb_df(1,I)
                btp%uvb_ave_df(2,I) = btp%uvb_ave_df(2,I) + qb_df(4,I) / qb_df(1,I)
-               qb_df(2,I) = a0*qb0_df(2,I) + a1*qb_df(2,I) + a2*qb2_df(2,I) &
+               qb_df(2,I) = a0*btp%qb0_df(2,I) + a1*qb_df(2,I) + a2*btp%qb2_df(2,I) &
                             + dtt * (mt%massinv(I) * btp%rhs_btp(1,I))
-               qb_df(3,I) = a0*qb0_df(3,I) + a1*qb_df(3,I) + a2*qb2_df(3,I) &
+               qb_df(3,I) = a0*btp%qb0_df(3,I) + a1*qb_df(3,I) + a2*btp%qb2_df(3,I) &
                             + dtt * (mt%massinv(I) * (btp%rhs_btp(2,I) + inp%visc_mlswe*btp%rhs_btp_visc(1,I)))
-               qb_df(4,I) = a0*qb0_df(4,I) + a1*qb_df(4,I) + a2*qb2_df(4,I) &
+               qb_df(4,I) = a0*btp%qb0_df(4,I) + a1*qb_df(4,I) + a2*btp%qb2_df(4,I) &
                             + dtt * (mt%massinv(I) * (btp%rhs_btp(3,I) + inp%visc_mlswe*btp%rhs_btp_visc(2,I)))
                qb_df(1,I) = qb_df(2,I) + init%pbprime_df(I)
             end do
@@ -127,8 +122,8 @@ contains
             call btp_mom_boundary_df(G, b, mf, qb_df)
 
             if (inp%kstages == 5 .and. ik == 2) then
-               !$acc kernels present(qb2_df, qb_df)
-               qb2_df = qb_df
+               !$acc kernels present(btp%qb2_df, qb_df)
+               btp%qb2_df = qb_df
                !$acc end kernels
             end if
 
@@ -173,9 +168,6 @@ contains
       btp%uvb_ave                  = N_inv * btp%uvb_ave
       btp%uvb_face_ave             = N_inv * btp%uvb_face_ave
       !$acc end kernels
-
-      ! qb_df was updated on GPU; callers use it on CPU after this returns.
-      !!$acc update host(qb_df)
 
    end subroutine ti_barotropic_ssprk_mlswe
 
