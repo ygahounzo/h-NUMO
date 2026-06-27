@@ -248,7 +248,7 @@ contains
 
       real, intent(out) :: lap_q(2,G%npoin,inp%nlayers)
 
-      integer :: ie, iq_local, Iq, I, ip, k
+      integer :: ie, iq_local, Iq, Iq0, I, ip, k
       integer :: npts_l, nelem_l, nlayers_l
       real :: wq, qq(4)
       real :: lap_loc(2, b%npts, inp%nlayers)
@@ -257,7 +257,8 @@ contains
       nelem_l   = G%nelem
       nlayers_l = inp%nlayers
 
-      !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%indexq, &
+      !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df,        &
+      !$acc              tsp%index_df_elt, tsp%index_df,                     &
       !$acc              btp%graduvb_ave, bcl%dpprime_visc, bcl%dpp_graduv, lap_q)
 
       !$acc kernels present(lap_q)
@@ -265,7 +266,7 @@ contains
       !$acc end kernels
 
       !$acc parallel loop gang                                                    &
-      !$acc   private(lap_loc, qq, wq, Iq, I, ip, k, iq_local)                  &
+      !$acc   private(lap_loc, qq, wq, Iq, Iq0, I, ip, k, iq_local)            &
       !$acc   firstprivate(npts_l, nelem_l, nlayers_l)
       do ie = 1, nelem_l
 
@@ -282,7 +283,7 @@ contains
          do k = 1, nlayers_l
             !$acc loop seq
             do iq_local = 1, npts_l
-               Iq = tsp%indexq(iq_local, ie)
+               Iq = tsp%index_df_elt(iq_local, ie)
                wq = tsp%wjac_df(Iq)
                qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduv(1,Iq,k)
                qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduv(2,Iq,k)
@@ -297,11 +298,12 @@ contains
          end do
 
          ! Elements are disjoint — scatter without atomics.
+         Iq0 = tsp%index_df_elt(1, ie)
          !$acc loop seq
          do k = 1, nlayers_l
             !$acc loop seq
             do ip = 1, npts_l
-               I = tsp%indexq(ip, ie)
+               I = tsp%index_df(ip, Iq0)
                lap_q(1,I,k) = lap_loc(1,ip,k)
                lap_q(2,I,k) = lap_loc(2,ip,k)
             end do
