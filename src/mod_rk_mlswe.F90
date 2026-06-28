@@ -32,6 +32,7 @@ contains
       use mod_tensor,            only: tensor_CS
       use mod_rhs_btp,           only: create_rhs_btp
       use mod_barotropic_terms,  only: btp_mom_boundary_df
+      use mod_laplacian_quad,    only: btp_create_laplacian
 
       implicit none
 
@@ -61,7 +62,7 @@ contains
       !$acc                  btp%btp_mass_flux_face_ave, btp%H_face_ave, btp%Qu_face_ave,  &
       !$acc                  btp%Qv_face_ave, btp%Quv_face_ave, btp%tau_wind_ave,          &
       !$acc                  btp%tau_bot_ave, btp%ope2_ave, btp%graduvb_face_ave,          &
-      !$acc                  btp%graduvb_ave)
+      !$acc                  btp%graduvb_ave, btp%qb2_df, btp%rhs_btp_visc)
       btp%one_plus_eta_edge_2_ave = 0.0;  btp%uvb_ave             = 0.0
       btp%uvb_ave_df              = 0.0;  btp%ope_ave             = 0.0
       btp%btp_mass_flux_ave       = 0.0;  btp%H_ave               = 0.0
@@ -73,12 +74,20 @@ contains
       btp%Qv_face_ave             = 0.0;  btp%Quv_face_ave        = 0.0
       btp%tau_wind_ave            = 0.0;  btp%tau_bot_ave         = 0.0
       btp%ope2_ave                = 0.0;  btp%graduvb_face_ave    = 0.0
-      btp%graduvb_ave             = 0.0
+      btp%graduvb_ave             = 0.0;  btp%qb2_df              = 0.0
+      btp%rhs_btp_visc            = 0.0
       !$acc end kernels
 
-      !$acc kernels present(btp%qb2_df)
-      btp%qb2_df = 0.0
-      !$acc end kernels
+      ! Frozen viscosity: compute rhs_btp_visc once per BCL stage using the
+      ! initial qb_df, then hold it fixed across all BTP substeps.
+      ! Valid when the viscous diffusion number nu*dt_btp/dx^2 << 1, which is
+      ! satisfied whenever dt_btp is set by the gravity-wave CFL (dt_btp ~ dx/c):
+      !   nu*dt_btp/dx^2 ~ nu/(c*dx)
+      ! For c~200 m/s, dx>=1 km, nu<=500: this ratio is ~2.5e-3 — negligible.
+      ! This eliminates N_btp*kstages-1 Laplacian solves and MPI halo exchanges.
+      if (inp%method_visc > 0) &
+         call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
+                                   btp%rhs_btp_visc, qb_df)
 
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
@@ -139,16 +148,13 @@ contains
       ! Normalise accumulators on GPU — no host round-trip needed.
       N_inv = 1.0 / real(inp%kstages * init%N_btp)
 
-      !$acc kernels present(btp%uvb_ave_df, btp%graduvb_face_ave, btp%graduvb_ave,         &
-      !$acc                  btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,                   &
+      !$acc kernels present(btp%uvb_ave_df, btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,    &
       !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave,               &
       !$acc                  btp%btp_mass_flux_ave, btp%tau_bot_ave,                        &
       !$acc                  btp%ope_face_ave, btp%ope2_face_ave, btp%H_face_ave,           &
       !$acc                  btp%Qu_face_ave, btp%Qv_face_ave, btp%btp_mass_flux_face_ave, &
       !$acc                  btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_face_ave)
       btp%uvb_ave_df               = N_inv * btp%uvb_ave_df
-      btp%graduvb_face_ave         = N_inv * btp%graduvb_face_ave
-      btp%graduvb_ave              = N_inv * btp%graduvb_ave
       btp%ope2_ave_df              = N_inv * btp%ope2_ave_df
       btp%ope2_ave                 = N_inv * btp%ope2_ave
       btp%ope_ave                  = N_inv * btp%ope_ave

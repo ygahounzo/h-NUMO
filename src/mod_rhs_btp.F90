@@ -22,7 +22,6 @@ contains
       use mod_mpi_communicator, only: mpi_communicator
       use mod_metrics,          only: metrics
       use mod_tensor,           only: tensor_CS
-      use mod_laplacian_quad,   only: btp_create_laplacian
 
       implicit none
 
@@ -42,12 +41,6 @@ contains
       real, dimension(4,G%npoin),             intent(in)    :: qb_df
       real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
-      ! Zero rhs_btp_visc on device unconditionally so the SSPRK GPU kernel
-      ! always reads a valid (zero) value even when method_visc == 0.
-      !$acc kernels present(btp)
-      btp%rhs_btp_visc = 0.0
-      !$acc end kernels
-
       ! 1. MPI halo exchange (host).
       call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, 4)
 
@@ -61,11 +54,8 @@ contains
       !    GPU create_nbhs_face_df adds MPI boundary fluxes into device rhs_btp
       !    and device btp%*_face_ave.  rhs_btp stays on device until step 5.
       call btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs_btp, 4)
-
-      ! 5. Viscosity (GPU-ported); rhs_btp_visc already zeroed on device above.
-      if (inp%method_visc > 0) &
-         call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, btp%rhs_btp_visc, qb_df)
       ! rhs_btp stays on device; mass-matrix scaling is fused into the SSPRK update in the caller.
+      ! rhs_btp_visc is precomputed once before the BTP substep loop by the caller.
 
    end subroutine create_rhs_btp
 
