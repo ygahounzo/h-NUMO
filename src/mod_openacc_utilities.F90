@@ -144,6 +144,9 @@ contains
       !$acc enter data copyin(btp%uvb_ave_df, btp%btp_dpp_graduv,              &
       !$acc                   btp%pbprime_visc)
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)
+      !$acc enter data create(btp%bcl_H,     btp%bcl_uu,     btp%bcl_uv,      &
+      !$acc                   btp%bcl_vv,   btp%bcl_dpq,    btp%bcl_up_dpq,  &
+      !$acc                   btp%bcl_vp_dpq, btp%pbq)
 
       ! mod_variables (bcl_CS)
       !$acc enter data copyin(bcl)

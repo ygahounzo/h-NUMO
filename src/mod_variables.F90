@@ -48,6 +48,17 @@ module mod_variables
       real, dimension(:,:),     allocatable :: qb0_df        ! (4,npoin)
       real, dimension(:,:),     allocatable :: qb2_df        ! (4,npoin)
 
+      ! Precomputed BCL layer integrals at quad points — updated once per RK stage
+      ! by btp_bcl_coeffs_qdf; fixed during BTP subcycling.
+      real, dimension(:),       allocatable :: bcl_H         ! (npoin_q) baroclinic H_b
+      real, dimension(:),       allocatable :: bcl_uu        ! (npoin_q) sum(pp*u*u)
+      real, dimension(:),       allocatable :: bcl_uv        ! (npoin_q) sum(pp*u*v)
+      real, dimension(:),       allocatable :: bcl_vv        ! (npoin_q) sum(pp*v*v)
+      real, dimension(:),       allocatable :: bcl_dpq       ! (npoin_q) bottom-layer dp
+      real, dimension(:),       allocatable :: bcl_up_dpq    ! (npoin_q) bottom-layer u*dp
+      real, dimension(:),       allocatable :: bcl_vp_dpq    ! (npoin_q) bottom-layer v*dp
+      real, dimension(:),       allocatable :: pbq           ! (npoin_q) background pressure
+
    end type btp_CS
 
    !  Baroclinic control structure
@@ -116,7 +127,10 @@ contains
             btp%uvb_face_ave,                                              &
             btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
             btp%rhs_btp,            btp%rhs_btp_visc,       btp%qb_df,  &
-            btp%qb0_df,             btp%qb2_df)
+            btp%qb0_df,             btp%qb2_df,                         &
+            btp%bcl_H,              btp%bcl_uu,    btp%bcl_uv,          &
+            btp%bcl_vv,             btp%bcl_dpq,   btp%bcl_up_dpq,      &
+            btp%bcl_vp_dpq,         btp%pbq)
       end if
 
       ! 1-D volume arrays
@@ -174,6 +188,15 @@ contains
          btp%qb2_df(4,G%npoin),                                               &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp buffers)"
+
+      ! Precomputed BCL layer integrals at quad points
+      allocate(                                                               &
+         btp%bcl_H(G%npoin_q),      btp%bcl_uu(G%npoin_q),                    &
+         btp%bcl_uv(G%npoin_q),    btp%bcl_vv(G%npoin_q),                    &
+         btp%bcl_dpq(G%npoin_q),    btp%bcl_up_dpq(G%npoin_q),               &
+         btp%bcl_vp_dpq(G%npoin_q), btp%pbq(G%npoin_q),                      &
+         stat=stat)
+      if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
 
       ! =========================================================
       !  bcl_CS

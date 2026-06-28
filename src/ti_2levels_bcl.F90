@@ -60,7 +60,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    qprime_df_n = bcl%qprime_df
 
-   call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
+   call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
 
    !$acc update device(bcl%qprime_df)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df)
@@ -87,7 +87,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    ! Centre-in-time average of the baroclinic layer-thickness forcing.
    bcl%qprime_df = 0.5*(qprime_df_pred + bcl%qprime_df)
 
-   call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
+   call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
    !$acc update device(bcl%qprime_df)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df)
 

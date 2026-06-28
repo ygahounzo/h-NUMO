@@ -66,7 +66,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     ! GPU: compute baroclinic primed variables from the current stage state.
     call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q_df, qb_df)
     ! GPU: compute bcl/btp coefficient arrays (fused single kernel).
-    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df)
+    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
 
     if (ik == 1 .and. inp%rk_bcl_FS) then
       ! FS: BTP at stage 1 only, full N_btp.

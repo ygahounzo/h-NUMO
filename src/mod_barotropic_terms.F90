@@ -74,14 +74,17 @@ module mod_barotropic_terms
 
     end subroutine btp_mom_boundary_df
 
-    subroutine btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, qprime_df)
+    subroutine btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, qprime_df, alpha_mlswe, pbprime_df)
 
         ! Compute baroclinic coefficients in the advective barotropic momentum fluxes
-        ! and in the barotropic pressure forcing.
+        ! and in the barotropic pressure forcing.  Also precomputes the BCL layer
+        ! integrals at quad points (btp%bcl_*) so they need not be recomputed each
+        ! BTP substep — qprime_df is fixed during BTP subcycling.
 
         use mod_grid,      only: grid
         use mod_input,     only: input
         use mod_basis,     only: basis
+        use mod_constants, only: gravity
         use mod_tensor,    only: tensor_CS
         use mod_variables, only: bcl_CS, btp_CS
 
@@ -95,13 +98,18 @@ module mod_barotropic_terms
         type(btp_CS),    intent(inout) :: btp
 
         real, dimension(3,G%npoin,inp%nlayers), intent(in) :: qprime_df
+        real, dimension(inp%nlayers),           intent(in) :: alpha_mlswe
+        real, dimension(G%npoin),               intent(in) :: pbprime_df
 
-        integer :: Iq, ip, k, npoin_l, nlayers_l, npts_l, I
+        integer :: Iq, ip, k, npoin_l, nlayers_l, npts_l, npoin_q_l, I
         real :: dhdx, dhdy, dpp
         real :: du_dx, du_dy, dv_dx, dv_dy
         real :: btg1, btg2, btg3, btg4, pbps
+        real :: pp_k, up_k, vp_k, pprime_k, pprime_k1
+        real :: H_b, H_bclq, sum_up2, sum_uv, sum_vp2, pbq, hi, dry_k
 
         npoin_l   = G%npoin
+        npoin_q_l = G%npoin_q
         nlayers_l = inp%nlayers
         npts_l    = b%npts
 
@@ -153,6 +161,64 @@ module mod_barotropic_terms
             btp%btp_dpp_graduv(3,Iq) = btg3
             btp%btp_dpp_graduv(4,Iq) = btg4
             btp%pbprime_visc(Iq)     = pbps
+        end do
+        !$acc end parallel loop
+
+        ! Precompute BCL layer integrals at quad points.
+        ! qprime_df is fixed during BTP subcycling, so this runs once per RK stage.
+        !$acc parallel loop gang                                                   &
+        !$acc    private(pp_k, up_k, vp_k, pprime_k, pprime_k1,                  &
+        !$acc            H_b, H_bclq, sum_up2, sum_uv, sum_vp2, pbq, hi, dry_k, I) &
+        !$acc    firstprivate(npoin_q_l, nlayers_l, npts_l)                        &
+        !$acc    present(tsp%indexq, tsp%psih, qprime_df, alpha_mlswe, pbprime_df, &
+        !$acc            btp%bcl_H, btp%bcl_uu, btp%bcl_uv, btp%bcl_vv,          &
+        !$acc            btp%bcl_dpq, btp%bcl_up_dpq, btp%bcl_vp_dpq, btp%pbq)
+        do Iq = 1, npoin_q_l
+           H_b = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
+           pbq = 0.0;  pprime_k = 0.0
+           pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
+
+           ! Interpolate pbprime_df to quad point (static — same for all stages).
+           !$acc loop seq
+           do ip = 1, npts_l
+              I   = tsp%indexq(ip, Iq)
+              pbq = pbq + tsp%psih(ip, Iq) * pbprime_df(I)
+           end do
+
+           ! Layer loop: accumulate H_b.
+           !$acc loop seq
+           do k = 1, nlayers_l
+              pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
+
+              !$acc loop seq
+              do ip = 1, npts_l
+                 I    = tsp%indexq(ip, Iq)
+                 hi   = tsp%psih(ip, Iq)
+                 pp_k = pp_k + hi * qprime_df(1, I, k)
+                 up_k = up_k + hi * qprime_df(2, I, k)
+                 vp_k = vp_k + hi * qprime_df(3, I, k)
+              end do
+
+              pprime_k1 = pprime_k + pp_k
+              H_bclq = 0.5 * alpha_mlswe(k) * (pprime_k1**2 - pprime_k**2)
+              H_b = H_b + H_bclq
+
+              sum_up2 = sum_up2 + pp_k * up_k * up_k
+              sum_uv  = sum_uv  + pp_k * up_k * vp_k
+              sum_vp2 = sum_vp2 + pp_k * vp_k * vp_k
+
+              pprime_k = pprime_k1
+           end do
+           ! After k loop: pp_k, up_k, vp_k hold the bottom-layer values.
+
+           btp%bcl_H(Iq)      = H_b
+           btp%bcl_uu(Iq)     = sum_up2
+           btp%bcl_uv(Iq)     = sum_uv
+           btp%bcl_vv(Iq)     = sum_vp2
+           btp%bcl_dpq(Iq) = pp_k
+           btp%bcl_up_dpq(Iq) = up_k
+           btp%bcl_vp_dpq(Iq) = vp_k
+           btp%pbq(Iq)     = pbq
         end do
         !$acc end parallel loop
 

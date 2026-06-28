@@ -94,7 +94,7 @@ contains
       call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, 4)
 
       ! rhs_btp_visc already zeroed on device by caller (create_rhs_btp).
-      call btp_compute_laplacian(G, b, btp, tsp, rhs_btp_visc, graduv)
+      call btp_compute_laplacian_qp(G, b, btp, tsp, rhs_btp_visc, graduv)
       call create_rhs_laplacian_flux(G, b, mf, btp, rhs_btp_visc, graduv)
 
       call create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs_btp_visc, 4)
@@ -229,6 +229,64 @@ contains
 
    end subroutine btp_compute_laplacian
 
+   subroutine btp_compute_laplacian_qp(G, b, btp, tsp, rhs_btp_visc, grad_dpuvp)
+
+      use mod_grid,      only: grid
+      use mod_basis,     only: basis
+      use mod_variables, only: btp_CS
+      use mod_tensor,    only: tensor_CS
+
+      implicit none
+
+      type(grid),      intent(in)  :: G
+      type(basis),     intent(in)  :: b
+      type(btp_CS),    intent(in)  :: btp
+      type(tensor_CS), intent(in)  :: tsp
+
+      real, intent(out) :: rhs_btp_visc(2,G%npoin)
+      real, dimension(4,G%npoin), intent(in) :: grad_dpuvp
+
+      integer :: Iq, I, ip
+      real :: wq, qq(4)
+      integer :: npoin_l, npts_l
+
+      npoin_l = G%npoin
+      npts_l  = b%npts
+
+      !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%index_df,  &
+      !$acc              btp%pbprime_visc, btp%btp_dpp_graduv, grad_dpuvp,           &
+      !$acc              rhs_btp_visc)
+
+      !$acc kernels present(rhs_btp_visc)
+      rhs_btp_visc = 0.0
+      !$acc end kernels
+
+      !$acc parallel loop gang                                     &
+      !$acc   private(qq, wq, I, ip)                               &
+      !$acc   firstprivate(npoin_l, npts_l)
+      do Iq = 1, npoin_l
+
+         wq    = tsp%wjac_df(Iq)
+         qq(1) = btp%pbprime_visc(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduv(1,Iq)
+         qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduv(2,Iq)
+         qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduv(3,Iq)
+         qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduv(4,Iq)
+
+         !$acc loop seq
+         do ip = 1, npts_l
+            I = tsp%index_df(ip,Iq)
+            !$acc atomic update
+            rhs_btp_visc(1,I) = rhs_btp_visc(1,I) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
+            !$acc atomic update
+            rhs_btp_visc(2,I) = rhs_btp_visc(2,I) - wq*(tsp%dpsidx_df(ip,Iq)*qq(3) + tsp%dpsidy_df(ip,Iq)*qq(4))
+         end do
+      end do
+      !$acc end parallel loop
+
+      !$acc end data
+
+   end subroutine btp_compute_laplacian_qp
+
    subroutine bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, lap_q)
 
       use mod_grid,      only: grid
@@ -315,6 +373,50 @@ contains
       !$acc end data
 
    end subroutine bcl_compute_laplacian
+
+   subroutine bcl_compute_laplacian_qp(G, inp, b, btp, bcl, tsp, lap_q)
+
+      use mod_grid,      only: grid
+      use mod_basis,     only: basis
+      use mod_input,     only: input
+      use mod_variables, only: btp_CS, bcl_CS
+      use mod_tensor,    only: tensor_CS
+
+      implicit none
+
+      type(grid),      intent(in)  :: G
+      type(basis),     intent(in)  :: b
+      type(input),     intent(in)  :: inp
+      type(btp_CS),    intent(in)  :: btp
+      type(bcl_CS),    intent(in)  :: bcl
+      type(tensor_CS), intent(in)  :: tsp
+
+      real, intent(out) :: lap_q(2,G%npoin,inp%nlayers)
+
+      integer :: Iq, I, ip, k
+      real :: wq, qq(4)
+
+      lap_q = 0.0
+
+      do k = 1, inp%nlayers
+         do Iq = 1, G%npoin
+
+            wq = tsp%wjac_df(Iq)
+
+            qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduv(1,Iq,k)
+            qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduv(2,Iq,k)
+            qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduv(3,Iq,k)
+            qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduv(4,Iq,k)
+
+            do ip = 1, b%npts
+               I = tsp%index_df(ip,Iq)
+               lap_q(1,I,k) = lap_q(1,I,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
+               lap_q(2,I,k) = lap_q(2,I,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(3) + tsp%dpsidy_df(ip,Iq)*qq(4))
+            end do
+         end do
+      end do
+
+   end subroutine bcl_compute_laplacian_qp
 
    subroutine create_rhs_laplacian_flux(G, b, mf, btp, rhs, gradq)
       !=========================================================================

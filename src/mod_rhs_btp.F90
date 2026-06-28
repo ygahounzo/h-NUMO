@@ -52,7 +52,7 @@ contains
       call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, 4)
 
       ! 2. GPU volume kernel — zeros rhs_btp on device, accumulates volume contribution.
-      call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df, qprime_df)
+      call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
 
       ! 3. GPU face kernel — accumulates local face fluxes into device rhs_btp.
       call create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
@@ -70,7 +70,7 @@ contains
    end subroutine create_rhs_btp
 
 
-   subroutine create_rhs_btp_volume_qdf(G, b, inp, init, btp, tsp, rhs_btp, qb_df, qprime_df)
+   subroutine create_rhs_btp_volume_qdf(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
       !===========================================================================
       !  Volume contribution to the barotropic RHS (DG weak form, interior).
       !
@@ -97,39 +97,40 @@ contains
       type(btp_CS),    intent(inout) :: btp
       type(tensor_CS), intent(in)    :: tsp
 
-      real, dimension(4,G%npoin),             intent(in)    :: qb_df
-      real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
-      real, dimension(3,G%npoin),             intent(out) :: rhs_btp
+      real, dimension(4,G%npoin), intent(in)  :: qb_df
+      real, dimension(3,G%npoin), intent(out) :: rhs_btp
 
       real :: sc_x, sc_y, Hq, Qu1, Qu2, Qv1, Qv2
       real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, ope2, grav_dp
       real :: dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq
-      real :: pp_k, up_k, vp_k, pprime_k, pprime_k1
+      real :: pp_k, up_k, vp_k
       real :: sum_up2, sum_uv, sum_vp2
       real :: wq_udp, wq_vdp, wq_scx, wq_scy, wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2
       real :: rhs_loc(3, b%npts)
       integer :: Iq, ie, iquad, jquad, ip, k, I, ijq
-      integer :: npts_l, nqx_l, nqy_l, nelem_l, nlayers_l, botfr_l, npts_q
-      real    :: cd_mlswe_l
+      integer :: npts_l, nqx_l, nqy_l, nelem_l, botfr_l, npts_q
+      real    :: cd_mlswe_l, alpha_bot_l
 
       npts_l     = b%npts
       nqx_l      = b%nqx
       nqy_l      = b%nqy
       nelem_l    = G%nelem
-      nlayers_l  = inp%nlayers
       botfr_l    = inp%botfr
       cd_mlswe_l = real(inp%cd_mlswe)
+      alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
       npts_q = b%npts_quad
 
       !$acc data present(init, tsp, btp,                                             &
-      !$acc               rhs_btp, qb_df, qprime_df,                                &
+      !$acc               rhs_btp, qb_df,                                            &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
-      !$acc               tsp%indexq, tsp%indexq_e, tsp%wjac, init%pbprime_df,      &
-      !$acc               init%coriolis_quad, init%alpha_mlswe,                     &
+      !$acc               tsp%indexq, tsp%indexq_e, tsp%wjac,                       &
+      !$acc               init%coriolis_quad,                                        &
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
-      !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave)
+      !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
+      !$acc               btp%bcl_H, btp%bcl_uu, btp%bcl_uv, btp%bcl_vv,           &
+      !$acc               btp%bcl_dpq, btp%bcl_up_dpq, btp%bcl_vp_dpq, btp%pbq)
 
       ! Zero rhs_btp on device.
       !$acc kernels
@@ -141,12 +142,13 @@ contains
       !$acc           dp, dpp, udp, vdp, pbq, hi, Hq, wq, ub, vb,               &
       !$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y,                   &
       !$acc           ope, ope2, grav_dp,                                         &
-      !$acc           pp_k, up_k, vp_k, pprime_k, pprime_k1,                     &
+      !$acc           pp_k, up_k, vp_k,                                          &
       !$acc           Qu1, Qu2, Qv1, Qv2,                                        &
       !$acc           dhdx, dhdy, sum_up2, sum_uv, sum_vp2,                      &
       !$acc           wq_udp, wq_vdp, wq_scx, wq_scy,                            &
       !$acc           wq_Qu1, wq_Qu2, wq_Qv1, wq_Qv2,                           &
-      !$acc           Iq, iquad, jquad, ip, k, I, ijq)
+      !$acc           Iq, iquad, jquad, ip, I, ijq)                              &
+      !$acc   firstprivate(npts_l, botfr_l, cd_mlswe_l, alpha_bot_l, npts_q)
       do ie = 1, nelem_l
 
          ! Zero gang-private accumulator for this element's nodes.
@@ -164,8 +166,8 @@ contains
             Iq = tsp%indexq_e(ijq, ie)
             wq = tsp%wjac(Iq)
 
-            ! Barotropic projection
-            dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  pbq = 0.0
+            ! Barotropic projection (qb_df changes each substep).
+            dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0
             !$acc loop seq
             do ip = 1, npts_l
                I = tsp%indexq(ip, Iq)
@@ -174,37 +176,20 @@ contains
                dpp = dpp + hi * qb_df(2, I)
                udp = udp + hi * qb_df(3, I)
                vdp = vdp + hi * qb_df(4, I)
-               pbq = pbq + hi * init%pbprime_df(I)
             end do
 
             ub = udp / dp
             vb = vdp / dp
 
-            ! Layer projections, Hq, momentum-flux sums
-            Hq = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
-            pprime_k = 0.0
-
-            !$acc loop seq
-            do k = 1, nlayers_l
-               pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
-               !$acc loop seq
-               do ip = 1, npts_l
-                  I = tsp%indexq(ip, Iq)
-                  hi = tsp%psih(ip, Iq)
-                  pp_k = pp_k + hi * qprime_df(1, I, k)
-                  up_k = up_k + hi * qprime_df(2, I, k)
-                  vp_k = vp_k + hi * qprime_df(3, I, k)
-               end do
-
-               pprime_k1 = pprime_k + pp_k
-
-               Hq      = Hq      + 0.5 * init%alpha_mlswe(k) * (pprime_k1 + pprime_k) * pp_k
-               sum_up2 = sum_up2 + up_k * up_k * pp_k
-               sum_uv  = sum_uv  + up_k * vp_k * pp_k
-               sum_vp2 = sum_vp2 + vp_k * vp_k * pp_k
-
-               pprime_k = pprime_k1
-            end do
+            ! Load BCL layer integrals precomputed once per RK stage.
+            Hq      = btp%bcl_H(Iq)
+            sum_up2 = btp%bcl_uu(Iq)
+            sum_uv  = btp%bcl_uv(Iq)
+            sum_vp2 = btp%bcl_vv(Iq)
+            pp_k    = btp%bcl_dpq(Iq)
+            up_k    = btp%bcl_up_dpq(Iq)
+            vp_k    = btp%bcl_vp_dpq(Iq)
+            pbq     = btp%pbq(Iq)
 
             ! Bottom friction
             tb_u = 0.0;  tb_v = 0.0
@@ -214,7 +199,7 @@ contains
                if (botfr_l == 1) then
                   spd = (cd_mlswe_l / gravity) * pp_k
                else
-                  spd = (cd_mlswe_l / init%alpha_mlswe(nlayers_l)) * sqrt(ubot**2 + vbot**2)
+                  spd = (cd_mlswe_l / alpha_bot_l) * sqrt(ubot**2 + vbot**2)
                end if
                tb_u = spd * ubot
                tb_v = spd * vbot
@@ -292,9 +277,12 @@ contains
 
    end subroutine create_rhs_btp_volume_qdf
 
-   subroutine create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df, qprime_df)
+   subroutine create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
       !===========================================================================
-      !  Volume contribution — v1 physics (H_bclq zeroed for dry layers).
+      !  Volume contribution — v1 physics.
+      !  BCL layer integrals (H_b, sum_up2, etc.) are precomputed once per RK
+      !  stage by btp_bcl_coeffs_qdf into btp%bcl_* arrays; only qb_df
+      !  interpolation is done per substep.
       !  Gang-parallel over do Iq = 1, npoin_q; scatter uses !$acc atomic because
       !  multiple Iq within the same element share DG DOF nodes.
       !===========================================================================
@@ -315,49 +303,49 @@ contains
       type(btp_CS),    intent(inout) :: btp
       type(tensor_CS), intent(in)    :: tsp
 
-      real, dimension(4,G%npoin),             intent(in)    :: qb_df
-      real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
-      real, dimension(3,G%npoin),             intent(out)   :: rhs_btp
+      real, dimension(4,G%npoin), intent(in)  :: qb_df
+      real, dimension(3,G%npoin), intent(out) :: rhs_btp
 
-      real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b, H_bclq
+      real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b
       real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, ope2
-      real :: dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq, dry_k
-      real :: pp_k, up_k, vp_k, pprime_k, pprime_k1
+      real :: dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq
+      real :: pp_k, up_k, vp_k
       real :: sum_up2, sum_uv, sum_vp2
-      integer :: I, Iq, ip, k
-      integer :: npts_l, nlayers_l, botfr_l
-      real    :: cd_l
+      integer :: I, Iq, ip
+      integer :: npts_l, botfr_l
+      real    :: cd_l, alpha_bot_l
 
-      npts_l    = b%npts
-      nlayers_l = inp%nlayers
-      botfr_l   = inp%botfr
-      cd_l      = real(inp%cd_mlswe)
+      npts_l      = b%npts
+      botfr_l     = inp%botfr
+      cd_l        = real(inp%cd_mlswe)
+      alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
 
       !$acc data present(init, tsp, btp,                                             &
-      !$acc               rhs_btp, qb_df, qprime_df,                                &
+      !$acc               rhs_btp, qb_df,                                            &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
-      !$acc               tsp%indexq, tsp%wjac, init%pbprime_df,                    &
-      !$acc               init%coriolis_quad, init%alpha_mlswe,                     &
+      !$acc               tsp%indexq, tsp%wjac,                                     &
+      !$acc               init%coriolis_quad,                                        &
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
-      !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave)
+      !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
+      !$acc               btp%bcl_H, btp%bcl_uu, btp%bcl_uv, btp%bcl_vv,           &
+      !$acc               btp%bcl_dpq, btp%bcl_up_dpq, btp%bcl_vp_dpq, btp%pbq)
 
       !$acc kernels
       rhs_btp = 0.0
       !$acc end kernels
 
       !$acc parallel loop gang                                                       &
-      !$acc   private(dp, dpp, udp, vdp, pbq, hi, H_b, H_bclq, Hq, wq, ub, vb,   &
-      !$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y, ope, ope2, dry_k,  &
-      !$acc           pp_k, up_k, vp_k, pprime_k, pprime_k1,                       &
-      !$acc           sum_up2, sum_uv, sum_vp2,                                     &
-      !$acc           qu, quv, qvu, qv, dhdx, dhdy, Iq, ip, k, I)
+      !$acc   private(dp, dpp, udp, vdp, pbq, H_b, Hq, wq, ub, vb,               &
+      !$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y, ope, ope2,         &
+      !$acc           pp_k, up_k, vp_k,                                            &
+      !$acc           sum_up2, sum_uv, sum_vp2,                                    &
+      !$acc           qu, quv, qvu, qv, hi, dhdx, dhdy, I)                        &
+      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l)
       do Iq = 1, G%npoin_q
 
-         dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  pbq = 0.0
-         H_b = 0.0;  pprime_k = 0.0
-         sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
+         dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0
 
          ! Barotropic interpolation to quad point.
          !$acc loop seq
@@ -368,40 +356,17 @@ contains
             dpp = dpp + hi * qb_df(2, I)
             udp = udp + hi * qb_df(3, I)
             vdp = vdp + hi * qb_df(4, I)
-            pbq = pbq + hi * init%pbprime_df(I)
          end do
 
-         ! Layer loop: scalar temporaries + running sums; no variable-size arrays.
-         !$acc loop seq
-         do k = 1, nlayers_l
-            pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
-            !$acc loop seq
-            do ip = 1, npts_l
-               I    = tsp%indexq(ip, Iq)
-               hi   = tsp%psih(ip, Iq)
-               pp_k = pp_k + hi * qprime_df(1, I, k)
-               up_k = up_k + hi * qprime_df(2, I, k)
-               vp_k = vp_k + hi * qprime_df(3, I, k)
-            end do
-
-            dry_k = (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
-            if (pp_k <= dry_k) then
-               pp_k = dry_k;  up_k = 0.0;  vp_k = 0.0
-            end if
-
-            pprime_k1 = pprime_k + pp_k
-            H_bclq = 0.5 * init%alpha_mlswe(k) * (pprime_k1**2 - pprime_k**2)
-            ! v1 physics: zero energy from dry layers.
-            if (abs(pprime_k1 - pprime_k) <= dry_k) H_bclq = 0.0
-            H_b = H_b + H_bclq
-
-            sum_up2 = sum_up2 + pp_k * up_k * up_k
-            sum_uv  = sum_uv  + pp_k * up_k * vp_k
-            sum_vp2 = sum_vp2 + pp_k * vp_k * vp_k
-
-            pprime_k = pprime_k1
-         end do
-         ! After k loop: pp_k, up_k, vp_k hold the bottom-layer values.
+         ! Load BCL layer integrals precomputed once per RK stage.
+         H_b     = btp%bcl_H(Iq)
+         sum_up2 = btp%bcl_uu(Iq)
+         sum_uv  = btp%bcl_uv(Iq)
+         sum_vp2 = btp%bcl_vv(Iq)
+         pp_k    = btp%bcl_dpq(Iq)
+         up_k    = btp%bcl_up_dpq(Iq)
+         vp_k    = btp%bcl_vp_dpq(Iq)
+         pbq     = btp%pbq(Iq)
 
          wq = tsp%wjac(Iq)
          ub = udp / dp;  vb = vdp / dp
@@ -413,7 +378,7 @@ contains
             tb_u = spd * ubot;  tb_v = spd * vbot
          elseif (botfr_l == 2) then
             ubot = up_k + ub;  vbot = vp_k + vb
-            spd  = (cd_l / init%alpha_mlswe(nlayers_l)) * sqrt(ubot**2 + vbot**2)
+            spd  = (cd_l / alpha_bot_l) * sqrt(ubot**2 + vbot**2)
             tb_u = spd * ubot;  tb_v = spd * vbot
          end if
 
@@ -447,8 +412,7 @@ contains
          btp%uvb_ave(1, Iq)          = btp%uvb_ave(1, Iq)          + ub
          btp%uvb_ave(2, Iq)          = btp%uvb_ave(2, Iq)          + vb
 
-         ! Scatter to global rhs_btp. Multiple Iq per element share DOF nodes
-         ! → atomic update required to avoid race conditions.
+         ! Scatter: atomics handle cross-gang races on shared DOF nodes.
          !$acc loop seq
          do ip = 1, npts_l
             I    = tsp%indexq(ip, Iq)
@@ -464,6 +428,7 @@ contains
          end do
 
       end do
+      !$acc end parallel loop
       !$acc end data
 
    end subroutine create_rhs_btp_volume_qdf_qp
