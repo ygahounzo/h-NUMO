@@ -34,7 +34,7 @@ subroutine create_normals(nv,jac_face,face,nface, b, G)
     !local
     integer :: iface, i, j, k, ip, l, m
     integer :: ilocl, ilocr, iel, ier, ndim
-    real :: ww, nx, ny, nz, nlen
+    real :: ww, nx, ny, nz, nlen, xn, yn, zn, rnorm
 
     !local arrays
     real, dimension(b%nglx,b%ngly,b%nglz) :: x, y, z
@@ -91,8 +91,17 @@ subroutine create_normals(nv,jac_face,face,nface, b, G)
                             y_ksi(i,j,k) = 0; y_zeta(i,j,k) = 0;
                         endif
                         if(b%nglz == 1) then
-                            x_zeta(i,j,k) = 0; y_zeta(i,j,k) = 0; z_zeta(i,j,k) = 1;
-                            z_ksi(i,j,k) = 0; z_eta(i,j,k) = 0;
+                            xn = y_ksi(i,j,k)*z_eta(i,j,k) - z_ksi(i,j,k)*y_eta(i,j,k)
+                            yn = z_ksi(i,j,k)*x_eta(i,j,k) - x_ksi(i,j,k)*z_eta(i,j,k)
+                            zn = x_ksi(i,j,k)*y_eta(i,j,k) - y_ksi(i,j,k)*x_eta(i,j,k)
+                            rnorm = sqrt(xn*xn + yn*yn + zn*zn)
+                            if (rnorm > 0.0) then
+                                x_zeta(i,j,k) = xn / rnorm
+                                y_zeta(i,j,k) = yn / rnorm
+                                z_zeta(i,j,k) = zn / rnorm
+                            else
+                                x_zeta(i,j,k) = 0.0; y_zeta(i,j,k) = 0.0; z_zeta(i,j,k) = 1.0
+                            end if
                         endif
                     enddo
                 enddo

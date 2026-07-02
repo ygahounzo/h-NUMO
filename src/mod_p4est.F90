@@ -33,6 +33,7 @@ module mod_p4est
   use mod_bc,             only: vc_el_type
   use mod_mpi_utilities,  only: irank, irank0, MPI_PRECISION
   use mod_types,          only: r8
+  use mod_constants,      only: earth_radius
   use iso_c_binding,      only: C_INT64_T
   use mpi
 
@@ -233,8 +234,13 @@ contains
     integer :: is_cube=1
     integer :: is_dg=0
     integer :: is_cgc=0
+    integer :: irank_local
 
-    integer irank_local
+    if (trim(inp%geometry_type) == 'sphere_hex' .or. &
+        trim(inp%geometry_type) == 'sphere_ico' .or. &
+        trim(inp%geometry_type) == 'sphere_lonlat') then
+      is_cube = 0
+    end if
 
     nop = b%ngl - 1
 
@@ -340,8 +346,25 @@ contains
 
     if (irank_local == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------'
 
-    !adjust cube dimensions
-    if(b%is_2d .and. inp%read_external_grid_flg==0) then
+    G%is_sphere = (trim(inp%geometry_type) == 'sphere_hex' .or. &
+                   trim(inp%geometry_type) == 'sphere_ico' .or. &
+                   trim(inp%geometry_type) == 'sphere_lonlat')
+
+    !adjust coordinates based on geometry type
+    if (trim(inp%geometry_type) /= 'cartesian' .and. inp%read_external_grid_flg==0) then
+        ! Gnomonic projection: cube vertices → unit sphere → scale by earth_radius
+        do i=1, G%npoin
+            x = G%coord(1, i)
+            y = G%coord(2, i)
+            z = G%coord(3, i)
+            height_correction = sqrt(x*x + y*y + z*z)
+            if (height_correction > 0.0) then
+                G%coord(1, i) = earth_radius * x / height_correction
+                G%coord(2, i) = earth_radius * y / height_correction
+                G%coord(3, i) = earth_radius * z / height_correction
+            end if
+        end do
+    else if(b%is_2d .and. inp%read_external_grid_flg==0) then
         do i=1, G%npoin
               if(b%nglx == 1) then
                   x=0; y=G%coord(1, i)/inp%nely; z=G%coord(2, i)/inp%nelz

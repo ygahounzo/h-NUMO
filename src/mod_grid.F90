@@ -48,6 +48,7 @@ module mod_grid
         integer :: nelemx = 0, nelemy = 0, nelemz = 0
         integer :: npoin_q = 0
         logical :: do_1dIMEX = .false.
+        logical :: is_sphere  = .false.
         integer, dimension(12)  :: edge_limit = 0
         integer, dimension(2,6) :: face_limit = 0
     end type grid

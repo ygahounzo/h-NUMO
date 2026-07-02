@@ -25,7 +25,7 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface,b,G)
     !local
     integer :: iface, i, j, k, ip, l, m
     integer :: ilocl, ilocr, iel, ier, ndim
-    real :: ww, nx, ny, nz, nlen
+    real :: ww, nx, ny, nz, nlen, xn, yn, zn, rnorm
 
     !local arrays
     real, dimension(b%nglx,b%ngly,b%nglz) :: x, y, z
@@ -85,8 +85,17 @@ subroutine create_normals_quad(nv_q,jac_faceq,face,nface,b,G)
                             y_ksiq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0;
                         endif
                         if(b%nqz == 1) then
-                            x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0;
-                            z_ksiq(i,j,k) = 0.0; z_etaq(i,j,k) = 0.0;
+                            xn = y_ksiq(i,j,k)*z_etaq(i,j,k) - z_ksiq(i,j,k)*y_etaq(i,j,k)
+                            yn = z_ksiq(i,j,k)*x_etaq(i,j,k) - x_ksiq(i,j,k)*z_etaq(i,j,k)
+                            zn = x_ksiq(i,j,k)*y_etaq(i,j,k) - y_ksiq(i,j,k)*x_etaq(i,j,k)
+                            rnorm = sqrt(xn*xn + yn*yn + zn*zn)
+                            if (rnorm > 0.0) then
+                                x_zetaq(i,j,k) = xn / rnorm
+                                y_zetaq(i,j,k) = yn / rnorm
+                                z_zetaq(i,j,k) = zn / rnorm
+                            else
+                                x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0
+                            end if
                         endif
                     enddo
                 enddo

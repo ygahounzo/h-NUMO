@@ -47,7 +47,7 @@ module mod_initial
         real, dimension(:),   allocatable :: zbot_df_init
 
         integer :: nvar, nvart, nvar_diag, ntracers
-        integer :: nrhs_mxm, N_btp
+        integer :: nrhs_mxm, N_btp, nvar_btp, nvar_bcl
 
     end type initial
 
@@ -96,6 +96,14 @@ module mod_initial
         nq = b%nq
         npts = b%npts
         nface = G%nface
+
+        if (trim(inp%geometry_type) == 'sphere_hex') then
+            init%nvar_btp = 5
+            init%nvar_bcl = 4
+        else
+            init%nvar_btp = 5
+            init%nvar_bcl = 3
+        end if
 
         if(allocated(init%q_init)) deallocate(init%q_init,init%q_exact,init%q_ref,init%kvector,init%pi_values,init%height, &
                 init%coriolis_constant, init%shear_stress)

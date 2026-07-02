@@ -29,6 +29,7 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
     real, dimension(b%nqx,b%nqy,b%nqz) :: z_ksiq, z_etaq, z_zetaq
 
     real xj
+    real xn, yn, zn, rnorm   ! surface normal (cross product) for nqz==1 case
     integer ie, i, j, k
     integer ip, ndim
 
@@ -83,8 +84,24 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
                         y_ksiq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0;
                     endif
                     if(b%nqz == 1) then
-                        x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0;
-                        z_ksiq(i,j,k) = 0.0; z_etaq(i,j,k) = 0.0;
+                        ! Set the zeta direction to the unit outward normal of the element
+                        ! surface (cross product of the two tangent vectors).
+                        ! For flat Cartesian meshes z_ksiq=z_etaq=0 so this gives (0,0,1),
+                        ! recovering the previous Cartesian behaviour.
+                        ! For a curved surface such as the sphere z_ksiq and z_etaq are
+                        ! non-zero, so the cross product gives the true outward unit normal
+                        ! and xj = |t_ksi x t_eta| is the correct surface area element.
+                        xn = y_ksiq(i,j,k)*z_etaq(i,j,k) - z_ksiq(i,j,k)*y_etaq(i,j,k)
+                        yn = z_ksiq(i,j,k)*x_etaq(i,j,k) - x_ksiq(i,j,k)*z_etaq(i,j,k)
+                        zn = x_ksiq(i,j,k)*y_etaq(i,j,k) - y_ksiq(i,j,k)*x_etaq(i,j,k)
+                        rnorm = sqrt(xn*xn + yn*yn + zn*zn)
+                        if (rnorm > 0.0) then
+                            x_zetaq(i,j,k) = xn / rnorm
+                            y_zetaq(i,j,k) = yn / rnorm
+                            z_zetaq(i,j,k) = zn / rnorm
+                        else
+                            x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0
+                        end if
                     endif
               
                     !compute inverse of J
@@ -120,7 +137,7 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
                     !fix inverse jacobian matrix for 2D
                     if(b%nqx == 1)  ksiq_x(i,j,k,ie) = 0.0
                     if(b%nqy == 1)  etaq_y(i,j,k,ie) = 0.0
-                    if(b%nqz == 1)  zetaq_z(i,j,k,ie) = 0.0
+                    if(b%nqz == 1 .and. .not. G%is_sphere)  zetaq_z(i,j,k,ie) = 0.0
               
                 end do
             end do

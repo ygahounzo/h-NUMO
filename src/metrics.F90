@@ -32,6 +32,7 @@ subroutine compute_metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zet
     real, dimension(b%nglx,b%ngly,b%nglz) :: z_ksi, z_eta, z_zeta
 
     real xj
+    real :: xn, yn, zn, rnorm
     integer ie, i, j, k
     integer ip, ndim
 
@@ -89,8 +90,17 @@ subroutine compute_metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zet
                         y_ksi(i,j,k) = 0; y_zeta(i,j,k) = 0;
                     endif
                     if(b%nglz == 1) then
-                        x_zeta(i,j,k) = 0; y_zeta(i,j,k) = 0; z_zeta(i,j,k) = 1;
-                        z_ksi(i,j,k) = 0; z_eta(i,j,k) = 0;
+                        xn = y_ksi(i,j,k)*z_eta(i,j,k) - z_ksi(i,j,k)*y_eta(i,j,k)
+                        yn = z_ksi(i,j,k)*x_eta(i,j,k) - x_ksi(i,j,k)*z_eta(i,j,k)
+                        zn = x_ksi(i,j,k)*y_eta(i,j,k) - y_ksi(i,j,k)*x_eta(i,j,k)
+                        rnorm = sqrt(xn*xn + yn*yn + zn*zn)
+                        if (rnorm > 0.0) then
+                            x_zeta(i,j,k) = xn / rnorm
+                            y_zeta(i,j,k) = yn / rnorm
+                            z_zeta(i,j,k) = zn / rnorm
+                        else
+                            x_zeta(i,j,k) = 0.0; y_zeta(i,j,k) = 0.0; z_zeta(i,j,k) = 1.0
+                        end if
                     endif
               
                     !compute inverse of J
@@ -119,7 +129,7 @@ subroutine compute_metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zet
 
                     if(b%nglx == 1)  ksi_x(i,j,k,ie) = 0
                     if(b%ngly == 1)  eta_y(i,j,k,ie) = 0
-                    if(b%nglz == 1)  zeta_z(i,j,k,ie) = 0
+                    if(b%nglz == 1 .and. .not. G%is_sphere)  zeta_z(i,j,k,ie) = 0
               
                 end do
             end do

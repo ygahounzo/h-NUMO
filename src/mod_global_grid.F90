@@ -12,10 +12,10 @@
 !----------------------------------------------------------------------!
 module mod_global_grid
 
-    use mod_basis,     only: basis
-    use mod_input,     only: input
-    use mod_constants, only: earth_radius, tol, gravity
-    use mod_types,     only: r8
+    use mod_basis,      only: basis
+    use mod_input,      only: input
+    use mod_constants,  only: earth_radius, tol, gravity
+    use mod_types,      only: r8
 
     implicit none
     private
@@ -65,9 +65,13 @@ contains
         type(input),       intent(in)    :: inp
         type(basis),       intent(in)    :: b
 
-        call mod_global_grid_cube_create(gg, inp, b)
-        call mod_global_grid_init_coord(gg, inp, b)
-        call create_face(gg%face_g, gg%nface_g, b%FACE_LEN)
+        if (trim(inp%geometry_type) == 'cartesian' .or. trim(inp%geometry_type) == '') then
+            call mod_global_grid_cube_create(gg, inp, b)
+            call mod_global_grid_init_coord(gg, inp, b)
+            call create_face(gg%face_g, gg%nface_g, b%FACE_LEN)
+        else
+            call mod_global_grid_sphere_create(gg, inp, b)
+        end if
 
     end subroutine mod_global_grid_create
 
@@ -305,5 +309,92 @@ contains
         close(1)
 
     end subroutine mod_global_grid_out
+
+    !-----------------------------------------------------------------------
+    subroutine mod_global_grid_sphere_create(gg, inp, b)
+
+        implicit none
+
+        type(grid_global), intent(inout) :: gg
+        type(input),       intent(in)    :: inp
+        type(basis),       intent(in)    :: b
+
+        integer :: AllocateStatus
+        integer, parameter :: nface_sphere = 6  ! cubed-sphere has 6 macro-faces
+
+        gg%nx = inp%nelx * b%nopx + 1
+        gg%ny = inp%nely * b%nopy + 1
+        gg%nz = inp%nelz * b%nopz + 1
+
+        gg%nelem_s = nface_sphere * inp%nelx * inp%nely
+        gg%npoin_s = nface_sphere * gg%nx * gg%ny   ! upper bound (shared edges counted once by p4est)
+
+        gg%nelem_g    = nface_sphere * inp%nelx * inp%nely * inp%nelz
+        gg%npoin_g_cg = nface_sphere * gg%nx * gg%ny * gg%nz  ! upper bound
+        gg%npoin_g_cg_q = nface_sphere * ((b%nqx-1)*inp%nelx + 1) * &
+                                          ((b%nqy-1)*inp%nely + 1) * &
+                                          ((b%nqz-1)*inp%nelz + 1)
+
+        if (inp%space_method == 'cgc') then
+            gg%npoin_g = gg%npoin_g_cg
+        else
+            gg%npoin_g   = gg%nelem_g * (b%nopx + 1) * (b%nopy + 1) * (b%nopz + 1)
+            gg%npoin_g_q = gg%nelem_g * b%nqx * b%nqy * b%nqz
+        end if
+        gg%ncol_g = gg%npoin_g_cg / gg%nz
+
+        ! Sphere has no open boundary elements
+        gg%nboun_g      = 0
+        gg%nboun_poin_g = 0
+
+        ! Internal face count (upper bound; p4est will determine exact local count)
+        gg%nface_g = 0
+        if (b%nopx > 0) gg%nface_g = gg%nface_g + nface_sphere * (inp%nelx+1)*inp%nely*inp%nelz
+        if (b%nopy > 0) gg%nface_g = gg%nface_g + nface_sphere * (inp%nely+1)*inp%nelx*inp%nelz
+        if (b%nopz > 0) gg%nface_g = gg%nface_g + nface_sphere * (inp%nelz+1)*inp%nelx*inp%nely
+
+        ! Sphere is periodic in all horizontal directions
+        gg%iboundary  = 3
+        gg%xperiodic  = .true.
+        gg%yperiodic  = .true.
+        gg%zperiodic  = .false.
+
+        gg%xmin = -earth_radius;  gg%xmax = earth_radius
+        gg%ymin = -earth_radius;  gg%ymax = earth_radius
+        gg%zmin = inp%zbottom   ;  gg%zmax = inp%ztop
+
+        ! Exact unique surface node count: 6m^2 - 12m + 8 where m = nx (=ny for square faces)
+        if (gg%nx /= gg%ny) then
+            write(*,*) 'ERROR: sphere_hex requires nelx == nely and nopx == nopy'
+            stop
+        end if
+        gg%npoin_g_cg = 6 * gg%nx * gg%nx - 12 * gg%nx + 8  ! surface nodes
+        gg%npoin_g_cg = gg%npoin_g_cg * gg%nz                ! × vertical levels
+        if (inp%space_method == 'cgc') gg%npoin_g = gg%npoin_g_cg
+
+        allocate(gg%coord_g_cg(3, gg%npoin_g_cg), gg%coord_g(3, gg%npoin_g), &
+                 gg%face_g(b%FACE_LEN, max(1, gg%nface_g)),                   &
+                 gg%sigma_g(gg%npoin_g_cg), gg%index_g(2, gg%npoin_g_cg),    &
+                 gg%intma_g(b%nglx, b%ngly, b%nglz, gg%nelem_g),              &
+                 gg%bsido_g(6, max(1, gg%nboun_g)),                            &
+                 gg%ele_col_g(gg%nelem_g),                                     &
+                 stat=AllocateStatus)
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Grid (sphere) **"
+
+        gg%coord_g_cg = 0.0
+        gg%coord_g    = 0.0
+        gg%sigma_g    = 0.0
+        gg%index_g    = 0
+        gg%intma_g    = 0
+        gg%bsido_g    = 0
+        gg%ele_col_g  = 0
+
+        call create_grid_sphere(gg%coord_g_cg, gg%index_g, gg%intma_g, gg%ele_col_g, &
+            gg%npoin_g_cg, gg%nelem_g,                                                 &
+            b%xglx, b%xgly, b%xglz, b%nglx, b%ngly, b%nglz,                          &
+            inp%nelx, inp%nelz,                                                         &
+            gg%zmin, gg%zmax, gg%nx, gg%nz)
+
+    end subroutine mod_global_grid_sphere_create
 
 end module mod_global_grid

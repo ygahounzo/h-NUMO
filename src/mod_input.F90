@@ -79,6 +79,7 @@ module mod_input
       integer           :: nlayers ! number of shallow water layers
       integer           :: nproc_z
       integer           :: zlevel_out  ! spherical level to write to netcdf (default 1)
+      character(len=20) :: geometry_type
       character(len=24) :: sponge_type
       character(len=8)  :: format_vtk      ! ascii or binary
       character(len=8)  :: vtk_cell_type   ! standard or lagrange
@@ -296,6 +297,7 @@ module mod_input
       integer           :: nlayers = 1 !number of shallow water layers
       integer           :: nproc_z
       integer           :: zlevel_out = 1 !This integer is given by the user to decide what spherical level to write to a netcdf file. Value 1 is by default
+      character(len=20) :: geometry_type = 'cartesian'
       character(len=24) :: sponge_type = 'no_sponge'
       character(len=8)  :: format_vtk  = 'BINARY' !can be ascii, binary
       character(len=8)  :: vtk_cell_type  = 'standard' !can be standard, lagrange
@@ -492,6 +494,7 @@ module mod_input
          bcl_time_method, rk_bcl_FS
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
+         geometry_type, &
          nlayers, &
          nproc_z, &
          x_boundary, y_boundary, z_boundary, &
@@ -654,6 +657,7 @@ module mod_input
       inp%nlayers                        = nlayers
       inp%nproc_z                        = nproc_z
       inp%zlevel_out                     = zlevel_out
+      inp%geometry_type                  = geometry_type
       inp%sponge_type                    = sponge_type
       inp%format_vtk                     = format_vtk
       inp%vtk_cell_type                  = vtk_cell_type
