@@ -168,67 +168,81 @@ module mod_initial_mlswe
     end subroutine interpolate_pbprime_init
 
     !> Wind Stress and Coriolis Force
-    subroutine wind_stress_coriolis(b, G, inp, tau_wind,coriolis_df,coriolis_quad, fdt_bcl, fdt2_bcl, &
-            a_bcl, b_bcl,tau_wind_df)
+    subroutine wind_stress_coriolis(b, G, inp, tau_wind, coriolis_df, coriolis_quad, fdt_bcl, fdt2_bcl, &
+            a_bcl, b_bcl, tau_wind_df, coriolis_3d_quad, kvector)
 
-        use mod_constants, only: gravity
-    
+        use mod_constants, only: gravity, omega
+
         implicit none
 
         type(basis), intent(in) :: b
-        type(grid), intent(in) :: G
+        type(grid),  intent(in) :: G
         type(input), intent(in) :: inp
-        
-        real, dimension(2,G%npoin), intent(in) :: tau_wind_df
+
+        real, dimension(2,G%npoin),   intent(in)  :: tau_wind_df
+        real, dimension(3,G%npoin),   intent(in)  :: kvector
         real, dimension(2,G%npoin_q), intent(out) :: tau_wind
-        real, dimension(G%npoin), intent(out) :: coriolis_df
-        real, dimension(G%npoin_q), intent(out) :: coriolis_quad
-        real, dimension(G%npoin), intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
+        real, dimension(G%npoin),     intent(out) :: coriolis_df
+        real, dimension(G%npoin_q),   intent(out) :: coriolis_quad
+        real, dimension(G%npoin),     intent(out) :: fdt_bcl, fdt2_bcl, a_bcl, b_bcl
+        real, dimension(3,G%npoin_q), intent(out) :: coriolis_3d_quad
 
-        integer :: k, e, iquad, jquad, kquad, l, m, n, I, Iq, ip
-        real :: ym, Ly, y, hi, tau0, lat, sig, rho_air, w
+        integer :: e, iquad, jquad, kquad, l, m, n, I, Iq
+        real    :: ym, Ly, y, hi, x_k, y_k, z_k, f_k
 
-        tau_wind = 0.0
-        coriolis_df = 0.0
-        coriolis_quad = 0.0
+        tau_wind         = 0.0
+        coriolis_df      = 0.0
+        coriolis_quad    = 0.0
+        coriolis_3d_quad = 0.0
 
-        gravity = 9.806
-        
         Ly = inp%ydims(2)
         ym = 0.5*Ly
 
-        do concurrent(I = 1:G%npoin)
-            y = G%coord(2,I)
-            coriolis_df(I) = inp%f0 + inp%beta*(y - ym)
-        end do
-
+        ! f at DOF nodes: sphere uses 2*Omega*sin(lat) = 2*Omega*kvector(3)
+        if (inp%geometry_type == 'sphere_hex') then
+            do concurrent (I = 1:G%npoin)
+                coriolis_df(I) = 2.0*omega*kvector(3,I)
+            end do
+        else
+            do concurrent (I = 1:G%npoin)
+                y = G%coord(2,I)
+                coriolis_df(I) = inp%f0 + inp%beta*(y - ym)
+            end do
+        end if
 
         do concurrent (e = 1:G%nelem, kquad = 1:b%nqz, jquad = 1:b%nqy, iquad = 1:b%nqx)
-                    
+
             Iq = G%intma_dg_quad(iquad, jquad, kquad, e)
-            
+
             do l = 1, b%nglz
                 do m = 1, b%ngly
                     do n = 1, b%nglx
-                        
-                        I = G%intma(n, m, l, e)
-                        
+
+                        I  = G%intma(n, m, l, e)
                         hi = b%psiqx(n, iquad) * b%psiqy(m, jquad)
-                        
-                        coriolis_quad(Iq) = coriolis_quad(Iq) + coriolis_df(I) * hi
-                        
+
+                        x_k = kvector(1,I)
+                        y_k = kvector(2,I)
+                        z_k = kvector(3,I)
+                        f_k = coriolis_df(I)
+
+                        coriolis_quad(Iq)      = coriolis_quad(Iq)      + f_k        * hi
+                        coriolis_3d_quad(1,Iq) = coriolis_3d_quad(1,Iq) + (f_k*x_k) * hi
+                        coriolis_3d_quad(2,Iq) = coriolis_3d_quad(2,Iq) + (f_k*y_k) * hi
+                        coriolis_3d_quad(3,Iq) = coriolis_3d_quad(3,Iq) + (f_k*z_k) * hi
+
                         tau_wind(1,Iq) = tau_wind(1,Iq) + tau_wind_df(1,I) * hi
                         tau_wind(2,Iq) = tau_wind(2,Iq) + tau_wind_df(2,I) * hi
-                        
+
                     end do
                 end do
             end do
         end do
-        
-        fdt_bcl = inp%dt * coriolis_df
+
+        fdt_bcl  = inp%dt * coriolis_df
         fdt2_bcl = 0.5 * fdt_bcl
-        a_bcl = 1.0 / (1.0 + fdt2_bcl**2)
-        b_bcl = fdt2_bcl / (1.0 + fdt2_bcl**2)
+        a_bcl    = 1.0 / (1.0 + fdt2_bcl**2)
+        b_bcl    = fdt2_bcl / (1.0 + fdt2_bcl**2)
 
     end subroutine wind_stress_coriolis
 

@@ -36,6 +36,7 @@ module mod_initial
         real, dimension(:,:,:,:), allocatable :: qb_face
         real, dimension(:,:), allocatable :: qb_df, tau_wind, tau_wind_df
         real, dimension(:), allocatable :: coriolis_df,coriolis_quad
+        real, dimension(:,:), allocatable :: coriolis_3d_quad  ! (3,npoin_q): cf = f*r̂ at quad pts
         real, dimension(:), allocatable :: zbot, zbot_df, fdt_bcl, fdt2_bcl, a_bcl, b_bcl
         real, dimension(:,:,:), allocatable :: zbot_face
         real, dimension(:,:), allocatable :: grad_zbot_quad, grad_zbot_df, z_interface
@@ -103,7 +104,7 @@ module mod_initial
             init%pi_values(3,npoin), init%height(npoin), init%coriolis_constant(npoin), init%shear_stress(3,npoin))
 
         !Set-up kvector (must come after init%kvector is allocated)
-        call create_kvector(init%kvector,G%coord,npoin)
+        call create_kvector(init%kvector,G%coord,npoin,inp%geometry_type)
 
         !hack to allocate layers stuff anyways
         allocate(init%rho_layers(1),init%bathymetry(npoin))
@@ -111,7 +112,7 @@ module mod_initial
         if(inp%is_mlswe) then
             if(allocated(init%q_df)) deallocate(init%q_df, init%pbprime_df, & 
             init%qb_df, init%alpha_mlswe, init%tau_wind, init%coriolis_quad, &
-            init%coriolis_df, init%zbot, init%zbot_df, init%zbot_face, &
+            init%coriolis_df, init%coriolis_3d_quad, init%zbot, init%zbot_df, init%zbot_face, &
             init%grad_zbot_quad, init%tau_wind_df,&
             init%ssprk_a,init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl, init%grad_zbot_df, &
             init%pbprime_df_face, init%z_interface, &
@@ -120,8 +121,9 @@ module mod_initial
             allocate(init%q_df(inp%nvar_bcl,npoin,nlayers), init%pbprime_df(npoin), &
             init%qb_df(inp%nvar_btp,npoin), &
             init%alpha_mlswe(nlayers), init%tau_wind(2,npoin_q), init%coriolis_quad(npoin_q), init%coriolis_df(npoin), &
-            init%zbot(npoin_q), init%zbot_df(npoin), init%zbot_face(2,nq,nface), init%grad_zbot_quad(2,npoin_q), &
-            init%grad_zbot_df(2,npoin), &
+            init%coriolis_3d_quad(3,npoin_q), &
+            init%zbot(npoin_q), init%zbot_df(npoin), init%zbot_face(2,nq,nface), init%grad_zbot_quad(inp%ngrd_var,npoin_q), &
+            init%grad_zbot_df(inp%ngrd_var,npoin), &
             init%fdt_bcl(npoin), init%fdt2_bcl(npoin), init%a_bcl(npoin), &
             init%b_bcl(npoin), &
             init%tau_wind_df(2,npoin), init%ssprk_a(kstages,3), init%ssprk_beta(kstages), &
@@ -151,15 +153,15 @@ module mod_initial
             call bot_topo_derivatives(b, G, inp, mf, init%zbot, init%zbot_face, init%zbot_df)
 
             if(present(mt)) then
-                call compute_gradient_quad(G, b, mt, init%grad_zbot_quad, init%zbot_df)
-                call compute_gradient_df(G, b, mt, init%grad_zbot_df, init%zbot_df)
+                call compute_gradient_quad(G, inp, b, mt, init%grad_zbot_quad, init%zbot_df)
+                call compute_gradient_df(G, inp, b, mt, init%grad_zbot_df, init%zbot_df)
             end if
 
             init%N_btp = ceiling(inp%dt/inp%dt_btp)
             inp%dt_btp = inp%dt/real(init%N_btp)
 
             call  wind_stress_coriolis(b, G, inp, init%tau_wind, init%coriolis_df, init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
-                init%a_bcl, init%b_bcl, init%tau_wind_df)
+                init%a_bcl, init%b_bcl, init%tau_wind_df, init%coriolis_3d_quad, init%kvector)
             call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl)
 
         endif
@@ -175,30 +177,33 @@ module mod_initial
     !>@brief This subroutine constructs the KVECTOR on the sphere
     !> (called the Rvector in Notes and Papers)
     !----------------------------------------------------------------------!
-    subroutine create_kvector(kvector,coord,npoin)
+    subroutine create_kvector(kvector, coord, npoin, geometry_type)
 
         implicit none
 
-        !global arrays
-        real kvector(3,npoin), coord(3,npoin)
-        integer npoin
+        integer,          intent(in)  :: npoin
+        real,             intent(out) :: kvector(3,npoin)
+        real,             intent(in)  :: coord(3,npoin)
+        character(len=*), intent(in)  :: geometry_type
 
-        !local
-        integer ip
-        real x, y, z, radius, xf, yf, zf
+        integer :: ip
+        real    :: radius
 
-        do ip = 1,npoin
-            x=coord(1,ip); y=coord(2,ip); z=coord(3,ip)
-            radius=sqrt( dot_product(coord(:,ip),coord(:,ip)) )
-            if (radius > 0.0) then
-                xf=x/radius; yf=y/radius; zf=z/radius
-            else
-                xf=0.0; yf=0.0; zf=1.0
-            end if
-            kvector(1,ip) = xf
-            kvector(2,ip) = yf
-            kvector(3,ip) = zf
-        end do
+        if (geometry_type == 'sphere_hex') then
+            do ip = 1, npoin
+                radius = sqrt(dot_product(coord(:,ip), coord(:,ip)))
+                if (radius > 0.0) then
+                    kvector(:,ip) = coord(:,ip) / radius
+                else
+                    kvector(1,ip) = 0.0; kvector(2,ip) = 0.0; kvector(3,ip) = 1.0
+                end if
+            end do
+        else
+            ! Cartesian: vertical direction is always z
+            do ip = 1, npoin
+                kvector(1,ip) = 0.0; kvector(2,ip) = 0.0; kvector(3,ip) = 1.0
+            end do
+        end if
 
     end subroutine create_kvector
 
