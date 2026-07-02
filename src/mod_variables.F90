@@ -42,11 +42,11 @@ module mod_variables
       ! RHS and state buffers
       real, dimension(:,:),     allocatable :: rhs_btp       ! (3,npoin)
       real, dimension(:,:),     allocatable :: rhs_btp_visc  ! (2,npoin)
-      real, dimension(:,:),     allocatable :: qb_df         ! (4,npoin)
+      real, dimension(:,:),     allocatable :: qb_df         ! (nvar_btp,npoin)
 
       ! BTP time integrator work arrays (persistent GPU allocations)
-      real, dimension(:,:),     allocatable :: qb0_df        ! (4,npoin)
-      real, dimension(:,:),     allocatable :: qb2_df        ! (4,npoin)
+      real, dimension(:,:),     allocatable :: qb0_df        ! (nvar_btp,npoin)
+      real, dimension(:,:),     allocatable :: qb2_df        ! (nvar_btp,npoin)
 
       ! Precomputed BCL layer integrals at quad points — updated once per RK stage
       ! by btp_bcl_coeffs_qdf; fixed during BTP subcycling.
@@ -74,18 +74,18 @@ module mod_variables
       real, dimension(:,:,:), allocatable :: sum_layer_mass_flux_face
 
       ! State vectors
-      real, dimension(:,:,:), allocatable :: q_df       ! (3,npoin,nlayers)
-      real, dimension(:,:,:), allocatable :: qprime_df  ! (3,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: q_df       ! (nvar_bcl,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: qprime_df  ! (nvar_bcl,npoin,nlayers)
 
       ! RHS buffers (persistent device allocations)
-      real, dimension(:,:,:), allocatable :: rhs_bcl      ! (3,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: rhs_bcl      ! (nvar_bcl,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: rhs_visc_bcl ! (2,npoin,nlayers)
 
       ! Time integrator work arrays (persistent GPU allocations, no per-call malloc)
-      real, dimension(:,:,:), allocatable :: q0_df    ! (3,npoin,nlayers)
-      real, dimension(:,:,:), allocatable :: q1_df    ! (3,npoin,nlayers) rk3 only
+      real, dimension(:,:,:), allocatable :: q0_df    ! (nvar_bcl,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: q1_df    ! (nvar_bcl,npoin,nlayers) rk3 only
       real, dimension(:,:,:), allocatable :: uv_df    ! (2,npoin,nlayers)
-      real, dimension(:,:),   allocatable :: qbp_df   ! (4,npoin)
+      real, dimension(:,:),   allocatable :: qbp_df   ! (nvar_btp,npoin)
 
    end type bcl_CS
 
@@ -183,9 +183,9 @@ contains
       allocate(                                                               &
          btp%rhs_btp(3,G%npoin),                                              &
          btp%rhs_btp_visc(2,G%npoin),                                         &
-         btp%qb_df(4,G%npoin),                                                &
-         btp%qb0_df(4,G%npoin),                                               &
-         btp%qb2_df(4,G%npoin),                                               &
+         btp%qb_df(inp%nvar_btp,G%npoin),                                     &
+         btp%qb0_df(inp%nvar_btp,G%npoin),                                    &
+         btp%qb2_df(inp%nvar_btp,G%npoin),                                    &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp buffers)"
 
@@ -220,16 +220,16 @@ contains
          bcl%graduv_dpp_face(5,2,b%ngl,G%nface,inp%nlayers),                        &
          bcl%sum_layer_mass_flux(2,G%npoin_q),                                &
          bcl%sum_layer_mass_flux_face(2,b%nq,G%nface),                          &
-         bcl%q_df(3,G%npoin,inp%nlayers),                                         &
-         bcl%qprime_df(3,G%npoin,inp%nlayers),                                    &
+         bcl%q_df(inp%nvar_bcl,G%npoin,inp%nlayers),                              &
+         bcl%qprime_df(inp%nvar_bcl,G%npoin,inp%nlayers),                         &
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
-         bcl%rhs_bcl(3,G%npoin,inp%nlayers),                                      &
+         bcl%rhs_bcl(inp%nvar_bcl,G%npoin,inp%nlayers),                          &
          bcl%rhs_visc_bcl(2,G%npoin,inp%nlayers),                               &
-         bcl%q0_df(3,G%npoin,inp%nlayers),                                       &
-         bcl%q1_df(3,G%npoin,inp%nlayers),                                       &
+         bcl%q0_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
+         bcl%q1_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
          bcl%uv_df(2,G%npoin,inp%nlayers),                                       &
-         bcl%qbp_df(4,G%npoin),                                                  &
+         bcl%qbp_df(inp%nvar_btp,G%npoin),                                       &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 

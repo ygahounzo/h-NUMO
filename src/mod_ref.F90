@@ -42,7 +42,7 @@ module mod_ref
         real, dimension(:),     allocatable :: lap_recv_data_dg_df1, lap_send_data_dg_df1
         real, dimension(:,:,:), allocatable :: q_send_csty, q_recv_csty
         real, dimension(:),     allocatable :: recv_data_csty, send_data_csty
-        integer :: nmessage, nbtp_var, nboun_valid
+        integer :: nmessage, nbtp_var, nboun_valid, nbtp_var_lap, nbcl_var_lap
         integer, allocatable :: face_pack_list(:)
     end type mref
 
@@ -73,7 +73,12 @@ contains
         !Size of Max DG Message
         ref%nmessage = 2*init%nvar + 4 !nvar+3 for inviscid dynamics
         if(inp%is_mlswe) ref%nmessage = 6 ! 2 for uv-momentum
-        ref%nbtp_var = 3*inp%nlayers + 5 ! 3*nlayers for baroclinic variables + 5 for barotropic variables
+        ref%nbtp_var = inp%nvar_bcl*inp%nlayers + (inp%nvar_btp + 1) ! nvar_bcl*nlayers for baroclinic variables + (nvar_btp+1) for barotropic variables
+        ! Velocity-gradient tensor (graduv/dpp_graduv) is 2 velocity components x inp%ngrd_var
+        ! spatial directions wide; lap message = 2*(that width) + 2 (pbprime_df, pbprime_visc) for btp,
+        ! and (that width + 1 for dpprime_visc) per layer for bcl.
+        ref%nbtp_var_lap = 4*inp%ngrd_var + 2
+        ref%nbcl_var_lap = (2*inp%ngrd_var + 1)*inp%nlayers
 
         ! Compact list of valid MPI faces (face_type==2, imulti>0) in nbh_send_recv order.
         ! Computed once here so pack/unpack GPU kernels need no per-call pre-scans.
@@ -136,7 +141,7 @@ contains
             deallocate(ref%q_send, ref%q_recv, ref%q_send_lap, ref%q_recv_lap)
         endif
         allocate(ref%q_send(ref%nbtp_var,b%ngl,G%nboun), ref%q_recv(ref%nbtp_var,b%ngl,G%nboun), &
-            ref%q_send_lap(10,b%ngl,G%nboun), ref%q_recv_lap(10,b%ngl,G%nboun), &
+            ref%q_send_lap(ref%nbtp_var_lap,b%ngl,G%nboun), ref%q_recv_lap(ref%nbtp_var_lap,b%ngl,G%nboun), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
@@ -147,8 +152,8 @@ contains
             endif
             allocate( ref%recv_data_dg(ref%nbtp_var*b%ngl*G%nboun), &
                 ref%send_data_dg(ref%nbtp_var*b%ngl*G%nboun), &
-                ref%recv_data_dg_lap(10*b%ngl*G%nboun), &
-                ref%send_data_dg_lap(10*b%ngl*G%nboun), &
+                ref%recv_data_dg_lap(ref%nbtp_var_lap*b%ngl*G%nboun), &
+                ref%send_data_dg_lap(ref%nbtp_var_lap*b%ngl*G%nboun), &
                 stat=AllocateStatus )
             if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 
@@ -164,10 +169,10 @@ contains
         if(allocated(ref%q_send_bcl)) then
             deallocate(ref%q_send_bcl, ref%q_recv_bcl, ref%q_send_lap_bcl, ref%q_recv_lap_bcl)
         endif
-        allocate(ref%q_send_bcl(3*inp%nlayers,b%ngl,G%nboun), &
-            ref%q_recv_bcl(3*inp%nlayers,b%ngl,G%nboun), &
-            ref%q_send_lap_bcl(5*inp%nlayers,b%ngl,G%nboun), &
-            ref%q_recv_lap_bcl(5*inp%nlayers,b%ngl,G%nboun), &
+        allocate(ref%q_send_bcl(inp%nvar_bcl*inp%nlayers,b%ngl,G%nboun), &
+            ref%q_recv_bcl(inp%nvar_bcl*inp%nlayers,b%ngl,G%nboun), &
+            ref%q_send_lap_bcl(ref%nbcl_var_lap,b%ngl,G%nboun), &
+            ref%q_recv_lap_bcl(ref%nbcl_var_lap,b%ngl,G%nboun), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 0**"
 
@@ -175,10 +180,10 @@ contains
             deallocate(ref%recv_data_bcl, ref%send_data_bcl, &
                 ref%recv_data_lap_bcl, ref%send_data_lap_bcl)
         endif
-        allocate( ref%recv_data_bcl(3*inp%nlayers*b%ngl*G%nboun), &
-            ref%send_data_bcl(3*inp%nlayers*b%ngl*G%nboun), &
-            ref%recv_data_lap_bcl(5*inp%nlayers*b%ngl*G%nboun), &
-            ref%send_data_lap_bcl(5*inp%nlayers*b%ngl*G%nboun), &
+        allocate( ref%recv_data_bcl(inp%nvar_bcl*inp%nlayers*b%ngl*G%nboun), &
+            ref%send_data_bcl(inp%nvar_bcl*inp%nlayers*b%ngl*G%nboun), &
+            ref%recv_data_lap_bcl(ref%nbcl_var_lap*b%ngl*G%nboun), &
+            ref%send_data_lap_bcl(ref%nbcl_var_lap*b%ngl*G%nboun), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
 

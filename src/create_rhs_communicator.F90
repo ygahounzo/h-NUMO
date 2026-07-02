@@ -37,7 +37,7 @@ subroutine btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, q, qp
    !Global Arrays
    integer, intent(in) :: nvarb
    real, dimension(nvarb, G%npoin),            intent(inout) :: q
-   real, dimension(3, G%npoin, inp%nlayers),   intent(in)    :: qprime_df
+   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in) :: qprime_df
 
    ! DG - Discontinuous communicator
 
@@ -98,7 +98,7 @@ subroutine bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
    type(mpi_communicator), intent(inout) :: mpic
 
    !Global Arrays
-   real, dimension(3, G%npoin, inp%nlayers), intent(in) :: qprime_df
+   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in) :: qprime_df
 
    ! DG - Discontinuous communicator
 
@@ -203,7 +203,7 @@ subroutine create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs
    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
    !Map Recv buffer to the boundary of the Receiver (unpack data)
-   call unpack_data_dg_general_lap(G, b, par, ref%q_send_lap, ref%q_recv_lap, ref%send_data_dg_lap, &
+   call unpack_data_dg_general_lap(G, b, par, ref, ref%q_send_lap, ref%q_recv_lap, ref%send_data_dg_lap, &
       ref%recv_data_dg_lap, nvarb)
 
    !Build Inviscid Fluxes On Element Boundary
@@ -360,7 +360,7 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
    call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
 
    ! GPU unpack from flat MPI buffer into q_send/q_recv.
-   call unpack_data_dg_general_lap_bcl(G, b, par, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, ref%send_data_lap_bcl, &
+   call unpack_data_dg_general_lap_bcl(G, b, par, ref, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, ref%send_data_lap_bcl, &
       ref%recv_data_lap_bcl, inp%nlayers, ref%nboun_valid)
 
    ! GPU face-gang scatter into rhs on device.

@@ -47,7 +47,7 @@ module mod_initial
         real, dimension(:),   allocatable :: zbot_df_init
 
         integer :: nvar, nvart, nvar_diag, ntracers
-        integer :: nrhs_mxm, N_btp, nvar_btp, nvar_bcl
+        integer :: nrhs_mxm, N_btp
 
     end type initial
 
@@ -97,14 +97,6 @@ module mod_initial
         npts = b%npts
         nface = G%nface
 
-        if (trim(inp%geometry_type) == 'sphere_hex') then
-            init%nvar_btp = 5
-            init%nvar_bcl = 4
-        else
-            init%nvar_btp = 5
-            init%nvar_bcl = 3
-        end if
-
         if(allocated(init%q_init)) deallocate(init%q_init,init%q_exact,init%q_ref,init%kvector,init%pi_values,init%height, &
                 init%coriolis_constant, init%shear_stress)
         allocate( init%q_init(init%nvar,npoin), init%q_exact(init%nvar,npoin), init%q_ref(init%nvar,npoin), init%kvector(3,npoin), &
@@ -125,8 +117,8 @@ module mod_initial
             init%pbprime_df_face, init%z_interface, &
             init%z_init_flag, init%z_interface_initial,                     &
             init%z_init_flag_elem, init%zbot_df_init)
-            allocate(init%q_df(3,npoin,nlayers), init%pbprime_df(npoin), &
-            init%qb_df(4,npoin), &
+            allocate(init%q_df(inp%nvar_bcl,npoin,nlayers), init%pbprime_df(npoin), &
+            init%qb_df(inp%nvar_btp,npoin), &
             init%alpha_mlswe(nlayers), init%tau_wind(2,npoin_q), init%coriolis_quad(npoin_q), init%coriolis_df(npoin), &
             init%zbot(npoin_q), init%zbot_df(npoin), init%zbot_face(2,nq,nface), init%grad_zbot_quad(2,npoin_q), &
             init%grad_zbot_df(2,npoin), &

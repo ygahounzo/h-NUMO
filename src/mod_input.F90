@@ -80,6 +80,8 @@ module mod_input
       integer           :: nproc_z
       integer           :: zlevel_out  ! spherical level to write to netcdf (default 1)
       character(len=20) :: geometry_type
+      integer           :: nvar_bcl, nvar_btp  ! number of baroclinic/barotropic prognostic variables, derived from geometry_type
+      integer           :: ngrd_var            ! number of spatial gradient directions, derived from geometry_type
       character(len=24) :: sponge_type
       character(len=8)  :: format_vtk      ! ascii or binary
       character(len=8)  :: vtk_cell_type   ! standard or lagrange
@@ -658,6 +660,15 @@ module mod_input
       inp%nproc_z                        = nproc_z
       inp%zlevel_out                     = zlevel_out
       inp%geometry_type                  = geometry_type
+      if (trim(inp%geometry_type) == 'sphere_hex') then
+         inp%nvar_bcl                    = 4
+         inp%nvar_btp                    = 5
+         inp%ngrd_var                    = 3 ! 3 gradient directions for spherical coordinates
+      else
+         inp%nvar_bcl                    = 3
+         inp%nvar_btp                    = 4
+         inp%ngrd_var                    = 2 ! 2 gradient directions (d/dx, d/dy) for cartesian coordinates
+      end if
       inp%sponge_type                    = sponge_type
       inp%format_vtk                     = format_vtk
       inp%vtk_cell_type                  = vtk_cell_type

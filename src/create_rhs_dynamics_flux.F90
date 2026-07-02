@@ -598,16 +598,16 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    type(mref),        intent(in)    :: ref
 
    real, intent(inout) :: rhs(3, G%npoin, inp%nlayers)
-   real, intent(in)    :: q_send_bcl(3*inp%nlayers, b%ngl, par%num_send_recv_total)
-   real, intent(in)    :: q_recv_bcl(3*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_send_bcl(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv_bcl(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
 
    integer :: kk, iquad, k, ktemp, n, ivar, iface, el, il, jl, kl, I
-   integer :: ngl_f, nq_f, nlayers_f, nboun_valid_f
+   integer :: ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f
 
    real, dimension(inp%nlayers)   :: alpha_over_g, g_over_alpha
    real, dimension(2,inp%nlayers+1) :: p_face, z_face
    real, dimension(inp%nlayers+1) :: p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus
-   real, dimension(3,inp%nlayers) :: ql, qr
+   real, dimension(inp%nvar_bcl,inp%nlayers) :: ql, qr
    real, dimension(2,inp%nlayers) :: dp_flux, udp_flux, vdp_flux
    real, dimension(inp%nlayers)   :: H_face_q, udpl, udpr, vdpl, vdpr, dp_lr_l, dp_lr_r
    real :: dp_deficit(2), uu_dp_flux_deficit(2), vv_dp_flux_deficit(2)
@@ -622,6 +622,7 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    ngl_f         = b%ngl
    nq_f          = b%nq
    nlayers_f     = inp%nlayers
+   nvarb_f       = inp%nvar_bcl
    nboun_valid_f = ref%nboun_valid
 
    !$acc data present(ref%face_pack_list, G%face, G%intma,                        &
@@ -646,7 +647,7 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    !$acc           H_r_plus, H_r_minus, p_intersect_bot, p_intersect_top,          &
    !$acc           H_corr1, p_inc1, flux, flux_x, flux_y,                          &
    !$acc           kk, iquad, k, ktemp, n, ivar, iface, el, il, jl, kl, I)        &
-   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nboun_valid_f)
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
    do kk = 1, nboun_valid_f
 
       iface = ref%face_pack_list(kk)
@@ -671,9 +672,9 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
             do n = 1, ngl_f
                hi = b%psiq(n,iquad)
                !$acc loop seq
-               do ivar = 1, 3
-                  ql(ivar,k) = ql(ivar,k) + hi*q_send_bcl(3*(k-1)+ivar, n, kk)
-                  qr(ivar,k) = qr(ivar,k) + hi*q_recv_bcl(3*(k-1)+ivar, n, kk)
+               do ivar = 1, nvarb_f
+                  ql(ivar,k) = ql(ivar,k) + hi*q_send_bcl(nvarb_f*(k-1)+ivar, n, kk)
+                  qr(ivar,k) = qr(ivar,k) + hi*q_recv_bcl(nvarb_f*(k-1)+ivar, n, kk)
                end do
             end do
 
@@ -857,8 +858,8 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send,
 
    !global arrays
    real, intent(inout) :: rhs(G%npoin, inp%nlayers)
-   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, par%num_send_recv_total)
-   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_send(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
 
    !local variables
 
@@ -870,7 +871,7 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send,
    real :: dpl, dpr, uu, vv, flux, ul, ur, vl, vr, weight
    real :: dp_lr(2,inp%nlayers), dp_deficit(2)
    real, dimension(b%nq,inp%nlayers) :: flux_edge_u, flux_edge_v
-   real, dimension(3) :: ql, qr
+   real, dimension(inp%nvar_bcl) :: ql, qr
    real, dimension(3,b%nq) :: qbl, qbr
    real, parameter :: eps = 1.0e-10
 
@@ -900,12 +901,12 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send,
 
             do k = 1,inp%nlayers
 
-               index = 3*(k-1)
+               index = inp%nvar_bcl*(k-1)
 
                ql = 0.0; qr = 0.0
                do n = 1, b%ngl
                   hi = b%psiq(n,iquad)
-                  do ivar = 1,3
+                  do ivar = 1,inp%nvar_bcl
                      !Left Element
                      ql(ivar) = ql(ivar) + hi*q_send(index+ivar,n,kk)
                      !Right Element
@@ -1015,8 +1016,8 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_s
 
    !global arrays
    real, intent(inout) :: rhs(2, G%npoin, inp%nlayers)
-   real, intent(in)    :: q_send(3*inp%nlayers, b%ngl, par%num_send_recv_total)
-   real, intent(in)    :: q_recv(3*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_send(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
 
    !local variables
 
@@ -1025,7 +1026,7 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_s
    real, dimension(inp%nlayers) :: alpha_over_g, g_over_alpha
    real, dimension(2,inp%nlayers+1) :: p_face, z_face
    real, dimension(inp%nlayers+1) :: p_edge_plus, p_edge_minus, p2l, p2r, z_edge_plus, z_edge_minus
-   real, dimension(3,inp%nlayers) :: ql, qr
+   real, dimension(inp%nvar_bcl,inp%nlayers) :: ql, qr
    real, dimension(3,b%nq) :: qbl, qbr
    integer :: iface, ilr, k, iquad, ktemp, I
    real :: z_intersect_top,z_intersect_bot, dz_intersect, H_r_plus, H_r_minus, acceleration
@@ -1074,11 +1075,11 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_s
 
             do k = 1,inp%nlayers
 
-               index = 3*(k-1)
+               index = inp%nvar_bcl*(k-1)
 
                do n = 1, b%ngl
                   hi = b%psiq(n,iquad)
-                  do ivar = 1,3
+                  do ivar = 1,inp%nvar_bcl
                      !Left Element
                      ql(ivar,k) = ql(ivar,k) + hi*q_send(index+ivar,n,kk)
                      !Right Element
