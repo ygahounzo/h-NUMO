@@ -30,15 +30,15 @@ subroutine print_diagnostics_mlswe(G, inp, b, tsp, init, q_mlswe, qb, time, itim
    type(tensor_CS), intent(in) :: tsp
    type(initial),   intent(in) :: init
 
-   real, intent(in) :: q_mlswe(5, G%npoin, inp%nlayers), qb(4, G%npoin)
+   real, intent(in) :: q_mlswe(5, G%npoin, inp%nlayers), qb(inp%nvar_btp, G%npoin)
    real, intent(in) :: time, dt, mass_conserv0_g(inp%nlayers)
    integer, intent(in) :: itime, idone, ntime, unit0
    character, intent(in) :: fnp11*18
 
    real, dimension(:,:), allocatable :: q
    real, dimension(init%nvar, inp%nlayers) :: qmax_layers, qmin_layers
-   real :: qmax(init%nvar),   qmin(init%nvar), qbmax(4), qbmin(4)
-   real :: qmax_g(init%nvar), qmin_g(init%nvar), qbmax_g(4), qbmin_g(4)
+   real :: qmax(init%nvar),   qmin(init%nvar), qbmax(inp%nvar_btp), qbmin(inp%nvar_btp)
+   real :: qmax_g(init%nvar), qmin_g(init%nvar), qbmax_g(inp%nvar_btp), qbmin_g(inp%nvar_btp)
    real :: cfl_vector(2), cfl_vector_g(2)
    real :: min_dx_vec(2), min_dx_vec_g(2)
    real :: xm1(inp%nlayers)
@@ -91,18 +91,18 @@ subroutine print_diagnostics_mlswe(G, inp, b, tsp, init, q_mlswe, qb, time, itim
 
    end if
 
-   do i = 1, 4
+   do i = 1, inp%nvar_btp
       qbmax(i) = maxval(qb(i,:))
       qbmin(i) = minval(qb(i,:))
    end do
 
-   call mpi_reduce(qbmax, qbmax_g, 4, MPI_PRECISION, &
+   call mpi_reduce(qbmax, qbmax_g, inp%nvar_btp, MPI_PRECISION, &
       mpi_max, 0, mpi_comm_world, ierr)
 
-   call mpi_reduce(qbmin, qbmin_g, 4, MPI_PRECISION, &
+   call mpi_reduce(qbmin, qbmin_g, inp%nvar_btp, MPI_PRECISION, &
       mpi_min, 0, mpi_comm_world, ierr)
 
-   call courant_mlswe(G, b, cfl_vector, q_mlswe, qb, dt, inp%dt_btp, inp%nlayers, min_dx_vec)
+   call courant_mlswe(G, b, cfl_vector, q_mlswe, qb, dt, inp%dt_btp, inp%nlayers, inp%nvar_btp, min_dx_vec)
 
    call mpi_reduce(cfl_vector, cfl_vector_g, 2, MPI_PRECISION, &
       mpi_max, 0, mpi_comm_world, ierr)
@@ -128,7 +128,7 @@ subroutine print_diagnostics_mlswe(G, inp, b, tsp, init, q_mlswe, qb, time, itim
       end do
       print *, '------------------------------------------------------------------------'
       write(*,*) 'Barotropic'
-      do i = 1, 4
+      do i = 1, inp%nvar_btp
          write(*,'("Qb: i    Max/Min = ",i3,1x,2(e24.12,1x))') i, qbmax_g(i), qbmin_g(i)
       end do
 
@@ -144,7 +144,11 @@ subroutine print_diagnostics_mlswe(G, inp, b, tsp, init, q_mlswe, qb, time, itim
       fileds(1) = "h"
       fileds(2) = "u"
       fileds(3) = "v"
-      fileds(4) = "dp"
+      if (inp%nvar_bcl == 4) then
+         fileds(4) = "w"
+      else
+         fileds(4) = "dp"
+      end if
       fileds(5) = "ssh"
 
       open(unit=100, file = 'mlswe_FIN.txt')

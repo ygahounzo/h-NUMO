@@ -16,23 +16,30 @@ subroutine diagnostics(G, inp, gg, par, init, q, q_df, qb, itime, idone)
     type(parallel_CS), intent(in) :: par
     type(initial),     intent(in) :: init
 
-    real, intent(in)    :: q_df(3, G%npoin, inp%nlayers)
-    real, intent(in)    :: qb(4, G%npoin)
+    real, intent(in)    :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
+    real, intent(in)    :: qb(inp%nvar_btp, G%npoin)
     integer, intent(in) :: itime, idone
     real, intent(out)   :: q(5, G%npoin, inp%nlayers)
 
     character*5 :: tempchar
     character*4 :: num
     integer  :: i, j, k, iloop
+    logical  :: has_w
     real     :: q_gg(5, gg%npoin_g, inp%nlayers), ql(5, G%npoin), zbot_g(gg%npoin_g)
     real :: coord_dg_gathered(3, gg%npoin_g), qb_g(4, gg%npoin_g), q_g(5, gg%npoin_g)
     real, dimension(G%npoin, inp%nlayers+1) :: mslwe_elevation
+
+    has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
     do k = 1, inp%nlayers
         q(1,:,k) = (init%alpha_mlswe(k)/gravity)*q_df(1,:,k)
         q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
         q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
-        q(4,:,k) = q_df(1,:,k)
+        if (has_w) then
+            q(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+        else
+            q(4,:,k) = q_df(1,:,k)
+        end if
     end do
 
     mslwe_elevation = 0.0
@@ -52,7 +59,7 @@ subroutine diagnostics(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         q_gg(:,:,k) = q_g(:,:)
     enddo
 
-    call gather_data(G, inp, gg, par, qb_g,             qb,           4)
+    call gather_data(G, inp, gg, par, qb_g,             qb(1:4,:),    4)
     call gather_data(G, inp, gg, par, coord_dg_gathered, G%coord,     3)
     call gather_data(G, inp, gg, par, zbot_g,            init%zbot_df, 1)
 

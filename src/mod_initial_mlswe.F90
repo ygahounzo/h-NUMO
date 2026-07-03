@@ -370,24 +370,26 @@ module mod_initial_mlswe
         type(input),   intent(in)    :: inp
         type(metrics), intent(in)    :: mt
 
-        real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q
-        real, dimension(inp%nlayers),           intent(in)    :: alpha
+        real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q
+        real, dimension(inp%nlayers),                       intent(in)    :: alpha
 
-        real    :: pmin, pavg, uavg, vavg, wsum, wjac, threshold, theta, denom
+        real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
         integer :: I, k, n, m, e, nelem_l, nlayers_l, nglx_l, ngly_l
         real    :: dry_cutoff_l
+        logical :: has_w
 
         nelem_l      = G%nelem
         nlayers_l    = inp%nlayers
         nglx_l       = b%nglx
         ngly_l       = b%ngly
         dry_cutoff_l = inp%dry_cutoff
+        has_w        = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
         ! DG elements own their nodes exclusively — no cross-element races on q.
         !$acc parallel loop gang collapse(2) &
         !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q, alpha) &
-        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l) &
-        !$acc    private(pmin, pavg, uavg, vavg, wsum, wjac, threshold, theta, denom, I)
+        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w) &
+        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, I)
         do k = 1, nlayers_l
             do e = 1, nelem_l
 
@@ -397,6 +399,7 @@ module mod_initial_mlswe
                 pavg = 0.0
                 uavg = 0.0
                 vavg = 0.0
+                wavg = 0.0
                 wsum = 0.0
                 !$acc loop seq
                 do m = 1, ngly_l
@@ -409,11 +412,13 @@ module mod_initial_mlswe
                         pavg = pavg + wjac * q(1,I,k)
                         uavg = uavg + wjac * q(2,I,k)
                         vavg = vavg + wjac * q(3,I,k)
+                        if (has_w) wavg = wavg + wjac * q(4,I,k)
                     end do
                 end do
                 pavg = pavg / wsum
                 uavg = uavg / wsum
                 vavg = vavg / wsum
+                if (has_w) wavg = wavg / wsum
 
                 if (pavg <= threshold) then
                     ! Entire element dry — clamp to minimum, zero momentum.
@@ -425,6 +430,7 @@ module mod_initial_mlswe
                             q(1,I,k) = threshold
                             q(2,I,k) = 0.0
                             q(3,I,k) = 0.0
+                            if (has_w) q(4,I,k) = 0.0
                         end do
                     end do
                 else if (pmin < threshold) then
@@ -439,6 +445,7 @@ module mod_initial_mlswe
                             q(1,I,k) = theta * (q(1,I,k) - pavg) + pavg
                             q(2,I,k) = theta * (q(2,I,k) - uavg) + uavg
                             q(3,I,k) = theta * (q(3,I,k) - vavg) + vavg
+                            if (has_w) q(4,I,k) = theta * (q(4,I,k) - wavg) + wavg
                         end do !n
                     end do !m
                 end if

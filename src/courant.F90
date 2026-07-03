@@ -6,7 +6,7 @@
 !>           Date: June 22, 2025
 !------------------------------------------------------------------------------
 
-subroutine courant_mlswe(G, b, cfl_vector, q_layers, qb, dt, dt_btp, nlayers, min_dx_vec)
+subroutine courant_mlswe(G, b, cfl_vector, q_layers, qb, dt, dt_btp, nlayers, nvarb, min_dx_vec)
 
     use mod_grid,  only: grid
     use mod_basis, only: basis
@@ -17,15 +17,15 @@ subroutine courant_mlswe(G, b, cfl_vector, q_layers, qb, dt, dt_btp, nlayers, mi
     type(basis), intent(in) :: b
 
     !global arrays
-    real,    intent(in)  :: q_layers(5,G%npoin,nlayers), qb(4,G%npoin)
-    integer, intent(in)  :: nlayers
+    real,    intent(in)  :: q_layers(5,G%npoin,nlayers), qb(nvarb,G%npoin)
+    integer, intent(in)  :: nlayers, nvarb
     real,    intent(in)  :: dt, dt_btp
     real,    intent(out) :: cfl_vector(2), min_dx_vec(2)
 
     !local arrays
     real :: min_dx, min_dy, cfl_b, cfl
 
-    call courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayers, min_dx, min_dy)
+    call courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayers, nvarb, min_dx, min_dy)
 
     cfl_vector(1) = cfl_b
     cfl_vector(2) = cfl
@@ -35,7 +35,7 @@ subroutine courant_mlswe(G, b, cfl_vector, q_layers, qb, dt, dt_btp, nlayers, mi
 
 end subroutine courant_mlswe
 
-subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayers, min_dx, min_dy)
+subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayers, nvarb, min_dx, min_dy)
 
     use mod_grid,  only: grid
     use mod_basis, only: basis
@@ -46,8 +46,8 @@ subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayer
     type(basis), intent(in) :: b
 
     !global arrays
-    real,    intent(in)  :: q_layers(5,G%npoin,nlayers), qb(4,G%npoin)
-    integer, intent(in)  :: nlayers
+    real,    intent(in)  :: q_layers(5,G%npoin,nlayers), qb(nvarb,G%npoin)
+    integer, intent(in)  :: nlayers, nvarb
     real,    intent(in)  :: dt, dt_btp
     real,    intent(out) :: cfl, cfl_b, min_dx, min_dy
 

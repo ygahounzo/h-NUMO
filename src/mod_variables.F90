@@ -229,7 +229,7 @@ contains
          bcl%rhs_visc_bcl(2,G%npoin,inp%nlayers),                               &
          bcl%q0_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
          bcl%q1_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
-         bcl%uv_df(2,G%npoin,inp%nlayers),                                       &
+         bcl%uv_df(inp%nvar_bcl-1,G%npoin,inp%nlayers),                          &
          bcl%qbp_df(inp%nvar_btp,G%npoin),                                       &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"

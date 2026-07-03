@@ -40,12 +40,16 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    type(tensor_CS),        intent(in)    :: tsp
    type(metrics),          intent(in)    :: mt
 
-   real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
-   real, dimension(4, G%npoin),              intent(inout) :: qb_df
+   ! NOTE: this two-level (predictor-corrector) scheme is not yet sphere-aware —
+   ! rhs_momentum/layer_momentum_rhs only ever compute u,v-momentum (rhs_mom
+   ! stays 2-wide); q_df(4,...) (w) is never advanced by this integrator.
+   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
+   real, dimension(inp%nvar_btp, G%npoin),              intent(inout) :: qb_df
 
-   real, dimension(4, G%npoin)              :: qb_df_n
-   real, dimension(3, G%npoin, inp%nlayers) :: qprime_df_n, qprime_df_pred, q_df_pred
-   real, dimension(2, G%npoin, inp%nlayers) :: uv_df, rhs_mom
+   real, dimension(inp%nvar_btp, G%npoin)              :: qb_df_n
+   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers) :: qprime_df_n, qprime_df_pred, q_df_pred
+   real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers) :: uv_df
+   real, dimension(2, G%npoin, inp%nlayers) :: rhs_mom
    real, dimension(G%npoin, inp%nlayers)    :: rhs_dp
    real, dimension(G%npoin)                 :: dp_norm_inv
    integer :: k
@@ -68,7 +72,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    q_df_pred = q_df + inp%dt*bcl%rhs_bcl
 
-   call layer_mom_boundary_df(G, inp, b, mf, q_df_pred)
+   call layer_mom_boundary_df(G, inp, b, mf, init, q_df_pred, bcl%q0_df)
 
    ! Enforce barotropic-baroclinic velocity consistency on the predicted state.
    call extract_velocity(G, inp, uv_df, q_df_pred, qb_df)
@@ -113,7 +117,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    q_df(2,:,:) = q_df(2,:,:) + inp%dt*rhs_mom(1,:,:)
    q_df(3,:,:) = q_df(3,:,:) + inp%dt*rhs_mom(2,:,:)
 
-   call layer_mom_boundary_df(G, inp, b, mf, q_df)
+   call layer_mom_boundary_df(G, inp, b, mf, init, q_df, bcl%q0_df)
 
    ! Enforce barotropic-baroclinic velocity consistency on the corrected state.
    call extract_velocity(G, inp, uv_df, q_df, qb_df)

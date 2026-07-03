@@ -150,35 +150,42 @@ contains
         type(grid),  intent(in)    :: G
         type(input), intent(in)    :: inp
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
-        real, dimension(4, G%npoin),              intent(in)    :: qb_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, dimension(inp%nvar_btp, G%npoin),              intent(in)    :: qb_df
 
-        real    :: ubar, vbar
+        real    :: ubar, vbar, wbar
         integer :: I, k
-        real    :: uv_df(2, G%npoin, inp%nlayers)
+        real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
+        logical :: has_w
+
+        has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
         uv_df = 0.0
 
         do k = 1, inp%nlayers
             uv_df(1,:,k) = q_df(2,:,k) / q_df(1,:,k)
             uv_df(2,:,k) = q_df(3,:,k) / q_df(1,:,k)
+            if (has_w) uv_df(3,:,k) = q_df(4,:,k) / q_df(1,:,k)
         end do
 
         do I = 1, G%npoin
-            ubar = 0.0; vbar = 0.0
+            ubar = 0.0; vbar = 0.0; wbar = 0.0
 
             do k = 1, inp%nlayers
                 ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
                 vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
+                if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
             end do
 
             if(qb_df(1,I) > 0.0) then
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
+                if (has_w) wbar = wbar / qb_df(1,I)
 
                 do k = 1, inp%nlayers
                     uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
                     uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
+                    if (has_w) uv_df(3,I,k) = uv_df(3,I,k) - wbar + qb_df(5,I)/qb_df(1,I)
                 end do
             else
                 uv_df(:,I,:) = 0.0
@@ -188,6 +195,7 @@ contains
         do k = 1, inp%nlayers
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
             q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
+            if (has_w) q_df(4,:,k) = uv_df(3,:,k) * q_df(1,:,k)
         end do
 
     end subroutine velocity_df
@@ -199,49 +207,57 @@ contains
         type(grid),  intent(in)  :: G
         type(input), intent(in)  :: inp
 
-        real, dimension(2, G%npoin, inp%nlayers), intent(out) :: uv_df
-        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df
-        real, dimension(4, G%npoin),              intent(in)  :: qb_df
+        real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers), intent(out) :: uv_df
+        real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
+        real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
 
-        real    :: ubar, vbar
+        real    :: ubar, vbar, wbar
         integer :: I, k, npoin_l, nlayers_l
+        logical :: has_w
 
         npoin_l   = G%npoin
         nlayers_l = inp%nlayers
+        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
         ! Gang over nodes; each gang accumulates its barotropic velocity privately.
         !$acc parallel loop gang &
         !$acc    present(uv_df, q_df, qb_df) &
-        !$acc    firstprivate(npoin_l, nlayers_l) &
-        !$acc    private(ubar, vbar)
+        !$acc    firstprivate(npoin_l, nlayers_l, has_w) &
+        !$acc    private(ubar, vbar, wbar)
         do I = 1, npoin_l
             !$acc loop seq
             do k = 1, nlayers_l
                 uv_df(1,I,k) = q_df(2,I,k) / q_df(1,I,k)
                 uv_df(2,I,k) = q_df(3,I,k) / q_df(1,I,k)
+                if (has_w) uv_df(3,I,k) = q_df(4,I,k) / q_df(1,I,k)
             end do
 
             ubar = 0.0
             vbar = 0.0
+            wbar = 0.0
             !$acc loop seq
             do k = 1, nlayers_l
                 ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
                 vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
+                if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
             end do
 
             if (qb_df(1,I) > 0.0) then
                 ubar = ubar / qb_df(1,I)
                 vbar = vbar / qb_df(1,I)
+                if (has_w) wbar = wbar / qb_df(1,I)
                 !$acc loop seq
                 do k = 1, nlayers_l
                     uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
                     uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
+                    if (has_w) uv_df(3,I,k) = uv_df(3,I,k) - (wbar - qb_df(5,I)/qb_df(1,I))
                 end do
             else
                 !$acc loop seq
                 do k = 1, nlayers_l
                     uv_df(1,I,k) = 0.0
                     uv_df(2,I,k) = 0.0
+                    if (has_w) uv_df(3,I,k) = 0.0
                 end do
             end if
         end do
@@ -257,16 +273,18 @@ contains
         type(input),   intent(in) :: inp
         type(initial), intent(in) :: init
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(out) :: qprime_df
-        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: q_df
-        real, dimension(4, G%npoin),              intent(in)  :: qb_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: qprime_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
+        real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
 
         integer :: k, I, npoin_l, nlayers_l
         real    :: ope
-        real    :: uv_df(2, G%npoin, inp%nlayers)
+        real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
+        logical :: has_w
 
         npoin_l   = G%npoin
         nlayers_l = inp%nlayers
+        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
         !$acc data create(uv_df)
 
@@ -280,7 +298,7 @@ contains
         ! write qprime.  No cross-node dependency — no atomics needed.
         !$acc parallel loop gang &
         !$acc    present(qprime_df, q_df, qb_df, uv_df, init%pbprime_df) &
-        !$acc    firstprivate(npoin_l, nlayers_l) private(ope)
+        !$acc    firstprivate(npoin_l, nlayers_l, has_w) private(ope)
         do I = 1, npoin_l
             ope = 0.0
             !$acc loop seq
@@ -294,6 +312,7 @@ contains
                 qprime_df(1,I,k) = q_df(1,I,k) / ope
                 qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
                 qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
+                if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - qb_df(5,I)/qb_df(1,I)
             end do
         end do
         !$acc end parallel loop
@@ -348,7 +367,7 @@ contains
 
     end subroutine extract_dprime_df_face
 
-    subroutine layer_mom_boundary_df(G, inp, b, mf, q)
+    subroutine layer_mom_boundary_df(G, inp, b, mf, init, q, q0)
 
         implicit none
 
@@ -356,16 +375,39 @@ contains
         type(input),   intent(in)    :: inp
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
+        type(initial), intent(in)    :: init
 
-        real, intent(inout) :: q(3, G%npoin, inp%nlayers)
+        real, intent(inout) :: q(inp%nvar_bcl, G%npoin, inp%nlayers)
+        real, intent(in)    :: q0(inp%nvar_bcl, G%npoin, inp%nlayers)
 
         integer :: iface, n, il, jl, kl, el, er, I, k
         integer :: nface_l, ngl_l, nlayers_l
-        real    :: nx, ny, upnl_k
+        real    :: nx, ny, nz, upnl_k
+        logical :: has_w
 
         nface_l   = G%nface
         ngl_l     = b%ngl
         nlayers_l = inp%nlayers
+        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+
+        ! Sphere tangency constraint: remove radial momentum component at all
+        ! nodes per layer so momentum stays tangent to the sphere surface.
+        if (has_w) then
+            !$acc parallel loop gang collapse(2) &
+            !$acc    present(init%kvector, q) private(nx, ny, nz, upnl_k)
+            do k = 1, nlayers_l
+                do I = 1, G%npoin
+                    nx     = init%kvector(1,I)
+                    ny     = init%kvector(2,I)
+                    nz     = init%kvector(3,I)
+                    upnl_k = q(2,I,k)*nx + q(3,I,k)*ny + q(4,I,k)*nz
+                    q(2,I,k) = q(2,I,k) - upnl_k*nx
+                    q(3,I,k) = q(3,I,k) - upnl_k*ny
+                    q(4,I,k) = q(4,I,k) - upnl_k*nz
+                end do
+            end do
+            !$acc end parallel loop
+        end if
 
         ! Gang over faces; seq over face nodes and layers.
         ! Atomics guard writes at corner nodes shared between two wall faces.
@@ -373,8 +415,8 @@ contains
 
         !$acc parallel loop gang &
         !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector, q) &
-        !$acc    firstprivate(nface_l, ngl_l, nlayers_l) &
-        !$acc    private(il, jl, kl, el, er, I, nx, ny, upnl_k)
+        !$acc    firstprivate(nface_l, ngl_l, nlayers_l, has_w) &
+        !$acc    private(il, jl, kl, el, er, I, nx, ny, nz, upnl_k)
         do iface = 1, nface_l
 
             el = G%face(7,iface)
@@ -389,13 +431,20 @@ contains
                     I  = G%intma(il,jl,kl,el)
                     nx = mf%normal_vector(1,n,1,iface)
                     ny = mf%normal_vector(2,n,1,iface)
+                    nz = 0.0
+                    if (has_w) nz = mf%normal_vector(3,n,1,iface)
                     !$acc loop seq
                     do k = 1, nlayers_l
                         upnl_k = q(2,I,k)*nx + q(3,I,k)*ny
+                        if (has_w) upnl_k = upnl_k + q(4,I,k)*nz
                         !$acc atomic update
                         q(2,I,k) = q(2,I,k) - upnl_k*nx
                         !$acc atomic update
                         q(3,I,k) = q(3,I,k) - upnl_k*ny
+                        if (has_w) then
+                            !$acc atomic update
+                            q(4,I,k) = q(4,I,k) - upnl_k*nz
+                        end if
                     end do
                 end do
 
@@ -412,6 +461,10 @@ contains
                         q(2,I,k) = 0.0
                         !$acc atomic write
                         q(3,I,k) = 0.0
+                        if (has_w) then
+                            !$acc atomic write
+                            q(4,I,k) = 0.0
+                        end if
                     end do
                 end do
             end if
@@ -419,6 +472,19 @@ contains
         !$acc end parallel loop
 
         !$acc end data
+
+        ! Solid body rotation: restore momentum direction from initial state.
+        if (has_w .and. trim(inp%test_case) == 'solid_body') then
+            !$acc parallel loop gang collapse(2) present(q, q0)
+            do k = 1, nlayers_l
+                do I = 1, G%npoin
+                    q(2,I,k) = (q0(2,I,k)/q0(1,I,k)) * q(1,I,k)
+                    q(3,I,k) = (q0(3,I,k)/q0(1,I,k)) * q(1,I,k)
+                    q(4,I,k) = (q0(4,I,k)/q0(1,I,k)) * q(1,I,k)
+                end do
+            end do
+            !$acc end parallel loop
+        end if
 
     end subroutine layer_mom_boundary_df
 

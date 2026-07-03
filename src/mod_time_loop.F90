@@ -107,7 +107,7 @@ contains
 
             if(inp%dump_data) then
                 if(trim(inp%out_type) == 'txt') then
-                    call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df(1:4,:), itime, idone)
+                    call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, itime, idone)
                 elseif(trim(inp%out_type) == 'vtk') then
                     do l = 1, inp%nlayers
                         ifnp = l
@@ -117,7 +117,7 @@ contains
                             fnp1(j:j) = '0'
                         end do
                         write(fnp2,'(a1,a3,a5)') "l", fnp1, "_0000"
-                        call write_output_mlswe(G, inp, b, init, gg, par, qout_mlswe(:,:,l), btp%qb_df(1:4,:), fnp2, time, l)
+                        call write_output_mlswe(G, inp, b, init, gg, par, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
                     end do
                 end if
             end if
@@ -153,7 +153,7 @@ contains
         if(inp%lcheck_conserved) then
 
             if (.not. inp%dump_data) then
-                call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df(1:4,:), itime, 1)
+                call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, itime, 1)
             end if
 
             do l = 1, inp%nlayers
@@ -177,7 +177,7 @@ contains
         end if
 
         if (inp%lprint_diagnostics) then
-            call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df(1:4,:), time, itime, inp%dt, idone, &
+            call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df, time, itime, inp%dt, idone, &
                                          mass_conserv0_g, ntime, fnp11, unit0)
         end if
 
@@ -228,7 +228,7 @@ contains
                 end do
 
                 if(trim(inp%out_type) == 'txt') then
-                    call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df(1:4,:), inorm, idone)
+                    call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)
                 elseif(trim(inp%out_type) == 'vtk') then
                     do l = 1, inp%nlayers
                         ifnp = l
@@ -238,12 +238,12 @@ contains
                             fnp4(j:j) = '0'
                         end do
                         write(fnp2,'(a1,a3,a1,a4)') "l", fnp4, "_", fnp1
-                        call write_output_mlswe(G, inp, b, init, gg, par, qout_mlswe(:,:,l), btp%qb_df(1:4,:), fnp2, time, l)
+                        call write_output_mlswe(G, inp, b, init, gg, par, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
                     end do
                 end if
 
                 if (inp%lprint_diagnostics) then
-                    call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df(1:4,:), time, itime, inp%dt, idone, &
+                    call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df, time, itime, inp%dt, idone, &
                                                  mass_conserv0_g, ntime, fnp11, unit0)
                 end if
             end if
@@ -257,9 +257,9 @@ contains
         idone = 1
 
         if (.not. inp%dump_data) then
-            call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df(1:4,:), inorm, idone)
+            call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)
         end if
-        call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df(1:4,:), time, itime, inp%dt, idone, &
+        call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df, time, itime, inp%dt, idone, &
                                      mass_conserv0_g, ntime, fnp11, unit0)
 
     end subroutine time_loop

@@ -35,9 +35,10 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
     type(grid_global), intent(in) :: gg
     type(parallel_CS), intent(in) :: par
 
-    real, intent(in) :: q(init%nvar, G%npoin), qb(4, G%npoin)
+    real, intent(in) :: q(init%nvar, G%npoin), qb(inp%nvar_btp, G%npoin)
     real, intent(in) :: time
     character, intent(in) :: fname*100
+    logical :: has_w
 
     integer ie, i, j, k, nglm1, nglm13, ii, jj, kk
     integer ncells, nsize
@@ -61,6 +62,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
     real,    dimension(:),     allocatable :: km
     real,    dimension(:),     allocatable :: x_uns, y_uns, z_uns
     integer, dimension(:),     allocatable :: eltype, conn
+    integer, dimension(:,:),   allocatable :: conn_local, conn_g_pts
     real,    dimension(:),     allocatable :: var_uns_grid, var_uns_grid_ref
 
     character*72  :: cbuf
@@ -68,31 +70,83 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
     character*24  :: fnp
     integer elemType, l
     integer AllocateStatus
+    integer ncells_local
     real :: xfactor, yfactor, zfactor
-    logical :: is_cgc
 
-    is_cgc = .false.
-    if(inp%space_method == 'cgc') is_cgc = .true.
+    has_w = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+
+    ! Connectivity is built from each rank's own LOCAL grid and gathered with
+    ! a point-index offset via gather_connectivity, rather than read from
+    ! gg%intma_g: gg%intma_g is only ever populated by mod_global_grid_create,
+    ! which nothing in this p4est-based build calls, so it is always
+    ! unallocated here. Indexing it (or indexing local G%intma out to the
+    ! global element count gg%nelem_g) read out-of-bounds/uninitialized
+    ! memory, corrupting the CELLS block (or segfaulting).
+    nglm13       = max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)
+    ncells       = gg%nelem_g*nglm13
+    ncells_local = G%nelem*nglm13
+
+    allocate(conn_local(b%CELL_CHILDREN, max(ncells_local,1)))
+
+    l = 0
+    do ie = 1, G%nelem
+        do i = 1, max(b%nglx-1,1)
+            do j = 1, max(b%ngly-1,1)
+                do k = 1, max(b%nglz-1,1)
+                    ii = min(i+1, b%nglx)
+                    jj = min(j+1, b%ngly)
+                    kk = min(k+1, b%nglz)
+                    l = l + 1
+
+                    if(b%nglx == 1) then
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma( i,jj, k,ie) - 1)
+                        conn_local(3,l) = (G%intma( i,jj,kk,ie) - 1)
+                        conn_local(4,l) = (G%intma( i, j,kk,ie) - 1)
+                    else if(b%ngly == 1) then
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma(ii, j, k,ie) - 1)
+                        conn_local(3,l) = (G%intma(ii, j,kk,ie) - 1)
+                        conn_local(4,l) = (G%intma( i, j,kk,ie) - 1)
+                    else if(b%nglz == 1) then
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma(ii, j, k,ie) - 1)
+                        conn_local(3,l) = (G%intma(ii,jj, k,ie) - 1)
+                        conn_local(4,l) = (G%intma( i,jj, k,ie) - 1)
+                    else
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma(ii, j, k,ie) - 1)
+                        conn_local(3,l) = (G%intma(ii,jj, k,ie) - 1)
+                        conn_local(4,l) = (G%intma( i,jj, k,ie) - 1)
+                        conn_local(5,l) = (G%intma( i, j,kk,ie) - 1)
+                        conn_local(6,l) = (G%intma(ii, j,kk,ie) - 1)
+                        conn_local(7,l) = (G%intma(ii,jj,kk,ie) - 1)
+                        conn_local(8,l) = (G%intma( i,jj,kk,ie) - 1)
+                    endif
+                end do
+            end do
+        end do
+    end do
+
+    if (irank == irank0) allocate(conn_g_pts(b%CELL_CHILDREN, ncells))
+    call gather_connectivity(b, par, conn_g_pts, conn_local, ncells_local, ncells)
+    deallocate(conn_local)
 
     if (irank == irank0) then
         allocate(q_g(init%nvar, gg%npoin_g), coord_dg_gathered(3, gg%npoin_g), &
             x_uns(gg%npoin_g), y_uns(gg%npoin_g), z_uns(gg%npoin_g),           &
-            eltype(gg%nelem_g*max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)), &
-            conn(9*gg%nelem_g*max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)), &
+            eltype(ncells), conn(ncells*(b%CELL_CHILDREN+1)),                  &
             var_uns_grid(gg%npoin_g), var_uns_grid_ref(gg%npoin_g),             &
-            qb_g(4, gg%npoin_g), stat=AllocateStatus)
+            qb_g(inp%nvar_btp, gg%npoin_g), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"
     end if
 
     ! Gather Data onto Head node
     call gather_data(G, inp, gg, par, q_g, q, init%nvar)
-    call gather_data(G, inp, gg, par, qb_g, qb, 4)
+    call gather_data(G, inp, gg, par, qb_g, qb, inp%nvar_btp)
     call gather_data(G, inp, gg, par, coord_dg_gathered, G%coord, 3)
 
     if (irank == irank0) then
-
-        nglm13 = max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)
-        ncells = gg%nelem_g*nglm13
 
         call vtk_ini(output_format = inp%format_vtk,   &
             filename      = fname,                     &
@@ -118,93 +172,14 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
             nsize = 9*ncells
         endif
 
+        ! Build the flat VTK connectivity list (cell-size prefix + point
+        ! indices per cell) from the already-gathered, correctly globally-
+        ! numbered conn_g_pts.
         l = 1
-
-        do ie = 1, gg%nelem_g
-            do i = 1, max(b%nglx-1,1)
-                do j = 1, max(b%ngly-1,1)
-                    do k = 1, max(b%nglz-1,1)
-                        ii = min(i+1, b%nglx)
-                        jj = min(j+1, b%ngly)
-                        kk = min(k+1, b%nglz)
-
-                        if(b%nglx == 1) then
-                            if(is_cgc) then
-                                conn(l)   = 4
-                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
-                                conn(l+2) = (gg%intma_g( i,jj, k,ie) - 1)
-                                conn(l+3) = (gg%intma_g( i,jj,kk,ie) - 1)
-                                conn(l+4) = (gg%intma_g( i, j,kk,ie) - 1)
-                                l = l + 5
-                            else
-                                conn(l)   = 4
-                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
-                                conn(l+2) = (G%intma( i,jj, k,ie) - 1)
-                                conn(l+3) = (G%intma( i,jj,kk,ie) - 1)
-                                conn(l+4) = (G%intma( i, j,kk,ie) - 1)
-                                l = l + 5
-                            endif
-                        else if(b%ngly == 1) then
-                            if(is_cgc) then
-                                conn(l)   = 4
-                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
-                                conn(l+2) = (gg%intma_g(ii, j, k,ie) - 1)
-                                conn(l+3) = (gg%intma_g(ii, j,kk,ie) - 1)
-                                conn(l+4) = (gg%intma_g( i, j,kk,ie) - 1)
-                                l = l + 5
-                            else
-                                conn(l)   = 4
-                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
-                                conn(l+2) = (G%intma(ii, j, k,ie) - 1)
-                                conn(l+3) = (G%intma(ii, j,kk,ie) - 1)
-                                conn(l+4) = (G%intma( i, j,kk,ie) - 1)
-                                l = l + 5
-                            endif
-                        else if(b%nglz == 1) then
-                            if(is_cgc) then
-                                conn(l)   = 4
-                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
-                                conn(l+2) = (gg%intma_g(ii, j, k,ie) - 1)
-                                conn(l+3) = (gg%intma_g(ii,jj, k,ie) - 1)
-                                conn(l+4) = (gg%intma_g( i,jj, k,ie) - 1)
-                                l = l + 5
-                            else
-                                conn(l)   = 4
-                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
-                                conn(l+2) = (G%intma(ii, j, k,ie) - 1)
-                                conn(l+3) = (G%intma(ii,jj, k,ie) - 1)
-                                conn(l+4) = (G%intma( i,jj, k,ie) - 1)
-                                l = l + 5
-                            endif
-                        else
-                            if(is_cgc) then
-                                conn(l)   = 8
-                                conn(l+1) = (gg%intma_g( i, j, k,ie) - 1)
-                                conn(l+2) = (gg%intma_g(ii, j, k,ie) - 1)
-                                conn(l+3) = (gg%intma_g(ii,jj, k,ie) - 1)
-                                conn(l+4) = (gg%intma_g( i,jj, k,ie) - 1)
-                                conn(l+5) = (gg%intma_g( i, j,kk,ie) - 1)
-                                conn(l+6) = (gg%intma_g(ii, j,kk,ie) - 1)
-                                conn(l+7) = (gg%intma_g(ii,jj,kk,ie) - 1)
-                                conn(l+8) = (gg%intma_g( i,jj,kk,ie) - 1)
-                                l = l + 9
-                            else
-                                conn(l)   = 8
-                                conn(l+1) = (G%intma( i, j, k,ie) - 1)
-                                conn(l+2) = (G%intma(ii, j, k,ie) - 1)
-                                conn(l+3) = (G%intma(ii,jj, k,ie) - 1)
-                                conn(l+4) = (G%intma( i,jj, k,ie) - 1)
-                                conn(l+5) = (G%intma( i, j,kk,ie) - 1)
-                                conn(l+6) = (G%intma(ii, j,kk,ie) - 1)
-                                conn(l+7) = (G%intma(ii,jj,kk,ie) - 1)
-                                conn(l+8) = (G%intma( i,jj,kk,ie) - 1)
-                                l = l + 9
-                            endif
-                        endif
-
-                    end do
-                end do
-            end do
+        do i = 1, ncells
+            conn(l) = b%CELL_CHILDREN
+            conn(l+1:l+b%CELL_CHILDREN) = conn_g_pts(1:b%CELL_CHILDREN, i)
+            l = l + b%CELL_CHILDREN + 1
         end do
         ncon = l-1
 
@@ -226,10 +201,18 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
         end do
         call vtk_var_scal_R8(gg%npoin_g, 'v', var_uns_grid)
 
+        if (has_w) then
+            do i = 1, gg%npoin_g
+                var_uns_grid(i) = q_g(4,i)
+            end do
+            call vtk_var_scal_R8(gg%npoin_g, 'w', var_uns_grid)
+        end if
+
         do i = 1, gg%npoin_g
             x_uns(i) = q_g(2,i)
             y_uns(i) = q_g(3,i)
             z_uns(i) = 0.0
+            if (has_w) z_uns(i) = q_g(4,i)
         end do
         call vtk_var_vect_R8('VECT', gg%npoin_g, 'MOMENTUM', x_uns, y_uns, z_uns)
 
@@ -253,10 +236,18 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, fname, time)
         end do
         call vtk_var_scal_R8(gg%npoin_g, 'vb', var_uns_grid)
 
+        if (has_w) then
+            do i = 1, gg%npoin_g
+                var_uns_grid(i) = qb_g(5,i) / qb_g(1,i)
+            end do
+            call vtk_var_scal_R8(gg%npoin_g, 'wb', var_uns_grid)
+        end if
+
         call vtk_end()
 
         deallocate(q_g, qb_g)
         deallocate(var_uns_grid, var_uns_grid_ref)
+        deallocate(conn_g_pts)
 
     end if
 

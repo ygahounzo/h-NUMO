@@ -17,16 +17,17 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
     type(parallel_CS), intent(in) :: par
     type(initial),     intent(in) :: init
 
-    real, intent(in)  :: q_df(3, G%npoin, inp%nlayers)
-    real, intent(in)  :: qb(4, G%npoin)
+    real, intent(in)  :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
+    real, intent(in)  :: qb(inp%nvar_btp, G%npoin)
     integer, intent(in) :: itime, idone
     real, intent(out) :: q(5, G%npoin, inp%nlayers)
 
     character*5 :: tempchar
     character*4 :: num
+    logical :: has_w
     integer :: i, j, k, iloop, ncid, dimids_2d(2)
     real :: q_gg(5, gg%npoin_g, inp%nlayers), ql(5, G%npoin), zbot_g(gg%npoin_g)
-    real :: coord_dg_gathered(3, gg%npoin_g), qb_g(4, gg%npoin_g), q_g(5, gg%npoin_g)
+    real :: coord_dg_gathered(3, gg%npoin_g), qb_g(inp%nvar_btp, gg%npoin_g), q_g(5, gg%npoin_g)
     real, dimension(G%npoin,    inp%nlayers+1) :: mslwe_elevation
     real, dimension(gg%npoin_g, inp%nlayers+1) :: eta
     character(len=100) :: fn
@@ -42,22 +43,30 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
     character (len = *), parameter :: PB_NAME        = "pb"
     character (len = *), parameter :: PBUB_NAME      = "pbub"
     character (len = *), parameter :: PBVB_NAME      = "pbvb"
+    character (len = *), parameter :: PBWB_NAME      = "pbwb"
     character (len = *), parameter :: H_NAME         = "h"
     character (len = *), parameter :: U_NAME         = "u"
     character (len = *), parameter :: V_NAME         = "v"
+    character (len = *), parameter :: W_NAME         = "w"
     character (len = *), parameter :: ETA_NAME       = "eta"
     character (len = *), parameter :: INTERFACE_NAME = "zi"
 
     integer :: time_dimid, npoin_dimid, nlayers_dimid, parameter_dimid
     integer :: dt_varid, dt_btp_varid, zb_varid, pb_varid
-    integer :: pbub_varid, pbvb_varid, h_varid, u_varid, v_varid, e_varid
+    integer :: pbub_varid, pbvb_varid, pbwb_varid, h_varid, u_varid, v_varid, w_varid, e_varid
     integer :: zi_dimid, x_varid, y_varid
+
+    has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
     do k = 1, inp%nlayers
         q(1,:,k) = (init%alpha_mlswe(k)/gravity)*q_df(1,:,k)
         q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
         q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
-        q(4,:,k) = q_df(1,:,k)
+        if (has_w) then
+            q(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+        else
+            q(4,:,k) = q_df(1,:,k)
+        end if
     end do
 
     mslwe_elevation = 0.0
@@ -77,7 +86,7 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         q_gg(:,:,k) = q_g(:,:)
     enddo
 
-    call gather_data(G, inp, gg, par, qb_g,               qb,             4)
+    call gather_data(G, inp, gg, par, qb_g,               qb,             inp%nvar_btp)
     call gather_data(G, inp, gg, par, coord_dg_gathered,   G%coord,        3)
     call gather_data(G, inp, gg, par, zbot_g,              init%zbot_df,   1)
 
@@ -136,6 +145,11 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         call check(nf90_def_var(ncid, PBVB_NAME, NF90_DOUBLE, npoin_dimid, pbvb_varid))
         call check(nf90_put_att(ncid, pbvb_varid, "name", "Barotropic v-momentum"))
         call check(nf90_put_att(ncid, pbvb_varid, "units", "kg·m/s"))
+        if (has_w) then
+            call check(nf90_def_var(ncid, PBWB_NAME, NF90_DOUBLE, npoin_dimid, pbwb_varid))
+            call check(nf90_put_att(ncid, pbwb_varid, "name", "Barotropic w-momentum"))
+            call check(nf90_put_att(ncid, pbwb_varid, "units", "kg·m/s"))
+        end if
         dimids_2d = (/npoin_dimid, nlayers_dimid/)
         call check(nf90_def_var(ncid, H_NAME, NF90_DOUBLE, dimids_2d, h_varid))
         call check(nf90_put_att(ncid, h_varid, "name", "Layer thickness"))
@@ -146,6 +160,11 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         call check(nf90_def_var(ncid, V_NAME, NF90_DOUBLE, dimids_2d, v_varid))
         call check(nf90_put_att(ncid, v_varid, "name", "Baroclinic v-velocity"))
         call check(nf90_put_att(ncid, v_varid, "units", "m/s"))
+        if (has_w) then
+            call check(nf90_def_var(ncid, W_NAME, NF90_DOUBLE, dimids_2d, w_varid))
+            call check(nf90_put_att(ncid, w_varid, "name", "Baroclinic w-velocity"))
+            call check(nf90_put_att(ncid, w_varid, "units", "m/s"))
+        end if
         dimids_2d = (/npoin_dimid, zi_dimid/)
         call check(nf90_def_var(ncid, ETA_NAME, NF90_DOUBLE, dimids_2d, e_varid))
         call check(nf90_put_att(ncid, e_varid, "name", "Interface Height Relative to Mean Sea Level"))
@@ -162,9 +181,11 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         call check(nf90_put_var(ncid, pb_varid,   qb_g(1,:)))
         call check(nf90_put_var(ncid, pbub_varid, qb_g(3,:)))
         call check(nf90_put_var(ncid, pbvb_varid, qb_g(4,:)))
+        if (has_w) call check(nf90_put_var(ncid, pbwb_varid, qb_g(5,:)))
         call check(nf90_put_var(ncid, h_varid, q_gg(1,:,:)))
         call check(nf90_put_var(ncid, u_varid, q_gg(2,:,:)))
         call check(nf90_put_var(ncid, v_varid, q_gg(3,:,:)))
+        if (has_w) call check(nf90_put_var(ncid, w_varid, q_gg(4,:,:)))
         call check(nf90_put_var(ncid, e_varid, eta(:,:)))
 
         ! Close NetCDF file

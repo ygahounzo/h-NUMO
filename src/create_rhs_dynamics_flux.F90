@@ -899,6 +899,292 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
 
 end subroutine create_nbhs_face_bcl
 
+! sphere_hex counterpart of create_nbhs_face_bcl: adds the w-momentum row
+! (mass,u,v,w -> 4-wide ql/qr, 3-component flux tensors, nzl normal, rhs(4,...)).
+! Forked rather than has_w-gated per the reference (hnumo-sphere) design, since
+! the baroclinic RHS pipeline there is itself split cartesian/sphere.
+subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, q_send_bcl, q_recv_bcl)
+
+   use mod_grid,      only: grid
+   use mod_input,     only: input
+   use mod_basis,     only: basis
+   use mod_face,      only: face_CS
+   use mod_parallel,  only: parallel_CS
+   use mod_variables, only: btp_CS
+   use mod_initial,   only: initial
+   use mod_ref,       only: mref
+   use mod_constants, only: gravity
+
+   implicit none
+
+   type(grid),        intent(in)    :: G
+   type(input),       intent(in)    :: inp
+   type(basis),       intent(in)    :: b
+   type(face_CS),     intent(in)    :: mf
+   type(parallel_CS), intent(in)    :: par
+   type(btp_CS),      intent(inout) :: btp
+   type(initial),     intent(in)    :: init
+   type(mref),        intent(in)    :: ref
+
+   real, intent(inout) :: rhs(inp%nvar_bcl, G%npoin, inp%nlayers)
+   real, intent(in)    :: q_send_bcl(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv_bcl(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+
+   integer :: kk, iquad, k, ktemp, n, ivar, iface, el, il, jl, kl, I
+   integer :: ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f
+
+   real, dimension(inp%nlayers)     :: alpha_over_g, g_over_alpha
+   real, dimension(2,inp%nlayers+1) :: p_face, z_face
+   real, dimension(inp%nlayers+1)   :: p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus
+   real, dimension(inp%nvar_bcl,inp%nlayers) :: ql, qr
+   real, dimension(3,inp%nlayers)   :: dp_flux, udp_flux, vdp_flux, wdp_flux
+   real, dimension(inp%nlayers)     :: H_face_q, udpl, udpr, vdpl, vdpr, wdpl, wdpr, dp_lr_l, dp_lr_r
+   real :: dp_deficit(3), uu_dp_flux_deficit(3), vv_dp_flux_deficit(3), ww_dp_flux_deficit(3)
+   real :: ope_l, ope_r, one_plus_eta_edge
+   real :: ul, ur, vl, vr, wl, wr, dpl, dpr, nxl, nyl, nzl, uu, vv, ww, un
+   real :: wq, hi, weight, acceleration
+   real :: z_intersect_top, z_intersect_bot, dz_intersect, H_r_plus, H_r_minus
+   real :: p_intersect_bot, p_intersect_top, H_corr1, p_inc1
+   real :: flux, flux_x, flux_y, flux_z
+   real, parameter :: eps1 = 1.0e-20
+
+   ngl_f         = b%ngl
+   nq_f          = b%nq
+   nlayers_f     = inp%nlayers
+   nvarb_f       = inp%nvar_bcl
+   nboun_valid_f = ref%nboun_valid
+
+   !$acc data present(ref%face_pack_list, G%face, G%intma,                        &
+   !$acc              mf%imapl, mf%normal_vector_q, mf%jac_faceq,                 &
+   !$acc              b%psiq,                                                       &
+   !$acc              btp%ope_face_ave, btp%uvb_face_ave, btp%ope2_face_ave,       &
+   !$acc              btp%one_plus_eta_edge_2_ave, btp%H_face_ave,                 &
+   !$acc              btp%btp_mass_flux_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,&
+   !$acc              btp%Qw_face_ave,                                             &
+   !$acc              init%alpha_mlswe, init%zbot_face,                            &
+   !$acc              q_send_bcl, q_recv_bcl, rhs)
+
+   !$acc parallel loop gang                                                         &
+   !$acc   private(ql, qr, alpha_over_g, g_over_alpha,                             &
+   !$acc           p_face, z_face, p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus, &
+   !$acc           dp_flux, udp_flux, vdp_flux, wdp_flux, H_face_q,                &
+   !$acc           dp_lr_l, dp_lr_r, udpl, udpr, vdpl, vdpr, wdpl, wdpr,           &
+   !$acc           dp_deficit, uu_dp_flux_deficit, vv_dp_flux_deficit, ww_dp_flux_deficit, &
+   !$acc           ope_l, ope_r, one_plus_eta_edge,                                &
+   !$acc           ul, ur, vl, vr, wl, wr, dpl, dpr, nxl, nyl, nzl, uu, vv, ww, un, &
+   !$acc           wq, hi, weight, acceleration,                                    &
+   !$acc           z_intersect_top, z_intersect_bot, dz_intersect,                 &
+   !$acc           H_r_plus, H_r_minus, p_intersect_bot, p_intersect_top,          &
+   !$acc           H_corr1, p_inc1, flux, flux_x, flux_y, flux_z,                  &
+   !$acc           kk, iquad, k, ktemp, n, ivar, iface, el, il, jl, kl, I)        &
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
+   do kk = 1, nboun_valid_f
+
+      iface = ref%face_pack_list(kk)
+      el    = G%face(7, iface)
+
+      !$acc loop seq
+      do k = 1, nlayers_f
+         alpha_over_g(k) = init%alpha_mlswe(k) / gravity
+         g_over_alpha(k) = gravity / init%alpha_mlswe(k)
+      end do
+
+      !$acc loop seq
+      do iquad = 1, nq_f
+
+         nxl = mf%normal_vector_q(1,iquad,1,iface)
+         nyl = mf%normal_vector_q(2,iquad,1,iface)
+         nzl = mf%normal_vector_q(3,iquad,1,iface)
+
+         ql = 0.0; qr = 0.0
+         !$acc loop seq
+         do k = 1, nlayers_f
+            !$acc loop seq
+            do n = 1, ngl_f
+               hi = b%psiq(n,iquad)
+               !$acc loop seq
+               do ivar = 1, nvarb_f
+                  ql(ivar,k) = ql(ivar,k) + hi*q_send_bcl(nvarb_f*(k-1)+ivar, n, kk)
+                  qr(ivar,k) = qr(ivar,k) + hi*q_recv_bcl(nvarb_f*(k-1)+ivar, n, kk)
+               end do
+            end do
+
+            dpl = btp%ope_face_ave(1,iquad,iface) * ql(1,k)
+            dpr = btp%ope_face_ave(2,iquad,iface) * qr(1,k)
+            dp_lr_l(k) = dpl
+            dp_lr_r(k) = dpr
+
+            ul = ql(2,k) + btp%uvb_face_ave(1,1,iquad,iface)
+            ur = qr(2,k) + btp%uvb_face_ave(1,2,iquad,iface)
+            vl = ql(3,k) + btp%uvb_face_ave(2,1,iquad,iface)
+            vr = qr(3,k) + btp%uvb_face_ave(2,2,iquad,iface)
+            wl = ql(4,k) + btp%uvb_face_ave(3,1,iquad,iface)
+            wr = qr(4,k) + btp%uvb_face_ave(3,2,iquad,iface)
+
+            uu = 0.5*(ul+ur)
+            vv = 0.5*(vl+vr)
+            ww = 0.5*(wl+wr)
+            udpl(k) = ul*dpl;  udpr(k) = ur*dpr
+            vdpl(k) = vl*dpl;  vdpr(k) = vr*dpr
+            wdpl(k) = wl*dpl;  wdpr(k) = wr*dpr
+
+            un = uu*nxl + vv*nyl + ww*nzl
+            if (un > 0.0) then
+               dp_flux(1,k)  = uu * dpl;  udp_flux(1,k) = uu*(ul*dpl);  vdp_flux(1,k) = uu*(vl*dpl);  wdp_flux(1,k) = uu*(wl*dpl)
+               dp_flux(2,k)  = vv * dpl;  udp_flux(2,k) = vv*(ul*dpl);  vdp_flux(2,k) = vv*(vl*dpl);  wdp_flux(2,k) = vv*(wl*dpl)
+               dp_flux(3,k)  = ww * dpl;  udp_flux(3,k) = ww*(ul*dpl);  vdp_flux(3,k) = ww*(vl*dpl);  wdp_flux(3,k) = ww*(wl*dpl)
+            else
+               dp_flux(1,k)  = uu * dpr;  udp_flux(1,k) = uu*(ur*dpr);  vdp_flux(1,k) = uu*(vr*dpr);  wdp_flux(1,k) = uu*(wr*dpr)
+               dp_flux(2,k)  = vv * dpr;  udp_flux(2,k) = vv*(ur*dpr);  vdp_flux(2,k) = vv*(vr*dpr);  wdp_flux(2,k) = vv*(wr*dpr)
+               dp_flux(3,k)  = ww * dpr;  udp_flux(3,k) = ww*(ur*dpr);  vdp_flux(3,k) = ww*(vr*dpr);  wdp_flux(3,k) = ww*(wr*dpr)
+            end if
+         end do  ! k
+
+         uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:))
+         uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:))
+         uu_dp_flux_deficit(3) = btp%Qu_face_ave(3,iquad,iface) - sum(udp_flux(3,:))
+         vv_dp_flux_deficit(1) = btp%Qv_face_ave(1,iquad,iface) - sum(vdp_flux(1,:))
+         vv_dp_flux_deficit(2) = btp%Qv_face_ave(2,iquad,iface) - sum(vdp_flux(2,:))
+         vv_dp_flux_deficit(3) = btp%Qv_face_ave(3,iquad,iface) - sum(vdp_flux(3,:))
+         ww_dp_flux_deficit(1) = btp%Qw_face_ave(1,iquad,iface) - sum(wdp_flux(1,:))
+         ww_dp_flux_deficit(2) = btp%Qw_face_ave(2,iquad,iface) - sum(wdp_flux(2,:))
+         ww_dp_flux_deficit(3) = btp%Qw_face_ave(3,iquad,iface) - sum(wdp_flux(3,:))
+         dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,:))
+         dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,:))
+         dp_deficit(3) = btp%btp_mass_flux_face_ave(3,iquad,iface) - sum(dp_flux(3,:))
+
+         !$acc loop seq
+         do k = 1, nlayers_f
+            weight = dp_lr_l(k) / (sum(abs(dp_lr_l(:))+eps1))
+            if ((dp_deficit(1)*nxl + dp_deficit(2)*nyl + dp_deficit(3)*nzl) < 0.0) &
+               weight = dp_lr_r(k) / (sum(abs(dp_lr_r(:))+eps1))
+            dp_flux(1,k) = dp_flux(1,k) + weight * dp_deficit(1)
+            dp_flux(2,k) = dp_flux(2,k) + weight * dp_deficit(2)
+            dp_flux(3,k) = dp_flux(3,k) + weight * dp_deficit(3)
+
+            weight = abs(udpl(k)) / (sum(abs(udpl(:))+eps1))
+            if ((uu_dp_flux_deficit(1)*nxl + uu_dp_flux_deficit(2)*nyl + uu_dp_flux_deficit(3)*nzl) < 0.0) &
+               weight = abs(udpr(k)) / (sum(abs(udpr(:))+eps1))
+            udp_flux(1,k) = udp_flux(1,k) + weight * uu_dp_flux_deficit(1)
+            udp_flux(2,k) = udp_flux(2,k) + weight * uu_dp_flux_deficit(2)
+            udp_flux(3,k) = udp_flux(3,k) + weight * uu_dp_flux_deficit(3)
+
+            weight = abs(vdpl(k)) / (sum(abs(vdpl(:))+eps1))
+            if ((vv_dp_flux_deficit(1)*nxl + vv_dp_flux_deficit(2)*nyl + vv_dp_flux_deficit(3)*nzl) < 0.0) &
+               weight = abs(vdpr(k)) / (sum(abs(vdpr(:))+eps1))
+            vdp_flux(1,k) = vdp_flux(1,k) + weight * vv_dp_flux_deficit(1)
+            vdp_flux(2,k) = vdp_flux(2,k) + weight * vv_dp_flux_deficit(2)
+            vdp_flux(3,k) = vdp_flux(3,k) + weight * vv_dp_flux_deficit(3)
+
+            weight = abs(wdpl(k)) / (sum(abs(wdpl(:))+eps1))
+            if ((ww_dp_flux_deficit(1)*nxl + ww_dp_flux_deficit(2)*nyl + ww_dp_flux_deficit(3)*nzl) < 0.0) &
+               weight = abs(wdpr(k)) / (sum(abs(wdpr(:))+eps1))
+            wdp_flux(1,k) = wdp_flux(1,k) + weight * ww_dp_flux_deficit(1)
+            wdp_flux(2,k) = wdp_flux(2,k) + weight * ww_dp_flux_deficit(2)
+            wdp_flux(3,k) = wdp_flux(3,k) + weight * ww_dp_flux_deficit(3)
+         end do
+
+         z_face = 0.0;  p_face = 0.0
+         z_edge_plus = 0.0;  z_edge_minus = 0.0
+         p_edge_plus = 0.0;  p_edge_minus = 0.0
+
+         ope_l = sqrt(btp%ope2_face_ave(1,iquad,iface))
+         ope_r = sqrt(btp%ope2_face_ave(2,iquad,iface))
+         p_face(1,1) = 0.0;  p_face(2,1) = 0.0
+         !$acc loop seq
+         do k = 1, nlayers_f
+            p_face(1,k+1) = p_face(1,k) + ope_l * ql(1,k)
+            p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,k)
+         end do
+
+         one_plus_eta_edge = sqrt(btp%one_plus_eta_edge_2_ave(iquad,iface))
+         z_face(1,nlayers_f+1)    = init%zbot_face(1,iquad,iface)
+         z_face(2,nlayers_f+1)    = init%zbot_face(2,iquad,iface)
+         z_edge_plus(nlayers_f+1) = init%zbot_face(1,iquad,iface)
+         z_edge_minus(nlayers_f+1)= init%zbot_face(2,iquad,iface)
+         !$acc loop seq
+         do k = nlayers_f, 1, -1
+            z_face(1,k)    = z_face(1,k+1)    + alpha_over_g(k)*(ope_l * ql(1,k))
+            z_face(2,k)    = z_face(2,k+1)    + alpha_over_g(k)*(ope_r * qr(1,k))
+            z_edge_plus(k) = z_edge_plus(k+1) + alpha_over_g(k)*(one_plus_eta_edge * ql(1,k))
+            z_edge_minus(k)= z_edge_minus(k+1)+ alpha_over_g(k)*(one_plus_eta_edge * qr(1,k))
+         end do
+
+         p_edge_plus(2)  = one_plus_eta_edge * ql(1,1)
+         p_edge_minus(2) = one_plus_eta_edge * qr(1,1)
+         !$acc loop seq
+         do k = 2, nlayers_f
+            p_edge_plus(k+1)  = p_edge_plus(k)  + one_plus_eta_edge * ql(1,k)
+            p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,k)
+         end do
+
+         !$acc loop seq
+         do k = 1, nlayers_f
+            H_r_plus  = 0.5*init%alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
+            H_r_minus = 0.0
+            !$acc loop seq
+            do ktemp = 1, nlayers_f
+               z_intersect_top = min(z_edge_minus(ktemp),   z_edge_plus(k))
+               z_intersect_bot = max(z_edge_minus(ktemp+1), z_edge_plus(k+1))
+               dz_intersect    = z_intersect_top - z_intersect_bot
+               if (dz_intersect > 0.0) then
+                  p_intersect_bot = p_edge_minus(ktemp+1) &
+                     - g_over_alpha(ktemp)*(z_intersect_bot - z_edge_minus(ktemp+1))
+                  p_intersect_top = p_edge_minus(ktemp+1) &
+                     - g_over_alpha(ktemp)*(z_intersect_top - z_edge_minus(ktemp+1))
+                  H_r_minus = H_r_minus + &
+                     0.5*init%alpha_mlswe(ktemp)*(p_intersect_bot**2 - p_intersect_top**2)
+               end if
+            end do
+            H_face_q(k) = 0.5*(H_r_plus + H_r_minus)
+         end do
+
+         !$acc loop seq
+         do k = 1, nlayers_f-1
+            p_inc1  = g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+            H_corr1 = 0.5*init%alpha_mlswe(k)*((p_face(1,k+1) + p_inc1)**2 - p_face(1,k+1)**2)
+            H_face_q(k)   = H_face_q(k)   - H_corr1
+            H_face_q(k+1) = H_face_q(k+1) + H_corr1
+         end do
+
+         weight = 1.0
+         acceleration = sum(H_face_q(:))
+         if (acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
+         H_face_q(:) = H_face_q(:) * weight
+
+         wq = mf%jac_faceq(iquad,1,iface)
+         !$acc loop seq
+         do k = 1, nlayers_f
+            flux   = nxl*dp_flux(1,k)  + nyl*dp_flux(2,k)  + nzl*dp_flux(3,k)
+            flux_x = nxl*(udp_flux(1,k) + H_face_q(k)) + nyl*udp_flux(2,k) + nzl*udp_flux(3,k)
+            flux_y = nxl*vdp_flux(1,k) + nyl*(vdp_flux(2,k) + H_face_q(k)) + nzl*vdp_flux(3,k)
+            flux_z = nxl*wdp_flux(1,k) + nyl*wdp_flux(2,k) + nzl*(wdp_flux(3,k) + H_face_q(k))
+            !$acc loop seq
+            do n = 1, ngl_f
+               hi = b%psiq(n,iquad)
+               il = mf%imapl(1,n,1,iface)
+               jl = mf%imapl(2,n,1,iface)
+               kl = mf%imapl(3,n,1,iface)
+               I  = G%intma(il,jl,kl,el)
+               !$acc atomic update
+               rhs(1,I,k) = rhs(1,I,k) - wq*hi*flux
+               !$acc atomic update
+               rhs(2,I,k) = rhs(2,I,k) - wq*hi*flux_x
+               !$acc atomic update
+               rhs(3,I,k) = rhs(3,I,k) - wq*hi*flux_y
+               !$acc atomic update
+               rhs(4,I,k) = rhs(4,I,k) - wq*hi*flux_z
+            end do
+         end do
+
+      end do  ! iquad
+
+   end do  ! kk
+   !$acc end parallel loop
+   !$acc end data
+
+end subroutine create_nbhs_face_bcl_sphere
+
 subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send, q_recv, multirate)
 
    use mod_grid,      only: grid

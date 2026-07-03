@@ -42,12 +42,15 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   type(bcl_CS),           intent(inout) :: bcl
   type(btp_CS),           intent(inout) :: btp
 
-  real, dimension(4,G%npoin),             intent(inout) :: qb_df
-  real, dimension(3,G%npoin,inp%nlayers), intent(inout) :: q_df
+  real, dimension(inp%nvar_btp,G%npoin),             intent(inout) :: qb_df
+  real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   integer :: k, ik
   real :: dtt
+  logical :: has_w
   real, parameter :: lsrk3_beta(3) = (/ 1.0/3.0, 1.0/2.0, 1.0 /)
+
+  has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
   ! Save stage-0 qb_df on GPU for the ES branch reset each stage.
   !$acc kernels present(bcl%qbp_df, qb_df)
@@ -92,11 +95,12 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       q_df(1,:,k) = bcl%q0_df(1,:,k) + dtt * bcl%rhs_bcl(1,:,k)
       q_df(2,:,k) = bcl%q0_df(2,:,k) + dtt * bcl%rhs_bcl(2,:,k)
       q_df(3,:,k) = bcl%q0_df(3,:,k) + dtt * bcl%rhs_bcl(3,:,k)
+      if (has_w) q_df(4,:,k) = bcl%q0_df(4,:,k) + dtt * bcl%rhs_bcl(4,:,k)
     end do
     !$acc end kernels
 
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
-    call layer_mom_boundary_df(G, inp, b, mf, q_df)
+    call layer_mom_boundary_df(G, inp, b, mf, init, q_df, bcl%q0_df)
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, bcl%uv_df, q_df, qb_df)
@@ -106,6 +110,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     do k = 1, inp%nlayers
       q_df(2,:,k) = bcl%uv_df(1,:,k) * q_df(1,:,k)
       q_df(3,:,k) = bcl%uv_df(2,:,k) * q_df(1,:,k)
+      if (has_w) q_df(4,:,k) = bcl%uv_df(3,:,k) * q_df(1,:,k)
     end do
     !$acc end kernels
 

@@ -60,9 +60,9 @@ contains
         type(tensor_CS),        intent(in)    :: tsp
         type(metrics),          intent(in)    :: mt
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: qprime_df
-        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
-        real, intent(in) :: qb_df(4, G%npoin)
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: qprime_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, intent(in) :: qb_df(inp%nvar_btp, G%npoin)
 
         real :: dp_advec(G%npoin, inp%nlayers), ope
         integer :: k, I
@@ -107,12 +107,16 @@ contains
         type(tensor_CS),        intent(in)    :: tsp
         type(metrics),          intent(in)    :: mt
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
-        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
-        real, dimension(4, G%npoin),              intent(in)    :: qb_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+        real, dimension(inp%nvar_btp, G%npoin),              intent(in)    :: qb_df
 
-        real, dimension(2, G%npoin,   inp%nlayers) :: q_df_temp, uv_df, rhs_mom, rhs_stress
-        real, dimension(3, G%npoin,   inp%nlayers) :: q_df3
+        ! NOTE: this two-level splitting scheme is not yet sphere-aware — the
+        ! Coriolis semi-implicit rotation below is a 2D beta-plane formula and
+        ! only ever touches q_df(2:3,...) (u,v); q_df(4,...) (w) is untouched.
+        real, dimension(2, G%npoin,   inp%nlayers) :: q_df_temp, rhs_mom, rhs_stress
+        real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers) :: uv_df
+        real, dimension(inp%nvar_bcl, G%npoin,   inp%nlayers) :: q_df3
         real, dimension(3, G%npoin_q, inp%nlayers) :: q
         real, dimension(G%npoin) :: tempu, tempv
         integer :: k, I
@@ -153,7 +157,7 @@ contains
             q_df(3,:,k) = -init%b_bcl(:)*tempu(:) + init%a_bcl(:)*tempv(:)
         end do
 
-        call layer_mom_boundary_df(G, inp, b, mf, q_df)
+        call layer_mom_boundary_df(G, inp, b, mf, init, q_df, bcl%q0_df)
 
         call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
@@ -191,12 +195,16 @@ contains
         type(tensor_CS),        intent(in)    :: tsp
         type(metrics),          intent(in)    :: mt
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(inout) :: q_df
-        real, dimension(3, G%npoin, inp%nlayers), intent(in)    :: qprime_df
-        real, dimension(4, G%npoin),              intent(in)    :: qb_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+        real, dimension(inp%nvar_btp, G%npoin),              intent(in)    :: qb_df
 
-        real, dimension(2, G%npoin,   inp%nlayers) :: uv_df, rhs_stress
-        real, dimension(3, G%npoin,   inp%nlayers) :: q_df3, q_df_temp
+        ! NOTE: this two-level splitting scheme is not yet sphere-aware — the
+        ! Coriolis semi-implicit rotation below is a 2D beta-plane formula and
+        ! only ever touches q_df(2:3,...) (u,v); q_df(4,...) (w) is untouched.
+        real, dimension(2, G%npoin,   inp%nlayers) :: rhs_stress
+        real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers) :: uv_df
+        real, dimension(inp%nvar_bcl, G%npoin,   inp%nlayers) :: q_df3, q_df_temp
         real, dimension(3, G%npoin_q, inp%nlayers) :: q
         real, dimension(G%npoin) :: tempu, tempv
         integer :: k, I
@@ -242,7 +250,7 @@ contains
             q_df(1,:,k) = q_df_temp(1,:,k)
         end do
 
-        call layer_mom_boundary_df(G, inp, b, mf, q_df)
+        call layer_mom_boundary_df(G, inp, b, mf, init, q_df, bcl%q0_df)
 
         call extract_velocity(G, inp, uv_df, q_df, qb_df)
 
@@ -273,7 +281,7 @@ contains
         type(tensor_CS),        intent(in)    :: tsp
         type(metrics),          intent(in)    :: mt
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
         real, dimension(2, G%npoin, inp%nlayers), intent(out) :: rhs_mom
 
         integer :: k
@@ -312,13 +320,15 @@ contains
         type(tensor_CS),        intent(in)    :: tsp
         type(metrics),          intent(in)    :: mt
 
-        real, dimension(3, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
-        real, dimension(3, G%npoin, inp%nlayers), intent(out) :: rhs
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
 
-        integer :: k, I, nlayers_l, npoin_l
+        integer :: k, I, iv, nlayers_l, npoin_l, nvarb_l
+        real    :: visc_term
 
         nlayers_l = inp%nlayers
         npoin_l   = G%npoin
+        nvarb_l   = inp%nvar_bcl
 
         !$acc kernels present(bcl%rhs_visc_bcl)
         bcl%rhs_visc_bcl = 0.0
@@ -329,13 +339,20 @@ contains
         call bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
         ! rhs stays on device; apply mass scaling and viscous term on GPU.
 
+        ! Momentum rows (u,v[,w]) get mass-matrix scaling plus viscosity.
+        ! bcl%rhs_visc_bcl only carries u,v (indices 1,2); w has no viscosity yet.
         !$acc parallel loop gang collapse(2) &
-        !$acc    present(rhs, bcl%rhs_visc_bcl, mt%massinv) firstprivate(nlayers_l, npoin_l)
+        !$acc    present(rhs, bcl%rhs_visc_bcl, mt%massinv) private(iv, visc_term) &
+        !$acc    firstprivate(nlayers_l, npoin_l, nvarb_l)
         do k = 1, nlayers_l
             do I = 1, npoin_l
                 rhs(1,I,k) = mt%massinv(I)*rhs(1,I,k)
-                rhs(2,I,k) = mt%massinv(I)*rhs(2,I,k) + bcl%rhs_visc_bcl(1,I,k)
-                rhs(3,I,k) = mt%massinv(I)*rhs(3,I,k) + bcl%rhs_visc_bcl(2,I,k)
+                !$acc loop seq
+                do iv = 2, nvarb_l
+                    visc_term = 0.0
+                    if (iv <= 3) visc_term = bcl%rhs_visc_bcl(iv-1,I,k)
+                    rhs(iv,I,k) = mt%massinv(I)*rhs(iv,I,k) + visc_term
+                end do
             end do
         end do
         !$acc end parallel loop

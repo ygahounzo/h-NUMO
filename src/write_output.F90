@@ -7,7 +7,7 @@
 !> @date March 12 2015, S. Marras added xml output from Michal's subroutine in the CG-only code
 !----------------------------------------------------------------------!
 
-subroutine write_output_mlswe(G, inp, b, init, gg, par, qp, qb, fnp1, time, layer)
+subroutine write_output_mlswe(G, inp, b, init, gg, par, q_df, qout, qb, fnp1, time, layer)
 
     use mod_grid,        only: grid
     use mod_input,       only: input
@@ -15,6 +15,7 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, qp, qb, fnp1, time, laye
     use mod_initial,     only: initial
     use mod_global_grid, only: grid_global
     use mod_parallel,    only: parallel_CS
+    use mod_constants,   only: gravity
 
     implicit none
 
@@ -25,20 +26,45 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, qp, qb, fnp1, time, laye
     type(grid_global), intent(in) :: gg
     type(parallel_CS), intent(in) :: par
 
-    real, intent(in)  :: qp(init%nvar, G%npoin), qb(4, G%npoin)
+    real, intent(in)    :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers), qb(inp%nvar_btp, G%npoin)
+    real, intent(inout) :: qout(init%nvar, G%npoin)
     integer, intent(in) :: layer
-    real, dimension(:,:), allocatable :: q_aux, qq, vorticity
+    real, dimension(:,:), allocatable :: q_aux, vorticity
+    real, dimension(:,:), allocatable :: mslwe_elevation
     real :: time
+    logical :: has_w
+    integer :: k
 
     character :: fnp1*9, fnp*100
 
-    allocate(qq(init%nvar, G%npoin), vorticity(3, G%npoin), q_aux(init%nvar, G%npoin))
-    qq = qp
+    allocate(vorticity(3, G%npoin), q_aux(init%nvar, G%npoin))
+    allocate(mslwe_elevation(G%npoin, inp%nlayers+1))
+
+    has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+
+    ! Compute the (h,u,v,w/dp,ssh) diagnostic fields for this layer, mirroring
+    ! diagnostics.F90's q_df -> q conversion. Written back into qout so it stays
+    ! valid for the caller's later print_diagnostics_mlswe call.
+    qout(1,:) = (init%alpha_mlswe(layer)/gravity) * q_df(1,:,layer)
+    qout(2,:) = q_df(2,:,layer) / q_df(1,:,layer)
+    qout(3,:) = q_df(3,:,layer) / q_df(1,:,layer)
+    if (has_w) then
+        qout(4,:) = q_df(4,:,layer) / q_df(1,:,layer)
+    else
+        qout(4,:) = q_df(1,:,layer)
+    end if
+
+    mslwe_elevation = 0.0
+    mslwe_elevation(:,inp%nlayers+1) = init%zbot_df
+    do k = inp%nlayers, 1, -1
+        mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + (init%alpha_mlswe(k)/gravity)*q_df(1,:,k)
+    end do
+    qout(5,:) = mslwe_elevation(:,layer)
 
     fnp = trim(inp%fname_root) // '_' // trim(fnp1) // '.vtk'
-    call outvtk_g_binary_mlswe(G, inp, b, init, gg, par, qq, qb, fnp, time)
+    call outvtk_g_binary_mlswe(G, inp, b, init, gg, par, qout, qb, fnp, time)
 
-    deallocate(qq, q_aux, vorticity)
+    deallocate(q_aux, vorticity, mslwe_elevation)
 
 end subroutine write_output_mlswe
 

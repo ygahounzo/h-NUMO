@@ -254,6 +254,44 @@ subroutine bcl_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic,
 
 end subroutine bcl_create_postcommunicator
 
+! sphere_hex counterpart of bcl_create_postcommunicator; reuses the same
+! (already inp%nvar_bcl-sized) MPI buffers, only the rhs width and the
+! underlying face-flux kernel differ (create_nbhs_face_bcl_sphere adds w).
+subroutine bcl_create_postcommunicator_sphere(G, inp, b, mf, par, btp, init, ref, mpic, rhs)
+
+   use mod_grid,             only: grid
+   use mod_input,            only: input
+   use mod_basis,            only: basis
+   use mod_face,             only: face_CS
+   use mod_parallel,         only: parallel_CS
+   use mod_variables,        only: btp_CS
+   use mod_initial,          only: initial
+   use mod_ref,              only: mref
+   use mod_mpi_communicator, only: mpi_communicator
+
+   implicit none
+
+   type(grid),             intent(in)    :: G
+   type(input),            intent(in)    :: inp
+   type(basis),            intent(in)    :: b
+   type(face_CS),          intent(in)    :: mf
+   type(parallel_CS),      intent(in)    :: par
+   type(btp_CS),           intent(inout) :: btp
+   type(initial),          intent(in)    :: init
+   type(mref),             intent(inout) :: ref
+   type(mpi_communicator), intent(inout) :: mpic
+
+   !Global Arrays
+   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: rhs
+
+   call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
+
+   call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl, ref%nboun_valid)
+
+   call create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, ref%q_send_bcl, ref%q_recv_bcl)
+
+end subroutine bcl_create_postcommunicator_sphere
+
 subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, ref, mpic, rhs)
 
    use mod_grid,             only: grid
