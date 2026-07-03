@@ -141,19 +141,17 @@ contains
       !$acc enter data copyin(btp%btp_mass_flux_face_ave, btp%ope_face_ave,    &
       !$acc                   btp%Qu_face_ave, btp%Qv_face_ave,                &
       !$acc                   btp%Quv_face_ave)
-      !$acc enter data copyin(btp%uvb_ave_df, btp%btp_dpp_graduv,              &
+      !$acc enter data copyin(btp%uvb_ave_df, btp%btp_dpp_graduvw,             &
       !$acc                   btp%pbprime_visc)
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)
-      !$acc enter data create(btp%bcl_H,     btp%bcl_uu,     btp%bcl_uv,      &
-      !$acc                   btp%bcl_vv,   btp%bcl_dpq,    btp%bcl_up_dpq,  &
-      !$acc                   btp%bcl_vp_dpq, btp%pbq)
+      !$acc enter data create(btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
       ! mod_variables (bcl_CS)
       !$acc enter data copyin(bcl)
       !$acc enter data create(bcl%rhs_bcl)
       !$acc enter data create(bcl%rhs_visc_bcl)
       !$acc enter data copyin(bcl%q_df)
-      !$acc enter data copyin(bcl%qprime_df, bcl%dpprime_visc, bcl%dpp_graduv, &
+      !$acc enter data copyin(bcl%qprime_df, bcl%dpprime_visc, bcl%dpp_graduvw, &
       !$acc                   bcl%dpp_uvp)
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
 

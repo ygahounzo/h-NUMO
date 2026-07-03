@@ -135,10 +135,13 @@ contains
 
       integer :: k
 
-      ! Pre-comm GPU pack reads dpp_graduv/dpprime_visc directly from device.
+      ! Pre-comm GPU pack reads dpp_graduvw/dpprime_visc directly from device.
       ! rhs_lap is created on device; all kernels run GPU-to-GPU.
+      ! Only the cartesian-equivalent 4 components cross MPI boundaries today —
+      ! the sphere-only slots 5:9 of dpp_graduvw aren't yet consumed by the
+      ! viscosity Laplacian (same rationale as btp_dpp_graduvw).
       !$acc data create(rhs_lap)
-      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduv, bcl%dpprime_visc)
+      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw(1:4,:,:), bcl%dpprime_visc)
       call bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, rhs_lap)
       call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, rhs_lap)
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
@@ -187,7 +190,7 @@ contains
       !$acc parallel loop gang private(lap_q_loc, qq, wq, Iq, I, ip, ijq) &
       !$acc    present(tsp%wjac_df, tsp%index_df, tsp%index_df_elt,        &
       !$acc            tsp%dpsidx_df, tsp%dpsidy_df,                        &
-      !$acc            btp%pbprime_visc, btp%btp_dpp_graduv,               &
+      !$acc            btp%pbprime_visc, btp%btp_dpp_graduvw,               &
       !$acc            grad_dpuvp, rhs_btp_visc)                                   &
       !$acc    firstprivate(npts_f, nelem_f)
       do ie = 1, nelem_f
@@ -202,10 +205,10 @@ contains
          do ijq = 1, npts_f
             Iq    = tsp%index_df_elt(ijq, ie)
             wq    = tsp%wjac_df(Iq)
-            qq(1) = btp%pbprime_visc(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduv(1,Iq)
-            qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduv(2,Iq)
-            qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduv(3,Iq)
-            qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduv(4,Iq)
+            qq(1) = btp%pbprime_visc(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduvw(1,Iq)
+            qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduvw(2,Iq)
+            qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduvw(3,Iq)
+            qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduvw(4,Iq)
             !$acc loop seq
             do ip = 1, npts_f
                lap_q_loc(1,ip) = lap_q_loc(1,ip) - &
@@ -254,7 +257,7 @@ contains
       npts_l  = b%npts
 
       !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%index_df,  &
-      !$acc              btp%pbprime_visc, btp%btp_dpp_graduv, grad_dpuvp,           &
+      !$acc              btp%pbprime_visc, btp%btp_dpp_graduvw, grad_dpuvp,           &
       !$acc              rhs_btp_visc)
 
       !$acc kernels present(rhs_btp_visc)
@@ -267,10 +270,10 @@ contains
       do Iq = 1, npoin_l
 
          wq    = tsp%wjac_df(Iq)
-         qq(1) = btp%pbprime_visc(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduv(1,Iq)
-         qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduv(2,Iq)
-         qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduv(3,Iq)
-         qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduv(4,Iq)
+         qq(1) = btp%pbprime_visc(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduvw(1,Iq)
+         qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduvw(2,Iq)
+         qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduvw(3,Iq)
+         qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduvw(4,Iq)
 
          !$acc loop seq
          do ip = 1, npts_l
@@ -317,7 +320,7 @@ contains
 
       !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df,        &
       !$acc              tsp%index_df_elt, tsp%index_df,                     &
-      !$acc              btp%graduvb_ave, bcl%dpprime_visc, bcl%dpp_graduv, lap_q)
+      !$acc              btp%graduvb_ave, bcl%dpprime_visc, bcl%dpp_graduvw, lap_q)
 
       !$acc kernels present(lap_q)
       lap_q = 0.0
@@ -343,10 +346,10 @@ contains
             do iq_local = 1, npts_l
                Iq = tsp%index_df_elt(iq_local, ie)
                wq = tsp%wjac_df(Iq)
-               qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduv(1,Iq,k)
-               qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduv(2,Iq,k)
-               qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduv(3,Iq,k)
-               qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduv(4,Iq,k)
+               qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduvw(1,Iq,k)
+               qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduvw(2,Iq,k)
+               qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduvw(3,Iq,k)
+               qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduvw(4,Iq,k)
                !$acc loop seq
                do ip = 1, npts_l
                   lap_loc(1,ip,k) = lap_loc(1,ip,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
@@ -403,10 +406,10 @@ contains
 
             wq = tsp%wjac_df(Iq)
 
-            qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduv(1,Iq,k)
-            qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduv(2,Iq,k)
-            qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduv(3,Iq,k)
-            qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduv(4,Iq,k)
+            qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduvw(1,Iq,k)
+            qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduvw(2,Iq,k)
+            qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduvw(3,Iq,k)
+            qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduvw(4,Iq,k)
 
             do ip = 1, b%npts
                I = tsp%index_df(ip,Iq)
@@ -467,7 +470,7 @@ contains
       !$acc data present(G%face, G%face_type, G%intma,                       &
       !$acc               mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face, &
       !$acc               b%psi,                                               &
-      !$acc               btp%btp_dpp_graduv, btp%pbprime_visc,               &
+      !$acc               btp%btp_dpp_graduvw, btp%pbprime_visc,               &
       !$acc               btp%graduvb_face_ave,                                &
       !$acc               rhs, gradq)
 
@@ -519,10 +522,10 @@ contains
             ql_s(3) = gradq(3,ip)
             ql_s(4) = gradq(4,ip)
 
-            btp_ql_s(1) = btp%btp_dpp_graduv(1,ip)
-            btp_ql_s(2) = btp%btp_dpp_graduv(2,ip)
-            btp_ql_s(3) = btp%btp_dpp_graduv(3,ip)
-            btp_ql_s(4) = btp%btp_dpp_graduv(4,ip)
+            btp_ql_s(1) = btp%btp_dpp_graduvw(1,ip)
+            btp_ql_s(2) = btp%btp_dpp_graduvw(2,ip)
+            btp_ql_s(3) = btp%btp_dpp_graduvw(3,ip)
+            btp_ql_s(4) = btp%btp_dpp_graduvw(4,ip)
             btp_ql_s(5) = btp%pbprime_visc(ip)
 
             if (ier > 0) then
@@ -534,10 +537,10 @@ contains
                qr_s(3) = gradq(3,ip)
                qr_s(4) = gradq(4,ip)
 
-               btp_qr_s(1) = btp%btp_dpp_graduv(1,ip)
-               btp_qr_s(2) = btp%btp_dpp_graduv(2,ip)
-               btp_qr_s(3) = btp%btp_dpp_graduv(3,ip)
-               btp_qr_s(4) = btp%btp_dpp_graduv(4,ip)
+               btp_qr_s(1) = btp%btp_dpp_graduvw(1,ip)
+               btp_qr_s(2) = btp%btp_dpp_graduvw(2,ip)
+               btp_qr_s(3) = btp%btp_dpp_graduvw(3,ip)
+               btp_qr_s(4) = btp%btp_dpp_graduvw(4,ip)
                btp_qr_s(5) = btp%pbprime_visc(ip)
 
             else
@@ -685,7 +688,7 @@ contains
       !$acc              mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face,     &
       !$acc              b%psi,                                                   &
       !$acc              btp%graduvb_face_ave,                                   &
-      !$acc              bcl%dpp_graduv, bcl%dpprime_visc,                       &
+      !$acc              bcl%dpp_graduvw, bcl%dpprime_visc,                       &
       !$acc              rhs)
 
       !$acc parallel loop gang                                                    &
@@ -714,10 +717,10 @@ contains
                kl = mf%imapl(3,iquad,1,iface)
                ip = G%intma(il,jl,kl,iel)
 
-               ql_cur(1) = bcl%dpp_graduv(1,ip,k)
-               ql_cur(2) = bcl%dpp_graduv(2,ip,k)
-               ql_cur(3) = bcl%dpp_graduv(3,ip,k)
-               ql_cur(4) = bcl%dpp_graduv(4,ip,k)
+               ql_cur(1) = bcl%dpp_graduvw(1,ip,k)
+               ql_cur(2) = bcl%dpp_graduvw(2,ip,k)
+               ql_cur(3) = bcl%dpp_graduvw(3,ip,k)
+               ql_cur(4) = bcl%dpp_graduvw(4,ip,k)
                ql_cur(5) = bcl%dpprime_visc(ip,k)
 
                if (ier > 0) then
@@ -725,10 +728,10 @@ contains
                   jr = mf%imapr(2,iquad,1,iface)
                   kr = mf%imapr(3,iquad,1,iface)
                   ip = G%intma(ir,jr,kr,ier)
-                  qr_cur(1) = bcl%dpp_graduv(1,ip,k)
-                  qr_cur(2) = bcl%dpp_graduv(2,ip,k)
-                  qr_cur(3) = bcl%dpp_graduv(3,ip,k)
-                  qr_cur(4) = bcl%dpp_graduv(4,ip,k)
+                  qr_cur(1) = bcl%dpp_graduvw(1,ip,k)
+                  qr_cur(2) = bcl%dpp_graduvw(2,ip,k)
+                  qr_cur(3) = bcl%dpp_graduvw(3,ip,k)
+                  qr_cur(4) = bcl%dpp_graduvw(4,ip,k)
                   qr_cur(5) = bcl%dpprime_visc(ip,k)
                else
                   qr_cur = ql_cur

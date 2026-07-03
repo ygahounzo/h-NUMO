@@ -82,6 +82,7 @@ module mod_input
       character(len=20) :: geometry_type
       integer           :: nvar_bcl, nvar_btp  ! number of baroclinic/barotropic prognostic variables, derived from geometry_type
       integer           :: ngrd_var            ! number of spatial gradient directions, derived from geometry_type
+      integer           :: ngraduvw_var        ! width of the combined btp velocity-gradient array (4 cartesian, 9 sphere_hex)
       character(len=24) :: sponge_type
       character(len=8)  :: format_vtk      ! ascii or binary
       character(len=8)  :: vtk_cell_type   ! standard or lagrange
@@ -664,9 +665,11 @@ module mod_input
          inp%nvar_bcl                    = 4
          inp%nvar_btp                    = 5
          inp%ngrd_var                    = 3 ! 3 gradient directions for spherical coordinates
+         inp%ngraduvw_var                = 9 ! du_dx,du_dy,dv_dx,dv_dy,gradw(3),graduvz(2)
       else
          inp%nvar_bcl                    = 3
          inp%nvar_btp                    = 4
+         inp%ngraduvw_var                = 4 ! du_dx,du_dy,dv_dx,dv_dy
          inp%ngrd_var                    = 2 ! 2 gradient directions (d/dx, d/dy) for cartesian coordinates
       end if
       inp%sponge_type                    = sponge_type

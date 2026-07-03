@@ -25,7 +25,8 @@ module mod_variables
       ! 2-D volume arrays
       real, dimension(:,:),     allocatable :: tau_wind, tau_bot
       real, dimension(:,:),     allocatable :: btp_mass_flux_ave, uvb_ave, uvb_ave_df
-      real, dimension(:,:),     allocatable :: btp_dpp_graduv, btp_dpp_uvp, graduvb_ave
+      real, dimension(:,:),     allocatable :: btp_dpp_uvp, graduvb_ave
+      real, dimension(:,:),     allocatable :: btp_dpp_graduvw  ! (ngraduvw_var,npoin): du_dx,du_dy,dv_dx,dv_dy [,graduvz(2)=du_dz,dv_dz, gradw(3)=dw_dx,dw_dy,dw_dz on sphere]
       real, dimension(:,:),     allocatable :: tau_wind_ave, tau_bot_ave
 
       ! Face / edge arrays
@@ -51,12 +52,8 @@ module mod_variables
       ! Precomputed BCL layer integrals at quad points — updated once per RK stage
       ! by btp_bcl_coeffs_qdf; fixed during BTP subcycling.
       real, dimension(:),       allocatable :: bcl_H         ! (npoin_q) baroclinic H_b
-      real, dimension(:),       allocatable :: bcl_uu        ! (npoin_q) sum(pp*u*u)
-      real, dimension(:),       allocatable :: bcl_uv        ! (npoin_q) sum(pp*u*v)
-      real, dimension(:),       allocatable :: bcl_vv        ! (npoin_q) sum(pp*v*v)
-      real, dimension(:),       allocatable :: bcl_dpq       ! (npoin_q) bottom-layer dp
-      real, dimension(:),       allocatable :: bcl_up_dpq    ! (npoin_q) bottom-layer u*dp
-      real, dimension(:),       allocatable :: bcl_vp_dpq    ! (npoin_q) bottom-layer v*dp
+      real, dimension(:,:,:),   allocatable :: bcl_flux      ! (n,n,npoin_q) sum(pp*u_i*u_j), n=nvar_bcl-1
+      real, dimension(:,:),     allocatable :: bcl_btp_flux  ! (nvar_bcl,npoin_q) bottom-layer (dp,u*dp,v*dp[,w*dp])
       real, dimension(:),       allocatable :: pbq           ! (npoin_q) background pressure
 
    end type btp_CS
@@ -65,7 +62,8 @@ module mod_variables
    type, public :: bcl_CS
 
       ! Viscosity / gradient arrays
-      real, dimension(:,:,:),     allocatable :: dpp_uvp, dpp_graduv
+      real, dimension(:,:,:),     allocatable :: dpp_uvp
+      real, dimension(:,:,:),     allocatable :: dpp_graduvw  ! (ngraduvw_var,npoin,nlayers): du_dx,du_dy,dv_dx,dv_dy [,graduvz(2)=du_dz,dv_dz, gradw(3)=dw_dx,dw_dy,dw_dz on sphere]
       real, dimension(:,:,:,:,:), allocatable :: graduv_dpp_face
       real, dimension(:,:),     allocatable :: dpprime_visc, dpprime_visc_q
 
@@ -117,7 +115,7 @@ contains
             btp%Quv_ave,            btp%ope2_ave,                          &
             btp%tau_wind,           btp%tau_bot,                           &
             btp%btp_mass_flux_ave,  btp%uvb_ave,       btp%uvb_ave_df,    &
-            btp%btp_dpp_graduv,     btp%btp_dpp_uvp,   btp%graduvb_ave,   &
+            btp%btp_dpp_graduvw,    btp%btp_dpp_uvp,   btp%graduvb_ave,   &
             btp%tau_wind_ave,       btp%tau_bot_ave,                       &
             btp%one_plus_eta_edge,  btp%one_plus_eta_edge_2,               &
             btp%one_plus_eta_edge_2_ave, btp%H_face_ave,                   &
@@ -128,9 +126,8 @@ contains
             btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
             btp%rhs_btp,            btp%rhs_btp_visc,       btp%qb_df,  &
             btp%qb0_df,             btp%qb2_df,                         &
-            btp%bcl_H,              btp%bcl_uu,    btp%bcl_uv,          &
-            btp%bcl_vv,             btp%bcl_dpq,   btp%bcl_up_dpq,      &
-            btp%bcl_vp_dpq,         btp%pbq)
+            btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
+            btp%pbq)
       end if
 
       ! 1-D volume arrays
@@ -153,7 +150,7 @@ contains
          btp%btp_mass_flux_ave(2,G%npoin_q),                                  &
          btp%uvb_ave(2,G%npoin_q),                                            &
          btp%uvb_ave_df(2,G%npoin),                                           &
-         btp%btp_dpp_graduv(4,G%npoin),                                       &
+         btp%btp_dpp_graduvw(inp%ngraduvw_var,G%npoin),                       &
          btp%btp_dpp_uvp(2,G%npoin),                                          &
          btp%graduvb_ave(4,G%npoin),                                          &
          btp%tau_wind_ave(2,G%npoin_q),                                       &
@@ -191,10 +188,10 @@ contains
 
       ! Precomputed BCL layer integrals at quad points
       allocate(                                                               &
-         btp%bcl_H(G%npoin_q),      btp%bcl_uu(G%npoin_q),                    &
-         btp%bcl_uv(G%npoin_q),    btp%bcl_vv(G%npoin_q),                    &
-         btp%bcl_dpq(G%npoin_q),    btp%bcl_up_dpq(G%npoin_q),               &
-         btp%bcl_vp_dpq(G%npoin_q), btp%pbq(G%npoin_q),                      &
+         btp%bcl_H(G%npoin_q),                                              &
+         btp%bcl_flux(inp%nvar_bcl-1,inp%nvar_bcl-1,G%npoin_q),             &
+         btp%bcl_btp_flux(inp%nvar_bcl,G%npoin_q),                          &
+         btp%pbq(G%npoin_q),                                                &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
 
@@ -204,7 +201,7 @@ contains
 
       if (allocated(bcl%dpp_uvp)) then
          deallocate(                                                         &
-            bcl%dpp_uvp,              bcl%dpp_graduv,                      &
+            bcl%dpp_uvp,              bcl%dpp_graduvw,                    &
             bcl%graduv_dpp_face,                                           &
             bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
             bcl%q_df,                 bcl%qprime_df,                     &
@@ -215,8 +212,8 @@ contains
       end if
 
       allocate(                                                               &
-         bcl%dpp_uvp(2,G%npoin,inp%nlayers),                                      &
-         bcl%dpp_graduv(4,G%npoin,inp%nlayers),                                   &
+         bcl%dpp_uvp(3,G%npoin,inp%nlayers),                                      &
+         bcl%dpp_graduvw(inp%ngraduvw_var,G%npoin,inp%nlayers),                    &
          bcl%graduv_dpp_face(5,2,b%ngl,G%nface,inp%nlayers),                        &
          bcl%sum_layer_mass_flux(2,G%npoin_q),                                &
          bcl%sum_layer_mass_flux_face(2,b%nq,G%nface),                          &

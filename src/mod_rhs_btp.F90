@@ -119,8 +119,7 @@ contains
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
       !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
-      !$acc               btp%bcl_H, btp%bcl_uu, btp%bcl_uv, btp%bcl_vv,           &
-      !$acc               btp%bcl_dpq, btp%bcl_up_dpq, btp%bcl_vp_dpq, btp%pbq)
+      !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
       ! Zero rhs_btp on device.
       !$acc kernels
@@ -173,12 +172,12 @@ contains
 
             ! Load BCL layer integrals precomputed once per RK stage.
             Hq      = btp%bcl_H(Iq)
-            sum_up2 = btp%bcl_uu(Iq)
-            sum_uv  = btp%bcl_uv(Iq)
-            sum_vp2 = btp%bcl_vv(Iq)
-            pp_k    = btp%bcl_dpq(Iq)
-            up_k    = btp%bcl_up_dpq(Iq)
-            vp_k    = btp%bcl_vp_dpq(Iq)
+            sum_up2 = btp%bcl_flux(1,1,Iq)
+            sum_uv  = btp%bcl_flux(1,2,Iq)
+            sum_vp2 = btp%bcl_flux(2,2,Iq)
+            pp_k    = btp%bcl_btp_flux(1,Iq)
+            up_k    = btp%bcl_btp_flux(2,Iq)
+            vp_k    = btp%bcl_btp_flux(3,Iq)
             pbq     = btp%pbq(Iq)
 
             ! Bottom friction
@@ -300,7 +299,7 @@ contains
       real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, ope2
       real :: dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq
       real :: pp_k, up_k, vp_k
-      real :: sum_up2, sum_uv, sum_vp2
+      real :: sum_up2, sum_uv, sum_vu, sum_vp2
       integer :: I, Iq, ip
       integer :: npts_l, botfr_l
       real    :: cd_l, alpha_bot_l
@@ -319,8 +318,7 @@ contains
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
       !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
-      !$acc               btp%bcl_H, btp%bcl_uu, btp%bcl_uv, btp%bcl_vv,           &
-      !$acc               btp%bcl_dpq, btp%bcl_up_dpq, btp%bcl_vp_dpq, btp%pbq)
+      !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
       !$acc kernels
       rhs_btp = 0.0
@@ -350,12 +348,13 @@ contains
 
          ! Load BCL layer integrals precomputed once per RK stage.
          H_b     = btp%bcl_H(Iq)
-         sum_up2 = btp%bcl_uu(Iq)
-         sum_uv  = btp%bcl_uv(Iq)
-         sum_vp2 = btp%bcl_vv(Iq)
-         pp_k    = btp%bcl_dpq(Iq)
-         up_k    = btp%bcl_up_dpq(Iq)
-         vp_k    = btp%bcl_vp_dpq(Iq)
+         sum_up2 = btp%bcl_flux(1,1,Iq)
+         sum_uv  = btp%bcl_flux(1,2,Iq)
+         sum_vu  = btp%bcl_flux(2,1,Iq)
+         sum_vp2 = btp%bcl_flux(2,2,Iq)
+         pp_k    = btp%bcl_btp_flux(1,Iq)
+         up_k    = btp%bcl_btp_flux(2,Iq)
+         vp_k    = btp%bcl_btp_flux(3,Iq)
          pbq     = btp%pbq(Iq)
 
          wq = tsp%wjac(Iq)
@@ -385,7 +384,7 @@ contains
 
          qu  = ub * udp + ope * sum_up2
          quv = vb * udp + ope * sum_uv
-         qvu = ub * vdp + ope * sum_uv
+         qvu = ub * vdp + ope * sum_vu
          qv  = vb * vdp + ope * sum_vp2
 
          ! Time-average accumulators (each Iq is unique per gang — no race).

@@ -71,8 +71,11 @@ subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q
    integer, intent(in) :: nvarb
    real, dimension(nvarb, G%npoin), intent(inout) :: q
 
+   ! pack_and_send_df_btp_lap only communicates the cartesian-equivalent 4 components
+   ! (du_dx,du_dy,dv_dx,dv_dy); the sphere-only slots 5:9 of btp_dpp_graduvw aren't
+   ! yet consumed by the viscosity Laplacian, so they don't need to cross MPI boundaries.
    call pack_and_send_df_btp_lap(G, b, mf, init, par, ref,                 &
-      q, btp%btp_dpp_graduv, btp%pbprime_visc, &
+      q, btp%btp_dpp_graduvw(1:4,:), btp%pbprime_visc, &
       nvarb, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_lap_create_precommunicator
@@ -127,7 +130,7 @@ subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_gra
    type(mpi_communicator), intent(inout) :: mpic
 
    !Global Arrays
-   real, dimension(5, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
+   real, dimension(4, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
    real, dimension(G%npoin, inp%nlayers),    intent(in) :: dpprime_visc
 
    ! GPU pack + GPU-direct MPI non-blocking send/receive.

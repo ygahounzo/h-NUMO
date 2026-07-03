@@ -97,86 +97,121 @@ module mod_barotropic_terms
         type(bcl_CS),    intent(inout) :: bcl
         type(btp_CS),    intent(inout) :: btp
 
-        real, dimension(3,G%npoin,inp%nlayers), intent(in) :: qprime_df
+        real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(in) :: qprime_df
         real, dimension(inp%nlayers),           intent(in) :: alpha_mlswe
         real, dimension(G%npoin),               intent(in) :: pbprime_df
 
         integer :: Iq, ip, k, npoin_l, nlayers_l, npts_l, npoin_q_l, I
-        real :: dhdx, dhdy, dpp
-        real :: du_dx, du_dy, dv_dx, dv_dy
-        real :: btg1, btg2, btg3, btg4, pbps
-        real :: pp_k, up_k, vp_k, pprime_k, pprime_k1
-        real :: H_b, H_bclq, sum_up2, sum_uv, sum_vp2, pbq, hi, dry_k
+        real :: dhdx, dhdy, dhdz, dpp
+        real :: du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz
+        real :: btg(9), pbps
+        real :: pprime_k, pprime_k1
+        real :: H_b, H_bclq, flux(3,3), pbq, hi, dry_k
+        real :: pp_k, up_k, vp_k, wp_k
+        logical :: has_w
 
         npoin_l   = G%npoin
         npoin_q_l = G%npoin_q
         nlayers_l = inp%nlayers
         npts_l    = b%npts
+        has_w     = (inp%nvar_bcl == 4) ! w (vertical velocity) is only carried on sphere_hex
 
         ! Fused single kernel: gang over nodes, seq over layers and neighbours.
         ! Eliminates the graduv temporary and the sequential k-loop with its
         ! 3*nlayers kernel launches.  btp sums accumulated privately per node.
         !$acc parallel loop gang &
-        !$acc    present(bcl%dpprime_visc, bcl%dpp_graduv, bcl%dpp_uvp, &
-        !$acc            btp%btp_dpp_graduv, btp%pbprime_visc, qprime_df, &
-        !$acc            tsp%index_df, tsp%dpsidx_df, tsp%dpsidy_df) &
-        !$acc    firstprivate(npoin_l, nlayers_l, npts_l) &
-        !$acc    private(dhdx, dhdy, dpp, du_dx, du_dy, dv_dx, dv_dy, &
-        !$acc            btg1, btg2, btg3, btg4, pbps, I)
+        !$acc    present(bcl%dpprime_visc, bcl%dpp_graduvw, bcl%dpp_uvp, &
+        !$acc            btp%btp_dpp_graduvw, &
+        !$acc            btp%pbprime_visc, qprime_df, &
+        !$acc            tsp%index_df, tsp%dpsidx_df, tsp%dpsidy_df, &
+        !$acc            tsp%dpsidz_df, tsp%dpsidz_df_x, tsp%dpsidz_df_y, &
+        !$acc            tsp%dpsidz_df_z) &
+        !$acc    firstprivate(npoin_l, nlayers_l, npts_l, has_w) &
+        !$acc    private(dhdx, dhdy, dhdz, dpp, &
+        !$acc            du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, &
+        !$acc            dw_dx, dw_dy, dw_dz, &
+        !$acc            btg, pbps, I)
         do Iq = 1, npoin_l
-            btg1 = 0.0; btg2 = 0.0; btg3 = 0.0; btg4 = 0.0; pbps = 0.0
+            btg = 0.0; pbps = 0.0
             !$acc loop seq
             do k = 1, nlayers_l
                 dpp = qprime_df(1,Iq,k)
                 bcl%dpprime_visc(Iq,k) = dpp
 
-                du_dx = 0.0; du_dy = 0.0; dv_dx = 0.0; dv_dy = 0.0
+                du_dx = 0.0; du_dy = 0.0; du_dz = 0.0
+                dv_dx = 0.0; dv_dy = 0.0; dv_dz = 0.0
+                dw_dx = 0.0; dw_dy = 0.0; dw_dz = 0.0
                 !$acc loop seq
                 do ip = 1, npts_l
                     I    = tsp%index_df(ip,Iq)
                     dhdx = tsp%dpsidx_df(ip,Iq)
                     dhdy = tsp%dpsidy_df(ip,Iq)
+                    dhdz = 0.0
+                    if (has_w) then
+                        dhdx = dhdx + tsp%dpsidz_df_x(ip,Iq)
+                        dhdy = dhdy + tsp%dpsidz_df_y(ip,Iq)
+                        dhdz = tsp%dpsidz_df(ip,Iq) + tsp%dpsidz_df_z(ip,Iq)
+                    end if
                     du_dx = du_dx + dhdx*qprime_df(2,I,k)
                     du_dy = du_dy + dhdy*qprime_df(2,I,k)
                     dv_dx = dv_dx + dhdx*qprime_df(3,I,k)
                     dv_dy = dv_dy + dhdy*qprime_df(3,I,k)
+                    if (has_w) then
+                        du_dz = du_dz + dhdz*qprime_df(2,I,k)
+                        dv_dz = dv_dz + dhdz*qprime_df(3,I,k)
+                        dw_dx = dw_dx + dhdx*qprime_df(4,I,k)
+                        dw_dy = dw_dy + dhdy*qprime_df(4,I,k)
+                        dw_dz = dw_dz + dhdz*qprime_df(4,I,k)
+                    end if
                 end do
 
-                bcl%dpp_graduv(1,Iq,k) = dpp*du_dx
-                bcl%dpp_graduv(2,Iq,k) = dpp*du_dy
-                bcl%dpp_graduv(3,Iq,k) = dpp*dv_dx
-                bcl%dpp_graduv(4,Iq,k) = dpp*dv_dy
+                ! x/y gradient components — sphere-corrected metric (no size change)
+                bcl%dpp_graduvw(1,Iq,k) = dpp*du_dx
+                bcl%dpp_graduvw(2,Iq,k) = dpp*du_dy
+                bcl%dpp_graduvw(3,Iq,k) = dpp*dv_dx
+                bcl%dpp_graduvw(4,Iq,k) = dpp*dv_dy
 
                 bcl%dpp_uvp(1,Iq,k) = dpp*qprime_df(2,Iq,k)
                 bcl%dpp_uvp(2,Iq,k) = dpp*qprime_df(3,Iq,k)
 
-                btg1 = btg1 + bcl%dpp_graduv(1,Iq,k)
-                btg2 = btg2 + bcl%dpp_graduv(2,Iq,k)
-                btg3 = btg3 + bcl%dpp_graduv(3,Iq,k)
-                btg4 = btg4 + bcl%dpp_graduv(4,Iq,k)
+                btg(1:4) = btg(1:4) + bcl%dpp_graduvw(1:4,Iq,k)
                 pbps = pbps + dpp
+
+                ! Sphere-only: z-gradient of u/v (for future 3D laplacian) then full 3D grad(w).
+                if (has_w) then
+                    bcl%dpp_graduvw(5,Iq,k) = dpp*du_dz
+                    bcl%dpp_graduvw(6,Iq,k) = dpp*dv_dz
+                    bcl%dpp_graduvw(7,Iq,k) = dpp*dw_dx
+                    bcl%dpp_graduvw(8,Iq,k) = dpp*dw_dy
+                    bcl%dpp_graduvw(9,Iq,k) = dpp*dw_dz
+
+                    bcl%dpp_uvp(3,Iq,k) = dpp*qprime_df(4,Iq,k)
+
+                    btg(5:9) = btg(5:9) + bcl%dpp_graduvw(5:9,Iq,k)
+                end if
             end do
-            btp%btp_dpp_graduv(1,Iq) = btg1
-            btp%btp_dpp_graduv(2,Iq) = btg2
-            btp%btp_dpp_graduv(3,Iq) = btg3
-            btp%btp_dpp_graduv(4,Iq) = btg4
-            btp%pbprime_visc(Iq)     = pbps
+            btp%pbprime_visc(Iq) = pbps
+            if (has_w) then
+                btp%btp_dpp_graduvw(:,Iq) = btg(1:9)
+            else
+                btp%btp_dpp_graduvw(:,Iq) = btg(1:4)
+            end if
         end do
         !$acc end parallel loop
 
         ! Precompute BCL layer integrals at quad points.
         ! qprime_df is fixed during BTP subcycling, so this runs once per RK stage.
         !$acc parallel loop gang                                                   &
-        !$acc    private(pp_k, up_k, vp_k, pprime_k, pprime_k1,                  &
-        !$acc            H_b, H_bclq, sum_up2, sum_uv, sum_vp2, pbq, hi, dry_k, I) &
-        !$acc    firstprivate(npoin_q_l, nlayers_l, npts_l)                        &
+        !$acc    private(pp_k, up_k, vp_k, wp_k, pprime_k, pprime_k1,            &
+        !$acc            H_b, H_bclq, flux, pbq, hi, I)                          &
+        !$acc    firstprivate(npoin_q_l, nlayers_l, npts_l, has_w)                 &
         !$acc    present(tsp%indexq, tsp%psih, qprime_df, alpha_mlswe, pbprime_df, &
-        !$acc            btp%bcl_H, btp%bcl_uu, btp%bcl_uv, btp%bcl_vv,          &
-        !$acc            btp%bcl_dpq, btp%bcl_up_dpq, btp%bcl_vp_dpq, btp%pbq)
+        !$acc            btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
         do Iq = 1, npoin_q_l
-           H_b = 0.0;  sum_up2 = 0.0;  sum_uv = 0.0;  sum_vp2 = 0.0
+           H_b = 0.0
            pbq = 0.0;  pprime_k = 0.0
-           pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
+
+           flux = 0.0
 
            ! Interpolate pbprime_df to quad point (static — same for all stages).
            !$acc loop seq
@@ -185,10 +220,10 @@ module mod_barotropic_terms
               pbq = pbq + tsp%psih(ip, Iq) * pbprime_df(I)
            end do
 
-           ! Layer loop: accumulate H_b.
+           ! Layer loop: accumulate H_b and the velocity-product flux tensor.
            !$acc loop seq
            do k = 1, nlayers_l
-              pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0
+              pp_k = 0.0;  up_k = 0.0;  vp_k = 0.0;  wp_k = 0.0
 
               !$acc loop seq
               do ip = 1, npts_l
@@ -197,28 +232,45 @@ module mod_barotropic_terms
                  pp_k = pp_k + hi * qprime_df(1, I, k)
                  up_k = up_k + hi * qprime_df(2, I, k)
                  vp_k = vp_k + hi * qprime_df(3, I, k)
+                 if (has_w) wp_k = wp_k + hi * qprime_df(4, I, k)
               end do
 
               pprime_k1 = pprime_k + pp_k
               H_bclq = 0.5 * alpha_mlswe(k) * (pprime_k1**2 - pprime_k**2)
               H_b = H_b + H_bclq
 
-              sum_up2 = sum_up2 + pp_k * up_k * up_k
-              sum_uv  = sum_uv  + pp_k * up_k * vp_k
-              sum_vp2 = sum_vp2 + pp_k * vp_k * vp_k
+              ! flux(i,j) = sum_k vel_i,k * (pp_k * vel_j,k), for velocity components
+              ! (1=u,2=v,3=w). The 3rd row/col only exists (and is only computed) on sphere.
+              flux(1,1) = flux(1,1) + up_k*(pp_k*up_k)
+              flux(2,1) = flux(2,1) + vp_k*(pp_k*up_k)
+              flux(1,2) = flux(1,2) + up_k*(pp_k*vp_k)
+              flux(2,2) = flux(2,2) + vp_k*(pp_k*vp_k)
+              if (has_w) then
+                 flux(3,1) = flux(3,1) + wp_k*(pp_k*up_k)
+                 flux(3,2) = flux(3,2) + wp_k*(pp_k*vp_k)
+                 flux(1,3) = flux(1,3) + up_k*(pp_k*wp_k)
+                 flux(2,3) = flux(2,3) + vp_k*(pp_k*wp_k)
+                 flux(3,3) = flux(3,3) + wp_k*(pp_k*wp_k)
+              end if
 
               pprime_k = pprime_k1
            end do
-           ! After k loop: pp_k, up_k, vp_k hold the bottom-layer values.
+           ! After the k loop, pp_k/up_k/vp_k/wp_k hold the bottom-layer values.
 
-           btp%bcl_H(Iq)      = H_b
-           btp%bcl_uu(Iq)     = sum_up2
-           btp%bcl_uv(Iq)     = sum_uv
-           btp%bcl_vv(Iq)     = sum_vp2
-           btp%bcl_dpq(Iq) = pp_k
-           btp%bcl_up_dpq(Iq) = up_k
-           btp%bcl_vp_dpq(Iq) = vp_k
-           btp%pbq(Iq)     = pbq
+           btp%bcl_H(Iq) = H_b
+           btp%pbq(Iq)   = pbq
+           if (has_w) then
+              btp%bcl_flux(:,:,Iq)    = flux(1:3,1:3)
+              btp%bcl_btp_flux(1,Iq)  = pp_k
+              btp%bcl_btp_flux(2,Iq)  = up_k
+              btp%bcl_btp_flux(3,Iq)  = vp_k
+              btp%bcl_btp_flux(4,Iq)  = wp_k
+           else
+              btp%bcl_flux(:,:,Iq)    = flux(1:2,1:2)
+              btp%bcl_btp_flux(1,Iq)  = pp_k
+              btp%bcl_btp_flux(2,Iq)  = up_k
+              btp%bcl_btp_flux(3,Iq)  = vp_k
+           end if
         end do
         !$acc end parallel loop
 
