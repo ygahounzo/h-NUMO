@@ -116,7 +116,7 @@ contains
       !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
       !$acc               tsp%indexq, tsp%indexq_e, tsp%wjac,                       &
       !$acc               init%coriolis_quad,                                        &
-      !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
+      !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave,                   &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
       !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
       !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
@@ -215,10 +215,12 @@ contains
             Qv2 = vb * vdp + ope * sum_vp2
 
             ! Time-average accumulators (Iq unique per gang — no race)
-            btp%H_ave(Iq)               = btp%H_ave(Iq)               + Hq
-            btp%Qu_ave(Iq)              = btp%Qu_ave(Iq)              + Qu1
-            btp%Qv_ave(Iq)              = btp%Qv_ave(Iq)              + Qv1
-            btp%Quv_ave(Iq)             = btp%Quv_ave(Iq)             + Qu2
+            btp%H_ave(Iq)  = btp%H_ave(Iq)  + Hq
+            btp%Qu_ave(1,Iq) = btp%Qu_ave(1,Iq) + Qu1
+            btp%Qu_ave(2,Iq) = btp%Qu_ave(2,Iq) + Qu2
+            btp%Qv_ave(1,Iq) = btp%Qv_ave(1,Iq) + Qv1
+            btp%Qv_ave(2,Iq) = btp%Qv_ave(2,Iq) + Qv2
+
             btp%tau_bot_ave(1,Iq)       = btp%tau_bot_ave(1,Iq)       + tb_u
             btp%tau_bot_ave(2,Iq)       = btp%tau_bot_ave(2,Iq)       + tb_v
             btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope
@@ -315,7 +317,7 @@ contains
       !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
       !$acc               tsp%indexq, tsp%wjac,                                     &
       !$acc               init%coriolis_quad,                                        &
-      !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave, btp%Quv_ave,     &
+      !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave,                   &
       !$acc               btp%Qv_ave, btp%ope_ave,                                  &
       !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
       !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
@@ -388,10 +390,13 @@ contains
          qv  = vb * vdp + ope * sum_vp2
 
          ! Time-average accumulators (each Iq is unique per gang — no race).
-         btp%H_ave(Iq)               = btp%H_ave(Iq)               + Hq
-         btp%Qu_ave(Iq)              = btp%Qu_ave(Iq)              + qu
-         btp%Qv_ave(Iq)              = btp%Qv_ave(Iq)              + qv
-         btp%Quv_ave(Iq)             = btp%Quv_ave(Iq)             + quv
+         btp%H_ave(Iq)    = btp%H_ave(Iq)    + Hq
+         btp%Qu_ave(1,Iq) = btp%Qu_ave(1,Iq) + qu
+         btp%Qu_ave(2,Iq) = btp%Qu_ave(2,Iq) + quv
+         btp%Qv_ave(1,Iq) = btp%Qv_ave(1,Iq) + qvu
+         btp%Qv_ave(2,Iq) = btp%Qv_ave(2,Iq) + qv
+
+
          btp%tau_bot_ave(1, Iq)      = btp%tau_bot_ave(1, Iq)      + tb_u
          btp%tau_bot_ave(2, Iq)      = btp%tau_bot_ave(2, Iq)      + tb_v
          btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope

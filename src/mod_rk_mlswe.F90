@@ -57,7 +57,7 @@ contains
       ! Zero-initialise all accumulation buffers on device.
       !$acc kernels present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
       !$acc                  btp%ope_ave, btp%btp_mass_flux_ave, btp%H_ave,                &
-      !$acc                  btp%Qu_ave, btp%Qv_ave, btp%Quv_ave, btp%ope2_ave_df,        &
+      !$acc                  btp%Qu_ave, btp%Qv_ave, btp%ope2_ave_df,        &
       !$acc                  btp%uvb_face_ave, btp%ope_face_ave, btp%ope2_face_ave,        &
       !$acc                  btp%btp_mass_flux_face_ave, btp%H_face_ave, btp%Qu_face_ave,  &
       !$acc                  btp%Qv_face_ave, btp%Quv_face_ave, btp%tau_wind_ave,          &
@@ -67,7 +67,7 @@ contains
       btp%uvb_ave_df              = 0.0;  btp%ope_ave             = 0.0
       btp%btp_mass_flux_ave       = 0.0;  btp%H_ave               = 0.0
       btp%Qu_ave                  = 0.0;  btp%Qv_ave              = 0.0
-      btp%Quv_ave                 = 0.0;  btp%ope2_ave_df         = 0.0
+      btp%ope2_ave_df             = 0.0
       btp%uvb_face_ave            = 0.0;  btp%ope_face_ave        = 0.0
       btp%ope2_face_ave           = 0.0;  btp%btp_mass_flux_face_ave = 0.0
       btp%H_face_ave              = 0.0;  btp%Qu_face_ave         = 0.0
@@ -149,7 +149,7 @@ contains
       N_inv = 1.0 / real(inp%kstages * init%N_btp)
 
       !$acc kernels present(btp%uvb_ave_df, btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,    &
-      !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Quv_ave,               &
+      !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave,               &
       !$acc                  btp%btp_mass_flux_ave, btp%tau_bot_ave,                        &
       !$acc                  btp%ope_face_ave, btp%ope2_face_ave, btp%H_face_ave,           &
       !$acc                  btp%Qu_face_ave, btp%Qv_face_ave, btp%btp_mass_flux_face_ave, &
@@ -161,7 +161,6 @@ contains
       btp%H_ave                    = N_inv * btp%H_ave
       btp%Qu_ave                   = N_inv * btp%Qu_ave
       btp%Qv_ave                   = N_inv * btp%Qv_ave
-      btp%Quv_ave                  = N_inv * btp%Quv_ave
       btp%btp_mass_flux_ave        = N_inv * btp%btp_mass_flux_ave
       btp%tau_bot_ave              = N_inv * btp%tau_bot_ave
       btp%ope_face_ave             = N_inv * btp%ope_face_ave

@@ -20,9 +20,11 @@ module mod_variables
       real, dimension(:),       allocatable :: ope2_ave_df, one_plus_eta_out
       real, dimension(:),       allocatable :: pbprime_visc
       real, dimension(:),       allocatable :: ope_ave, H_ave
-      real, dimension(:),       allocatable :: Qu_ave, Qv_ave, Quv_ave, ope2_ave
+      real, dimension(:),       allocatable :: ope2_ave
 
       ! 2-D volume arrays
+      real, dimension(:,:),     allocatable :: Qu_ave  ! (2,npoin_q): (uu, uv-via-u-eqn) time-avg flux
+      real, dimension(:,:),     allocatable :: Qv_ave  ! (2,npoin_q): (uv-via-v-eqn, vv) time-avg flux
       real, dimension(:,:),     allocatable :: tau_wind, tau_bot
       real, dimension(:,:),     allocatable :: btp_mass_flux_ave, uvb_ave, uvb_ave_df
       real, dimension(:,:),     allocatable :: btp_dpp_uvp, graduvb_ave
@@ -112,7 +114,7 @@ contains
             btp%pbprime_visc,                                              &
             btp%ope_ave,            btp%H_ave,                             &
             btp%Qu_ave,             btp%Qv_ave,                            &
-            btp%Quv_ave,            btp%ope2_ave,                          &
+            btp%ope2_ave,                                                  &
             btp%tau_wind,           btp%tau_bot,                           &
             btp%btp_mass_flux_ave,  btp%uvb_ave,       btp%uvb_ave_df,    &
             btp%btp_dpp_graduvw,    btp%btp_dpp_uvp,   btp%graduvb_ave,   &
@@ -138,13 +140,13 @@ contains
          btp%one_plus_eta_out(G%npoin),                                       &
          btp%pbprime_visc(G%npoin),                                           &
          btp%ope_ave(G%npoin_q),      btp%H_ave(G%npoin_q),                     &
-         btp%Qu_ave(G%npoin_q),       btp%Qv_ave(G%npoin_q),                    &
-         btp%Quv_ave(G%npoin_q),      btp%ope2_ave(G%npoin_q),                  &
+         btp%ope2_ave(G%npoin_q),                                                &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp 1-D)"
 
       ! 2-D volume arrays
       allocate(                                                               &
+         btp%Qu_ave(2,G%npoin_q),      btp%Qv_ave(2,G%npoin_q),               &
          btp%tau_wind(2,G%npoin_q),                                           &
          btp%tau_bot(2,G%npoin_q),                                            &
          btp%btp_mass_flux_ave(2,G%npoin_q),                                  &

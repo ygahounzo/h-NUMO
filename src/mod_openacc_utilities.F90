@@ -132,7 +132,7 @@ contains
       !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
       !$acc enter data create(btp%qb0_df, btp%qb2_df)
       !$acc enter data copyin(btp%ope_ave, btp%H_ave, btp%Qu_ave, btp%Qv_ave, &
-      !$acc                   btp%Quv_ave, btp%ope2_ave, btp%ope2_ave_df,      &
+      !$acc                   btp%ope2_ave, btp%ope2_ave_df,      &
       !$acc                   btp%btp_mass_flux_ave, btp%uvb_ave,              &
       !$acc                   btp%ope2_face_ave)
       !$acc enter data copyin(btp%one_plus_eta_edge_2_ave, btp%H_face_ave,     &

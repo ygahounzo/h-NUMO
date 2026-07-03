@@ -272,7 +272,7 @@ contains
         real, dimension(inp%nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp
         real, dimension(2,inp%nlayers) :: u_vdp
         real :: p_tmp(inp%nlayers+1), u, v, dp, weightq, one_over_sumuq, one_over_sumvq
-        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
+        real :: uu_dp_deficitq, uv_dp_deficitq, vu_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
         real, parameter :: eps1 = 1.0e-20
         real :: flux(2,2)
 
@@ -333,9 +333,10 @@ contains
                 pbq = pbq + tsp%psih(ip,Iq) * init%pbprime_df(I)
             end do
 
-            uu_dp_deficitq = btp%Qu_ave(Iq)  - sum(u_udp(:))
-            uv_dp_deficitq = btp%Quv_ave(Iq) - sum(u_vdp(1,:))
-            vv_dp_deficitq = btp%Qv_ave(Iq)  - sum(v_vdp(:))
+            uu_dp_deficitq = btp%Qu_ave(1,Iq)  - sum(u_udp(:))
+            uv_dp_deficitq = btp%Qu_ave(2,Iq) - sum(u_vdp(1,:))
+            vu_dp_deficitq = btp%Qv_ave(1,Iq) - sum(u_vdp(2,:))
+            vv_dp_deficitq = btp%Qv_ave(2,Iq)  - sum(v_vdp(:))
 
             one_over_sumuq = 1.0/sum(temp_uu(:))
             one_over_sumvq = 1.0/sum(temp_vv(:))
@@ -349,7 +350,7 @@ contains
                 flux(2,1)  = u_vdp(1,k) + weightq * uv_dp_deficitq
 
                 weightq    = temp_vv(k) * one_over_sumvq
-                flux(1,2)  = u_vdp(2,k) + weightq * uv_dp_deficitq
+                flux(1,2)  = u_vdp(2,k) + weightq * vu_dp_deficitq
                 flux(2,2)  = v_vdp(k)   + weightq * vv_dp_deficitq
 
                 Hq = H_tmp(k)
@@ -416,7 +417,7 @@ contains
         real, dimension(inp%nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp, udp, vdp, dp
         real, dimension(2,inp%nlayers) :: u_vdp
         real :: p_tmp(inp%nlayers+1), u, v, weightq, one_over_sumuq, one_over_sumvq
-        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
+        real :: uu_dp_deficitq, uv_dp_deficitq, vu_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
         real, parameter :: eps1 = 1.0e-20
         real :: flux(3,3)
         real, dimension(inp%nlayers)   :: a_visc, bc_visc, c_visc
@@ -448,7 +449,7 @@ contains
 
         !$acc data present(tsp%indexq, tsp%indexq_e, tsp%psih, tsp%dpsidx, tsp%dpsidy, tsp%wjac,    &
         !$acc              btp%ope_ave, btp%ope2_ave, btp%uvb_ave, btp%btp_mass_flux_ave,             &
-        !$acc              btp%H_ave, btp%Qu_ave, btp%Quv_ave, btp%Qv_ave, btp%tau_bot_ave,          &
+        !$acc              btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%tau_bot_ave,          &
         !$acc              btp%ope2_ave_df,                                                            &
         !$acc              init%alpha_mlswe, init%zbot_df, init%grad_zbot_quad,                       &
         !$acc              init%pbprime_df, init%tau_wind, init%coriolis_quad,                        &
@@ -467,7 +468,7 @@ contains
         !$acc           source_x, source_y, temp1, tau_wind_u, tau_wind_v,                             &
         !$acc           tempbot, weight, acceleration, weightq,                                         &
         !$acc           one_over_sumuq, one_over_sumvq,                                                &
-        !$acc           uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq,                               &
+        !$acc           uu_dp_deficitq, uv_dp_deficitq, vu_dp_deficitq, vv_dp_deficitq,               &
         !$acc           u, v, coeff, coeff1, mult)
         do ie = 1, nelem_l
 
@@ -585,9 +586,10 @@ contains
                     pbq = pbq + tsp%psih(ip,Iq) * init%pbprime_df(I)
                 end do
 
-                uu_dp_deficitq = btp%Qu_ave(Iq)  - sum(u_udp(:))
-                uv_dp_deficitq = btp%Quv_ave(Iq) - sum(u_vdp(1,:))
-                vv_dp_deficitq = btp%Qv_ave(Iq)  - sum(v_vdp(:))
+                uu_dp_deficitq = btp%Qu_ave(1,Iq) - sum(u_udp(:))
+                uv_dp_deficitq = btp%Qu_ave(2,Iq) - sum(u_vdp(1,:))
+                vu_dp_deficitq = btp%Qv_ave(1,Iq) - sum(u_vdp(2,:))
+                vv_dp_deficitq = btp%Qv_ave(2,Iq) - sum(v_vdp(:))
 
                 one_over_sumuq = 1.0/sum(temp_uu(:))
                 one_over_sumvq = 1.0/sum(temp_vv(:))
@@ -602,7 +604,7 @@ contains
                     u_vdp(1,k) = u_vdp(1,k) + weightq * uv_dp_deficitq
 
                     weightq    = temp_vv(k) * one_over_sumvq
-                    u_vdp(2,k) = u_vdp(2,k) + weightq * uv_dp_deficitq
+                    u_vdp(2,k) = u_vdp(2,k) + weightq * vu_dp_deficitq
                     v_vdp(k)   = v_vdp(k)   + weightq * vv_dp_deficitq
 
                     Hq = H_tmp(k)
@@ -696,7 +698,7 @@ contains
         real, dimension(inp%nlayers) :: temp_uu, temp_vv, H_tmp, u_udp, v_vdp, udp, vdp, dp
         real, dimension(2,inp%nlayers) :: u_vdp
         real :: p_tmp(inp%nlayers+1), u, v, weightq, one_over_sumuq, one_over_sumvq
-        real :: uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
+        real :: uu_dp_deficitq, uv_dp_deficitq, vu_dp_deficitq, vv_dp_deficitq, gradz(2,inp%nlayers+1)
         real, parameter :: eps1 = 1.0e-20
         real :: flux(3,3)
         real, dimension(inp%nlayers)   :: a_visc, bc_visc, c_visc
@@ -729,7 +731,7 @@ contains
         !$acc              init%grad_zbot_quad, init%tau_wind, init%coriolis_quad,     &
         !$acc              btp%ope_ave, btp%uvb_ave, btp%ope2_ave, btp%ope2_ave_df,   &
         !$acc              btp%H_ave, btp%btp_mass_flux_ave, btp%Qu_ave,               &
-        !$acc              btp%Quv_ave, btp%Qv_ave, btp%tau_bot_ave)
+        !$acc              btp%Qv_ave, btp%tau_bot_ave)
 
         !$acc kernels present(rhs)
         rhs = 0.0
@@ -742,7 +744,7 @@ contains
         !$acc           wq, hi, dhdx, dhdy, tau_wind_u, tau_wind_v, temp1,             &
         !$acc           Hq, source_x, source_y, pbq, tempbot, weight, acceleration,   &
         !$acc           u, v, weightq, one_over_sumuq, one_over_sumvq,                 &
-        !$acc           uu_dp_deficitq, uv_dp_deficitq, vv_dp_deficitq,               &
+        !$acc           uu_dp_deficitq, uv_dp_deficitq, vu_dp_deficitq, vv_dp_deficitq, &
         !$acc           coeff, coeff1, mult, k, I, ip)                                 &
         !$acc   firstprivate(Pstress, Pbstress, npoin_q_l, npts_l, nlayers_l,         &
         !$acc                ad_mlswe_l, max_shear_dz_l, dt_l,                        &
@@ -849,9 +851,10 @@ contains
                 pbq = pbq + tsp%psih(ip,Iq) * init%pbprime_df(I)
             end do
 
-            uu_dp_deficitq = btp%Qu_ave(Iq)  - sum(u_udp(:))
-            uv_dp_deficitq = btp%Quv_ave(Iq) - sum(u_vdp(1,:))
-            vv_dp_deficitq = btp%Qv_ave(Iq)  - sum(v_vdp(:))
+            uu_dp_deficitq = btp%Qu_ave(1,Iq) - sum(u_udp(:))
+            uv_dp_deficitq = btp%Qu_ave(2,Iq) - sum(u_vdp(1,:))
+            vu_dp_deficitq = btp%Qv_ave(1,Iq) - sum(u_vdp(2,:))
+            vv_dp_deficitq = btp%Qv_ave(2,Iq) - sum(v_vdp(:))
 
             one_over_sumuq = 1.0/sum(temp_uu(:))
             one_over_sumvq = 1.0/sum(temp_vv(:))
@@ -866,7 +869,7 @@ contains
                 u_vdp(1,k) = u_vdp(1,k) + weightq * uv_dp_deficitq
 
                 weightq    = temp_vv(k) * one_over_sumvq
-                u_vdp(2,k) = u_vdp(2,k) + weightq * uv_dp_deficitq
+                u_vdp(2,k) = u_vdp(2,k) + weightq * vu_dp_deficitq
                 v_vdp(k)   = v_vdp(k)   + weightq * vv_dp_deficitq
 
                 Hq = H_tmp(k)
