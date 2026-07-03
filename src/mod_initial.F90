@@ -146,7 +146,13 @@ module mod_initial
     
         if(inp%is_mlswe) then
 
-            call initial_conditions(inp, G, b, mf, init)
+            if (trim(inp%geometry_type) == 'sphere_hex') then
+                call initial_conditions_sphere(init%q_df, init%pbprime_df, init%qb_df, &
+                    init%alpha_mlswe, init%pbprime_df_face, init%zbot_df, init%kvector, &
+                    nlayers, b, G, inp, mf)
+            else
+                call initial_conditions(inp, G, b, mf, init)
+            end if
 
             init%zbot_df_init = init%zbot_df
                 

@@ -72,6 +72,7 @@ SOURCEF += metrics_quad.F90
 SOURCEF += mod_restart.F90
 SOURCEF += create_normals_quad.F90
 SOURCEF += initial_conditions.F90
+SOURCEF += initial_conditions_sphere.F90
 SOURCEF += diagnostics.F90
 # SOURCEF += diagnostics_nc.F90
 SOURCEF += mod_laplacian_quad.F90
