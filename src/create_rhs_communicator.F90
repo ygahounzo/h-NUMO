@@ -165,7 +165,7 @@ subroutine btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic,
 
    !Global Arrays
    integer, intent(in) :: nvarb
-   real, dimension(3, G%npoin), intent(inout) :: rhs
+   real, dimension(inp%nvar_btp-1, G%npoin), intent(inout) :: rhs
 
    ! DG - Discontinuous communicator
 

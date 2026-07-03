@@ -132,6 +132,7 @@ contains
       !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
       !$acc enter data create(btp%qb0_df, btp%qb2_df)
       !$acc enter data copyin(btp%ope_ave, btp%H_ave, btp%Qu_ave, btp%Qv_ave, &
+      !$acc                   btp%Qw_ave,                                      &
       !$acc                   btp%ope2_ave, btp%ope2_ave_df,      &
       !$acc                   btp%btp_mass_flux_ave, btp%uvb_ave,              &
       !$acc                   btp%ope2_face_ave)
@@ -140,7 +141,7 @@ contains
       !$acc                   btp%uvb_face_ave)
       !$acc enter data copyin(btp%btp_mass_flux_face_ave, btp%ope_face_ave,    &
       !$acc                   btp%Qu_face_ave, btp%Qv_face_ave,                &
-      !$acc                   btp%Quv_face_ave)
+      !$acc                   btp%Qw_face_ave)
       !$acc enter data copyin(btp%uvb_ave_df, btp%btp_dpp_graduvw,             &
       !$acc                   btp%pbprime_visc)
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)

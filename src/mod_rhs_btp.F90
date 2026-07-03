@@ -37,12 +37,12 @@ contains
       type(metrics),          intent(in)    :: mt
       type(tensor_CS),        intent(in)    :: tsp
 
-      real, dimension(3,G%npoin),             intent(out) :: rhs_btp
-      real, dimension(4,G%npoin),             intent(in)    :: qb_df
-      real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
+      real, dimension(inp%nvar_btp-1,G%npoin),             intent(out) :: rhs_btp
+      real, dimension(inp%nvar_btp,G%npoin),               intent(in)  :: qb_df
+      real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers),   intent(in)  :: qprime_df
 
       ! 1. MPI halo exchange (host).
-      call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, 4)
+      call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, inp%nvar_btp)
 
       ! 2. GPU volume kernel — zeros rhs_btp on device, accumulates volume contribution.
       call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
@@ -53,7 +53,7 @@ contains
       ! 4. Post-communicator: mpi_waitall → unpack → upload q_recv to GPU →
       !    GPU create_nbhs_face_df adds MPI boundary fluxes into device rhs_btp
       !    and device btp%*_face_ave.  rhs_btp stays on device until step 5.
-      call btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs_btp, 4)
+      call btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs_btp, inp%nvar_btp-1)
       ! rhs_btp stays on device; mass-matrix scaling is fused into the SSPRK update in the caller.
       ! rhs_btp_visc is precomputed once before the BTP substep loop by the caller.
 
@@ -294,31 +294,35 @@ contains
       type(btp_CS),    intent(inout) :: btp
       type(tensor_CS), intent(in)    :: tsp
 
-      real, dimension(4,G%npoin), intent(in)  :: qb_df
-      real, dimension(3,G%npoin), intent(out) :: rhs_btp
+      real, dimension(inp%nvar_btp,G%npoin),   intent(in)  :: qb_df
+      real, dimension(inp%nvar_btp-1,G%npoin), intent(out) :: rhs_btp
 
-      real :: sc_x, sc_y, Hq, qu, quv, qvu, qv, H_b
-      real :: wq, hi, dhdx, dhdy, tb_u, tb_v, ope, ope2
-      real :: dp, dpp, udp, vdp, ub, vb, ubot, vbot, spd, pbq
-      real :: pp_k, up_k, vp_k
-      real :: sum_up2, sum_uv, sum_vu, sum_vp2
+      real :: sc_x, sc_y, sc_z, Hq, qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw, H_b
+      real :: wq, hi, dhdx, dhdy, dhdz, tb_u, tb_v, tb_w, ope, ope2
+      real :: dp, dpp, udp, vdp, wdp, ub, vb, wb, ubot, vbot, wbot, spd, pbq
+      real :: pp_k, up_k, vp_k, wp_k
+      real :: sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww, sum_wu, sum_wv
+      real :: cfx, cfy, cfz
       integer :: I, Iq, ip
       integer :: npts_l, botfr_l
       real    :: cd_l, alpha_bot_l
+      logical :: has_w
 
       npts_l      = b%npts
       botfr_l     = inp%botfr
       cd_l        = real(inp%cd_mlswe)
       alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
+      has_w       = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(init, tsp, btp,                                             &
       !$acc               rhs_btp, qb_df,                                            &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
-      !$acc               tsp%dpsidx, tsp%dpsidy,                                   &
+      !$acc               tsp%dpsidx, tsp%dpsidy, tsp%dpsidz,                       &
+      !$acc               tsp%dpsidz_x, tsp%dpsidz_y, tsp%dpsidz_z,                &
       !$acc               tsp%indexq, tsp%wjac,                                     &
-      !$acc               init%coriolis_quad,                                        &
+      !$acc               init%coriolis_3d_quad,                                     &
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave,                   &
-      !$acc               btp%Qv_ave, btp%ope_ave,                                  &
+      !$acc               btp%Qv_ave, btp%Qw_ave, btp%ope_ave,                     &
       !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
       !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
@@ -327,15 +331,17 @@ contains
       !$acc end kernels
 
       !$acc parallel loop gang                                                       &
-      !$acc   private(dp, dpp, udp, vdp, pbq, H_b, Hq, wq, ub, vb,               &
-      !$acc           ubot, vbot, spd, tb_u, tb_v, sc_x, sc_y, ope, ope2,         &
-      !$acc           pp_k, up_k, vp_k,                                            &
-      !$acc           sum_up2, sum_uv, sum_vp2,                                    &
-      !$acc           qu, quv, qvu, qv, hi, dhdx, dhdy, I)                        &
-      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l)
+      !$acc   private(dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb,       &
+      !$acc           ubot, vbot, wbot, spd, tb_u, tb_v, tb_w,                    &
+      !$acc           cfx, cfy, cfz, sc_x, sc_y, sc_z, ope, ope2,                 &
+      !$acc           pp_k, up_k, vp_k, wp_k,                                      &
+      !$acc           sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww,  &
+      !$acc           qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw,                   &
+      !$acc           hi, dhdx, dhdy, dhdz, I)                                     &
+      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l, has_w)
       do Iq = 1, G%npoin_q
 
-         dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0
+         dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  wdp = 0.0
 
          ! Barotropic interpolation to quad point.
          !$acc loop seq
@@ -346,6 +352,7 @@ contains
             dpp = dpp + hi * qb_df(2, I)
             udp = udp + hi * qb_df(3, I)
             vdp = vdp + hi * qb_df(4, I)
+            if (has_w) wdp = wdp + hi * qb_df(5, I)
          end do
 
          ! Load BCL layer integrals precomputed once per RK stage.
@@ -359,24 +366,43 @@ contains
          vp_k    = btp%bcl_btp_flux(3,Iq)
          pbq     = btp%pbq(Iq)
 
-         wq = tsp%wjac(Iq)
-         ub = udp / dp;  vb = vdp / dp
-
-         tb_u = 0.0;  tb_v = 0.0
-         if (botfr_l == 1) then
-            ubot = up_k + ub;  vbot = vp_k + vb
-            spd  = (cd_l / gravity) * pp_k
-            tb_u = spd * ubot;  tb_v = spd * vbot
-         elseif (botfr_l == 2) then
-            ubot = up_k + ub;  vbot = vp_k + vb
-            spd  = (cd_l / alpha_bot_l) * sqrt(ubot**2 + vbot**2)
-            tb_u = spd * ubot;  tb_v = spd * vbot
+         sum_uw = 0.0;  sum_vw = 0.0;  sum_ww = 0.0;  wp_k = 0.0
+         sum_wu = 0.0;  sum_wv = 0.0
+         if (has_w) then
+            sum_uw = btp%bcl_flux(3,1,Iq)
+            sum_vw = btp%bcl_flux(3,2,Iq)
+            sum_wu = btp%bcl_flux(1,3,Iq)
+            sum_wv = btp%bcl_flux(2,3,Iq)
+            sum_ww = btp%bcl_flux(3,3,Iq)
+            wp_k   = btp%bcl_btp_flux(4,Iq)
          end if
 
-         sc_x =  init%coriolis_quad(Iq) * vdp                          &
+         wq = tsp%wjac(Iq)
+         ub = udp / dp;  vb = vdp / dp;  wb = wdp / dp
+
+         ! 3D Coriolis vector (f * r̂); reduces to the f-plane pair (0,0,f) on
+         ! cartesian since kvector=(0,0,1) there — see wind_stress_coriolis.
+         cfx = init%coriolis_3d_quad(1, Iq)
+         cfy = init%coriolis_3d_quad(2, Iq)
+         cfz = init%coriolis_3d_quad(3, Iq)
+
+         tb_u = 0.0;  tb_v = 0.0;  tb_w = 0.0
+         if (botfr_l == 1) then
+            ubot = up_k + ub;  vbot = vp_k + vb;  wbot = wp_k + wb
+            spd  = (cd_l / gravity) * pp_k
+            tb_u = spd * ubot;  tb_v = spd * vbot;  tb_w = spd * wbot
+         elseif (botfr_l == 2) then
+            ubot = up_k + ub;  vbot = vp_k + vb;  wbot = wp_k + wb
+            spd  = (cd_l / alpha_bot_l) * sqrt(ubot**2 + vbot**2 + wbot**2)
+            tb_u = spd * ubot;  tb_v = spd * vbot;  tb_w = spd * wbot
+         end if
+
+         ! Source terms (3D Coriolis cross-product -f×p*u; reduces exactly to
+         ! the old f-plane form on cartesian since cfx=cfy=0 and wdp=0 there).
+         sc_x = -(cfy*wdp - cfz*vdp)                                  &
             + gravity * (init%tau_wind(1, Iq) - tb_u)                 &
             - gravity * dp * init%grad_zbot_quad(1, Iq)
-         sc_y = -init%coriolis_quad(Iq) * udp                          &
+         sc_y = -(cfz*udp - cfx*wdp)                                  &
             + gravity * (init%tau_wind(2, Iq) - tb_v)                 &
             - gravity * dp * init%grad_zbot_quad(2, Iq)
 
@@ -396,15 +422,37 @@ contains
          btp%Qv_ave(1,Iq) = btp%Qv_ave(1,Iq) + qvu
          btp%Qv_ave(2,Iq) = btp%Qv_ave(2,Iq) + qv
 
-
-         btp%tau_bot_ave(1, Iq)      = btp%tau_bot_ave(1, Iq)      + tb_u
-         btp%tau_bot_ave(2, Iq)      = btp%tau_bot_ave(2, Iq)      + tb_v
+         btp%tau_bot_ave(1,Iq)       = btp%tau_bot_ave(1,Iq)       + tb_u
+         btp%tau_bot_ave(2,Iq)       = btp%tau_bot_ave(2,Iq)       + tb_v
          btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope
          btp%ope2_ave(Iq)            = btp%ope2_ave(Iq)            + ope2
          btp%btp_mass_flux_ave(1,Iq) = btp%btp_mass_flux_ave(1,Iq) + udp
          btp%btp_mass_flux_ave(2,Iq) = btp%btp_mass_flux_ave(2,Iq) + vdp
-         btp%uvb_ave(1, Iq)          = btp%uvb_ave(1, Iq)          + ub
-         btp%uvb_ave(2, Iq)          = btp%uvb_ave(2, Iq)          + vb
+         btp%uvb_ave(1,Iq)           = btp%uvb_ave(1,Iq)           + ub
+         btp%uvb_ave(2,Iq)           = btp%uvb_ave(2,Iq)           + vb
+
+         ! Sphere-only: z-momentum flux/source terms and their time averages.
+         sc_z = 0.0;  quz = 0.0;  qvz = 0.0;  qwu = 0.0;  qwv = 0.0;  qw = 0.0
+         if (has_w) then
+            sc_z = -(cfx*vdp - cfy*udp)                                &
+                 - gravity * tb_w                                        &
+                 - gravity * dp * init%grad_zbot_quad(3, Iq)
+
+            quz = wb * udp + ope * sum_uw
+            qvz = wb * vdp + ope * sum_vw
+            qwu = ub * wdp + ope * sum_wu
+            qwv = vb * wdp + ope * sum_wv
+            qw  = wb * wdp + ope * sum_ww
+
+            btp%Qu_ave(3,Iq)            = btp%Qu_ave(3,Iq)            + quz
+            btp%Qv_ave(3,Iq)            = btp%Qv_ave(3,Iq)            + qvz
+            btp%Qw_ave(1,Iq)            = btp%Qw_ave(1,Iq)            + qwu
+            btp%Qw_ave(2,Iq)            = btp%Qw_ave(2,Iq)            + qwv
+            btp%Qw_ave(3,Iq)            = btp%Qw_ave(3,Iq)            + qw
+            btp%tau_bot_ave(3,Iq)       = btp%tau_bot_ave(3,Iq)       + tb_w
+            btp%btp_mass_flux_ave(3,Iq) = btp%btp_mass_flux_ave(3,Iq) + wdp
+            btp%uvb_ave(3,Iq)           = btp%uvb_ave(3,Iq)           + wb
+         end if
 
          ! Scatter: atomics handle cross-gang races on shared DOF nodes.
          !$acc loop seq
@@ -413,12 +461,22 @@ contains
             hi   = tsp%psih(ip, Iq)
             dhdx = tsp%dpsidx(ip, Iq)
             dhdy = tsp%dpsidy(ip, Iq)
+            dhdz = 0.0
+            if (has_w) then
+               dhdx = dhdx + tsp%dpsidz_x(ip, Iq)
+               dhdy = dhdy + tsp%dpsidz_y(ip, Iq)
+               dhdz = tsp%dpsidz(ip, Iq) + tsp%dpsidz_z(ip, Iq)
+            end if
             !$acc atomic update
-            rhs_btp(1, I) = rhs_btp(1, I) + wq * (dhdx*udp + dhdy*vdp)
+            rhs_btp(1, I) = rhs_btp(1, I) + wq * (dhdx*udp + dhdy*vdp + dhdz*wdp)
             !$acc atomic update
-            rhs_btp(2, I) = rhs_btp(2, I) + wq * (hi*sc_x + dhdx*(Hq+qu) + quv*dhdy)
+            rhs_btp(2, I) = rhs_btp(2, I) + wq * (hi*sc_x + dhdx*(Hq+qu) + dhdy*quv + dhdz*quz)
             !$acc atomic update
-            rhs_btp(3, I) = rhs_btp(3, I) + wq * (hi*sc_y + dhdx*qvu    + dhdy*(Hq+qv))
+            rhs_btp(3, I) = rhs_btp(3, I) + wq * (hi*sc_y + dhdx*qvu    + dhdy*(Hq+qv) + dhdz*qvz)
+            if (has_w) then
+               !$acc atomic update
+               rhs_btp(4, I) = rhs_btp(4, I) + wq * (hi*sc_z + dhdx*qwu + dhdy*qwv + dhdz*(Hq+qw))
+            end if
          end do
 
       end do
@@ -457,27 +515,29 @@ contains
       type(initial), intent(in)    :: init
       type(btp_CS),  intent(inout) :: btp
 
-      real, dimension(3,G%npoin),             intent(inout) :: rhs_btp
-      real, dimension(4,G%npoin),             intent(in)    :: qb
-      real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
+      real, dimension(inp%nvar_btp-1,G%npoin),             intent(inout) :: rhs_btp
+      real, dimension(inp%nvar_btp,G%npoin),               intent(in)    :: qb
+      real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers),   intent(in)    :: qprime_df
 
       integer :: iface, iquad, el, er, il, jl, kl, ir, jr, kr, I, n, k
-      real    :: wq, hi, nxl, nyl, un
+      real    :: wq, hi, nxl, nyl, nzl, un
       real    :: pbl, pbr, clam, one_eta, one_eta2, half_clam, quarter_clam
       real    :: pU_L, pU_R, half_clam_dqb2, pbpert_edge
-      real    :: qbl(4), qbr(4)
+      real    :: qbl(5), qbr(5)
       real    :: c_minus, c_plus
-      real    :: ul, ur, vl, vr, opl, opr
+      real    :: ul, ur, vl, vr, wl, wr, opl, opr
       real    :: H_bcl_ql, H_bcl_qr, H_bcl_q, oe2_Hql, oe2_Hqr
-      real    :: Qu_ql1, Qu_ql2, Qu_qr1, Qu_qr2
-      real    :: Qv_ql1, Qv_ql2, Qv_qr1, Qv_qr2
-      real    :: flux_edge_x, flux_edge_y, flux_pb, flux_u, flux_v
+      real    :: Qu_ql1, Qu_ql2, Qu_ql3, Qu_qr1, Qu_qr2, Qu_qr3
+      real    :: Qv_ql1, Qv_ql2, Qv_ql3, Qv_qr1, Qv_qr2, Qv_qr3
+      real    :: Qw_ql1, Qw_ql2, Qw_ql3, Qw_qr1, Qw_qr2, Qw_qr3
+      real    :: flux_edge_x, flux_edge_y, flux_edge_z, flux_pb, flux_u, flux_v, flux_w
       real    :: pprime_lk, pprime_rk, pprime_lk1, pprime_rk1
-      real    :: pkl, pkr, ukl, ukr, vkl, vkr
+      real    :: pkl, pkr, ukl, ukr, vkl, vkr, wkl, wkr
       real    :: ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r
-      real    :: wq_flux_pb, wq_flux_u, wq_flux_v
+      real    :: wq_flux_pb, wq_flux_u, wq_flux_v, wq_flux_w
       real,    dimension(b%ngl) :: hi_c
       integer, dimension(b%ngl) :: I_l, I_r
+      logical :: has_w
 
       ! Capture derived-type scalars before the parallel region so they are
       ! available as firstprivate values inside the GPU kernel.
@@ -486,6 +546,7 @@ contains
       nq_f      = b%nq
       nlayers_f = inp%nlayers
       nface_f   = G%nface
+      has_w     = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(btp, rhs_btp, qb, qprime_df,                              &
       !$acc               G%face, G%face_type, G%intma,                             &
@@ -494,7 +555,7 @@ contains
       !$acc               init%pbprime_df, init%alpha_mlswe,                        &
       !$acc               btp%H_face_ave, btp%ope_face_ave, btp%ope2_face_ave,     &
       !$acc               btp%btp_mass_flux_face_ave,                               &
-      !$acc               btp%Qu_face_ave, btp%Qv_face_ave,                        &
+      !$acc               btp%Qu_face_ave, btp%Qv_face_ave, btp%Qw_face_ave,       &
       !$acc               btp%one_plus_eta_edge_2_ave,                              &
       !$acc               btp%uvb_face_ave)
 
@@ -502,18 +563,20 @@ contains
       !$acc   private(el, er, il, jl, kl, ir, jr, kr, I, n, k,                    &
       !$acc           I_l, I_r, hi_c,                                              &
       !$acc           qbl, qbr, pbl, pbr,                                          &
-      !$acc           nxl, nyl, wq, hi, un,                                        &
+      !$acc           nxl, nyl, nzl, wq, hi, un,                                   &
       !$acc           clam, one_eta, one_eta2, half_clam, quarter_clam,            &
       !$acc           pU_L, pU_R, half_clam_dqb2, pbpert_edge,                    &
-      !$acc           c_minus, c_plus, ul, ur, vl, vr, opl, opr,                  &
+      !$acc           c_minus, c_plus, ul, ur, vl, vr, wl, wr, opl, opr,          &
       !$acc           H_bcl_ql, H_bcl_qr, H_bcl_q, oe2_Hql, oe2_Hqr,             &
-      !$acc           Qu_ql1, Qu_ql2, Qu_qr1, Qu_qr2,                             &
-      !$acc           Qv_ql1, Qv_ql2, Qv_qr1, Qv_qr2,                             &
-      !$acc           flux_edge_x, flux_edge_y, flux_pb, flux_u, flux_v,          &
+      !$acc           Qu_ql1, Qu_ql2, Qu_ql3, Qu_qr1, Qu_qr2, Qu_qr3,            &
+      !$acc           Qv_ql1, Qv_ql2, Qv_ql3, Qv_qr1, Qv_qr2, Qv_qr3,            &
+      !$acc           Qw_ql1, Qw_ql2, Qw_ql3, Qw_qr1, Qw_qr2, Qw_qr3,            &
+      !$acc           flux_edge_x, flux_edge_y, flux_edge_z, flux_pb, flux_u, flux_v, flux_w, &
       !$acc           pprime_lk, pprime_rk, pprime_lk1, pprime_rk1,               &
-      !$acc           pkl, pkr, ukl, ukr, vkl, vkr,                               &
+      !$acc           pkl, pkr, ukl, ukr, vkl, vkr, wkl, wkr,                     &
       !$acc           ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r,               &
-      !$acc           wq_flux_pb, wq_flux_u, wq_flux_v)
+      !$acc           wq_flux_pb, wq_flux_u, wq_flux_v, wq_flux_w)              &
+      !$acc   firstprivate(has_w)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -545,6 +608,7 @@ contains
 
             nxl = mf%normal_vector_q(1, iquad, 1, iface)
             nyl = mf%normal_vector_q(2, iquad, 1, iface)
+            nzl = mf%normal_vector_q(3, iquad, 1, iface)
 
             !$acc loop seq
             do n = 1, ngl_f
@@ -552,7 +616,7 @@ contains
             end do
 
             ! Project barotropic LEFT state
-            qbl(1) = 0.0;  qbl(2) = 0.0;  qbl(3) = 0.0;  qbl(4) = 0.0
+            qbl(1) = 0.0;  qbl(2) = 0.0;  qbl(3) = 0.0;  qbl(4) = 0.0;  qbl(5) = 0.0
             pbl = 0.0
             !$acc loop seq
             do n = 1, ngl_f
@@ -562,12 +626,13 @@ contains
                qbl(2) = qbl(2) + hi * qb(2,I)
                qbl(3) = qbl(3) + hi * qb(3,I)
                qbl(4) = qbl(4) + hi * qb(4,I)
+               if (has_w) qbl(5) = qbl(5) + hi * qb(5,I)
                pbl    = pbl    + hi * init%pbprime_df(I)
             end do
 
             ! Project barotropic RIGHT state or apply boundary condition.
             if (er > 0) then
-               qbr(1) = 0.0;  qbr(2) = 0.0;  qbr(3) = 0.0;  qbr(4) = 0.0
+               qbr(1) = 0.0;  qbr(2) = 0.0;  qbr(3) = 0.0;  qbr(4) = 0.0;  qbr(5) = 0.0
                pbr = 0.0
                !$acc loop seq
                do n = 1, ngl_f
@@ -577,24 +642,27 @@ contains
                   qbr(2) = qbr(2) + hi * qb(2,I)
                   qbr(3) = qbr(3) + hi * qb(3,I)
                   qbr(4) = qbr(4) + hi * qb(4,I)
+                  if (has_w) qbr(5) = qbr(5) + hi * qb(5,I)
                   pbr    = pbr    + hi * init%pbprime_df(I)
                end do
             else
                qbr(1) = qbl(1);  qbr(2) = qbl(2)
-               qbr(3) = qbl(3);  qbr(4) = qbl(4)
+               qbr(3) = qbl(3);  qbr(4) = qbl(4);  qbr(5) = qbl(5)
                pbr = pbl
                if (er == -4) then          ! slip wall
-                  un     = nxl*qbl(3) + nyl*qbl(4)
+                  un     = nxl*qbl(3) + nyl*qbl(4) + nzl*qbl(5)
                   qbr(3) = qbl(3) - 2.0*un*nxl
                   qbr(4) = qbl(4) - 2.0*un*nyl
+                  if (has_w) qbr(5) = qbl(5) - 2.0*un*nzl
                else if (er == -2) then     ! no-slip wall
                   qbr(3) = -qbl(3);  qbr(4) = -qbl(4)
+                  if (has_w) qbr(5) = -qbl(5)
                end if
             end if
 
             ! Wave speeds
-            pU_L = nxl*qbl(3) + nyl*qbl(4)
-            pU_R = -(nxl*qbr(3) + nyl*qbr(4))
+            pU_L = nxl*qbl(3) + nyl*qbl(4) + nzl*qbl(5)
+            pU_R = -(nxl*qbr(3) + nyl*qbr(4) + nzl*qbr(5))
 
             c_minus      = sqrt(init%alpha_mlswe(nlayers_f) * pbr)
             c_plus       = sqrt(init%alpha_mlswe(nlayers_f) * pbl)
@@ -608,12 +676,24 @@ contains
 
             ul = qbl(3) / qbl(1);  ur = qbr(3) / qbr(1)
             vl = qbl(4) / qbl(1);  vr = qbr(4) / qbr(1)
+            wl = 0.0;  wr = 0.0
+            if (has_w) then
+               wl = qbl(5) / qbl(1);  wr = qbr(5) / qbr(1)
+            end if
 
             ! Initialise flux tensors from barotropic state
-            Qu_ql1 = ul * qbl(3);  Qu_ql2 = vl * qbl(3)
-            Qu_qr1 = ur * qbr(3);  Qu_qr2 = vr * qbr(3)
-            Qv_ql1 = ul * qbl(4);  Qv_ql2 = vl * qbl(4)
-            Qv_qr1 = ur * qbr(4);  Qv_qr2 = vr * qbr(4)
+            Qu_ql1 = ul * qbl(3);  Qu_ql2 = vl * qbl(3);  Qu_ql3 = 0.0
+            Qu_qr1 = ur * qbr(3);  Qu_qr2 = vr * qbr(3);  Qu_qr3 = 0.0
+            Qv_ql1 = ul * qbl(4);  Qv_ql2 = vl * qbl(4);  Qv_ql3 = 0.0
+            Qv_qr1 = ur * qbr(4);  Qv_qr2 = vr * qbr(4);  Qv_qr3 = 0.0
+            Qw_ql1 = 0.0;  Qw_ql2 = 0.0;  Qw_ql3 = 0.0
+            Qw_qr1 = 0.0;  Qw_qr2 = 0.0;  Qw_qr3 = 0.0
+            if (has_w) then
+               Qu_ql3 = wl * qbl(3);  Qu_qr3 = wr * qbr(3)
+               Qv_ql3 = wl * qbl(4);  Qv_qr3 = wr * qbr(4)
+               Qw_ql1 = ul * qbl(5);  Qw_ql2 = vl * qbl(5);  Qw_ql3 = wl * qbl(5)
+               Qw_qr1 = ur * qbr(5);  Qw_qr2 = vr * qbr(5);  Qw_qr3 = wr * qbr(5)
+            end if
             H_bcl_ql  = 0.0;  H_bcl_qr  = 0.0
             pprime_lk = 0.0;  pprime_rk = 0.0
 
@@ -621,7 +701,7 @@ contains
             !$acc loop seq
             do k = 1, nlayers_f
 
-               pkl = 0.0;  ukl = 0.0;  vkl = 0.0
+               pkl = 0.0;  ukl = 0.0;  vkl = 0.0;  wkl = 0.0
                !$acc loop seq
                do n = 1, ngl_f
                   hi  = hi_c(n)
@@ -629,10 +709,11 @@ contains
                   pkl = pkl + hi * qprime_df(1, I, k)
                   ukl = ukl + hi * qprime_df(2, I, k)
                   vkl = vkl + hi * qprime_df(3, I, k)
+                  if (has_w) wkl = wkl + hi * qprime_df(4, I, k)
                end do
 
                if (er > 0) then
-                  pkr = 0.0;  ukr = 0.0;  vkr = 0.0
+                  pkr = 0.0;  ukr = 0.0;  vkr = 0.0;  wkr = 0.0
                   !$acc loop seq
                   do n = 1, ngl_f
                      hi  = hi_c(n)
@@ -640,17 +721,20 @@ contains
                      pkr = pkr + hi * qprime_df(1, I, k)
                      ukr = ukr + hi * qprime_df(2, I, k)
                      vkr = vkr + hi * qprime_df(3, I, k)
+                     if (has_w) wkr = wkr + hi * qprime_df(4, I, k)
                   end do
                else
                   pkr = pkl
                   if (er == -4) then
-                     un  = nxl * ukl + nyl * vkl
+                     un  = nxl * ukl + nyl * vkl + nzl * wkl
                      ukr = ukl - 2.0 * un * nxl
                      vkr = vkl - 2.0 * un * nyl
+                     if (has_w) wkr = wkl - 2.0 * un * nzl
                   else if (er == -2) then
                      ukr = -ukl;  vkr = -vkl
+                     if (has_w) wkr = -wkl
                   else
-                     ukr = ukl;  vkr = vkl
+                     ukr = ukl;  vkr = vkl;  wkr = wkl
                   end if
                end if
 
@@ -669,6 +753,14 @@ contains
                Qv_qr1 = Qv_qr1 + uv_cross_r
                Qv_qr2 = Qv_qr2 + vkr * vkr * ope_ppr_k
 
+               if (has_w) then
+                  Qu_ql3 = Qu_ql3 + ukl * wkl * ope_ppl_k;  Qu_qr3 = Qu_qr3 + ukr * wkr * ope_ppr_k
+                  Qv_ql3 = Qv_ql3 + vkl * wkl * ope_ppl_k;  Qv_qr3 = Qv_qr3 + vkr * wkr * ope_ppr_k
+                  Qw_ql1 = Qw_ql1 + ukl * wkl * ope_ppl_k;  Qw_qr1 = Qw_qr1 + ukr * wkr * ope_ppr_k
+                  Qw_ql2 = Qw_ql2 + vkl * wkl * ope_ppl_k;  Qw_qr2 = Qw_qr2 + vkr * wkr * ope_ppr_k
+                  Qw_ql3 = Qw_ql3 + wkl * wkl * ope_ppl_k;  Qw_qr3 = Qw_qr3 + wkr * wkr * ope_ppr_k
+               end if
+
                pprime_lk1 = pprime_lk + pkl
                pprime_rk1 = pprime_rk + pkr
                H_bcl_ql   = H_bcl_ql  + 0.5*init%alpha_mlswe(k) * (pprime_lk1 + pprime_lk) * pkl
@@ -683,7 +775,9 @@ contains
             half_clam_dqb2 = half_clam * (qbl(2) - qbr(2))
             flux_edge_x = 0.5*(qbl(3) + qbr(3)) + nxl * half_clam_dqb2
             flux_edge_y = 0.5*(qbl(4) + qbr(4)) + nyl * half_clam_dqb2
-            flux_pb     = nxl*flux_edge_x + nyl*flux_edge_y
+            flux_edge_z = 0.0
+            if (has_w) flux_edge_z = 0.5*(qbl(5) + qbr(5)) + nzl * half_clam_dqb2
+            flux_pb     = nxl*flux_edge_x + nyl*flux_edge_y + nzl*flux_edge_z
 
             H_bcl_q = one_eta2 * H_bcl_q
 
@@ -708,24 +802,43 @@ contains
             btp%uvb_face_ave(2,1,iquad,iface) = btp%uvb_face_ave(2,1,iquad,iface) + vl
             btp%uvb_face_ave(2,2,iquad,iface) = btp%uvb_face_ave(2,2,iquad,iface) + vr
 
+            if (has_w) then
+               btp%btp_mass_flux_face_ave(3,iquad,iface) = btp%btp_mass_flux_face_ave(3,iquad,iface) + flux_edge_z
+               btp%Qu_face_ave(3,iquad,iface) = btp%Qu_face_ave(3,iquad,iface) + 0.5*(Qu_ql3 + Qu_qr3)
+               btp%Qv_face_ave(3,iquad,iface) = btp%Qv_face_ave(3,iquad,iface) + 0.5*(Qv_ql3 + Qv_qr3)
+               btp%Qw_face_ave(1,iquad,iface) = btp%Qw_face_ave(1,iquad,iface) + 0.5*(Qw_ql1 + Qw_qr1)
+               btp%Qw_face_ave(2,iquad,iface) = btp%Qw_face_ave(2,iquad,iface) + 0.5*(Qw_ql2 + Qw_qr2)
+               btp%Qw_face_ave(3,iquad,iface) = btp%Qw_face_ave(3,iquad,iface) + 0.5*(Qw_ql3 + Qw_qr3)
+               btp%uvb_face_ave(3,1,iquad,iface) = btp%uvb_face_ave(3,1,iquad,iface) + wl
+               btp%uvb_face_ave(3,2,iquad,iface) = btp%uvb_face_ave(3,2,iquad,iface) + wr
+            end if
+
             ! Momentum fluxes
             oe2_Hql = one_eta2 * H_bcl_ql
             oe2_Hqr = one_eta2 * H_bcl_qr
 
             Qu_ql1 = Qu_ql1 + oe2_Hql
             Qu_qr1 = Qu_qr1 + oe2_Hqr
-            flux_u = 0.5 * (nxl*(Qu_ql1 + Qu_qr1) + nyl*(Qu_ql2 + Qu_qr2)) &
-               - quarter_clam * (qbr(3) - qbl(3))
-
             Qv_ql2 = Qv_ql2 + oe2_Hql
             Qv_qr2 = Qv_qr2 + oe2_Hqr
-            flux_v = 0.5 * (nxl*(Qv_ql1 + Qv_qr1) + nyl*(Qv_ql2 + Qv_qr2)) &
+            if (has_w) then
+               Qw_ql3 = Qw_ql3 + oe2_Hql
+               Qw_qr3 = Qw_qr3 + oe2_Hqr
+            end if
+
+            flux_u = 0.5 * (nxl*(Qu_ql1 + Qu_qr1) + nyl*(Qu_ql2 + Qu_qr2) + nzl*(Qu_ql3 + Qu_qr3)) &
+               - quarter_clam * (qbr(3) - qbl(3))
+            flux_v = 0.5 * (nxl*(Qv_ql1 + Qv_qr1) + nyl*(Qv_ql2 + Qv_qr2) + nzl*(Qv_ql3 + Qv_qr3)) &
                - quarter_clam * (qbr(4) - qbl(4))
+            flux_w = 0.0
+            if (has_w) flux_w = 0.5 * (nxl*(Qw_ql1 + Qw_qr1) + nyl*(Qw_ql2 + Qw_qr2) + nzl*(Qw_ql3 + Qw_qr3)) &
+               - quarter_clam * (qbr(5) - qbl(5))
 
             wq         = mf%jac_faceq(iquad, 1, iface)
             wq_flux_pb = wq * flux_pb
             wq_flux_u  = wq * flux_u
             wq_flux_v  = wq * flux_v
+            wq_flux_w  = wq * flux_w
 
             ! RHS scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
@@ -738,6 +851,10 @@ contains
                rhs_btp(2,I) = rhs_btp(2,I) - hi * wq_flux_u
                !$acc atomic update
                rhs_btp(3,I) = rhs_btp(3,I) - hi * wq_flux_v
+               if (has_w) then
+                  !$acc atomic update
+                  rhs_btp(4,I) = rhs_btp(4,I) - hi * wq_flux_w
+               end if
             end do
 
             if (er > 0) then
@@ -751,6 +868,10 @@ contains
                   rhs_btp(2,I) = rhs_btp(2,I) + hi * wq_flux_u
                   !$acc atomic update
                   rhs_btp(3,I) = rhs_btp(3,I) + hi * wq_flux_v
+                  if (has_w) then
+                     !$acc atomic update
+                     rhs_btp(4,I) = rhs_btp(4,I) + hi * wq_flux_w
+                  end if
                end do
             end if
 

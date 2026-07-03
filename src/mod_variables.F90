@@ -23,8 +23,9 @@ module mod_variables
       real, dimension(:),       allocatable :: ope2_ave
 
       ! 2-D volume arrays
-      real, dimension(:,:),     allocatable :: Qu_ave  ! (2,npoin_q): (uu, uv-via-u-eqn) time-avg flux
-      real, dimension(:,:),     allocatable :: Qv_ave  ! (2,npoin_q): (uv-via-v-eqn, vv) time-avg flux
+      real, dimension(:,:),     allocatable :: Qu_ave  ! (nvel_btp,npoin_q): u-mom eqn flux row (x,y[,z])
+      real, dimension(:,:),     allocatable :: Qv_ave  ! (nvel_btp,npoin_q): v-mom eqn flux row (x,y[,z])
+      real, dimension(:,:),     allocatable :: Qw_ave  ! (nvel_btp,npoin_q): w-mom eqn flux row, sphere-only
       real, dimension(:,:),     allocatable :: tau_wind, tau_bot
       real, dimension(:,:),     allocatable :: btp_mass_flux_ave, uvb_ave, uvb_ave_df
       real, dimension(:,:),     allocatable :: btp_dpp_uvp, graduvb_ave
@@ -37,7 +38,7 @@ module mod_variables
 
       real, dimension(:,:,:),   allocatable :: btp_mass_flux_face_ave
       real, dimension(:,:,:),   allocatable :: ope_face_ave, ope2_face_ave
-      real, dimension(:,:,:),   allocatable :: Qu_face_ave, Qv_face_ave, Quv_face_ave
+      real, dimension(:,:,:),   allocatable :: Qu_face_ave, Qv_face_ave, Qw_face_ave
 
       real, dimension(:,:,:,:), allocatable :: uvb_face_ave
       real, dimension(:,:,:,:), allocatable :: btp_graduv_dpp_face, graduvb_face_ave
@@ -113,7 +114,7 @@ contains
             btp%ope2_ave_df,        btp%one_plus_eta_out,                  &
             btp%pbprime_visc,                                              &
             btp%ope_ave,            btp%H_ave,                             &
-            btp%Qu_ave,             btp%Qv_ave,                            &
+            btp%Qu_ave,             btp%Qv_ave,        btp%Qw_ave,        &
             btp%ope2_ave,                                                  &
             btp%tau_wind,           btp%tau_bot,                           &
             btp%btp_mass_flux_ave,  btp%uvb_ave,       btp%uvb_ave_df,    &
@@ -123,7 +124,7 @@ contains
             btp%one_plus_eta_edge_2_ave, btp%H_face_ave,                   &
             btp%btp_mass_flux_face_ave,                                    &
             btp%ope_face_ave,       btp%ope2_face_ave,                     &
-            btp%Qu_face_ave,        btp%Qv_face_ave,   btp%Quv_face_ave,  &
+            btp%Qu_face_ave,        btp%Qv_face_ave,   btp%Qw_face_ave,   &
             btp%uvb_face_ave,                                              &
             btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
             btp%rhs_btp,            btp%rhs_btp_visc,       btp%qb_df,  &
@@ -146,17 +147,18 @@ contains
 
       ! 2-D volume arrays
       allocate(                                                               &
-         btp%Qu_ave(2,G%npoin_q),      btp%Qv_ave(2,G%npoin_q),               &
+         btp%Qu_ave(inp%nvar_btp-2,G%npoin_q), btp%Qv_ave(inp%nvar_btp-2,G%npoin_q), &
+         btp%Qw_ave(inp%nvar_btp-2,G%npoin_q),                                &
          btp%tau_wind(2,G%npoin_q),                                           &
          btp%tau_bot(2,G%npoin_q),                                            &
-         btp%btp_mass_flux_ave(2,G%npoin_q),                                  &
-         btp%uvb_ave(2,G%npoin_q),                                            &
-         btp%uvb_ave_df(2,G%npoin),                                           &
+         btp%btp_mass_flux_ave(inp%nvar_btp-2,G%npoin_q),                     &
+         btp%uvb_ave(inp%nvar_btp-2,G%npoin_q),                               &
+         btp%uvb_ave_df(inp%nvar_btp-2,G%npoin),                              &
          btp%btp_dpp_graduvw(inp%ngraduvw_var,G%npoin),                       &
          btp%btp_dpp_uvp(2,G%npoin),                                          &
          btp%graduvb_ave(4,G%npoin),                                          &
          btp%tau_wind_ave(2,G%npoin_q),                                       &
-         btp%tau_bot_ave(2,G%npoin_q),                                        &
+         btp%tau_bot_ave(inp%nvar_btp-2,G%npoin_q),                           &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp 2-D)"
 
@@ -166,13 +168,13 @@ contains
          btp%one_plus_eta_edge_2(b%nq,G%nface),                                 &
          btp%one_plus_eta_edge_2_ave(b%nq,G%nface),                             &
          btp%H_face_ave(b%nq,G%nface),                                          &
-         btp%btp_mass_flux_face_ave(2,b%nq,G%nface),                            &
+         btp%btp_mass_flux_face_ave(inp%nvar_btp-2,b%nq,G%nface),               &
          btp%ope_face_ave(2,b%nq,G%nface),                                      &
          btp%ope2_face_ave(2,b%nq,G%nface),                                     &
-         btp%Qu_face_ave(2,b%nq,G%nface),                                       &
-         btp%Qv_face_ave(2,b%nq,G%nface),                                       &
-         btp%Quv_face_ave(2,b%nq,G%nface),                                      &
-         btp%uvb_face_ave(2,2,b%nq,G%nface),                                    &
+         btp%Qu_face_ave(inp%nvar_btp-2,b%nq,G%nface),                          &
+         btp%Qv_face_ave(inp%nvar_btp-2,b%nq,G%nface),                          &
+         btp%Qw_face_ave(inp%nvar_btp-2,b%nq,G%nface),                          &
+         btp%uvb_face_ave(inp%nvar_btp-2,2,b%nq,G%nface),                       &
          btp%btp_graduv_dpp_face(5,2,b%ngl,G%nface),                            &
          btp%graduvb_face_ave(4,2,b%ngl,G%nface),                               &
          stat=stat)
@@ -180,7 +182,7 @@ contains
 
       ! RHS and state buffers
       allocate(                                                               &
-         btp%rhs_btp(3,G%npoin),                                              &
+         btp%rhs_btp(inp%nvar_btp-1,G%npoin),                                 &
          btp%rhs_btp_visc(2,G%npoin),                                         &
          btp%qb_df(inp%nvar_btp,G%npoin),                                     &
          btp%qb0_df(inp%nvar_btp,G%npoin),                                    &

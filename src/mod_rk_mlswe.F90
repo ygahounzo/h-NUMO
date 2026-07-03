@@ -48,30 +48,34 @@ contains
       type(tensor_CS),        intent(in)    :: tsp
       type(btp_CS),           intent(inout) :: btp
 
-      real, dimension(4,G%npoin),             intent(inout) :: qb_df
-      real, dimension(3,G%npoin,inp%nlayers), intent(in)    :: qprime_df
+      real, dimension(inp%nvar_btp,G%npoin),             intent(inout) :: qb_df
+      real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(in)    :: qprime_df
 
-      integer :: mstep, ik, I
-      real    :: N_inv, a0, a1, a2, dtt
+      integer :: mstep, ik, I, iv, nvarb_f
+      real    :: N_inv, a0, a1, a2, dtt, visc_term
+      logical :: has_w
+
+      has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      nvarb_f = inp%nvar_btp
 
       ! Zero-initialise all accumulation buffers on device.
       !$acc kernels present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
       !$acc                  btp%ope_ave, btp%btp_mass_flux_ave, btp%H_ave,                &
-      !$acc                  btp%Qu_ave, btp%Qv_ave, btp%ope2_ave_df,        &
+      !$acc                  btp%Qu_ave, btp%Qv_ave, btp%Qw_ave, btp%ope2_ave_df,          &
       !$acc                  btp%uvb_face_ave, btp%ope_face_ave, btp%ope2_face_ave,        &
       !$acc                  btp%btp_mass_flux_face_ave, btp%H_face_ave, btp%Qu_face_ave,  &
-      !$acc                  btp%Qv_face_ave, btp%Quv_face_ave, btp%tau_wind_ave,          &
+      !$acc                  btp%Qv_face_ave, btp%Qw_face_ave, btp%tau_wind_ave,           &
       !$acc                  btp%tau_bot_ave, btp%ope2_ave, btp%graduvb_face_ave,          &
       !$acc                  btp%graduvb_ave, btp%qb2_df, btp%rhs_btp_visc)
       btp%one_plus_eta_edge_2_ave = 0.0;  btp%uvb_ave             = 0.0
       btp%uvb_ave_df              = 0.0;  btp%ope_ave             = 0.0
       btp%btp_mass_flux_ave       = 0.0;  btp%H_ave               = 0.0
       btp%Qu_ave                  = 0.0;  btp%Qv_ave              = 0.0
-      btp%ope2_ave_df             = 0.0
+      btp%Qw_ave                  = 0.0;  btp%ope2_ave_df         = 0.0
       btp%uvb_face_ave            = 0.0;  btp%ope_face_ave        = 0.0
       btp%ope2_face_ave           = 0.0;  btp%btp_mass_flux_face_ave = 0.0
       btp%H_face_ave              = 0.0;  btp%Qu_face_ave         = 0.0
-      btp%Qv_face_ave             = 0.0;  btp%Quv_face_ave        = 0.0
+      btp%Qv_face_ave             = 0.0;  btp%Qw_face_ave         = 0.0
       btp%tau_wind_ave            = 0.0;  btp%tau_bot_ave         = 0.0
       btp%ope2_ave                = 0.0;  btp%graduvb_face_ave    = 0.0
       btp%graduvb_ave             = 0.0;  btp%qb2_df              = 0.0
@@ -92,10 +96,12 @@ contains
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
-         !$acc parallel loop present(btp%qb0_df, qb_df)
+         !$acc parallel loop present(btp%qb0_df, qb_df) private(iv) firstprivate(nvarb_f)
          do I = 1, G%npoin
-            btp%qb0_df(1,I) = qb_df(1,I); btp%qb0_df(2,I) = qb_df(2,I)
-            btp%qb0_df(3,I) = qb_df(3,I); btp%qb0_df(4,I) = qb_df(4,I)
+            !$acc loop seq
+            do iv = 1, nvarb_f
+               btp%qb0_df(iv,I) = qb_df(iv,I)
+            end do
          end do
          !$acc end parallel loop
 
@@ -113,22 +119,28 @@ contains
             ! Reading qb_df(I) for averages and a1-coefficient happens before the
             ! write to qb_df(I) within the same thread — no race across nodes.
             !$acc parallel loop present(btp%qb0_df, qb_df, btp%qb2_df, btp, init, mt) &
-            !$acc    firstprivate(a0, a1, a2, dtt)
+            !$acc    private(iv, visc_term) firstprivate(a0, a1, a2, dtt, nvarb_f)
             do I = 1, G%npoin
-               btp%ope2_ave_df(I)  = btp%ope2_ave_df(I)  + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
-               btp%uvb_ave_df(1,I) = btp%uvb_ave_df(1,I) + qb_df(3,I) / qb_df(1,I)
-               btp%uvb_ave_df(2,I) = btp%uvb_ave_df(2,I) + qb_df(4,I) / qb_df(1,I)
+               btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
+
+               ! Momentum components: u,v[,w] -> uvb_ave_df(1..nvarb_f-2), rhs_btp(2..nvarb_f-1).
+               ! Viscosity (rhs_btp_visc) is only defined for u,v (indices 3,4); w has none yet.
+               !$acc loop seq
+               do iv = 3, nvarb_f
+                  btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) / qb_df(1,I)
+                  visc_term = 0.0
+                  if (iv <= 4) visc_term = inp%visc_mlswe * btp%rhs_btp_visc(iv-2,I)
+                  qb_df(iv,I) = a0*btp%qb0_df(iv,I) + a1*qb_df(iv,I) + a2*btp%qb2_df(iv,I) &
+                               + dtt * (mt%massinv(I) * (btp%rhs_btp(iv-1,I) + visc_term))
+               end do
+
                qb_df(2,I) = a0*btp%qb0_df(2,I) + a1*qb_df(2,I) + a2*btp%qb2_df(2,I) &
                             + dtt * (mt%massinv(I) * btp%rhs_btp(1,I))
-               qb_df(3,I) = a0*btp%qb0_df(3,I) + a1*qb_df(3,I) + a2*btp%qb2_df(3,I) &
-                            + dtt * (mt%massinv(I) * (btp%rhs_btp(2,I) + inp%visc_mlswe*btp%rhs_btp_visc(1,I)))
-               qb_df(4,I) = a0*btp%qb0_df(4,I) + a1*qb_df(4,I) + a2*btp%qb2_df(4,I) &
-                            + dtt * (mt%massinv(I) * (btp%rhs_btp(3,I) + inp%visc_mlswe*btp%rhs_btp_visc(2,I)))
                qb_df(1,I) = qb_df(2,I) + init%pbprime_df(I)
             end do
             !$acc end parallel loop
 
-            call btp_mom_boundary_df(G, b, mf, qb_df)
+            call btp_mom_boundary_df(G, b, mf, init, inp, qb_df, btp%qb0_df)
 
             if (inp%kstages == 5 .and. ik == 2) then
                !$acc kernels present(btp%qb2_df, qb_df)
@@ -149,10 +161,11 @@ contains
       N_inv = 1.0 / real(inp%kstages * init%N_btp)
 
       !$acc kernels present(btp%uvb_ave_df, btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,    &
-      !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave,               &
+      !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Qw_ave,                &
       !$acc                  btp%btp_mass_flux_ave, btp%tau_bot_ave,                        &
       !$acc                  btp%ope_face_ave, btp%ope2_face_ave, btp%H_face_ave,           &
-      !$acc                  btp%Qu_face_ave, btp%Qv_face_ave, btp%btp_mass_flux_face_ave, &
+      !$acc                  btp%Qu_face_ave, btp%Qv_face_ave, btp%Qw_face_ave,             &
+      !$acc                  btp%btp_mass_flux_face_ave,                                    &
       !$acc                  btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_face_ave)
       btp%uvb_ave_df               = N_inv * btp%uvb_ave_df
       btp%ope2_ave_df              = N_inv * btp%ope2_ave_df
@@ -161,6 +174,7 @@ contains
       btp%H_ave                    = N_inv * btp%H_ave
       btp%Qu_ave                   = N_inv * btp%Qu_ave
       btp%Qv_ave                   = N_inv * btp%Qv_ave
+      btp%Qw_ave                   = N_inv * btp%Qw_ave
       btp%btp_mass_flux_ave        = N_inv * btp%btp_mass_flux_ave
       btp%tau_bot_ave              = N_inv * btp%tau_bot_ave
       btp%ope_face_ave             = N_inv * btp%ope_face_ave
@@ -168,6 +182,7 @@ contains
       btp%H_face_ave               = N_inv * btp%H_face_ave
       btp%Qu_face_ave              = N_inv * btp%Qu_face_ave
       btp%Qv_face_ave              = N_inv * btp%Qv_face_ave
+      btp%Qw_face_ave              = N_inv * btp%Qw_face_ave
       btp%btp_mass_flux_face_ave   = N_inv * btp%btp_mass_flux_face_ave
       btp%one_plus_eta_edge_2_ave  = N_inv * btp%one_plus_eta_edge_2_ave
       btp%uvb_ave                  = N_inv * btp%uvb_ave

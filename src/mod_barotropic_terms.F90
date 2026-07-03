@@ -16,25 +16,49 @@ module mod_barotropic_terms
 
     contains
 
-    subroutine btp_mom_boundary_df(G, b, mf, qb)
+    subroutine btp_mom_boundary_df(G, b, mf, init, inp, qb, qb0)
 
         use mod_basis,    only: basis
         use mod_grid,     only: grid
         use mod_face,     only: face_CS
+        use mod_initial,  only: initial
+        use mod_input,    only: input
 
         implicit none
 
         type(grid),    intent(in)    :: G
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
+        type(initial), intent(in)    :: init
+        type(input),   intent(in)    :: inp
 
-        real, intent(inout) :: qb(4,G%npoin)
+        real, intent(inout) :: qb(inp%nvar_btp,G%npoin)
+        real, intent(in)    :: qb0(inp%nvar_btp,G%npoin)
 
         integer :: iface, il, jl, el, er, I, kl, n
-        real :: nx, ny, unl
+        real :: nx, ny, nz, unl
+        logical :: has_w
+
+        has_w = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+
+        ! Sphere tangency constraint: remove radial momentum component at all nodes
+        ! so momentum stays tangent to the sphere surface (kvector = r_hat).
+        if (has_w) then
+            !$acc parallel loop present(init%kvector, qb) private(nx, ny, nz, unl)
+            do I = 1, G%npoin
+                nx  = init%kvector(1,I)
+                ny  = init%kvector(2,I)
+                nz  = init%kvector(3,I)
+                unl = qb(3,I)*nx + qb(4,I)*ny + qb(5,I)*nz
+                qb(3,I) = qb(3,I) - unl*nx
+                qb(4,I) = qb(4,I) - unl*ny
+                qb(5,I) = qb(5,I) - unl*nz
+            end do
+            !$acc end parallel loop
+        end if
 
         !$acc parallel loop present(G%face, G%intma, mf%imapl, mf%normal_vector, qb) &
-        !$acc    private(il, jl, kl, el, er, I, nx, ny, unl)
+        !$acc    private(il, jl, kl, el, er, I, nx, ny, nz, unl) firstprivate(has_w)
         do iface = 1, G%nface
 
             el = G%face(7,iface)
@@ -49,11 +73,18 @@ module mod_barotropic_terms
                     I  = G%intma(il,jl,kl,el)
                     nx = mf%normal_vector(1,n,1,iface)
                     ny = mf%normal_vector(2,n,1,iface)
+                    nz = 0.0
+                    if (has_w) nz = mf%normal_vector(3,n,1,iface)
                     unl = qb(3,I)*nx + qb(4,I)*ny
+                    if (has_w) unl = unl + qb(5,I)*nz
                     !$acc atomic update
                     qb(3,I) = qb(3,I) - unl*nx
                     !$acc atomic update
                     qb(4,I) = qb(4,I) - unl*ny
+                    if (has_w) then
+                        !$acc atomic update
+                        qb(5,I) = qb(5,I) - unl*nz
+                    end if
                 end do
 
             elseif (er == -2) then
@@ -67,10 +98,25 @@ module mod_barotropic_terms
                     qb(3,I) = 0.0
                     !$acc atomic write
                     qb(4,I) = 0.0
+                    if (has_w) then
+                        !$acc atomic write
+                        qb(5,I) = 0.0
+                    end if
                 end do
             end if
         end do
         !$acc end parallel loop
+
+        ! Solid body rotation: restore momentum direction from initial state.
+        if (has_w .and. trim(inp%test_case) == 'solid_body') then
+            !$acc parallel loop present(qb, qb0)
+            do I = 1, G%npoin
+                qb(3,I) = (qb0(3,I)/qb0(1,I)) * qb(1,I)
+                qb(4,I) = (qb0(4,I)/qb0(1,I)) * qb(1,I)
+                qb(5,I) = (qb0(5,I)/qb0(1,I)) * qb(1,I)
+            end do
+            !$acc end parallel loop
+        end if
 
     end subroutine btp_mom_boundary_df
 
