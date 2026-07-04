@@ -72,7 +72,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    q_df_pred = q_df + inp%dt*bcl%rhs_bcl
 
-   call layer_mom_boundary_df(G, inp, b, mf, init, q_df_pred, bcl%q0_df)
+   call layer_mom_boundary_df(G, inp, b, mf, init, q_df_pred)
 
    ! Enforce barotropic-baroclinic velocity consistency on the predicted state.
    call extract_velocity(G, inp, uv_df, q_df_pred, qb_df)
@@ -117,7 +117,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    q_df(2,:,:) = q_df(2,:,:) + inp%dt*rhs_mom(1,:,:)
    q_df(3,:,:) = q_df(3,:,:) + inp%dt*rhs_mom(2,:,:)
 
-   call layer_mom_boundary_df(G, inp, b, mf, init, q_df, bcl%q0_df)
+   call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
    ! Enforce barotropic-baroclinic velocity consistency on the corrected state.
    call extract_velocity(G, inp, uv_df, q_df, qb_df)

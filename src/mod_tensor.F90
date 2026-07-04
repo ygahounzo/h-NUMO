@@ -46,9 +46,10 @@ contains
 
    subroutine compute_tensor_product(G, b, mt, tsp)
 
-      use mod_grid,    only: grid
-      use mod_basis,   only: basis
-      use mod_metrics, only: metrics
+      use mod_grid,      only: grid
+      use mod_basis,     only: basis
+      use mod_metrics,   only: metrics
+      use mod_constants, only: earth_radius
 
       implicit none
 

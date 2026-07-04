@@ -14,6 +14,7 @@ subroutine compute_metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zet
     use mod_basis
     use mod_grid
     use mod_gradient, only: compute_local_gradient_v3
+    use mod_constants, only: earth_radius
 
     implicit none
 
@@ -121,6 +122,21 @@ subroutine compute_metrics(ksi_x,ksi_y,ksi_z,eta_x,eta_y,eta_z,zeta_x,zeta_y,zet
                     zeta_x(i,j,k,ie)= (y_ksi(i,j,k)*z_eta(i,j,k) -y_eta(i,j,k)*z_ksi(i,j,k) )/xj
                     zeta_y(i,j,k,ie)=-(x_ksi(i,j,k)*z_eta(i,j,k) -x_eta(i,j,k)*z_ksi(i,j,k) )/xj
                     zeta_z(i,j,k,ie)= (x_ksi(i,j,k)*y_eta(i,j,k) -x_eta(i,j,k)*y_ksi(i,j,k) )/xj
+
+                    ! For the degenerate 2D-shell-in-3D sphere case, x_zeta/y_zeta/z_zeta above is
+                    ! built from the *unit* surface normal (see rnorm block), so zeta_x/y/z as computed
+                    ! is dimensionless (it is exactly the unit normal, reused). The genuine metric term
+                    ! grad(zeta) instead corresponds to using the true radial position (magnitude
+                    ! earth_radius, same direction as the unit normal) as the zeta-direction tangent,
+                    ! which rescales grad(zeta) by 1/earth_radius (cf. swe_sphere's metrics.f90, which
+                    ! builds x_zeta/y_zeta/z_zeta directly from the physical coordinate). ksi_x/eta_x/jac
+                    ! are unaffected by this rescaling since they only depend on the *direction* of
+                    ! x_zeta/y_zeta/z_zeta, not its magnitude.
+                    if (b%nglz == 1 .and. G%is_sphere) then
+                        zeta_x(i,j,k,ie) = zeta_x(i,j,k,ie) / earth_radius
+                        zeta_y(i,j,k,ie) = zeta_y(i,j,k,ie) / earth_radius
+                        zeta_z(i,j,k,ie) = zeta_z(i,j,k,ie) / earth_radius
+                    end if
 
                     jac(i,j,k,ie) = b%wglx(i)*b%wgly(j)*b%wglz(k)*abs(xj)
                     xjac(i,j,k,ie)=xj

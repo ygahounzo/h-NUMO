@@ -67,7 +67,7 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       hc    = 1000.0
       h0    = 1000.0
       p     = 24.0*3600.0
-      w_rot = twopi*earth_radius/(12.0*p)
+      w_rot = twopi*earth_radius/p   ! flow speed for a full circumnavigation in 12 h
       oloni = 0.0
       olati = 0.0
       olonc = 3.0*pi/2.0

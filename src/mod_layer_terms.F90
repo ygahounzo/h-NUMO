@@ -367,7 +367,7 @@ contains
 
     end subroutine extract_dprime_df_face
 
-    subroutine layer_mom_boundary_df(G, inp, b, mf, init, q, q0)
+    subroutine layer_mom_boundary_df(G, inp, b, mf, init, q)
 
         implicit none
 
@@ -378,7 +378,6 @@ contains
         type(initial), intent(in)    :: init
 
         real, intent(inout) :: q(inp%nvar_bcl, G%npoin, inp%nlayers)
-        real, intent(in)    :: q0(inp%nvar_bcl, G%npoin, inp%nlayers)
 
         integer :: iface, n, il, jl, kl, el, er, I, k
         integer :: nface_l, ngl_l, nlayers_l
@@ -473,14 +472,15 @@ contains
 
         !$acc end data
 
-        ! Solid body rotation: restore momentum direction from initial state.
+        ! Solid body rotation: restore momentum direction from the fixed initial
+        ! (t=0) analytic wind field, held constant for the whole run.
         if (has_w .and. trim(inp%test_case) == 'solid_body') then
-            !$acc parallel loop gang collapse(2) present(q, q0)
+            !$acc parallel loop gang collapse(2) present(q, init%q_df)
             do k = 1, nlayers_l
                 do I = 1, G%npoin
-                    q(2,I,k) = (q0(2,I,k)/q0(1,I,k)) * q(1,I,k)
-                    q(3,I,k) = (q0(3,I,k)/q0(1,I,k)) * q(1,I,k)
-                    q(4,I,k) = (q0(4,I,k)/q0(1,I,k)) * q(1,I,k)
+                    q(2,I,k) = (init%q_df(2,I,k)/init%q_df(1,I,k)) * q(1,I,k)
+                    q(3,I,k) = (init%q_df(3,I,k)/init%q_df(1,I,k)) * q(1,I,k)
+                    q(4,I,k) = (init%q_df(4,I,k)/init%q_df(1,I,k)) * q(1,I,k)
                 end do
             end do
             !$acc end parallel loop

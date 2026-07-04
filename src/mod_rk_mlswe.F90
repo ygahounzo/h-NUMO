@@ -140,7 +140,7 @@ contains
             end do
             !$acc end parallel loop
 
-            call btp_mom_boundary_df(G, b, mf, init, inp, qb_df, btp%qb0_df)
+            call btp_mom_boundary_df(G, b, mf, init, inp, qb_df)
 
             if (inp%kstages == 5 .and. ik == 2) then
                !$acc kernels present(btp%qb2_df, qb_df)

@@ -11,6 +11,7 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
     use mod_basis
     use mod_grid
     use mod_gradient, only: compute_local_gradient_quad_v3
+    use mod_constants, only: earth_radius
 
     implicit none
 
@@ -130,6 +131,17 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
                                         -x_etaq(i,j,k)*z_ksiq(i,j,k) )/xj
                     zetaq_z(i,j,k,ie)= (x_ksiq(i,j,k)*y_etaq(i,j,k) &
                                         -x_etaq(i,j,k)*y_ksiq(i,j,k) )/xj
+
+                    ! Same rescaling as metrics.F90: x_zetaq/y_zetaq/z_zetaq above is the
+                    ! *unit* surface normal (see rnorm block), so zetaq_x/y/z as computed is
+                    ! dimensionless. The genuine grad(zeta) uses the true radial position
+                    ! (magnitude earth_radius) as the zeta-direction tangent, rescaling by
+                    ! 1/earth_radius. ksiq_x/etaq_x/jacq are unaffected (direction-only dependence).
+                    if (b%nqz == 1 .and. G%is_sphere) then
+                        zetaq_x(i,j,k,ie) = zetaq_x(i,j,k,ie) / earth_radius
+                        zetaq_y(i,j,k,ie) = zetaq_y(i,j,k,ie) / earth_radius
+                        zetaq_z(i,j,k,ie) = zetaq_z(i,j,k,ie) / earth_radius
+                    end if
 
                     jacq(i,j,k,ie) = b%wnqx(i)*b%wnqy(j)*b%wnqz(k)*abs(xj)
                     xjacq(i,j,k,ie) = xj

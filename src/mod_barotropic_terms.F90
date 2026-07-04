@@ -16,7 +16,7 @@ module mod_barotropic_terms
 
     contains
 
-    subroutine btp_mom_boundary_df(G, b, mf, init, inp, qb, qb0)
+    subroutine btp_mom_boundary_df(G, b, mf, init, inp, qb)
 
         use mod_basis,    only: basis
         use mod_grid,     only: grid
@@ -33,7 +33,6 @@ module mod_barotropic_terms
         type(input),   intent(in)    :: inp
 
         real, intent(inout) :: qb(inp%nvar_btp,G%npoin)
-        real, intent(in)    :: qb0(inp%nvar_btp,G%npoin)
 
         integer :: iface, il, jl, el, er, I, kl, n
         real :: nx, ny, nz, unl
@@ -107,13 +106,14 @@ module mod_barotropic_terms
         end do
         !$acc end parallel loop
 
-        ! Solid body rotation: restore momentum direction from initial state.
+        ! Solid body rotation: restore momentum direction from the fixed initial
+        ! (t=0) analytic wind field, held constant for the whole run.
         if (has_w .and. trim(inp%test_case) == 'solid_body') then
-            !$acc parallel loop present(qb, qb0)
+            !$acc parallel loop present(qb, init%qb_df)
             do I = 1, G%npoin
-                qb(3,I) = (qb0(3,I)/qb0(1,I)) * qb(1,I)
-                qb(4,I) = (qb0(4,I)/qb0(1,I)) * qb(1,I)
-                qb(5,I) = (qb0(5,I)/qb0(1,I)) * qb(1,I)
+                qb(3,I) = (init%qb_df(3,I)/init%qb_df(1,I)) * qb(1,I)
+                qb(4,I) = (init%qb_df(4,I)/init%qb_df(1,I)) * qb(1,I)
+                qb(5,I) = (init%qb_df(5,I)/init%qb_df(1,I)) * qb(1,I)
             end do
             !$acc end parallel loop
         end if

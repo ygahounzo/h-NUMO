@@ -100,7 +100,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     !$acc end kernels
 
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
-    call layer_mom_boundary_df(G, inp, b, mf, init, q_df, bcl%q0_df)
+    call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, bcl%uv_df, q_df, qb_df)

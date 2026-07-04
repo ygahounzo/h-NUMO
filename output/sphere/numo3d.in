@@ -1,0 +1,88 @@
+&gridnl
+nelx  = 10,
+nely  = 10,
+nopx  = 4,
+nopy  = 4,
+xdims = -1.0,1.0,
+ydims = -1.0,1.0,
+nlayers = 2,
+
+geometry_type = 'sphere_hex',
+              ! cartesian=flat Cartesian domain (default)
+              ! sphere_hex=single cube-face patch, gnomonically projected onto
+              !            a sphere of radius earth_radius (mod_constants.F90).
+              !            xdims/ydims set the flat patch extent BEFORE
+              !            projection (kept symmetric about 0, i.e. a patch
+              !            centered on the projection point) — NOT physical
+              !            meters; the projection is scale-invariant so only
+              !            the xdims/ydims:depth ratio (i.e. angular extent)
+              !            matters, not their absolute size.
+
+!Dimension of the domain: (x,y) in (min,max)
+x_boundary = 4, 4 ! Front and Back (x=-1 and x=+1)
+y_boundary = 4, 4 ! Left and Right (y=-1 and y=+1)
+           ! These denote constant x or y.
+           ! E.g. x_boundary(1) is the west and x_boundary(2) is the east
+           ! BCs are: 0=do nothing, 4=freeslip, 5=noslip
+
+!P4est Input
+refinement_levels_h = 0, ! refinement levels in horizontal
+
+lread_external_grid = F,  ! Read external grid file
+
+/
+
+&input_nml
+dt= 100,
+dt_btp = 20.,
+time_initial = 0.0,
+time_final   = 24,
+time_restart = 0.5,
+time_scale = 3600, !1=seconds, 3600=hours, 86400=days
+!lrestart_file = .true.,
+!irestart_file_number = 2
+
+! mlswe parameter
+ad_mlswe = 0.0,
+botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
+cd_mlswe = 0.0, ! cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
+method_visc = 0,  ! 0=no viscosity
+visc_mlswe = 0.5, ! horizontal viscosity
+dg_integ_exact = F,
+dump_data = T,    ! write output files
+beta = 0.0,  ! beta-plane Coriolis parameter (default = 0.0, unused on sphere_hex — Coriolis comes from kvector/omega instead)
+f0 = 0.0,    ! Coriolis parameter (default = 0.0, unused on sphere_hex)
+
+!---- Test Cases ------------------------------------
+test_case = 'solid_body',
+           !
+           ! sphere_hex test cases (initial_conditions_sphere.F90):
+           ! 'solid_body'      = Williamson et al. 1992 test case 2: zonal
+           !                     geostrophic flow in solid-body rotation
+           ! 'sphere_bump'     = cosine bell advected by solid-body rotation
+           !                     (Williamson et al. 1992 test case 1)
+           ! 'sphere_mountain' = zonal flow over a conical mountain
+           !                     (Williamson et al. 1992 test case 5)
+
+ti_method_btp = 'rk35', ! Default = 'explicit' which is a two step method
+kstages = 5,
+kstages_bcl = 3,
+bcl_time_method = 'rk3',
+!rk_bcl_FS = T,
+
+space_method = 'dg', ! dg=discontinuous Galerkin
+
+fname_root = 'mlswe_sphere',
+format_vtk = 'ascii',
+out_type = 'vtk',
+                  ! txt=binary output
+                  ! nc=netcdf output;
+                  ! vtk=Visual ToolKit (Paraview) output
+                  ! none=No Output
+
+lprint_diagnostics = T,
+                           ! T=true=print diagnostics
+                           ! F=false=do NOT print diagnostics
+
+lcheck_conserved = T
+/
