@@ -166,6 +166,14 @@ module mod_initial
             init%N_btp = ceiling(inp%dt/inp%dt_btp)
             inp%dt_btp = inp%dt/real(init%N_btp)
 
+            ! No bcl-btp time splitting to speak of with a single layer: use
+            ! dt_btp (sized for the barotropic CFL) as the master timestep
+            ! directly, one barotropic step per call.
+            if (inp%nlayers == 1) then
+                init%N_btp = 1
+                inp%dt     = inp%dt_btp
+            end if
+
             call  wind_stress_coriolis(b, G, inp, init%tau_wind, init%coriolis_df, init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
                 init%a_bcl, init%b_bcl, init%tau_wind_df, init%coriolis_3d_quad, init%kvector)
             call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl)

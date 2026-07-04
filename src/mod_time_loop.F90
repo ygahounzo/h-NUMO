@@ -35,7 +35,10 @@ contains
 
     subroutine time_loop(G, inp, b, gg, par, mf, btp, bcl, init, ref, mpic, tsp, mt)
 
-        use mod_restart,  only: restart_mlswe
+        use mod_restart,          only: restart_mlswe
+        use mod_rk_mlswe,         only: ti_barotropic_ssprk_mlswe
+        use mod_layer_terms,      only: extract_qprime_df_face
+        use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
 
         implicit none
 
@@ -88,6 +91,17 @@ contains
         ! Initialize all layers
         bcl%q_df = init%q_df
         btp%qb_df       = init%qb_df
+
+        ! Single-layer configurations reduce to the barotropic system exactly
+        ! (the one layer's mass/momentum *is* the barotropic mass/momentum), so
+        ! the baroclinic perturbation qprime_df is identically zero (aside from
+        ! the constant qprime_df(1,:,:) = pbprime_df term) for all time. Compute
+        ! it once here so the barotropic-only path below never needs to touch
+        ! the baroclinic driver at all.
+        if (inp%nlayers == 1) then
+            call extract_qprime_df_face(G, inp, init, bcl%qprime_df, bcl%q_df, btp%qb_df)
+            call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+        end if
 
         ! Initialize/Restart
         inorm  = 0
@@ -203,7 +217,15 @@ contains
 
             call cpu_time(time1)
 
-            if (trim(inp%bcl_time_method) == 'rk3') then
+            if (inp%nlayers == 1) then
+              ! Barotropic-only path: skip the baroclinic driver entirely (see setup above).
+              call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
+                                              btp%qb_df, bcl%qprime_df)
+              bcl%q_df(1,:,1) = btp%qb_df(1,:)
+              bcl%q_df(2,:,1) = btp%qb_df(3,:)
+              bcl%q_df(3,:,1) = btp%qb_df(4,:)
+              if (inp%nvar_bcl == 4) bcl%q_df(4,:,1) = btp%qb_df(5,:)
+            elseif (trim(inp%bcl_time_method) == 'rk3') then
               call ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
             elseif (trim(inp%bcl_time_method) == 'lsrk3') then
               call ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
