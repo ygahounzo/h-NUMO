@@ -52,7 +52,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   integer :: k, ik
-  real :: dtt, a1, a2
+  real :: dtt, a1, a2, dt_btp_in
   logical :: has_w
 
   has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
@@ -86,7 +86,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
       ! FS: BTP at stage 1 only, full N_btp.
       ! ti_barotropic_ssprk_mlswe uploads qb_df internally before use.
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                      qb_df, bcl%qprime_df)
+                                      qb_df, bcl%qprime_df, inp%dt_btp)
 
     elseif (.not. inp%rk_bcl_FS) then
       ! ES: restore qb_df to the stage-0 value on GPU.
@@ -94,8 +94,9 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
       qb_df      = bcl%qbp_df
       !$acc end kernels
       init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
+      dt_btp_in = dtt / real(init%N_btp)
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                      qb_df, bcl%qprime_df)
+                                      qb_df, bcl%qprime_df, dt_btp_in)
     endif
     ! After ti_barotropic_ssprk_mlswe: qb_df device copy is current.
 

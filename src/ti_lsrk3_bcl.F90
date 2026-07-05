@@ -46,7 +46,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   integer :: k, ik
-  real :: dtt
+  real :: dtt, dt_btp_in
   logical :: has_w
   real, parameter :: lsrk3_beta(3) = (/ 1.0/3.0, 1.0/2.0, 1.0 /)
 
@@ -74,7 +74,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     if (ik == 1 .and. inp%rk_bcl_FS) then
       ! FS: BTP at stage 1 only, full N_btp.
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                      qb_df, bcl%qprime_df)
+                                      qb_df, bcl%qprime_df, inp%dt_btp)
 
     elseif (.not. inp%rk_bcl_FS) then
       ! ES: restore qb_df to the stage-0 value on GPU.
@@ -82,8 +82,9 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       qb_df      = bcl%qbp_df
       !$acc end kernels
       init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
+      dt_btp_in = dtt / real(init%N_btp)
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                      qb_df, bcl%qprime_df)
+                                      qb_df, bcl%qprime_df, dt_btp_in)
     endif
 
     ! GPU: build baroclinic RHS; rhs_bcl downloaded to host inside but device copy valid.
