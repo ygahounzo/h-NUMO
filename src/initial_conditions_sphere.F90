@@ -59,7 +59,15 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
 
    select case (trim(inp%test_case))
 
-   case ('solid_body') ! Solid body rotation
+   case ('solid_body') ! Williamson et al. 1992, Test 1: advection of a cosine
+                        ! bell by solid-body rotation. The momentum restore in
+                        ! layer_mom_boundary_df/btp_mom_boundary_df plays the
+                        ! role of "overwrite the predicted wind field every
+                        ! step with the analytic advecting wind" (per the
+                        ! paper's own recipe for codes solving the full
+                        ! shallow water equations), so the bell is advected
+                        ! passively rather than dynamically generating its
+                        ! own geostrophic adjustment.
 
       beta  = 0.0
       twopi = 2.0*pi
@@ -135,7 +143,12 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
          w_df(I1,:) = (+v*cos(olat))
       end do
 
-   case ('geoFlow') ! Zonal geostrophic flow — solid body rotation
+   case ('geoFlow') ! Williamson et al. 1992, Test 2: steady zonal geostrophic
+                    ! flow. Unlike 'solid_body', the elevation field below
+                    ! includes the geostrophic-balance term that exactly
+                    ! cancels the Coriolis/centrifugal force of the imposed
+                    ! wind, so this is a genuine steady state of the full
+                    ! shallow water equations (no momentum restore needed).
 
       twopi = 2.0*pi
       pio2  = pi/2.0

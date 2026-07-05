@@ -52,7 +52,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   integer :: k, ik
-  real :: dtt, a1, a2, dt_btp_in
+  real :: dtt, a1, a2
   logical :: has_w
 
   has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
@@ -89,14 +89,15 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
                                       qb_df, bcl%qprime_df, inp%dt_btp)
 
     elseif (.not. inp%rk_bcl_FS) then
-      ! ES: restore qb_df to the stage-0 value on GPU.
+      ! ES: restore qb_df to the stage-0 value on GPU, then re-integrate the
+      ! barotropic system over the FULL dt (not just this stage's fractional
+      ! dtt) using this stage's qprime_df. N_btp/dt_btp are already exact by
+      ! construction (mod_initial.F90 sets dt_btp = dt/N_btp).
       !$acc kernels present(qb_df, bcl%qbp_df)
       qb_df      = bcl%qbp_df
       !$acc end kernels
-      init%N_btp = max(1, ceiling(dtt / inp%dt_btp))
-      dt_btp_in = dtt / real(init%N_btp)
       call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                      qb_df, bcl%qprime_df, dt_btp_in)
+                                      qb_df, bcl%qprime_df, inp%dt_btp)
     endif
     ! After ti_barotropic_ssprk_mlswe: qb_df device copy is current.
 
@@ -129,7 +130,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     !$acc end kernels
 
     ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
-    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    ! call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
     ! GPU: save stage result for next stage.
     !$acc kernels present(bcl%q1_df, q_df)

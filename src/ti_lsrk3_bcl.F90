@@ -116,7 +116,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     !$acc end kernels
 
     ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
-    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    ! call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
   end do
 
