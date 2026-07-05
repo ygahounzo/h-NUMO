@@ -338,11 +338,11 @@ module mod_initial_mlswe
                 ssprk_beta(1)=0.377268915331368
                 ssprk_a(2,1)=0.0;       ssprk_a(2,2)=1.0; ssprk_a(2,3)=0.0
                 ssprk_beta(2)=0.377268915331368
-                ssprk_a(3,1)=0.355909775063326; ssprk_a(3,2)=0.644090224936674; ssprk_a(3,3)=0.0
+                ssprk_a(3,1)=0.355909775063327; ssprk_a(3,2)=1.0-ssprk_a(3,1); ssprk_a(3,3)=0.0
                 ssprk_beta(3)=0.242995220537396
-                ssprk_a(4,1)=0.367933791638137; ssprk_a(4,2)=0.632066208361863; ssprk_a(4,3)=0.0
+                ssprk_a(4,1)=0.367933791638137; ssprk_a(4,2)=1.0-ssprk_a(4,1); ssprk_a(4,3)=0.0
                 ssprk_beta(4)=0.238458932846290
-                ssprk_a(5,1)=0.0; ssprk_a(5,2)=0.762406163401431; ssprk_a(5,3)=0.237593836598569
+                ssprk_a(5,1)=0.0; ssprk_a(5,2)=0.762406163401431; ssprk_a(5,3)=1.0-ssprk_a(5,2)
                 ssprk_beta(5)=0.287632146308408
             end select
         endif

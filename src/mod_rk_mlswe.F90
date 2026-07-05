@@ -17,7 +17,7 @@ module mod_rk_mlswe
 contains
 
    subroutine ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-      qb_df, qprime_df)
+      qb_df, qprime_df, dt_btp_in)
 
       use mod_grid,              only: grid
       use mod_input,             only: input
@@ -50,6 +50,7 @@ contains
 
       real, dimension(inp%nvar_btp,G%npoin),             intent(inout) :: qb_df
       real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(in)    :: qprime_df
+      real,                                               intent(in)    :: dt_btp_in
 
       integer :: mstep, ik, I, iv, nvarb_f
       real    :: N_inv, a0, a1, a2, dtt, visc_term
@@ -110,7 +111,7 @@ contains
             a0  = init%ssprk_a(ik,1)
             a1  = init%ssprk_a(ik,2)
             a2  = init%ssprk_a(ik,3)
-            dtt = inp%dt_btp * init%ssprk_beta(ik)
+            dtt = dt_btp_in * init%ssprk_beta(ik)
 
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)

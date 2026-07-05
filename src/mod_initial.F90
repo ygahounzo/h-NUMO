@@ -166,7 +166,7 @@ module mod_initial
             init%N_btp = ceiling(inp%dt/inp%dt_btp)
             inp%dt_btp = inp%dt/real(init%N_btp)
 
-            ! No bcl-btp time splitting to speak of with a single layer: use
+            ! No bcl-btp time splitting with a single layer: use
             ! dt_btp (sized for the barotropic CFL) as the master timestep
             ! directly, one barotropic step per call.
             if (inp%nlayers == 1) then

@@ -220,7 +220,7 @@ contains
             if (inp%nlayers == 1) then
               ! Barotropic-only path: skip the baroclinic driver entirely (see setup above).
               call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
-                                              btp%qb_df, bcl%qprime_df)
+                                              btp%qb_df, bcl%qprime_df, inp%dt_btp)
               bcl%q_df(1,:,1) = btp%qb_df(1,:)
               bcl%q_df(2,:,1) = btp%qb_df(3,:)
               bcl%q_df(3,:,1) = btp%qb_df(4,:)
