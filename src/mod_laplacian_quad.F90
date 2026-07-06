@@ -40,64 +40,102 @@ contains
       type(mpi_communicator), intent(inout) :: mpic
       type(tensor_CS),        intent(in)    :: tsp
 
-      real, intent(out) :: rhs_btp_visc(2,G%npoin)
-      real, dimension(4,G%npoin), intent(in) :: qb_df
+      real, intent(out) :: rhs_btp_visc(inp%nvar_btp-2,G%npoin)
+      real, dimension(inp%nvar_btp,G%npoin), intent(in) :: qb_df
 
-      real, dimension(2,G%npoin) :: Uk
-      real, dimension(4,G%npoin) :: graduv
+      real, dimension(inp%nvar_btp-2,G%npoin) :: Uk
+      real, dimension(inp%ngraduvw_var,G%npoin) :: graduv
       integer :: I, Iq, ip
-      real    :: dhdx, dhdy
+      real    :: dhdx, dhdy, dhdz
+      real    :: du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz
+      logical :: has_w
+
+      has_w = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data create(Uk, graduv)
 
       ! Compute barotropic velocity — qb_df lives on device during the BTP loop.
-      !$acc parallel loop present(Uk, qb_df)
+      !$acc parallel loop present(Uk, qb_df) firstprivate(has_w)
       do I = 1, G%npoin
          Uk(1,I) = qb_df(3,I) / qb_df(1,I)
          Uk(2,I) = qb_df(4,I) / qb_df(1,I)
+         if (has_w) Uk(3,I) = qb_df(5,I) / qb_df(1,I)
       end do
       !$acc end parallel loop
 
-      ! Compute velocity gradient (inlined from compute_gradient_uv).
+      ! Compute velocity gradient (inlined from compute_gradient_uv), using the
+      ! same shell-embedding correction (dpsidz_df_x/y/z, from mt%zeta_x/y/z)
+      ! as btp_bcl_coeffs_qdf so graduv/dpp_graduvw stay index-consistent.
       !$acc kernels present(graduv)
       graduv = 0.0
       !$acc end kernels
 
-      !$acc parallel loop present(graduv, Uk, tsp, b, G)
+      !$acc parallel loop present(graduv, Uk, tsp, b, G) &
+      !$acc    private(dhdx, dhdy, dhdz, du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, &
+      !$acc            dw_dx, dw_dy, dw_dz, I) firstprivate(has_w)
       do Iq = 1, G%npoin
+         du_dx = 0.0; du_dy = 0.0; du_dz = 0.0
+         dv_dx = 0.0; dv_dy = 0.0; dv_dz = 0.0
+         dw_dx = 0.0; dw_dy = 0.0; dw_dz = 0.0
          !$acc loop seq
          do ip = 1, b%npts
             I    = tsp%index_df(ip,Iq)
             dhdx = tsp%dpsidx_df(ip,Iq)
             dhdy = tsp%dpsidy_df(ip,Iq)
-            graduv(1,Iq) = graduv(1,Iq) + dhdx*Uk(1,I)
-            graduv(2,Iq) = graduv(2,Iq) + dhdy*Uk(1,I)
-            graduv(3,Iq) = graduv(3,Iq) + dhdx*Uk(2,I)
-            graduv(4,Iq) = graduv(4,Iq) + dhdy*Uk(2,I)
+            dhdz = 0.0
+            if (has_w) then
+               dhdx = dhdx + tsp%dpsidz_df_x(ip,Iq)
+               dhdy = dhdy + tsp%dpsidz_df_y(ip,Iq)
+               dhdz = tsp%dpsidz_df(ip,Iq) + tsp%dpsidz_df_z(ip,Iq)
+            end if
+            du_dx = du_dx + dhdx*Uk(1,I)
+            du_dy = du_dy + dhdy*Uk(1,I)
+            dv_dx = dv_dx + dhdx*Uk(2,I)
+            dv_dy = dv_dy + dhdy*Uk(2,I)
+            if (has_w) then
+               du_dz = du_dz + dhdz*Uk(1,I)
+               dv_dz = dv_dz + dhdz*Uk(2,I)
+               dw_dx = dw_dx + dhdx*Uk(3,I)
+               dw_dy = dw_dy + dhdy*Uk(3,I)
+               dw_dz = dw_dz + dhdz*Uk(3,I)
+            end if
          end do
+         graduv(1,Iq) = du_dx; graduv(2,Iq) = du_dy
+         graduv(3,Iq) = dv_dx; graduv(4,Iq) = dv_dy
+         if (has_w) then
+            graduv(5,Iq) = du_dz; graduv(6,Iq) = dv_dz
+            graduv(7,Iq) = dw_dx; graduv(8,Iq) = dw_dy; graduv(9,Iq) = dw_dz
+         end if
       end do
       !$acc end parallel loop
 
       ! Accumulate time-average on device.
-      !$acc parallel loop present(btp, graduv)
+      !$acc parallel loop present(btp, graduv) firstprivate(has_w)
       do I = 1, G%npoin
          btp%graduvb_ave(1,I) = btp%graduvb_ave(1,I) + graduv(1,I)
          btp%graduvb_ave(2,I) = btp%graduvb_ave(2,I) + graduv(2,I)
          btp%graduvb_ave(3,I) = btp%graduvb_ave(3,I) + graduv(3,I)
          btp%graduvb_ave(4,I) = btp%graduvb_ave(4,I) + graduv(4,I)
+         if (has_w) then
+            btp%graduvb_ave(5,I) = btp%graduvb_ave(5,I) + graduv(5,I)
+            btp%graduvb_ave(6,I) = btp%graduvb_ave(6,I) + graduv(6,I)
+            btp%graduvb_ave(7,I) = btp%graduvb_ave(7,I) + graduv(7,I)
+            btp%graduvb_ave(8,I) = btp%graduvb_ave(8,I) + graduv(8,I)
+            btp%graduvb_ave(9,I) = btp%graduvb_ave(9,I) + graduv(9,I)
+         end if
       end do
       !$acc end parallel loop
 
       ! MPI precommunicator reads graduv from host — download once before packing.
       !$acc update host(graduv)
 
-      call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, 4)
+      call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var)
 
       ! rhs_btp_visc already zeroed on device by caller (create_rhs_btp).
-      call btp_compute_laplacian_qp(G, b, btp, tsp, rhs_btp_visc, graduv)
-      call create_rhs_laplacian_flux(G, b, mf, btp, rhs_btp_visc, graduv)
+      call btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, graduv)
+      call create_rhs_laplacian_flux(G, inp, b, mf, btp, rhs_btp_visc, graduv)
 
-      call create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs_btp_visc, 4)
+      call create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs_btp_visc, inp%nvar_btp-2)
 
       ! rhs_btp_visc stays on device; read by the SSPRK GPU kernel in the caller.
       !$acc end data
@@ -131,27 +169,28 @@ contains
       type(metrics),          intent(in)    :: mt
       type(tensor_CS),        intent(in)    :: tsp
 
-      real, intent(out) :: rhs_lap(2,G%npoin,inp%nlayers)
+      real, intent(out) :: rhs_lap(inp%nvar_bcl-1,G%npoin,inp%nlayers)
 
       integer :: k
+      logical :: has_w
+
+      has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
       ! Pre-comm GPU pack reads dpp_graduvw/dpprime_visc directly from device.
       ! rhs_lap is created on device; all kernels run GPU-to-GPU.
-      ! Only the cartesian-equivalent 4 components cross MPI boundaries today —
-      ! the sphere-only slots 5:9 of dpp_graduvw aren't yet consumed by the
-      ! viscosity Laplacian (same rationale as btp_dpp_graduvw).
       !$acc data create(rhs_lap)
-      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw(1:4,:,:), bcl%dpprime_visc)
+      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw, bcl%dpprime_visc)
       call bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, rhs_lap)
       call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, rhs_lap)
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
       call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, rhs_lap)
 
       ! GPU: apply viscous mass-inverse scaling while rhs_lap is still on device.
-      !$acc kernels present(rhs_lap, mt%massinv)
+      !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
       do k = 1, inp%nlayers
          rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
          rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
+         if (has_w) rhs_lap(3,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(3,:,k)
       end do
       !$acc end kernels
 
@@ -232,9 +271,10 @@ contains
 
    end subroutine btp_compute_laplacian
 
-   subroutine btp_compute_laplacian_qp(G, b, btp, tsp, rhs_btp_visc, grad_dpuvp)
+   subroutine btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, grad_dpuvp)
 
       use mod_grid,      only: grid
+      use mod_input,     only: input
       use mod_basis,     only: basis
       use mod_variables, only: btp_CS
       use mod_tensor,    only: tensor_CS
@@ -242,21 +282,25 @@ contains
       implicit none
 
       type(grid),      intent(in)  :: G
+      type(input),     intent(in)  :: inp
       type(basis),     intent(in)  :: b
       type(btp_CS),    intent(in)  :: btp
       type(tensor_CS), intent(in)  :: tsp
 
-      real, intent(out) :: rhs_btp_visc(2,G%npoin)
-      real, dimension(4,G%npoin), intent(in) :: grad_dpuvp
+      real, intent(out) :: rhs_btp_visc(inp%nvar_btp-2,G%npoin)
+      real, dimension(inp%ngraduvw_var,G%npoin), intent(in) :: grad_dpuvp
 
       integer :: Iq, I, ip
-      real :: wq, qq(4)
+      real :: wq, qq(9), dhdx, dhdy, dhdz
       integer :: npoin_l, npts_l
+      logical :: has_w
 
       npoin_l = G%npoin
       npts_l  = b%npts
+      has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%index_df,  &
+      !$acc              tsp%dpsidz_df, tsp%dpsidz_df_x, tsp%dpsidz_df_y, tsp%dpsidz_df_z, &
       !$acc              btp%pbprime_visc, btp%btp_dpp_graduvw, grad_dpuvp,           &
       !$acc              rhs_btp_visc)
 
@@ -265,8 +309,8 @@ contains
       !$acc end kernels
 
       !$acc parallel loop gang                                     &
-      !$acc   private(qq, wq, I, ip)                               &
-      !$acc   firstprivate(npoin_l, npts_l)
+      !$acc   private(qq, wq, I, ip, dhdx, dhdy, dhdz)              &
+      !$acc   firstprivate(npoin_l, npts_l, has_w)
       do Iq = 1, npoin_l
 
          wq    = tsp%wjac_df(Iq)
@@ -274,14 +318,37 @@ contains
          qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduvw(2,Iq)
          qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduvw(3,Iq)
          qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduvw(4,Iq)
+         if (has_w) then
+            qq(5) = btp%pbprime_visc(Iq)*grad_dpuvp(5,Iq) + btp%btp_dpp_graduvw(5,Iq)
+            qq(6) = btp%pbprime_visc(Iq)*grad_dpuvp(6,Iq) + btp%btp_dpp_graduvw(6,Iq)
+            qq(7) = btp%pbprime_visc(Iq)*grad_dpuvp(7,Iq) + btp%btp_dpp_graduvw(7,Iq)
+            qq(8) = btp%pbprime_visc(Iq)*grad_dpuvp(8,Iq) + btp%btp_dpp_graduvw(8,Iq)
+            qq(9) = btp%pbprime_visc(Iq)*grad_dpuvp(9,Iq) + btp%btp_dpp_graduvw(9,Iq)
+         end if
 
          !$acc loop seq
          do ip = 1, npts_l
             I = tsp%index_df(ip,Iq)
+            dhdx = tsp%dpsidx_df(ip,Iq)
+            dhdy = tsp%dpsidy_df(ip,Iq)
+            dhdz = 0.0
+            if (has_w) then
+               dhdx = dhdx + tsp%dpsidz_df_x(ip,Iq)
+               dhdy = dhdy + tsp%dpsidz_df_y(ip,Iq)
+               dhdz = tsp%dpsidz_df(ip,Iq) + tsp%dpsidz_df_z(ip,Iq)
+            end if
             !$acc atomic update
-            rhs_btp_visc(1,I) = rhs_btp_visc(1,I) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
+            rhs_btp_visc(1,I) = rhs_btp_visc(1,I) - wq*(dhdx*qq(1) + dhdy*qq(2))
             !$acc atomic update
-            rhs_btp_visc(2,I) = rhs_btp_visc(2,I) - wq*(tsp%dpsidx_df(ip,Iq)*qq(3) + tsp%dpsidy_df(ip,Iq)*qq(4))
+            rhs_btp_visc(2,I) = rhs_btp_visc(2,I) - wq*(dhdx*qq(3) + dhdy*qq(4))
+            if (has_w) then
+               !$acc atomic update
+               rhs_btp_visc(1,I) = rhs_btp_visc(1,I) - wq*dhdz*qq(5)
+               !$acc atomic update
+               rhs_btp_visc(2,I) = rhs_btp_visc(2,I) - wq*dhdz*qq(6)
+               !$acc atomic update
+               rhs_btp_visc(3,I) = rhs_btp_visc(3,I) - wq*(dhdx*qq(7) + dhdy*qq(8) + dhdz*qq(9))
+            end if
          end do
       end do
       !$acc end parallel loop
@@ -307,18 +374,21 @@ contains
       type(bcl_CS),    intent(in)  :: bcl
       type(tensor_CS), intent(in)  :: tsp
 
-      real, intent(out) :: lap_q(2,G%npoin,inp%nlayers)
+      real, intent(out) :: lap_q(inp%nvar_bcl-1,G%npoin,inp%nlayers)
 
       integer :: ie, iq_local, Iq, Iq0, I, ip, k
       integer :: npts_l, nelem_l, nlayers_l
-      real :: wq, qq(4)
-      real :: lap_loc(2, b%npts, inp%nlayers)
+      real :: wq, qq(9), dhdx, dhdy, dhdz
+      real :: lap_loc(3, b%npts, inp%nlayers)
+      logical :: has_w
 
       npts_l    = b%npts
       nelem_l   = G%nelem
       nlayers_l = inp%nlayers
+      has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df,        &
+      !$acc              tsp%dpsidz_df, tsp%dpsidz_df_x, tsp%dpsidz_df_y, tsp%dpsidz_df_z, &
       !$acc              tsp%index_df_elt, tsp%index_df,                     &
       !$acc              btp%graduvb_ave, bcl%dpprime_visc, bcl%dpp_graduvw, lap_q)
 
@@ -327,8 +397,8 @@ contains
       !$acc end kernels
 
       !$acc parallel loop gang                                                    &
-      !$acc   private(lap_loc, qq, wq, Iq, Iq0, I, ip, k, iq_local)            &
-      !$acc   firstprivate(npts_l, nelem_l, nlayers_l)
+      !$acc   private(lap_loc, qq, wq, dhdx, dhdy, dhdz, Iq, Iq0, I, ip, k, iq_local) &
+      !$acc   firstprivate(npts_l, nelem_l, nlayers_l, has_w)
       do ie = 1, nelem_l
 
          !$acc loop seq
@@ -337,6 +407,7 @@ contains
             do ip = 1, npts_l
                lap_loc(1,ip,k) = 0.0
                lap_loc(2,ip,k) = 0.0
+               if (has_w) lap_loc(3,ip,k) = 0.0
             end do
          end do
 
@@ -350,10 +421,30 @@ contains
                qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduvw(2,Iq,k)
                qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduvw(3,Iq,k)
                qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduvw(4,Iq,k)
+               if (has_w) then
+                  qq(5) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(5,Iq) + bcl%dpp_graduvw(5,Iq,k)
+                  qq(6) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(6,Iq) + bcl%dpp_graduvw(6,Iq,k)
+                  qq(7) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(7,Iq) + bcl%dpp_graduvw(7,Iq,k)
+                  qq(8) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(8,Iq) + bcl%dpp_graduvw(8,Iq,k)
+                  qq(9) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(9,Iq) + bcl%dpp_graduvw(9,Iq,k)
+               end if
                !$acc loop seq
                do ip = 1, npts_l
-                  lap_loc(1,ip,k) = lap_loc(1,ip,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(1) + tsp%dpsidy_df(ip,Iq)*qq(2))
-                  lap_loc(2,ip,k) = lap_loc(2,ip,k) - wq*(tsp%dpsidx_df(ip,Iq)*qq(3) + tsp%dpsidy_df(ip,Iq)*qq(4))
+                  dhdx = tsp%dpsidx_df(ip,Iq)
+                  dhdy = tsp%dpsidy_df(ip,Iq)
+                  dhdz = 0.0
+                  if (has_w) then
+                     dhdx = dhdx + tsp%dpsidz_df_x(ip,Iq)
+                     dhdy = dhdy + tsp%dpsidz_df_y(ip,Iq)
+                     dhdz = tsp%dpsidz_df(ip,Iq) + tsp%dpsidz_df_z(ip,Iq)
+                  end if
+                  lap_loc(1,ip,k) = lap_loc(1,ip,k) - wq*(dhdx*qq(1) + dhdy*qq(2))
+                  lap_loc(2,ip,k) = lap_loc(2,ip,k) - wq*(dhdx*qq(3) + dhdy*qq(4))
+                  if (has_w) then
+                     lap_loc(1,ip,k) = lap_loc(1,ip,k) - wq*dhdz*qq(5)
+                     lap_loc(2,ip,k) = lap_loc(2,ip,k) - wq*dhdz*qq(6)
+                     lap_loc(3,ip,k) = lap_loc(3,ip,k) - wq*(dhdx*qq(7) + dhdy*qq(8) + dhdz*qq(9))
+                  end if
                end do
             end do
          end do
@@ -367,6 +458,7 @@ contains
                I = tsp%index_df(ip, Iq0)
                lap_q(1,I,k) = lap_loc(1,ip,k)
                lap_q(2,I,k) = lap_loc(2,ip,k)
+               if (has_w) lap_q(3,I,k) = lap_loc(3,ip,k)
             end do
          end do
 
@@ -421,7 +513,7 @@ contains
 
    end subroutine bcl_compute_laplacian_qp
 
-   subroutine create_rhs_laplacian_flux(G, b, mf, btp, rhs, gradq)
+   subroutine create_rhs_laplacian_flux(G, inp, b, mf, btp, rhs, gradq)
       !=========================================================================
       !  Face flux contribution to the barotropic viscous RHS.
       !
@@ -433,8 +525,15 @@ contains
       !    rhs(m,ip): multiple faces share boundary nodes — !$acc atomic update.
       !    btp%graduvb_face_ave(ivar,side,iquad,iface): each (iquad,iface) pair
       !      is touched by exactly one gang×seq-step — no atomics needed.
+      !
+      !  Sphere (has_w): gradq/btp_dpp_graduvw carry 9 components
+      !  (du_dx,du_dy,dv_dx,dv_dy,du_dz,dv_dz,dw_dx,dw_dy,dw_dz); the wall
+      !  reflection (ier==-4) mirrors each velocity's full (dx,dy,dz) gradient
+      !  vector across the 3-component face normal, and w gets its own flux
+      !  row (rhs component 3) built from (dw_dx,dw_dy,dw_dz).
       !=========================================================================
       use mod_grid,      only: grid
+      use mod_input,     only: input
       use mod_basis,     only: basis
       use mod_face,      only: face_CS
       use mod_variables, only: btp_CS
@@ -442,23 +541,25 @@ contains
       implicit none
 
       type(grid),    intent(in)    :: G
+      type(input),   intent(in)    :: inp
       type(basis),   intent(in)    :: b
       type(face_CS), intent(in)    :: mf
       type(btp_CS),  intent(inout) :: btp
 
-      real, intent(inout) :: rhs(2,G%npoin)
-      real, intent(in)    :: gradq(4,G%npoin)
+      real, intent(inout) :: rhs(inp%nvar_btp-2,G%npoin)
+      real, intent(in)    :: gradq(inp%ngraduvw_var,G%npoin)
 
-      real :: qu_mean(2), qv_mean(2)
-      real :: flux_uv_visc_face(4,2)
-      real :: qul(2), qur(2), qvl(2), qvr(2)
-      real :: nx, ny, wq, un
+      real :: qu_mean(3), qv_mean(3), qw_mean(3)
+      real :: flux_uv_visc_face(9,2)
+      real :: qul(3), qur(3), qvl(3), qvr(3), qwl(3), qwr(3)
+      real :: nx, ny, nz, wq, un
       integer :: iface, i, il, jl, kl, ir, jr, kr
-      integer :: iel, ier, ip, iquad, ivar
-      real :: flux_qu, flux_qv, hi, alpha, beta, iflux
-      real    :: ql_s(4), qr_s(4), btp_ql_s(5), btp_qr_s(5)
+      integer :: iel, ier, ip, iquad, ivar, nw
+      real :: flux_qu, flux_qv, flux_qw, hi, alpha, beta, iflux
+      real    :: ql_s(9), qr_s(9), btp_ql_s(10), btp_qr_s(10)
       integer, dimension(b%ngl) :: I_l, I_r
       integer :: ngl_f, nface_f
+      logical :: has_w
 
       beta  = 0.5
       alpha = 1.0 - beta
@@ -466,6 +567,8 @@ contains
 
       ngl_f   = b%ngl
       nface_f = G%nface
+      nw      = inp%ngraduvw_var
+      has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(G%face, G%face_type, G%intma,                       &
       !$acc               mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face, &
@@ -477,12 +580,13 @@ contains
       !$acc parallel loop gang                                                &
       !$acc   private(iel, ier, il, jl, kl, ir, jr, kr, ip,                  &
       !$acc           I_l, I_r,                                               &
-      !$acc           nx, ny, un, wq,                                         &
+      !$acc           nx, ny, nz, un, wq,                                     &
       !$acc           ql_s, qr_s, btp_ql_s, btp_qr_s,                       &
       !$acc           flux_uv_visc_face,                                      &
-      !$acc           qul, qur, qvl, qvr, qu_mean, qv_mean,                  &
-      !$acc           flux_qu, flux_qv, hi, ivar, i, iquad)                  &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f)
+      !$acc           qul, qur, qvl, qvr, qwl, qwr,                          &
+      !$acc           qu_mean, qv_mean, qw_mean,                              &
+      !$acc           flux_qu, flux_qv, flux_qw, hi, ivar, i, iquad)          &
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -514,83 +618,103 @@ contains
 
             nx = mf%normal_vector(1,iquad,1,iface)
             ny = mf%normal_vector(2,iquad,1,iface)
+            nz = mf%normal_vector(3,iquad,1,iface)
 
             ip = I_l(iquad)
 
-            ql_s(1) = gradq(1,ip)
-            ql_s(2) = gradq(2,ip)
-            ql_s(3) = gradq(3,ip)
-            ql_s(4) = gradq(4,ip)
-
-            btp_ql_s(1) = btp%btp_dpp_graduvw(1,ip)
-            btp_ql_s(2) = btp%btp_dpp_graduvw(2,ip)
-            btp_ql_s(3) = btp%btp_dpp_graduvw(3,ip)
-            btp_ql_s(4) = btp%btp_dpp_graduvw(4,ip)
-            btp_ql_s(5) = btp%pbprime_visc(ip)
+            !$acc loop seq
+            do ivar = 1, nw
+               ql_s(ivar)     = gradq(ivar,ip)
+               btp_ql_s(ivar) = btp%btp_dpp_graduvw(ivar,ip)
+            end do
+            btp_ql_s(nw+1) = btp%pbprime_visc(ip)
 
             if (ier > 0) then
 
                ip = I_r(iquad)
 
-               qr_s(1) = gradq(1,ip)
-               qr_s(2) = gradq(2,ip)
-               qr_s(3) = gradq(3,ip)
-               qr_s(4) = gradq(4,ip)
-
-               btp_qr_s(1) = btp%btp_dpp_graduvw(1,ip)
-               btp_qr_s(2) = btp%btp_dpp_graduvw(2,ip)
-               btp_qr_s(3) = btp%btp_dpp_graduvw(3,ip)
-               btp_qr_s(4) = btp%btp_dpp_graduvw(4,ip)
-               btp_qr_s(5) = btp%pbprime_visc(ip)
+               !$acc loop seq
+               do ivar = 1, nw
+                  qr_s(ivar)     = gradq(ivar,ip)
+                  btp_qr_s(ivar) = btp%btp_dpp_graduvw(ivar,ip)
+               end do
+               btp_qr_s(nw+1) = btp%pbprime_visc(ip)
 
             else
-               qr_s(1) = ql_s(1)
-               qr_s(2) = ql_s(2)
-               qr_s(3) = ql_s(3)
-               qr_s(4) = ql_s(4)
-
-               btp_qr_s(1) = btp_ql_s(1)
-               btp_qr_s(2) = btp_ql_s(2)
-               btp_qr_s(3) = btp_ql_s(3)
-               btp_qr_s(4) = btp_ql_s(4)
-               btp_qr_s(5) = btp_ql_s(5)
+               !$acc loop seq
+               do ivar = 1, nw
+                  qr_s(ivar)     = ql_s(ivar)
+                  btp_qr_s(ivar) = btp_ql_s(ivar)
+               end do
+               btp_qr_s(nw+1) = btp_ql_s(nw+1)
 
                if (ier == -4) then
 
-                  un = ql_s(1)*nx + ql_s(2)*ny
-                  qr_s(1) = ql_s(1) - 2.0*un*nx
-                  qr_s(2) = ql_s(2) - 2.0*un*ny
+                  ! Mirror each velocity's full gradient vector across the
+                  ! face normal. u: (dx,dy[,dz]) = indices (1,2[,5]);
+                  ! v: (3,4[,6]); w (sphere only): (7,8,9).
+                  if (has_w) then
+                     un = ql_s(1)*nx + ql_s(2)*ny + ql_s(5)*nz
+                     qr_s(1) = ql_s(1) - 2.0*un*nx
+                     qr_s(2) = ql_s(2) - 2.0*un*ny
+                     qr_s(5) = ql_s(5) - 2.0*un*nz
 
-                  un = ql_s(3)*nx + ql_s(4)*ny
-                  qr_s(3) = ql_s(3) - 2.0*un*nx
-                  qr_s(4) = ql_s(4) - 2.0*un*ny
+                     un = ql_s(3)*nx + ql_s(4)*ny + ql_s(6)*nz
+                     qr_s(3) = ql_s(3) - 2.0*un*nx
+                     qr_s(4) = ql_s(4) - 2.0*un*ny
+                     qr_s(6) = ql_s(6) - 2.0*un*nz
 
-                  un = btp_ql_s(1)*nx + btp_ql_s(2)*ny
-                  btp_qr_s(1) = btp_ql_s(1) - 2.0*un*nx
-                  btp_qr_s(2) = btp_ql_s(2) - 2.0*un*ny
+                     un = ql_s(7)*nx + ql_s(8)*ny + ql_s(9)*nz
+                     qr_s(7) = ql_s(7) - 2.0*un*nx
+                     qr_s(8) = ql_s(8) - 2.0*un*ny
+                     qr_s(9) = ql_s(9) - 2.0*un*nz
 
-                  un = btp_ql_s(3)*nx + btp_ql_s(4)*ny
-                  btp_qr_s(3) = btp_ql_s(3) - 2.0*un*nx
-                  btp_qr_s(4) = btp_ql_s(4) - 2.0*un*ny
+                     un = btp_ql_s(1)*nx + btp_ql_s(2)*ny + btp_ql_s(5)*nz
+                     btp_qr_s(1) = btp_ql_s(1) - 2.0*un*nx
+                     btp_qr_s(2) = btp_ql_s(2) - 2.0*un*ny
+                     btp_qr_s(5) = btp_ql_s(5) - 2.0*un*nz
+
+                     un = btp_ql_s(3)*nx + btp_ql_s(4)*ny + btp_ql_s(6)*nz
+                     btp_qr_s(3) = btp_ql_s(3) - 2.0*un*nx
+                     btp_qr_s(4) = btp_ql_s(4) - 2.0*un*ny
+                     btp_qr_s(6) = btp_ql_s(6) - 2.0*un*nz
+
+                     un = btp_ql_s(7)*nx + btp_ql_s(8)*ny + btp_ql_s(9)*nz
+                     btp_qr_s(7) = btp_ql_s(7) - 2.0*un*nx
+                     btp_qr_s(8) = btp_ql_s(8) - 2.0*un*ny
+                     btp_qr_s(9) = btp_ql_s(9) - 2.0*un*nz
+                  else
+                     un = ql_s(1)*nx + ql_s(2)*ny
+                     qr_s(1) = ql_s(1) - 2.0*un*nx
+                     qr_s(2) = ql_s(2) - 2.0*un*ny
+
+                     un = ql_s(3)*nx + ql_s(4)*ny
+                     qr_s(3) = ql_s(3) - 2.0*un*nx
+                     qr_s(4) = ql_s(4) - 2.0*un*ny
+
+                     un = btp_ql_s(1)*nx + btp_ql_s(2)*ny
+                     btp_qr_s(1) = btp_ql_s(1) - 2.0*un*nx
+                     btp_qr_s(2) = btp_ql_s(2) - 2.0*un*ny
+
+                     un = btp_ql_s(3)*nx + btp_ql_s(4)*ny
+                     btp_qr_s(3) = btp_ql_s(3) - 2.0*un*nx
+                     btp_qr_s(4) = btp_ql_s(4) - 2.0*un*ny
+                  end if
 
                end if
             end if
 
             ! (iquad,iface) unique per gang×seq-step — no atomics needed.
-            btp%graduvb_face_ave(1,1,iquad,iface) = btp%graduvb_face_ave(1,1,iquad,iface) + ql_s(1)
-            btp%graduvb_face_ave(2,1,iquad,iface) = btp%graduvb_face_ave(2,1,iquad,iface) + ql_s(2)
-            btp%graduvb_face_ave(3,1,iquad,iface) = btp%graduvb_face_ave(3,1,iquad,iface) + ql_s(3)
-            btp%graduvb_face_ave(4,1,iquad,iface) = btp%graduvb_face_ave(4,1,iquad,iface) + ql_s(4)
-
-            btp%graduvb_face_ave(1,2,iquad,iface) = btp%graduvb_face_ave(1,2,iquad,iface) + qr_s(1)
-            btp%graduvb_face_ave(2,2,iquad,iface) = btp%graduvb_face_ave(2,2,iquad,iface) + qr_s(2)
-            btp%graduvb_face_ave(3,2,iquad,iface) = btp%graduvb_face_ave(3,2,iquad,iface) + qr_s(3)
-            btp%graduvb_face_ave(4,2,iquad,iface) = btp%graduvb_face_ave(4,2,iquad,iface) + qr_s(4)
+            !$acc loop seq
+            do ivar = 1, nw
+               btp%graduvb_face_ave(ivar,1,iquad,iface) = btp%graduvb_face_ave(ivar,1,iquad,iface) + ql_s(ivar)
+               btp%graduvb_face_ave(ivar,2,iquad,iface) = btp%graduvb_face_ave(ivar,2,iquad,iface) + qr_s(ivar)
+            end do
 
             !$acc loop seq
-            do ivar = 1, 4
-               flux_uv_visc_face(ivar,1) = btp_ql_s(5)*ql_s(ivar) + btp_ql_s(ivar)
-               flux_uv_visc_face(ivar,2) = btp_qr_s(5)*qr_s(ivar) + btp_qr_s(ivar)
+            do ivar = 1, nw
+               flux_uv_visc_face(ivar,1) = btp_ql_s(nw+1)*ql_s(ivar) + btp_ql_s(ivar)
+               flux_uv_visc_face(ivar,2) = btp_qr_s(nw+1)*qr_s(ivar) + btp_qr_s(ivar)
             end do
 
             qul(1) = flux_uv_visc_face(1,1)
@@ -603,15 +727,33 @@ contains
             qvr(1) = flux_uv_visc_face(3,2)
             qvr(2) = flux_uv_visc_face(4,2)
 
+            qul(3) = 0.0; qvl(3) = 0.0; qur(3) = 0.0; qvr(3) = 0.0
+            qwl = 0.0; qwr = 0.0
+            if (has_w) then
+               qul(3) = flux_uv_visc_face(5,1); qvl(3) = flux_uv_visc_face(6,1)
+               qur(3) = flux_uv_visc_face(5,2); qvr(3) = flux_uv_visc_face(6,2)
+               qwl(1) = flux_uv_visc_face(7,1); qwl(2) = flux_uv_visc_face(8,1); qwl(3) = flux_uv_visc_face(9,1)
+               qwr(1) = flux_uv_visc_face(7,2); qwr(2) = flux_uv_visc_face(8,2); qwr(3) = flux_uv_visc_face(9,2)
+            end if
+
             qu_mean(1) = alpha*qul(1) + beta*qur(1)
             qu_mean(2) = alpha*qul(2) + beta*qur(2)
+            qu_mean(3) = alpha*qul(3) + beta*qur(3)
             qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
             qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
+            qv_mean(3) = alpha*qvl(3) + beta*qvr(3)
+            qw_mean(1) = alpha*qwl(1) + beta*qwr(1)
+            qw_mean(2) = alpha*qwl(2) + beta*qwr(2)
+            qw_mean(3) = alpha*qwl(3) + beta*qwr(3)
 
             wq = mf%jac_face(iquad,1,iface)
 
-            flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny
-            flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny
+            flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny &
+                    + (qu_mean(3) - iflux*qul(3))*nz
+            flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny &
+                    + (qv_mean(3) - iflux*qvl(3))*nz
+            flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
+                    + (qw_mean(3) - iflux*qwl(3))*nz
 
             ! rhs scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
@@ -622,6 +764,10 @@ contains
                rhs(1,ip) = rhs(1,ip) + wq*hi*flux_qu
                !$acc atomic update
                rhs(2,ip) = rhs(2,ip) + wq*hi*flux_qv
+               if (has_w) then
+                  !$acc atomic update
+                  rhs(3,ip) = rhs(3,ip) + wq*hi*flux_qw
+               end if
             end do
 
             if (ier > 0) then
@@ -633,6 +779,10 @@ contains
                   rhs(1,ip) = rhs(1,ip) - wq*hi*flux_qu
                   !$acc atomic update
                   rhs(2,ip) = rhs(2,ip) - wq*hi*flux_qv
+                  if (has_w) then
+                     !$acc atomic update
+                     rhs(3,ip) = rhs(3,ip) - wq*hi*flux_qw
+                  end if
                end do
             end if
 
@@ -660,21 +810,21 @@ contains
       type(btp_CS),  intent(in)    :: btp
       type(bcl_CS),  intent(in)    :: bcl
 
-      real, intent(inout) :: rhs(2,G%npoin,inp%nlayers)
+      real, intent(inout) :: rhs(inp%nvar_bcl-1,G%npoin,inp%nlayers)
 
-      real, dimension(2) :: qu_mean, qv_mean
-      real, dimension(4,2) :: flux_uv_visc_face
-      real, dimension(2) :: qul, qur
-      real, dimension(2) :: qvl, qvr
+      real, dimension(3) :: qu_mean, qv_mean, qw_mean
+      real, dimension(9,2) :: flux_uv_visc_face
+      real, dimension(3) :: qul, qur, qvl, qvr, qwl, qwr
 
-      real :: nx, ny, un
+      real :: nx, ny, nz, un
       real :: wq
       integer :: iface, i, il, jl, kl, ir, jr, kr
       integer :: iel, ier, ip
-      integer :: iquad, ivar, k
-      real :: flux_qu, flux_qv, hi, alpha, beta, iflux
-      real :: ql_cur(5), qr_cur(5)
+      integer :: iquad, ivar, k, nw
+      real :: flux_qu, flux_qv, flux_qw, hi, alpha, beta, iflux
+      real :: ql_cur(10), qr_cur(10)
       integer :: ngl_f, nlayers_f, nface_f
+      logical :: has_w
 
       beta  = 0.5
       alpha = 1.0 - beta
@@ -683,6 +833,8 @@ contains
       ngl_f     = b%ngl
       nlayers_f = inp%nlayers
       nface_f   = G%nface
+      nw        = inp%ngraduvw_var
+      has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(G%face, G%face_type, G%intma,                          &
       !$acc              mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face,     &
@@ -692,11 +844,11 @@ contains
       !$acc              rhs)
 
       !$acc parallel loop gang                                                    &
-      !$acc   private(ql_cur, qr_cur, flux_uv_visc_face, qul, qur, qvl, qvr,   &
-      !$acc           qu_mean, qv_mean,                                           &
-      !$acc           nx, ny, un, wq, flux_qu, flux_qv, hi,                      &
+      !$acc   private(ql_cur, qr_cur, flux_uv_visc_face, qul, qur, qvl, qvr, qwl, qwr, &
+      !$acc           qu_mean, qv_mean, qw_mean,                                     &
+      !$acc           nx, ny, nz, un, wq, flux_qu, flux_qv, flux_qw, hi,            &
       !$acc           iel, ier, ip, il, jl, kl, ir, jr, kr, iquad, k, i, ivar)  &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f)
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f, nw, has_w)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -711,44 +863,65 @@ contains
 
                nx = mf%normal_vector(1,iquad,1,iface)
                ny = mf%normal_vector(2,iquad,1,iface)
+               nz = mf%normal_vector(3,iquad,1,iface)
 
                il = mf%imapl(1,iquad,1,iface)
                jl = mf%imapl(2,iquad,1,iface)
                kl = mf%imapl(3,iquad,1,iface)
                ip = G%intma(il,jl,kl,iel)
 
-               ql_cur(1) = bcl%dpp_graduvw(1,ip,k)
-               ql_cur(2) = bcl%dpp_graduvw(2,ip,k)
-               ql_cur(3) = bcl%dpp_graduvw(3,ip,k)
-               ql_cur(4) = bcl%dpp_graduvw(4,ip,k)
-               ql_cur(5) = bcl%dpprime_visc(ip,k)
+               !$acc loop seq
+               do ivar = 1, nw
+                  ql_cur(ivar) = bcl%dpp_graduvw(ivar,ip,k)
+               end do
+               ql_cur(nw+1) = bcl%dpprime_visc(ip,k)
 
                if (ier > 0) then
                   ir = mf%imapr(1,iquad,1,iface)
                   jr = mf%imapr(2,iquad,1,iface)
                   kr = mf%imapr(3,iquad,1,iface)
                   ip = G%intma(ir,jr,kr,ier)
-                  qr_cur(1) = bcl%dpp_graduvw(1,ip,k)
-                  qr_cur(2) = bcl%dpp_graduvw(2,ip,k)
-                  qr_cur(3) = bcl%dpp_graduvw(3,ip,k)
-                  qr_cur(4) = bcl%dpp_graduvw(4,ip,k)
-                  qr_cur(5) = bcl%dpprime_visc(ip,k)
+                  !$acc loop seq
+                  do ivar = 1, nw
+                     qr_cur(ivar) = bcl%dpp_graduvw(ivar,ip,k)
+                  end do
+                  qr_cur(nw+1) = bcl%dpprime_visc(ip,k)
                else
-                  qr_cur = ql_cur
+                  !$acc loop seq
+                  do ivar = 1, nw+1
+                     qr_cur(ivar) = ql_cur(ivar)
+                  end do
                   if (ier == -4) then
-                     un = ql_cur(1)*nx + ql_cur(2)*ny
-                     qr_cur(1) = ql_cur(1) - 2.0*un*nx
-                     qr_cur(2) = ql_cur(2) - 2.0*un*ny
-                     un = ql_cur(3)*nx + ql_cur(4)*ny
-                     qr_cur(3) = ql_cur(3) - 2.0*un*nx
-                     qr_cur(4) = ql_cur(4) - 2.0*un*ny
+                     if (has_w) then
+                        un = ql_cur(1)*nx + ql_cur(2)*ny + ql_cur(5)*nz
+                        qr_cur(1) = ql_cur(1) - 2.0*un*nx
+                        qr_cur(2) = ql_cur(2) - 2.0*un*ny
+                        qr_cur(5) = ql_cur(5) - 2.0*un*nz
+
+                        un = ql_cur(3)*nx + ql_cur(4)*ny + ql_cur(6)*nz
+                        qr_cur(3) = ql_cur(3) - 2.0*un*nx
+                        qr_cur(4) = ql_cur(4) - 2.0*un*ny
+                        qr_cur(6) = ql_cur(6) - 2.0*un*nz
+
+                        un = ql_cur(7)*nx + ql_cur(8)*ny + ql_cur(9)*nz
+                        qr_cur(7) = ql_cur(7) - 2.0*un*nx
+                        qr_cur(8) = ql_cur(8) - 2.0*un*ny
+                        qr_cur(9) = ql_cur(9) - 2.0*un*nz
+                     else
+                        un = ql_cur(1)*nx + ql_cur(2)*ny
+                        qr_cur(1) = ql_cur(1) - 2.0*un*nx
+                        qr_cur(2) = ql_cur(2) - 2.0*un*ny
+                        un = ql_cur(3)*nx + ql_cur(4)*ny
+                        qr_cur(3) = ql_cur(3) - 2.0*un*nx
+                        qr_cur(4) = ql_cur(4) - 2.0*un*ny
+                     end if
                   end if
                end if
 
                !$acc loop seq
-               do ivar = 1, 4
-                  flux_uv_visc_face(ivar,1) = ql_cur(5)*btp%graduvb_face_ave(ivar,1,iquad,iface) + ql_cur(ivar)
-                  flux_uv_visc_face(ivar,2) = qr_cur(5)*btp%graduvb_face_ave(ivar,2,iquad,iface) + qr_cur(ivar)
+               do ivar = 1, nw
+                  flux_uv_visc_face(ivar,1) = ql_cur(nw+1)*btp%graduvb_face_ave(ivar,1,iquad,iface) + ql_cur(ivar)
+                  flux_uv_visc_face(ivar,2) = qr_cur(nw+1)*btp%graduvb_face_ave(ivar,2,iquad,iface) + qr_cur(ivar)
                end do
 
                qul(1) = flux_uv_visc_face(1,1);  qul(2) = flux_uv_visc_face(2,1)
@@ -756,14 +929,32 @@ contains
                qur(1) = flux_uv_visc_face(1,2);  qur(2) = flux_uv_visc_face(2,2)
                qvr(1) = flux_uv_visc_face(3,2);  qvr(2) = flux_uv_visc_face(4,2)
 
+               qul(3) = 0.0; qvl(3) = 0.0; qur(3) = 0.0; qvr(3) = 0.0
+               qwl = 0.0; qwr = 0.0
+               if (has_w) then
+                  qul(3) = flux_uv_visc_face(5,1); qvl(3) = flux_uv_visc_face(6,1)
+                  qur(3) = flux_uv_visc_face(5,2); qvr(3) = flux_uv_visc_face(6,2)
+                  qwl(1) = flux_uv_visc_face(7,1); qwl(2) = flux_uv_visc_face(8,1); qwl(3) = flux_uv_visc_face(9,1)
+                  qwr(1) = flux_uv_visc_face(7,2); qwr(2) = flux_uv_visc_face(8,2); qwr(3) = flux_uv_visc_face(9,2)
+               end if
+
                qu_mean(1) = alpha*qul(1) + beta*qur(1)
                qu_mean(2) = alpha*qul(2) + beta*qur(2)
+               qu_mean(3) = alpha*qul(3) + beta*qur(3)
                qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
                qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
+               qv_mean(3) = alpha*qvl(3) + beta*qvr(3)
+               qw_mean(1) = alpha*qwl(1) + beta*qwr(1)
+               qw_mean(2) = alpha*qwl(2) + beta*qwr(2)
+               qw_mean(3) = alpha*qwl(3) + beta*qwr(3)
 
                wq = mf%jac_face(iquad,1,iface)
-               flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny
-               flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny
+               flux_qu = (qu_mean(1) - iflux*qul(1))*nx + (qu_mean(2) - iflux*qul(2))*ny &
+                       + (qu_mean(3) - iflux*qul(3))*nz
+               flux_qv = (qv_mean(1) - iflux*qvl(1))*nx + (qv_mean(2) - iflux*qvl(2))*ny &
+                       + (qv_mean(3) - iflux*qvl(3))*nz
+               flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
+                       + (qw_mean(3) - iflux*qwl(3))*nz
 
                !$acc loop seq
                do i = 1, ngl_f
@@ -776,6 +967,10 @@ contains
                   rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
                   !$acc atomic update
                   rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
+                  if (has_w) then
+                     !$acc atomic update
+                     rhs(3,ip,k) = rhs(3,ip,k) + wq*hi*flux_qw
+                  end if
                end do
 
                if (ier > 0) then
@@ -790,6 +985,10 @@ contains
                      rhs(1,ip,k) = rhs(1,ip,k) - wq*hi*flux_qu
                      !$acc atomic update
                      rhs(2,ip,k) = rhs(2,ip,k) - wq*hi*flux_qv
+                     if (has_w) then
+                        !$acc atomic update
+                        rhs(3,ip,k) = rhs(3,ip,k) - wq*hi*flux_qw
+                     end if
                   end do
                end if
 

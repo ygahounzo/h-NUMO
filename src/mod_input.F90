@@ -574,6 +574,11 @@ module mod_input
    
       read_external_grid_flg = 0
       if(lread_external_grid) read_external_grid_flg = 1
+      ! sphere_ico builds its coarse icosahedral mesh as an ABAQUS .inp
+      ! file (create_grid_sphere_ico_inp) and always feeds it to p4est
+      ! through the read_external_grid_flg path, regardless of the
+      ! user's lread_external_grid setting.
+      if (trim(geometry_type) == 'sphere_ico') read_external_grid_flg = 1
    
       if (x_boundary(1) == 3 .or. x_boundary(2) == 3 .or. x_periodic > 0) then
          x_periodic    = 1
@@ -661,7 +666,7 @@ module mod_input
       inp%nproc_z                        = nproc_z
       inp%zlevel_out                     = zlevel_out
       inp%geometry_type                  = geometry_type
-      if (trim(inp%geometry_type) == 'sphere_hex') then
+      if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
          inp%nvar_bcl                    = 4
          inp%nvar_btp                    = 5
          inp%ngrd_var                    = 3 ! 3 gradient directions for spherical coordinates

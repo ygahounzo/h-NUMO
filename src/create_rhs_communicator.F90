@@ -71,11 +71,9 @@ subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q
    integer, intent(in) :: nvarb
    real, dimension(nvarb, G%npoin), intent(inout) :: q
 
-   ! pack_and_send_df_btp_lap only communicates the cartesian-equivalent 4 components
-   ! (du_dx,du_dy,dv_dx,dv_dy); the sphere-only slots 5:9 of btp_dpp_graduvw aren't
-   ! yet consumed by the viscosity Laplacian, so they don't need to cross MPI boundaries.
+   ! nvarb = inp%ngraduvw_var (4 cartesian, 9 sphere_hex, including w).
    call pack_and_send_df_btp_lap(G, b, mf, init, par, ref,                 &
-      q, btp%btp_dpp_graduvw(1:4,:), btp%pbprime_visc, &
+      q, btp%btp_dpp_graduvw, btp%pbprime_visc, &
       nvarb, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_lap_create_precommunicator
@@ -130,7 +128,7 @@ subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_gra
    type(mpi_communicator), intent(inout) :: mpic
 
    !Global Arrays
-   real, dimension(4, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
+   real, dimension(inp%ngraduvw_var, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
    real, dimension(G%npoin, inp%nlayers),    intent(in) :: dpprime_visc
 
    ! GPU pack + GPU-direct MPI non-blocking send/receive.
@@ -393,7 +391,7 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
    type(mpi_communicator), intent(inout) :: mpic
 
    !Global Arrays
-   real, dimension(2, G%npoin, inp%nlayers), intent(inout) :: rhs
+   real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers), intent(inout) :: rhs
 
    ! DG - Discontinuous communicator
 
@@ -405,7 +403,8 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
       ref%recv_data_lap_bcl, inp%nlayers, ref%nboun_valid)
 
    ! GPU face-gang scatter into rhs on device.
-   call create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, inp%nlayers, 0)
+   call create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, &
+      inp%nlayers, 0, inp%nvar_bcl-1)
 
 end subroutine bcl_create_rhs_lap_postcommunicator_df
 

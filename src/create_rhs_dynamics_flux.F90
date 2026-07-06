@@ -550,37 +550,42 @@ subroutine create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, ref, nvarb)
 
    !global arrays
    integer, intent(in) :: nvarb
-   real, intent(inout) :: rhs(2, G%npoin)
+   real, intent(inout) :: rhs(nvarb, G%npoin)
 
    !local variables
 
    integer :: kk, ivar, iquad, i, ip, iface, el, il, jl, kl
-   integer :: ngl_f, nboun_f
-   real :: wq, iflux, alpha, beta, nxl, nyl, hi, flux_qu, flux_qv
+   integer :: ngl_f, nboun_f, nw
+   real :: wq, iflux, alpha, beta, nxl, nyl, nzl, hi, flux_qu, flux_qv, flux_qw
+   logical :: has_w
 
-   real, dimension(2) :: qu_mean, qv_mean
-   real, dimension(4,2) :: flux_uv_visc_face
-   real, dimension(2) :: qul, qur, qvl, qvr
-   real, dimension(5) :: grad_uvb_pb_l, grad_uvb_pb_r
+   real, dimension(3) :: qu_mean, qv_mean, qw_mean
+   real, dimension(9,2) :: flux_uv_visc_face
+   real, dimension(3) :: qul, qur, qvl, qvr, qwl, qwr
+   real, dimension(10) :: grad_uvb_pb_l, grad_uvb_pb_r
 
    ngl_f   = b%ngl
    nboun_f = G%nboun
    beta    = 0.5
    alpha   = 1.0 - beta
    iflux   = 0.0
+   ! ref%nbtp_var_lap = 2*nw + 2 (see mod_ref.F90); recover nw from it so this
+   ! routine stays consistent with pack_and_send_df_btp_lap's layout.
+   nw      = (ref%nbtp_var_lap - 2) / 2
+   has_w   = (nvarb == 3) ! w (vertical momentum) is only carried on sphere_hex
 
    !$acc parallel loop gang                                                  &
    !$acc    private(iface, el, iquad, i, ip, ivar,                           &
-   !$acc            nxl, nyl, wq, hi, flux_qu, flux_qv,                      &
-   !$acc            qu_mean, qv_mean, flux_uv_visc_face,                     &
-   !$acc            qul, qur, qvl, qvr, grad_uvb_pb_l, grad_uvb_pb_r,       &
+   !$acc            nxl, nyl, nzl, wq, hi, flux_qu, flux_qv, flux_qw,        &
+   !$acc            qu_mean, qv_mean, qw_mean, flux_uv_visc_face,            &
+   !$acc            qul, qur, qvl, qvr, qwl, qwr, grad_uvb_pb_l, grad_uvb_pb_r, &
    !$acc            il, jl, kl)                                              &
    !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector,             &
    !$acc            mf%jac_face, b%psi,                                      &
    !$acc            par%nbh_send_recv,                                       &
    !$acc            ref%q_send_lap, ref%q_recv_lap,                          &
    !$acc            btp%graduvb_face_ave, rhs)                               &
-   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux)
+   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux, nw, has_w)
    do kk = 1, nboun_f
       iface = par%nbh_send_recv(kk)
       el    = G%face(7, iface)
@@ -588,34 +593,54 @@ subroutine create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, ref, nvarb)
       !$acc loop seq
       do iquad = 1, ngl_f
 
-         do ivar = 6, 10
-            grad_uvb_pb_l(ivar-5) = ref%q_send_lap(ivar, iquad, kk)
-            grad_uvb_pb_r(ivar-5) = ref%q_recv_lap(ivar, iquad, kk)
+         do ivar = 1, nw
+            grad_uvb_pb_l(ivar) = ref%q_send_lap(nw+1+ivar, iquad, kk)
+            grad_uvb_pb_r(ivar) = ref%q_recv_lap(nw+1+ivar, iquad, kk)
          end do
+         grad_uvb_pb_l(nw+1) = ref%q_send_lap(2*nw+2, iquad, kk)
+         grad_uvb_pb_r(nw+1) = ref%q_recv_lap(2*nw+2, iquad, kk)
 
-         do ivar = 1, 4
-            flux_uv_visc_face(ivar,1) = grad_uvb_pb_l(5)*ref%q_send_lap(ivar,iquad,kk) + grad_uvb_pb_l(ivar)
-            flux_uv_visc_face(ivar,2) = grad_uvb_pb_r(5)*ref%q_recv_lap(ivar,iquad,kk) + grad_uvb_pb_r(ivar)
+         do ivar = 1, nw
+            flux_uv_visc_face(ivar,1) = grad_uvb_pb_l(nw+1)*ref%q_send_lap(ivar,iquad,kk) + grad_uvb_pb_l(ivar)
+            flux_uv_visc_face(ivar,2) = grad_uvb_pb_r(nw+1)*ref%q_recv_lap(ivar,iquad,kk) + grad_uvb_pb_r(ivar)
             btp%graduvb_face_ave(ivar,1,iquad,iface) = btp%graduvb_face_ave(ivar,1,iquad,iface) + ref%q_send_lap(ivar,iquad,kk)
             btp%graduvb_face_ave(ivar,2,iquad,iface) = btp%graduvb_face_ave(ivar,2,iquad,iface) + ref%q_recv_lap(ivar,iquad,kk)
          end do
 
          nxl = mf%normal_vector(1, iquad, 1, iface)
          nyl = mf%normal_vector(2, iquad, 1, iface)
+         nzl = mf%normal_vector(3, iquad, 1, iface)
 
          qul(1) = flux_uv_visc_face(1,1);  qul(2) = flux_uv_visc_face(2,1)
          qvl(1) = flux_uv_visc_face(3,1);  qvl(2) = flux_uv_visc_face(4,1)
          qur(1) = flux_uv_visc_face(1,2);  qur(2) = flux_uv_visc_face(2,2)
          qvr(1) = flux_uv_visc_face(3,2);  qvr(2) = flux_uv_visc_face(4,2)
 
+         qul(3) = 0.0; qvl(3) = 0.0; qur(3) = 0.0; qvr(3) = 0.0
+         qwl = 0.0; qwr = 0.0
+         if (has_w) then
+            qul(3) = flux_uv_visc_face(5,1); qvl(3) = flux_uv_visc_face(6,1)
+            qur(3) = flux_uv_visc_face(5,2); qvr(3) = flux_uv_visc_face(6,2)
+            qwl(1) = flux_uv_visc_face(7,1); qwl(2) = flux_uv_visc_face(8,1); qwl(3) = flux_uv_visc_face(9,1)
+            qwr(1) = flux_uv_visc_face(7,2); qwr(2) = flux_uv_visc_face(8,2); qwr(3) = flux_uv_visc_face(9,2)
+         end if
+
          ! Central flux (beta=0.5)
          qu_mean(1) = alpha*qul(1) + beta*qur(1);  qu_mean(2) = alpha*qul(2) + beta*qur(2)
+         qu_mean(3) = alpha*qul(3) + beta*qur(3)
          qv_mean(1) = alpha*qvl(1) + beta*qvr(1);  qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
+         qv_mean(3) = alpha*qvl(3) + beta*qvr(3)
+         qw_mean(1) = alpha*qwl(1) + beta*qwr(1);  qw_mean(2) = alpha*qwl(2) + beta*qwr(2)
+         qw_mean(3) = alpha*qwl(3) + beta*qwr(3)
 
          wq = mf%jac_face(iquad, 1, iface)
 
-         flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl
-         flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl
+         flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl &
+                 + (qu_mean(3) - iflux*qul(3))*nzl
+         flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl &
+                 + (qv_mean(3) - iflux*qvl(3))*nzl
+         flux_qw = (qw_mean(1) - iflux*qwl(1))*nxl + (qw_mean(2) - iflux*qwl(2))*nyl &
+                 + (qw_mean(3) - iflux*qwl(3))*nzl
 
          !$acc loop seq
          do i = 1, ngl_f
@@ -628,6 +653,10 @@ subroutine create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, ref, nvarb)
             rhs(1, ip) = rhs(1, ip) + wq*hi*flux_qu
             !$acc atomic update
             rhs(2, ip) = rhs(2, ip) + wq*hi*flux_qv
+            if (has_w) then
+               !$acc atomic update
+               rhs(3, ip) = rhs(3, ip) + wq*hi*flux_qw
+            end if
          end do
 
       end do  ! iquad
@@ -1623,7 +1652,7 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_s
 
 end subroutine create_nbhs_face_bcl_momentum
 
-subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, q_send, q_recv, nlayers, multirate)
+subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, q_send, q_recv, nlayers, multirate, nvel)
 
    use mod_grid,      only: grid
    use mod_basis,     only: basis
@@ -1642,17 +1671,19 @@ subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, q_send, q_r
    type(mref),        intent(in)    :: ref
    integer,           intent(in)    :: nlayers
    integer,           intent(in)    :: multirate
+   integer,           intent(in)    :: nvel
 
    !global arrays
-   real, intent(inout) :: rhs(2, G%npoin, nlayers)
-   real, intent(in)    :: q_send(5*nlayers, b%ngl, par%num_send_recv_total)
-   real, intent(in)    :: q_recv(5*nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(inout) :: rhs(nvel, G%npoin, nlayers)
+   real, intent(in)    :: q_send(ref%nbcl_var_lap, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(ref%nbcl_var_lap, b%ngl, par%num_send_recv_total)
 
    integer :: kk, k, iquad, i, ivar, iface, el, il, jl, kl, ip, index
-   integer :: ngl_f, nlayers_f, nboun_valid_f
-   real    :: wq, nxl, nyl, hi, flux_qu, flux_qv, alpha, beta, iflux
-   real, dimension(4,2) :: flux_uv_visc_face
-   real, dimension(2)   :: qu_mean, qv_mean, qul, qur, qvl, qvr
+   integer :: ngl_f, nlayers_f, nboun_valid_f, nw
+   real    :: wq, nxl, nyl, nzl, hi, flux_qu, flux_qv, flux_qw, alpha, beta, iflux
+   logical :: has_w
+   real, dimension(9,2) :: flux_uv_visc_face
+   real, dimension(3)   :: qu_mean, qv_mean, qw_mean, qul, qur, qvl, qvr, qwl, qwr
 
    ngl_f         = b%ngl
    nlayers_f     = nlayers
@@ -1660,46 +1691,68 @@ subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, q_send, q_r
    beta  = 0.5
    alpha = 1.0 - beta
    iflux = 0.0
+   ! ref%nbcl_var_lap = (nw+1)*nlayers (see mod_ref.F90); recover nw from it.
+   nw    = ref%nbcl_var_lap/nlayers - 1
+   has_w = (nvel == 3) ! w (vertical momentum) is only carried on sphere_hex
 
    !$acc parallel loop gang &
    !$acc    present(ref%face_pack_list, G%face, G%intma, mf%imapl, mf%jac_face, &
    !$acc            mf%normal_vector, b%psi, btp%graduvb_face_ave, q_send, q_recv, rhs) &
-   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, alpha, beta, iflux) &
-   !$acc    private(flux_uv_visc_face, qu_mean, qv_mean, qul, qur, qvl, qvr)
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, alpha, beta, iflux, nw, has_w) &
+   !$acc    private(flux_uv_visc_face, qu_mean, qv_mean, qw_mean, qul, qur, qvl, qvr, qwl, qwr)
    do kk = 1, nboun_valid_f
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
 
       !$acc loop seq
       do k = 1, nlayers_f
-         index = 5*(k-1)
+         index = (nw+1)*(k-1)
 
          !$acc loop seq
          do iquad = 1, ngl_f
-            do ivar = 1, 4
-               flux_uv_visc_face(ivar,1) = q_send(index+5,iquad,kk)* &
+            do ivar = 1, nw
+               flux_uv_visc_face(ivar,1) = q_send(index+nw+1,iquad,kk)* &
                   btp%graduvb_face_ave(ivar,1,iquad,iface) + q_send(index+ivar,iquad,kk)
-               flux_uv_visc_face(ivar,2) = q_recv(index+5,iquad,kk)* &
+               flux_uv_visc_face(ivar,2) = q_recv(index+nw+1,iquad,kk)* &
                   btp%graduvb_face_ave(ivar,2,iquad,iface) + q_recv(index+ivar,iquad,kk)
             end do
 
             nxl = mf%normal_vector(1,iquad,1,iface)
             nyl = mf%normal_vector(2,iquad,1,iface)
+            nzl = mf%normal_vector(3,iquad,1,iface)
 
             qul(1) = flux_uv_visc_face(1,1); qul(2) = flux_uv_visc_face(2,1)
             qvl(1) = flux_uv_visc_face(3,1); qvl(2) = flux_uv_visc_face(4,1)
             qur(1) = flux_uv_visc_face(1,2); qur(2) = flux_uv_visc_face(2,2)
             qvr(1) = flux_uv_visc_face(3,2); qvr(2) = flux_uv_visc_face(4,2)
 
+            qul(3) = 0.0; qvl(3) = 0.0; qur(3) = 0.0; qvr(3) = 0.0
+            qwl = 0.0; qwr = 0.0
+            if (has_w) then
+               qul(3) = flux_uv_visc_face(5,1); qvl(3) = flux_uv_visc_face(6,1)
+               qur(3) = flux_uv_visc_face(5,2); qvr(3) = flux_uv_visc_face(6,2)
+               qwl(1) = flux_uv_visc_face(7,1); qwl(2) = flux_uv_visc_face(8,1); qwl(3) = flux_uv_visc_face(9,1)
+               qwr(1) = flux_uv_visc_face(7,2); qwr(2) = flux_uv_visc_face(8,2); qwr(3) = flux_uv_visc_face(9,2)
+            end if
+
             qu_mean(1) = alpha*qul(1) + beta*qur(1)
             qu_mean(2) = alpha*qul(2) + beta*qur(2)
+            qu_mean(3) = alpha*qul(3) + beta*qur(3)
             qv_mean(1) = alpha*qvl(1) + beta*qvr(1)
             qv_mean(2) = alpha*qvl(2) + beta*qvr(2)
+            qv_mean(3) = alpha*qvl(3) + beta*qvr(3)
+            qw_mean(1) = alpha*qwl(1) + beta*qwr(1)
+            qw_mean(2) = alpha*qwl(2) + beta*qwr(2)
+            qw_mean(3) = alpha*qwl(3) + beta*qwr(3)
 
             wq = mf%jac_face(iquad,1,iface)
 
-            flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl
-            flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl
+            flux_qu = (qu_mean(1) - iflux*qul(1))*nxl + (qu_mean(2) - iflux*qul(2))*nyl &
+                    + (qu_mean(3) - iflux*qul(3))*nzl
+            flux_qv = (qv_mean(1) - iflux*qvl(1))*nxl + (qv_mean(2) - iflux*qvl(2))*nyl &
+                    + (qv_mean(3) - iflux*qvl(3))*nzl
+            flux_qw = (qw_mean(1) - iflux*qwl(1))*nxl + (qw_mean(2) - iflux*qwl(2))*nyl &
+                    + (qw_mean(3) - iflux*qwl(3))*nzl
 
             do i = 1, ngl_f
                hi = b%psi(i, iquad)
@@ -1711,6 +1764,10 @@ subroutine create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, q_send, q_r
                rhs(1,ip,k) = rhs(1,ip,k) + wq*hi*flux_qu
                !$acc atomic update
                rhs(2,ip,k) = rhs(2,ip,k) + wq*hi*flux_qv
+               if (has_w) then
+                  !$acc atomic update
+                  rhs(3,ip,k) = rhs(3,ip,k) + wq*hi*flux_qw
+               end if
             end do
          end do
       end do

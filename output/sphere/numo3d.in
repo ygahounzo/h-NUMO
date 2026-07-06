@@ -1,15 +1,17 @@
 &gridnl
-nelx  = 10,
-nely  = 10,
+nelx  = 10,  ! sphere_hex: elements per panel edge.
+             ! sphere_ico: elements per icosahedron-edge ("nico"); nely,
+             !             xdims, ydims are NOT used for sphere_ico.
+nely  = 10,  ! unused for sphere_ico
 nopx  = 4,
 nopy  = 4,
-xdims = -1.0,1.0,
-ydims = -1.0,1.0,
+xdims = -1.0,1.0,  ! unused for sphere_ico
+ydims = -1.0,1.0,  ! unused for sphere_ico
 nlayers = 2,
 
-geometry_type = 'sphere_hex',
+geometry_type = 'sphere_ico',
               ! cartesian=flat Cartesian domain (default)
-              ! sphere_hex=single cube-face patch, gnomonically projected onto
+              ! sphere_hex=6-panel cubed-sphere, gnomonically projected onto
               !            a sphere of radius earth_radius (mod_constants.F90).
               !            xdims/ydims set the flat patch extent BEFORE
               !            projection (kept symmetric about 0, i.e. a patch
@@ -17,6 +19,26 @@ geometry_type = 'sphere_hex',
               !            meters; the projection is scale-invariant so only
               !            the xdims/ydims:depth ratio (i.e. angular extent)
               !            matters, not their absolute size.
+              !            Resolution = nelx x nely elements per panel (6
+              !            panels total), further split by
+              !            2^refinement_levels_h via p4est.
+              ! sphere_ico=icosahedral quad-sphere: the 20-triangle
+              !            icosahedron, each triangle uniformly subdivided
+              !            into nelx^2 smaller triangles then split into 3
+              !            quads apiece (60*nelx^2 base quads/"trees" total),
+              !            radially projected onto the sphere the same way
+              !            sphere_hex is.  Built by create_grid_sphere_ico_inp
+              !            at start-up (nelx plays the same role here as it
+              !            does for sphere_hex — an arbitrary integer, not a
+              !            power of 2), which writes the coarse mesh to
+              !            EXTERNAL_MESH.inp and hands it to p4est via the
+              !            read_external_grid_flg path (lread_external_grid
+              !            is forced on automatically for sphere_ico,
+              !            regardless of the setting below).
+              !            nely/xdims/ydims are NOT used for sphere_ico;
+              !            total resolution is 60*nelx^2*4^refinement_levels_h
+              !            elements (refinement_levels_h adds further p4est
+              !            quadtree refinement on top, in powers of 4).
 
 !Dimension of the domain: (x,y) in (min,max)
 x_boundary = 4, 4 ! Front and Back (x=-1 and x=+1)
@@ -26,15 +48,24 @@ y_boundary = 4, 4 ! Left and Right (y=-1 and y=+1)
            ! BCs are: 0=do nothing, 4=freeslip, 5=noslip
 
 !P4est Input
-refinement_levels_h = 0, ! refinement levels in horizontal
+refinement_levels_h = 0, ! refinement levels in horizontal (additional p4est
+                         ! quadtree refinement on top of nelx, in powers of 4)
+                         ! sphere_hex: nelx*2^this elements per panel edge.
+                         ! sphere_ico: total elems = 60*nelx^2*4^this.
+                         !             nelx=10, level 2 -> 96000 elements;
+                         !             for ~960 elements (roughly matching
+                         !             sphere_hex's 600-elem default) use
+                         !             e.g. nelx=1 with level=2, or nelx=4
+                         !             with level=0.
 
-lread_external_grid = F,  ! Read external grid file
+lread_external_grid = F,  ! Read external grid file (ignored/forced on for
+                          ! geometry_type='sphere_ico', see above)
 
 /
 
 &input_nml
-dt= 100,
-dt_btp = 20.,
+dt= 300,
+dt_btp = 50.,
 time_initial = 0.0,
 time_final   = 24,
 time_restart = 0.5,
@@ -47,27 +78,31 @@ ad_mlswe = 0.0,
 botfr = 0, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 0.0, ! cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
 method_visc = 0,  ! 0=no viscosity
-visc_mlswe = 0.5, ! horizontal viscosity
+visc_mlswe = 0.0, ! horizontal viscosity
 dg_integ_exact = F,
 dump_data = T,    ! write output files
-beta = 0.0,  ! beta-plane Coriolis parameter (default = 0.0, unused on sphere_hex — Coriolis comes from kvector/omega instead)
-f0 = 0.0,    ! Coriolis parameter (default = 0.0, unused on sphere_hex)
+beta = 0.0,  ! beta-plane Coriolis parameter (default = 0.0, unused on sphere_hex/sphere_ico — Coriolis comes from kvector/omega instead)
+f0 = 0.0,    ! Coriolis parameter (default = 0.0, unused on sphere_hex/sphere_ico)
 
 !---- Test Cases ------------------------------------
-test_case = 'solid_body',
+test_case = 'gravity_wave',
            !
-           ! sphere_hex test cases (initial_conditions_sphere.F90):
-           ! 'solid_body'      = Williamson et al. 1992 test case 2: zonal
-           !                     geostrophic flow in solid-body rotation
-           ! 'sphere_bump'     = cosine bell advected by solid-body rotation
-           !                     (Williamson et al. 1992 test case 1)
+           ! sphere_hex/sphere_ico test cases (initial_conditions_sphere.F90):
+           ! 'solid_body'      = Williamson et al. 1992 test case 1: cosine
+           !                     bell advected by solid-body rotation
+           !                     (pure advection; wind is held fixed via the
+           !                     momentum restore, not dynamically balanced)
+           ! 'geoFlow'         = Williamson et al. 1992 test case 2: steady
+           !                     zonal geostrophic flow (wind is a genuine
+           !                     steady state of the full shallow water eqns,
+           !                     no momentum restore)
            ! 'sphere_mountain' = zonal flow over a conical mountain
            !                     (Williamson et al. 1992 test case 5)
 
 ti_method_btp = 'rk35', ! Default = 'explicit' which is a two step method
 kstages = 5,
 kstages_bcl = 3,
-bcl_time_method = 'rk3',
+bcl_time_method = 'lsrk3',
 !rk_bcl_FS = T,
 
 space_method = 'dg', ! dg=discontinuous Galerkin

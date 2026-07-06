@@ -188,7 +188,7 @@ subroutine initialize_grid(G, inp, b, gg, par, mf, init)
   use mod_global_grid, only: grid_global
   use mod_grid,        only: grid
   use mod_input,       only: mod_input_create, input
-  use mod_mpi_utilities, only: irank, irank0
+  use mod_mpi_utilities, only: irank, irank0, task_sync
   use mod_p4est,       only: mod_p4est_create
   use mod_parallel,    only: parallel_CS
   use mod_face,        only: face_CS
@@ -224,6 +224,21 @@ subroutine initialize_grid(G, inp, b, gg, par, mf, init)
 
   !--- Read case specific defaults
   call initial_grid_coord(inp)
+
+  ! sphere_ico: generate the coarse icosahedral base mesh as an ABAQUS
+  ! .inp file that p4est reads via the existing read_external_grid_flg
+  ! path (p4est derives all tree adjacency itself). Rank 0 writes it;
+  ! everyone else waits so the file is complete before p4est reads it.
+  if (trim(inp%geometry_type) == 'sphere_ico') then
+     if (irank == irank0) then
+        ! nelx plays the same role here as it does for sphere_hex
+        ! (elements per base panel edge) -- an arbitrary integer, not
+        ! restricted to a power of 2 like refinement_levels_h is.
+        call create_grid_sphere_ico_inp('EXTERNAL_MESH.inp', inp%nelx)
+        print *, "Icosahedral base mesh (EXTERNAL_MESH.inp) Created"
+     end if
+     call task_sync()
+  end if
 
   ! Generate Global Grid and Domain Decomposition Graph
 

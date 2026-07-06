@@ -108,7 +108,7 @@ contains
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df, qprime_df
 
-        if (trim(inp%geometry_type) == 'sphere_hex') then
+        if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
             call bcl_rhs_sphere(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
             return
         end if
@@ -2212,20 +2212,20 @@ contains
                 end do
             end if
 
-            ! if(er /= -4) then
-            !     !$acc loop seq
-            !     do k = 1, nlayers_f-1
-            !         p_inc1  = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
-            !         H_corr1 = 0.5*init%alpha_mlswe(k)*(p_inc1**2 - p_face(1,k+1)**2)
-            !         H_face(1,k,iquad)   = H_face(1,k,iquad)   - H_corr1
-            !         H_face(1,k+1,iquad) = H_face(1,k+1,iquad) + H_corr1
+            if(er > 0) then
+                !$acc loop seq
+                do k = 1, nlayers_f-1
+                    p_inc1  = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
+                    H_corr1 = 0.5*init%alpha_mlswe(k)*(p_inc1**2 - p_face(1,k+1)**2)
+                    H_face(1,k,iquad)   = H_face(1,k,iquad)   - H_corr1
+                    H_face(1,k+1,iquad) = H_face(1,k+1,iquad) + H_corr1
 
-            !         p_inc2  = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
-            !         H_corr2 = 0.5*init%alpha_mlswe(k)*(p_inc2**2 - p_face(2,k+1)**2)
-            !         H_face(2,k,iquad)   = H_face(2,k,iquad)   - H_corr2
-            !         H_face(2,k+1,iquad) = H_face(2,k+1,iquad) + H_corr2
-            !     end do
-            ! end if
+                    p_inc2  = p_face(2,k+1) + g_over_alpha(k)*(z_face(2,k+1) - z_edge_minus(k+1))
+                    H_corr2 = 0.5*init%alpha_mlswe(k)*(p_inc2**2 - p_face(2,k+1)**2)
+                    H_face(2,k,iquad)   = H_face(2,k,iquad)   - H_corr2
+                    H_face(2,k+1,iquad) = H_face(2,k+1,iquad) + H_corr2
+                end do
+            end if
 
             weight = 1.0
             acceleration = sum(H_face(1,:,iquad))

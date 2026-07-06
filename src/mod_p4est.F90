@@ -351,8 +351,9 @@ contains
                    trim(inp%geometry_type) == 'sphere_lonlat')
 
     !adjust coordinates based on geometry type
-    if (trim(inp%geometry_type) /= 'cartesian' .and. inp%read_external_grid_flg==0) then
-        ! Gnomonic projection: cube vertices → unit sphere → scale by earth_radius
+    if (trim(inp%geometry_type) /= 'cartesian' .and. &
+        (inp%read_external_grid_flg==0 .or. trim(inp%geometry_type)=='sphere_ico')) then
+        ! Gnomonic projection: cube/icosahedron vertices → unit sphere → scale by earth_radius
         do i=1, G%npoin
             x = G%coord(1, i)
             y = G%coord(2, i)

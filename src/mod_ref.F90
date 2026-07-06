@@ -74,11 +74,13 @@ contains
         ref%nmessage = 2*init%nvar + 4 !nvar+3 for inviscid dynamics
         if(inp%is_mlswe) ref%nmessage = 6 ! 2 for uv-momentum
         ref%nbtp_var = inp%nvar_bcl*inp%nlayers + (inp%nvar_btp + 1) ! nvar_bcl*nlayers for baroclinic variables + (nvar_btp+1) for barotropic variables
-        ! Velocity-gradient tensor (graduv/dpp_graduv) is 2 velocity components x inp%ngrd_var
-        ! spatial directions wide; lap message = 2*(that width) + 2 (pbprime_df, pbprime_visc) for btp,
+        ! Velocity-gradient tensor (graduv/dpp_graduv) is inp%ngraduvw_var wide
+        ! (nvel velocity components x inp%ngrd_var spatial directions: 2x2=4
+        ! cartesian, 3x3=9 sphere_hex, including w). lap message =
+        ! 2*(that width) + 2 (pbprime_df, pbprime_visc) for btp,
         ! and (that width + 1 for dpprime_visc) per layer for bcl.
-        ref%nbtp_var_lap = 4*inp%ngrd_var + 2
-        ref%nbcl_var_lap = (2*inp%ngrd_var + 1)*inp%nlayers
+        ref%nbtp_var_lap = 2*inp%ngraduvw_var + 2
+        ref%nbcl_var_lap = (inp%ngraduvw_var + 1)*inp%nlayers
 
         ! Compact list of valid MPI faces (face_type==2, imulti>0) in nbh_send_recv order.
         ! Computed once here so pack/unpack GPU kernels need no per-call pre-scans.

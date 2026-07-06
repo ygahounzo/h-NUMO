@@ -340,7 +340,8 @@ contains
         ! rhs stays on device; apply mass scaling and viscous term on GPU.
 
         ! Momentum rows (u,v[,w]) get mass-matrix scaling plus viscosity.
-        ! bcl%rhs_visc_bcl only carries u,v (indices 1,2); w has no viscosity yet.
+        ! bcl%rhs_visc_bcl carries one row per momentum component (u,v[,w]),
+        ! i.e. rows 1..nvar_bcl-1, matching rhs rows 2..nvar_bcl.
         !$acc parallel loop gang collapse(2) &
         !$acc    present(rhs, bcl%rhs_visc_bcl, mt%massinv) private(iv, visc_term) &
         !$acc    firstprivate(nlayers_l, npoin_l, nvarb_l)
@@ -349,8 +350,7 @@ contains
                 rhs(1,I,k) = mt%massinv(I)*rhs(1,I,k)
                 !$acc loop seq
                 do iv = 2, nvarb_l
-                    visc_term = 0.0
-                    if (iv <= 3) visc_term = bcl%rhs_visc_bcl(iv-1,I,k)
+                    visc_term = bcl%rhs_visc_bcl(iv-1,I,k)
                     rhs(iv,I,k) = mt%massinv(I)*rhs(iv,I,k) + visc_term
                 end do
             end do

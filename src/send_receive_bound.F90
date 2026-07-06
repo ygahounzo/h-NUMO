@@ -1302,7 +1302,7 @@ subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
    integer,           intent(in)    :: nvarb
 
    real,    intent(in)  :: q(nvarb, G%npoin)
-   real,    intent(in)  :: btp_dpp_graduv(4, G%npoin)
+   real,    intent(in)  :: btp_dpp_graduv(nvarb, G%npoin)
    real,    intent(in)  :: pbprime_visc(G%npoin)
    integer, intent(out) :: nreq
    integer, intent(out) :: ireq(2*par%num_nbh)
@@ -1318,12 +1318,12 @@ subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
    nvarb_lap_f   = ref%nbtp_var_lap
 
    ! Packed layout per node: [1..nvarb]=q, [off_pbprime]=pbprime_df,
-   ! [off_graduv+1..off_graduv+4]=btp_dpp_graduv, [off_visc]=pbprime_visc.
-   ! Total width must equal ref%nbtp_var_lap (currently nvarb=4 -> 4+1+4+1=10);
+   ! [off_graduv+1..off_graduv+nvarb]=btp_dpp_graduv, [off_visc]=pbprime_visc.
+   ! Total width must equal ref%nbtp_var_lap (= 2*nvarb + 2);
    ! unpack_data_dg_general_lap must be read back with the same width.
    off_pbprime = nvarb + 1
    off_graduv  = nvarb + 1
-   off_visc    = nvarb + 6
+   off_visc    = 2*nvarb + 2
 
    ! GPU packing: one gang per boundary face, one vector lane per node.
    !$acc parallel loop gang private(iface, el)                                      &
@@ -1347,7 +1347,7 @@ subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
          end do
          ref%send_data_dg_lap(ioff+off_pbprime) = init%pbprime_df(ip)
          !$acc loop seq
-         do ivar = 1, 4
+         do ivar = 1, nvarb
             ref%send_data_dg_lap(ioff+off_graduv+ivar) = btp_dpp_graduv(ivar, ip)
          end do
          ref%send_data_dg_lap(ioff+off_visc) = pbprime_visc(ip)
@@ -1688,26 +1688,27 @@ subroutine pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, send_data, recv_dat
 
    real, intent(out) :: send_data(ref%nbcl_var_lap*b%ngl*par%num_send_recv_total)
    real, intent(out) :: recv_data(ref%nbcl_var_lap*b%ngl*par%num_send_recv_total)
-   real, intent(in)  :: dpp_graduv(4, G%npoin, inp%nlayers)
+   real, intent(in)  :: dpp_graduv(inp%ngraduvw_var, G%npoin, inp%nlayers)
    real, intent(in)  :: dpprime_visc(G%npoin, inp%nlayers)
    integer, intent(out) :: nreq
    integer, intent(out) :: ireq(2*par%num_nbh)
    integer, intent(out) :: status(mpi_status_size, 2*par%num_nbh)
 
    integer :: kk, jj, i, inbh, ib, iface, el, ivar, ip, ll, inode
-   integer :: ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer
+   integer :: ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer, nw_f
    integer :: nqp, istart, iend, idest, ierr
 
    ngl_f               = b%ngl
    nlayers_f           = inp%nlayers
    nboun_valid_f       = ref%nboun_valid
    nvarb_lap_per_layer = ref%nbcl_var_lap / inp%nlayers
+   nw_f                = inp%ngraduvw_var
 
-   ! GPU pack: each gang handles one boundary face; 5 vars per node
-   ! (ivar=1..4 from dpp_graduv, ivar=5 from dpprime_visc).
+   ! GPU pack: each gang handles one boundary face; (nw_f+1) vars per node
+   ! (ivar=1..nw_f from dpp_graduv, ivar=nw_f+1 from dpprime_visc).
    !$acc parallel loop gang &
    !$acc    present(G%face, G%intma, mf%imapl, dpp_graduv, dpprime_visc, send_data, ref%face_pack_list) &
-   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer)
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer, nw_f)
    do kk = 1, nboun_valid_f
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
@@ -1719,7 +1720,7 @@ subroutine pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, send_data, recv_dat
                          mf%imapl(2,inode,1,iface), &
                          mf%imapl(3,inode,1,iface), el)
             !$acc loop seq
-            do ivar = 1, 4
+            do ivar = 1, nw_f
                send_data((kk-1)*nlayers_f*ngl_f*nvarb_lap_per_layer + (ll-1)*ngl_f*nvarb_lap_per_layer + (inode-1)*nvarb_lap_per_layer + ivar) = dpp_graduv(ivar,ip,ll)
             end do
             send_data((kk-1)*nlayers_f*ngl_f*nvarb_lap_per_layer + (ll-1)*ngl_f*nvarb_lap_per_layer + (inode-1)*nvarb_lap_per_layer + nvarb_lap_per_layer) = dpprime_visc(ip,ll)

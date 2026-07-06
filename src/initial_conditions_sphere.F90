@@ -195,6 +195,50 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
 
       z_interface(:,nlayers+1) = zbot_df(:)
 
+   case ('gravity_wave') ! Chen (2025, QJRMS, 10.1002/qj.4994) Sec 5.2: internal
+                         ! gravity-wave propagation test. Two layers, densities
+                         ! 1000/1020 kg/m^3 (paper's first configuration; 1040
+                         ! is its second), flow initially AT REST with a
+                         ! cosine-bell hump on the layer interface, non-rotating
+                         ! (f=0, set in wind_stress_coriolis). Excites a fast
+                         ! barotropic and a slower baroclinic gravity wave;
+                         ! validated by comparing their propagation speeds
+                         ! against linear theory, not by a steady-state check.
+                         ! Requires nlayers=2.
+
+      hc    = 100.0                 ! hump amplitude (m)
+      rc    = earth_radius*pi/18.0  ! hump radius (10 deg -> 20 deg wide)
+      oloni = 0.0                   ! hump center: equator, lon=0
+      olati = 0.0
+
+      zbot_df(:)     = -2000.0      ! total resting depth: 1000 + 1000 m
+      z_interface(:,1) = 0.0        ! flat top surface (at rest)
+
+      alpha_mlswe(1) = 1.0/1000.0
+      alpha_mlswe(2) = 1.0/1020.0   ! paper's other tested value: 1.0/1040.0
+
+      do I1 = 1, npoin
+         x = G%coord(1,I1)
+         y = G%coord(2,I1)
+         z = G%coord(3,I1)
+         olon = atan2(y, x+atol)
+         olat = asin(z/earth_radius)
+
+         r = earth_radius*acos( sin(olati)*sin(olat) + &
+             cos(olati)*cos(olat)*cos(olon-oloni) )
+
+         ! phi2 = bottom-layer thickness: 1000 m background + cosine-bell hump.
+         if (r < rc) then
+            z_interface(I1,2) = 1000.0 + 0.5*hc*(1.0 + cos(pi*r/rc)) - 2000.0
+         else
+            z_interface(I1,2) = 1000.0 - 2000.0
+         end if
+      end do
+      ! u_df, v_df, w_df stay 0 (flow at rest); Coriolis is set to 0 for this
+      ! test case in wind_stress_coriolis (mod_initial_mlswe.F90).
+
+      z_interface(:,nlayers+1) = zbot_df(:)
+
    case ('sphere_mountain') ! Flow over mountain
 
       twopi = 2.0*pi

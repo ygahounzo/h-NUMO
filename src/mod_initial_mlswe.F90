@@ -199,10 +199,17 @@ module mod_initial_mlswe
         ym = 0.5*Ly
 
         ! f at DOF nodes: sphere uses 2*Omega*sin(lat) = 2*Omega*kvector(3)
-        if (inp%geometry_type == 'sphere_hex') then
-            do concurrent (I = 1:G%npoin)
-                coriolis_df(I) = 2.0*omega*kvector(3,I)
-            end do
+        if (inp%geometry_type == 'sphere_hex' .or. inp%geometry_type == 'sphere_ico') then
+            if (trim(inp%test_case) == 'gravity_wave') then
+                ! Non-rotating test (Chen 2025, Sec 5.2): f = 0 everywhere.
+                do concurrent (I = 1:G%npoin)
+                    coriolis_df(I) = 0.0
+                end do
+            else
+                do concurrent (I = 1:G%npoin)
+                    coriolis_df(I) = 2.0*omega*kvector(3,I)
+                end do
+            end if
         else
             do concurrent (I = 1:G%npoin)
                 y = G%coord(2,I)

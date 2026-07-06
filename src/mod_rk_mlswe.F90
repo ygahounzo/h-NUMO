@@ -124,13 +124,12 @@ contains
             do I = 1, G%npoin
                btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
 
-               ! Momentum components: u,v[,w] -> uvb_ave_df(1..nvarb_f-2), rhs_btp(2..nvarb_f-1).
-               ! Viscosity (rhs_btp_visc) is only defined for u,v (indices 3,4); w has none yet.
+               ! Momentum components: u,v[,w] -> uvb_ave_df(1..nvarb_f-2), rhs_btp(2..nvarb_f-1),
+               ! rhs_btp_visc(1..nvarb_f-2) (one viscosity row per momentum component).
                !$acc loop seq
                do iv = 3, nvarb_f
                   btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) / qb_df(1,I)
-                  visc_term = 0.0
-                  if (iv <= 4) visc_term = inp%visc_mlswe * btp%rhs_btp_visc(iv-2,I)
+                  visc_term = inp%visc_mlswe * btp%rhs_btp_visc(iv-2,I)
                   qb_df(iv,I) = a0*btp%qb0_df(iv,I) + a1*qb_df(iv,I) + a2*btp%qb2_df(iv,I) &
                                + dtt * (mt%massinv(I) * (btp%rhs_btp(iv-1,I) + visc_term))
                end do

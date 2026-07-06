@@ -45,7 +45,7 @@ module mod_variables
 
       ! RHS and state buffers
       real, dimension(:,:),     allocatable :: rhs_btp       ! (3,npoin)
-      real, dimension(:,:),     allocatable :: rhs_btp_visc  ! (2,npoin)
+      real, dimension(:,:),     allocatable :: rhs_btp_visc  ! (nvar_btp-2,npoin): u,v[,w]
       real, dimension(:,:),     allocatable :: qb_df         ! (nvar_btp,npoin)
 
       ! BTP time integrator work arrays (persistent GPU allocations)
@@ -80,7 +80,7 @@ module mod_variables
 
       ! RHS buffers (persistent device allocations)
       real, dimension(:,:,:), allocatable :: rhs_bcl      ! (nvar_bcl,npoin,nlayers)
-      real, dimension(:,:,:), allocatable :: rhs_visc_bcl ! (2,npoin,nlayers)
+      real, dimension(:,:,:), allocatable :: rhs_visc_bcl ! (nvar_bcl-1,npoin,nlayers): u,v[,w]
 
       ! Time integrator work arrays (persistent GPU allocations, no per-call malloc)
       real, dimension(:,:,:), allocatable :: q0_df    ! (nvar_bcl,npoin,nlayers)
@@ -156,7 +156,7 @@ contains
          btp%uvb_ave_df(inp%nvar_btp-2,G%npoin),                              &
          btp%btp_dpp_graduvw(inp%ngraduvw_var,G%npoin),                       &
          btp%btp_dpp_uvp(2,G%npoin),                                          &
-         btp%graduvb_ave(4,G%npoin),                                          &
+         btp%graduvb_ave(inp%ngraduvw_var,G%npoin),                          &
          btp%tau_wind_ave(2,G%npoin_q),                                       &
          btp%tau_bot_ave(inp%nvar_btp-2,G%npoin_q),                           &
          stat=stat)
@@ -176,14 +176,14 @@ contains
          btp%Qw_face_ave(inp%nvar_btp-2,b%nq,G%nface),                          &
          btp%uvb_face_ave(inp%nvar_btp-2,2,b%nq,G%nface),                       &
          btp%btp_graduv_dpp_face(5,2,b%ngl,G%nface),                            &
-         btp%graduvb_face_ave(4,2,b%ngl,G%nface),                               &
+         btp%graduvb_face_ave(inp%ngraduvw_var,2,b%ngl,G%nface),               &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp face)"
 
       ! RHS and state buffers
       allocate(                                                               &
          btp%rhs_btp(inp%nvar_btp-1,G%npoin),                                 &
-         btp%rhs_btp_visc(2,G%npoin),                                         &
+         btp%rhs_btp_visc(inp%nvar_btp-2,G%npoin),                           &
          btp%qb_df(inp%nvar_btp,G%npoin),                                     &
          btp%qb0_df(inp%nvar_btp,G%npoin),                                    &
          btp%qb2_df(inp%nvar_btp,G%npoin),                                    &
@@ -226,7 +226,7 @@ contains
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
          bcl%rhs_bcl(inp%nvar_bcl,G%npoin,inp%nlayers),                          &
-         bcl%rhs_visc_bcl(2,G%npoin,inp%nlayers),                               &
+         bcl%rhs_visc_bcl(inp%nvar_bcl-1,G%npoin,inp%nlayers),                  &
          bcl%q0_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
          bcl%q1_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
          bcl%uv_df(inp%nvar_bcl-1,G%npoin,inp%nlayers),                          &

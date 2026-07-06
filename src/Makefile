@@ -17,6 +17,7 @@ SOURCEF += create_face.F90
 SOURCEF += create_global_rhs.F90
 SOURCEF += create_grid_cube.F90
 SOURCEF += create_grid_sphere.F90
+SOURCEF += create_grid_sphere_ico.F90
 SOURCEF += create_mass.F90
 SOURCEF += create_normals.F90
 SOURCEF += create_rhs_communicator.F90
