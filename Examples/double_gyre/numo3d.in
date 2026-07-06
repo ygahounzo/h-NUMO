@@ -37,7 +37,7 @@ botfr = 1, ! bottom Friction flag: 0 = no friction, 1 = linear, 2 = quadratic
 cd_mlswe = 1.0e-7, ! cd = 1.0e-7 for linear, cd = 1e-3 (default) for quadratic bottom friction
 method_visc = 3,  ! 0=no viscosity
 visc_mlswe = 50.0, ! horizontal viscosity
-dg_integ_exact = T,
+dg_integ_exact = F,
 dump_data = T,    ! write output files
 beta = 2.0e-11,  ! beta-plane Coriolis parameter (default = 0.0)
 f0 = 0.93e-4,    ! Coriolis parameter (default = 0.0)
