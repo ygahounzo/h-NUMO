@@ -67,7 +67,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     dtt = inp%dt * lsrk3_beta(ik)
 
     ! GPU: compute baroclinic primed variables from the current stage state.
-    call extract_qprime_df_face(G, inp, init, bcl%qprime_df, q_df, qb_df)
+    call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, q_df, qb_df)
     ! GPU: compute bcl/btp coefficient arrays (fused single kernel).
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
 
@@ -104,7 +104,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
-    call extract_velocity(G, inp, bcl%uv_df, q_df, qb_df)
+    call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 
     ! GPU: reconstruct momentum from corrected velocity.
     !$acc kernels present(q_df, bcl%uv_df)
