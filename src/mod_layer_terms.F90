@@ -14,7 +14,10 @@ module mod_layer_terms
     use mod_initial,   only: initial
     use mod_face,      only: face_CS
     use mod_tensor,    only: tensor_CS
+    use mod_metrics,   only: metrics
     use mod_variables, only: btp_CS, bcl_CS
+    use mod_constants, only: gravity
+    use mod_initial_mlswe,    only: find_dry_elements
 
     implicit none
 
@@ -22,7 +25,6 @@ module mod_layer_terms
               velocity_df,              &
               evaluate_consistency_face, &
               extract_qprime_df_face,   &
-              extract_dprime_df_face,   &
               interpolate_dpp
 
 contains
@@ -200,172 +202,285 @@ contains
 
     end subroutine velocity_df
 
-    subroutine extract_velocity(G, inp, uv_df, q_df, qb_df)
+    subroutine extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
-        implicit none
+      implicit none
 
-        type(grid),  intent(in)  :: G
-        type(input), intent(in)  :: inp
+      type(grid),    intent(in)  :: G
+      type(input),   intent(in)  :: inp
+      type(basis),   intent(in)  :: b
+      type(metrics), intent(in)  :: mt
+      type(tensor_CS), intent(in) :: tsp
+      type(initial), intent(in)    :: init
+      type(bcl_CS),  intent(inout) :: bcl
 
-        real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers), intent(out) :: uv_df
-        real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
-        real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
+      real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers), intent(out) :: uv_df
+      real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
+      real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
 
-        real    :: ubar, vbar, wbar
-        integer :: I, k, npoin_l, nlayers_l
-        logical :: has_w
+      real    :: ubar, vbar, wbar, wjac, wsum, mult
+      integer :: I, k, e, n, m
+      integer :: nlayers_l, nelem_l, nglx_l, ngly_l
+      logical :: has_w
+      real, parameter :: eps = 1.0e-20
 
-        npoin_l   = G%npoin
-        nlayers_l = inp%nlayers
-        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+      real :: dp_avg(inp%nlayers), udp_avg(inp%nlayers), vdp_avg(inp%nlayers)
+      real :: wdp_avg(inp%nlayers)
+      real :: dp_max(inp%nlayers), dp_min(inp%nlayers)
+      real :: dp_cutoff1(inp%nlayers), dp_cutoff2(inp%nlayers), dp_range(inp%nlayers)
+      real :: a(inp%nlayers), bc(inp%nlayers), c_td(inp%nlayers)
+      real :: r(inp%nlayers, 3)
+      real :: u_ave(inp%nlayers), v_ave(inp%nlayers), w_ave(inp%nlayers)
+      real :: weight(inp%nlayers)
 
-        ! Gang over nodes; each gang accumulates its barotropic velocity privately.
-        !$acc parallel loop gang &
-        !$acc    present(uv_df, q_df, qb_df) &
-        !$acc    firstprivate(npoin_l, nlayers_l, has_w) &
-        !$acc    private(ubar, vbar, wbar)
-        do I = 1, npoin_l
-            !$acc loop seq
-            do k = 1, nlayers_l
-                uv_df(1,I,k) = q_df(2,I,k) / q_df(1,I,k)
-                uv_df(2,I,k) = q_df(3,I,k) / q_df(1,I,k)
-                if (has_w) uv_df(3,I,k) = q_df(4,I,k) / q_df(1,I,k)
-            end do
+      ! GPU: classify dry elements (all arrays already on device).
+      call find_dry_elements(G, inp, b, tsp, bcl%q_df, init%alpha_mlswe, bcl%dry_flg)
 
-            ubar = 0.0
-            vbar = 0.0
-            wbar = 0.0
-            !$acc loop seq
-            do k = 1, nlayers_l
-                ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
-                vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
-                if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
-            end do
+      nlayers_l = inp%nlayers
+      nelem_l   = G%nelem
+      nglx_l    = b%nglx
+      ngly_l    = b%ngly
+      has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
-            if (qb_df(1,I) > 0.0) then
-                ubar = ubar / qb_df(1,I)
-                vbar = vbar / qb_df(1,I)
-                if (has_w) wbar = wbar / qb_df(1,I)
-                !$acc loop seq
-                do k = 1, nlayers_l
-                    uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
-                    uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
-                    if (has_w) uv_df(3,I,k) = uv_df(3,I,k) - (wbar - qb_df(5,I)/qb_df(1,I))
-                end do
-            else
-                !$acc loop seq
-                do k = 1, nlayers_l
-                    uv_df(1,I,k) = 0.0
-                    uv_df(2,I,k) = 0.0
-                    if (has_w) uv_df(3,I,k) = 0.0
-                end do
-            end if
+      ! Compute per-layer blending thresholds on CPU (small loop over nlayers).
+      do k = 1, nlayers_l
+          if (inp%h_cutoff1 < 1.0e-2) then
+              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * 10.0
+              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * 100.0
+          else
+              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
+              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
+          end if
+          dp_range(k) = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
+      end do
+
+      ! Copy blending thresholds to device once; shared read-only by both kernels below.
+      !$acc data copyin(dp_cutoff1, dp_cutoff2, dp_range)
+
+      ! Part 1: element-parallel velocity blending.
+      ! One gang per element; all inner loops are sequential within the gang.
+      ! Shared boundary nodes written by multiple gangs with different blended values —
+      ! same determinism as the sequential CPU version (last writer wins).
+      !$acc parallel loop gang &
+      !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df) &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, has_w) &
+      !$acc    private(dp_avg, udp_avg, vdp_avg, wdp_avg, dp_max, dp_min, &
+      !$acc            a, bc, c_td, r, u_ave, v_ave, w_ave, weight, &
+      !$acc            wsum, wjac, mult)
+      do e = 1, nelem_l
+
+        wsum = 0.0
+        !$acc loop seq
+        do k = 1, nlayers_l
+            dp_avg(k) = 0.0;  udp_avg(k) = 0.0;  vdp_avg(k) = 0.0;  wdp_avg(k) = 0.0
+            dp_max(k) = -huge(1.0);  dp_min(k) = huge(1.0)
         end do
-        !$acc end parallel loop
+
+        !$acc loop seq
+        do m = 1, ngly_l
+            !$acc loop seq
+            do n = 1, nglx_l
+                I    = G%intma(n, m, 1, e)
+                wjac = b%wglx(n) * b%wgly(m) * mt%jac(n, m, 1, e)
+                wsum = wsum + wjac
+                !$acc loop seq
+                do k = 1, nlayers_l
+                    dp_avg(k)  = dp_avg(k)  + wjac * q_df(1,I,k)
+                    udp_avg(k) = udp_avg(k) + wjac * q_df(2,I,k)
+                    vdp_avg(k) = vdp_avg(k) + wjac * q_df(3,I,k)
+                    if (has_w) wdp_avg(k) = wdp_avg(k) + wjac * q_df(4,I,k)
+                    dp_max(k)  = max(dp_max(k), q_df(1,I,k))
+                    dp_min(k)  = min(dp_min(k), q_df(1,I,k))
+                end do
+            end do
+        end do
+
+        !$acc loop seq
+        do k = 1, nlayers_l
+          dp_avg(k)  = dp_avg(k)  / wsum
+          udp_avg(k) = udp_avg(k) / wsum
+          vdp_avg(k) = vdp_avg(k) / wsum
+          if (has_w) wdp_avg(k) = wdp_avg(k) / wsum
+        end do
+
+        ! Build tridiagonal system for mass-weighted cell-average velocity.
+        !$acc loop seq
+        do k = 1, nlayers_l
+          weight(k) = (dp_max(k) - dp_cutoff1(k)) / dp_range(k)
+          weight(k) = max(min(weight(k), 1.0), 0.0)
+          bc(k)   = 1.0
+          r(k, 1) = weight(k) * udp_avg(k) / (dp_avg(k) + eps)
+          r(k, 2) = weight(k) * vdp_avg(k) / (dp_avg(k) + eps)
+          if (has_w) r(k, 3) = weight(k) * wdp_avg(k) / (dp_avg(k) + eps)
+        end do
+        a(1)            = 0.0
+        c_td(1)         = -(1.0 - weight(1))
+        a(nlayers_l)    = -(1.0 - weight(nlayers_l))
+        c_td(nlayers_l) = 0.0
+        !$acc loop seq
+        do k = 2, nlayers_l - 1
+          a(k)    = -0.5 * (1.0 - weight(k))
+          c_td(k) = a(k)
+        end do
+
+        ! Forward sweep (Thomas algorithm).
+        !$acc loop seq
+        do k = 2, nlayers_l
+            mult   = a(k) / bc(k-1)
+            bc(k)  = bc(k)  - mult * c_td(k-1)
+            r(k,1) = r(k,1) - mult * r(k-1,1)
+            r(k,2) = r(k,2) - mult * r(k-1,2)
+            if (has_w) r(k,3) = r(k,3) - mult * r(k-1,3)
+        end do
+        ! Back substitution.
+        u_ave(nlayers_l) = r(nlayers_l,1) / bc(nlayers_l)
+        v_ave(nlayers_l) = r(nlayers_l,2) / bc(nlayers_l)
+        if (has_w) w_ave(nlayers_l) = r(nlayers_l,3) / bc(nlayers_l)
+        !$acc loop seq
+        do k = nlayers_l-1, 1, -1
+          u_ave(k) = (r(k,1) - c_td(k) * u_ave(k+1)) / bc(k)
+          v_ave(k) = (r(k,2) - c_td(k) * v_ave(k+1)) / bc(k)
+          if (has_w) w_ave(k) = (r(k,3) - c_td(k) * w_ave(k+1)) / bc(k)
+        end do
+
+        ! Recompute weight using dp_min for the pointwise blending.
+        !$acc loop seq
+        do k = 1, nlayers_l
+          weight(k) = (dp_min(k) - dp_cutoff1(k)) / dp_range(k)
+          weight(k) = max(min(weight(k), 1.0), 0.0)
+        end do
+
+        ! Write blended velocities at all element nodes.
+        !$acc loop seq
+        do m = 1, ngly_l
+          !$acc loop seq
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
+            !$acc loop seq
+            do k = 1, nlayers_l
+              uv_df(1,I,k) = weight(k) * q_df(2,I,k) / (q_df(1,I,k) + eps) &
+                            + (1.0 - weight(k)) * u_ave(k)
+              uv_df(2,I,k) = weight(k) * q_df(3,I,k) / (q_df(1,I,k) + eps) &
+                            + (1.0 - weight(k)) * v_ave(k)
+              if (has_w) uv_df(3,I,k) = weight(k) * q_df(4,I,k) / (q_df(1,I,k) + eps) &
+                                       + (1.0 - weight(k)) * w_ave(k)
+            end do
+          end do
+        end do
+
+      end do
+      !$acc end parallel loop
+
+      ! Part 2: element-parallel barotropic consistency correction.
+      ! One gang per element; uses dry_flg(e,k) to skip fully-dry layers, matching
+      ! the original CPU semantics. Shared boundary nodes may be written by multiple
+      ! gangs with different corrections — same non-determinism as the sequential
+      ! CPU version (last writer wins).
+      !$acc parallel loop gang &
+      !$acc    present(G%intma, uv_df, q_df, qb_df, bcl%dry_flg) &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, has_w) &
+      !$acc    private(ubar, vbar, wbar)
+      do e = 1, nelem_l
+        !$acc loop seq
+        do m = 1, ngly_l
+          !$acc loop seq
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
+            ubar = 0.0;  vbar = 0.0;  wbar = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+              if (bcl%dry_flg(e, k) == 2) cycle
+              ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
+              vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
+              if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
+            end do
+            if (qb_df(1,I) > 0.0) then
+              ubar = ubar / qb_df(1,I)
+              vbar = vbar / qb_df(1,I)
+              if (has_w) wbar = wbar / qb_df(1,I)
+              !$acc loop seq
+              do k = 1, nlayers_l
+                if (bcl%dry_flg(e, k) == 2) cycle
+                uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
+                uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
+                if (has_w) uv_df(3,I,k) = uv_df(3,I,k) - (wbar - qb_df(5,I)/qb_df(1,I))
+              end do
+            else
+              !$acc loop seq
+              do k = 1, nlayers_l
+                uv_df(1,I,k) = 0.0
+                uv_df(2,I,k) = 0.0
+                if (has_w) uv_df(3,I,k) = 0.0
+              end do
+            end if
+          end do
+        end do
+      end do
+      !$acc end parallel loop
+
+      !$acc end data
 
     end subroutine extract_velocity
 
-    subroutine extract_qprime_df_face(G, inp, init, qprime_df, q_df, qb_df)
+    subroutine extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df, q_df, qb_df)
 
-        implicit none
+      implicit none
 
-        type(grid),    intent(in) :: G
-        type(input),   intent(in) :: inp
-        type(initial), intent(in) :: init
+      type(grid),      intent(in) :: G
+      type(input),     intent(in) :: inp
+      type(basis),     intent(in) :: b
+      type(metrics),   intent(in) :: mt
+      type(tensor_CS), intent(in) :: tsp
+      type(initial),   intent(in)    :: init
+      type(bcl_CS),    intent(inout) :: bcl
 
-        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: qprime_df
-        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
-        real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
+      real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: qprime_df
+      real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
+      real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
 
-        integer :: k, I, npoin_l, nlayers_l
-        real    :: ope
-        real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
-        logical :: has_w
+      integer :: k, I, npoin_l, nlayers_l
+      real    :: ope
+      real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
+      logical :: has_w
 
-        npoin_l   = G%npoin
-        nlayers_l = inp%nlayers
-        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+      npoin_l   = G%npoin
+      nlayers_l = inp%nlayers
+      has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
-        !$acc data create(uv_df)
+      !$acc data create(uv_df)
 
-        !$acc kernels present(qprime_df)
-        qprime_df = 0.0
-        !$acc end kernels
+      !$acc kernels present(qprime_df)
+      qprime_df = 0.0
+      !$acc end kernels
 
-        call extract_velocity(G, inp, uv_df, q_df, qb_df)
+      call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
-        ! Gang over nodes: accumulate ope = sum_k(h_k)/H0 sequentially, then
-        ! write qprime.  No cross-node dependency — no atomics needed.
-        !$acc parallel loop gang &
-        !$acc    present(qprime_df, q_df, qb_df, uv_df, init%pbprime_df) &
-        !$acc    firstprivate(npoin_l, nlayers_l, has_w) private(ope)
-        do I = 1, npoin_l
-            ope = 0.0
-            !$acc loop seq
-            do k = 1, nlayers_l
-                ope = ope + q_df(1,I,k)
-            end do
-            ope = ope / init%pbprime_df(I)
+      ! Gang over nodes: accumulate ope = sum_k(h_k)/H0 sequentially, then
+      ! write qprime.  No cross-node dependency — no atomics needed.
+      !$acc parallel loop gang &
+      !$acc    present(qprime_df, q_df, qb_df, uv_df, init%pbprime_df) &
+      !$acc    firstprivate(npoin_l, nlayers_l, has_w) private(ope)
+      do I = 1, npoin_l
+          ope = 0.0
+          !$acc loop seq
+          do k = 1, nlayers_l
+              ope = ope + q_df(1,I,k)
+          end do
+          ope = ope / init%pbprime_df(I)
 
-            !$acc loop seq
-            do k = 1, nlayers_l
-                qprime_df(1,I,k) = q_df(1,I,k) / ope
-                qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
-                qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
-                if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - qb_df(5,I)/qb_df(1,I)
-            end do
-        end do
-        !$acc end parallel loop
+          !$acc loop seq
+          do k = 1, nlayers_l
+              qprime_df(1,I,k) = q_df(1,I,k) / ope
+              qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
+              qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
+              if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - qb_df(5,I)/qb_df(1,I)
+          end do
+      end do
+      !$acc end parallel loop
 
-        !$acc end data
+      !$acc end data
 
     end subroutine extract_qprime_df_face
-
-    subroutine extract_dprime_df_face(G, inp, b, mf, dprime_df_face, dprime_df)
-
-        ! Extracts face values of layer mass at DG nodes
-
-        implicit none
-
-        type(grid),    intent(in) :: G
-        type(input),   intent(in) :: inp
-        type(basis),   intent(in) :: b
-        type(face_CS), intent(in) :: mf
-
-        real, dimension(2, b%ngl, G%nface, inp%nlayers), intent(out) :: dprime_df_face
-        real, dimension(G%npoin, inp%nlayers),            intent(in)  :: dprime_df
-
-        integer :: iface, el, er, il, jl, ir, jr, kl, kr, I, n
-
-        dprime_df_face = 0.0
-
-        do iface = 1, G%nface
-
-            el = G%face(7,iface)
-            er = G%face(8,iface)
-
-            do n = 1, b%ngl
-
-                il = mf%imapl(1,n,1,iface)
-                jl = mf%imapl(2,n,1,iface)
-                kl = mf%imapl(3,n,1,iface)
-                I  = G%intma(il,jl,kl,el)
-
-                dprime_df_face(1,n,iface,:) = dprime_df(I,:)
-
-                if(er > 0) then
-                    ir = mf%imapr(1,n,1,iface)
-                    jr = mf%imapr(2,n,1,iface)
-                    kr = mf%imapr(3,n,1,iface)
-                    I  = G%intma(ir,jr,kr,er)
-                    dprime_df_face(2,n,iface,:) = dprime_df(I,:)
-                else
-                    dprime_df_face(2,n,iface,:) = dprime_df_face(1,n,iface,:)
-                end if
-            end do
-        end do
-
-    end subroutine extract_dprime_df_face
 
     subroutine layer_mom_boundary_df(G, inp, b, mf, init, q)
 

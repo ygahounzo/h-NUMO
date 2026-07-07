@@ -85,8 +85,9 @@ module mod_variables
       ! Time integrator work arrays (persistent GPU allocations, no per-call malloc)
       real, dimension(:,:,:), allocatable :: q0_df    ! (nvar_bcl,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: q1_df    ! (nvar_bcl,npoin,nlayers) rk3 only
-      real, dimension(:,:,:), allocatable :: uv_df    ! (2,npoin,nlayers)
-      real, dimension(:,:),   allocatable :: qbp_df   ! (nvar_btp,npoin)
+      real, dimension(:,:,:),   allocatable :: uv_df    ! (2,npoin,nlayers)
+      real, dimension(:,:),     allocatable :: qbp_df   ! (nvar_btp,npoin)
+      integer, dimension(:,:),  allocatable :: dry_flg  ! (nelem,nlayers): 0=wet,1=mixed,2=dry
 
    end type bcl_CS
 
@@ -212,7 +213,8 @@ contains
             bcl%dpprime_visc,         bcl%dpprime_visc_q,                 &
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
-            bcl%uv_df,                bcl%qbp_df)
+            bcl%uv_df,                bcl%qbp_df,                        &
+            bcl%dry_flg)
       end if
 
       allocate(                                                               &
@@ -231,6 +233,7 @@ contains
          bcl%q1_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
          bcl%uv_df(inp%nvar_bcl-1,G%npoin,inp%nlayers),                          &
          bcl%qbp_df(inp%nvar_btp,G%npoin),                                       &
+         bcl%dry_flg(G%nelem,inp%nlayers),                                        &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 

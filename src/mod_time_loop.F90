@@ -99,7 +99,7 @@ contains
         ! it once here so the barotropic-only path below never needs to touch
         ! the baroclinic driver at all.
         if (inp%nlayers == 1) then
-            call extract_qprime_df_face(G, inp, init, bcl%qprime_df, bcl%q_df, btp%qb_df)
+            call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, bcl%q_df, btp%qb_df)
             call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
         end if
 

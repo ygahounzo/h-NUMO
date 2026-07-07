@@ -63,6 +63,7 @@ module mod_input
       real(kind=r8) :: f0
       real(kind=r8) :: beta
       real(kind=r8) :: dry_cutoff
+      real(kind=r8) :: h_cutoff1, h_cutoff2
 
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -284,6 +285,7 @@ module mod_input
       real(kind=r8) :: f0 = 0.0
       real(kind=r8) :: beta = 0.0
       real(kind=r8) :: dry_cutoff = 1.0e-10
+      real(kind=r8) :: h_cutoff1 = 0.0, h_cutoff2 = 0.0
    
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -493,7 +495,7 @@ module mod_input
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, &
+         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, &
          bcl_time_method, rk_bcl_FS
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
@@ -647,6 +649,8 @@ module mod_input
       inp%f0                             = f0
       inp%beta                           = beta
       inp%dry_cutoff                     = dry_cutoff
+      inp%h_cutoff1                      = h_cutoff1
+      inp%h_cutoff2                      = h_cutoff2
       inp%xdims                          = xdims
       inp%ydims                          = ydims
       inp%ztop                           = ztop

@@ -159,7 +159,7 @@ contains
 
         call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
-        call extract_velocity(G, inp, uv_df, q_df, qb_df)
+        call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
         do k = 1, inp%nlayers
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
@@ -252,7 +252,7 @@ contains
 
         call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
-        call extract_velocity(G, inp, uv_df, q_df, qb_df)
+        call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
         do k = 1, inp%nlayers
             q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
