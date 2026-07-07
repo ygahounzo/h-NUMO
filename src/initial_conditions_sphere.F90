@@ -239,25 +239,38 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
 
       z_interface(:,nlayers+1) = zbot_df(:)
 
-   case ('sphere_mountain') ! Flow over mountain
+   case ('mountain_2layer') ! Chen (2025, QJRMS, 10.1002/qj.4994) Sec 5.3: two-layer
+                             ! zonal flow over mountain topography, adapting
+                             ! Williamson et al. (1992) test #5 to two density
+                             ! layers (1000/1010 kg/m^3). Same balanced zonal
+                             ! wind and top-surface height field as the existing
+                             ! single-layer 'sphere_mountain' case above; the
+                             ! water column is split at a flat interface, 3500 m
+                             ! above the flat sea floor, into a light top layer
+                             ! and a denser bottom layer that submerges the
+                             ! mountain. Chen's own results show this case
+                             ! develops negative bottom-layer thickness
+                             ! (interface outcropping) near the mountain within
+                             ! ~15h without an added artificial-potential-energy
+                             ! stabilization term, which h-NUMO does not
+                             ! currently implement. Requires nlayers=2.
 
       twopi = 2.0*pi
       pio2  = pi/2.0
       h0    = 5960.0
-      p     = 24.0*3600.0
       u0    = 20.0
-      oloni = 0.0
-      olati = 0.0
-      rc    = earth_radius
       hs0   = 2000.0
       rs    = pi/9.0
       olonc = 3.0*pi/2.0
       olatc = pi/6.0
-      rlon  = 0.0
-      rlat  = alpha
+      rlat  = alpha  ! alpha=0: standard (non-rotated) test 5 configuration
 
-      z_interface(:,2) = -3500.0
-      alpha_mlswe(:)   = 1.0
+      alpha_mlswe(1) = 1.0/1000.0
+      alpha_mlswe(2) = 1.0/1010.0
+
+      ! Flat layer interface at 3500 m above the flat sea floor, expressed in
+      ! h-NUMO's zbot_df-relative height convention (sea floor at -h0).
+      z_interface(:,2) = 3500.0 - h0
 
       do I1 = 1, npoin
          x = G%coord(1,I1)

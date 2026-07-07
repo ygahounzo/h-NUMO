@@ -64,7 +64,7 @@ lread_external_grid = F,  ! Read external grid file (ignored/forced on for
 /
 
 &input_nml
-dt= 300,
+dt= 400,
 dt_btp = 50.,
 time_initial = 0.0,
 time_final   = 24,
@@ -85,7 +85,7 @@ beta = 0.0,  ! beta-plane Coriolis parameter (default = 0.0, unused on sphere_he
 f0 = 0.0,    ! Coriolis parameter (default = 0.0, unused on sphere_hex/sphere_ico)
 
 !---- Test Cases ------------------------------------
-test_case = 'gravity_wave',
+test_case = 'mountain_2layer',
            !
            ! sphere_hex/sphere_ico test cases (initial_conditions_sphere.F90):
            ! 'solid_body'      = Williamson et al. 1992 test case 1: cosine
