@@ -8,6 +8,7 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
    use mod_variables, only: btp_CS
    use mod_initial,   only: initial
    use mod_ref,       only: mref
+   use mod_constants, only: gravity
 
    implicit none
 
@@ -132,6 +133,25 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
                   wpr = wpr + hi*ref%q_recv(ii+4,n,kk)
                end if
             end do
+
+            ! Dry-cell protection, matching the volume/face BCL flux
+            ! routines. Thickness is CLAMPED (not zeroed) to a floor so
+            ! H_bcl_ql/qr's cumulative pprime bookkeeping stays continuous
+            ! across dry_cutoff; velocity is zeroed, which alone fully
+            ! suppresses this layer's Qu/Qv/Qw flux terms (each is a product
+            ! of two velocity components) regardless of the floored
+            ! thickness. Without this, a phantom contribution would leak
+            ! into btp%H_face_ave/Qu_face_ave/Qv_face_ave/Qw_face_ave --
+            ! exactly the consistency targets the volume/face routines'
+            ! deficit-redistribution logic spreads onto the wet layers.
+            if (ppl < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+               ppl = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+               upl = 0.0;  vpl = 0.0;  wpl = 0.0
+            end if
+            if (ppr < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+               ppr = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+               upr = 0.0;  vpr = 0.0;  wpr = 0.0
+            end if
 
             Qu_ql(1) = Qu_ql(1) + upl*(upl*(one_eta*ppl))
             Qu_qr(1) = Qu_qr(1) + upr*(upr*(one_eta*ppr))
@@ -976,6 +996,7 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
    real :: p_intersect_bot, p_intersect_top, H_corr1, p_inc1
    real :: flux, flux_x, flux_y, flux_z
    real, parameter :: eps1 = 1.0e-20
+   logical :: is_dry_l, is_dry_r
 
    ngl_f         = b%ngl
    nq_f          = b%nq
@@ -1001,7 +1022,7 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
    !$acc           dp_deficit, uu_dp_flux_deficit, vv_dp_flux_deficit, ww_dp_flux_deficit, &
    !$acc           ope_l, ope_r, one_plus_eta_edge,                                &
    !$acc           ul, ur, vl, vr, wl, wr, dpl, dpr, nxl, nyl, nzl, uu, vv, ww, un, &
-   !$acc           wq, hi, weight, acceleration,                                    &
+   !$acc           wq, hi, weight, acceleration, is_dry_l, is_dry_r,               &
    !$acc           z_intersect_top, z_intersect_bot, dz_intersect,                 &
    !$acc           H_r_plus, H_r_minus, p_intersect_bot, p_intersect_top,          &
    !$acc           H_corr1, p_inc1, flux, flux_x, flux_y, flux_z,                  &
@@ -1038,6 +1059,28 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
                end do
             end do
 
+            ! Dry-cell protection. Thickness is CLAMPED, not zeroed, to a
+            ! floor so the H_face pressure bookkeeping stays continuous
+            ! across dry_cutoff. Velocity perturbation is zeroed to keep a
+            ! dry layer's noisy velocity estimate out of the uu/vv/ww
+            ! averages; actual flux suppression comes from is_dry_l/is_dry_r
+            ! below.
+            !
+            ! is_dry_l/is_dry_r are decided ONCE here and reused below
+            ! instead of re-deriving from dpl/dpr after clamping, to avoid
+            ! dividing by btp%ope_face_ave (which can be arbitrarily small)
+            ! to land dpl/dpr exactly on the threshold.
+            is_dry_l = (ql(1,k) * btp%ope_face_ave(1,iquad,iface) < g_over_alpha(k) * inp%dry_cutoff)
+            if (is_dry_l) then
+               ql(1,k) = g_over_alpha(k) * inp%dry_cutoff
+               ql(2,k) = 0.0;  ql(3,k) = 0.0;  ql(4,k) = 0.0
+            end if
+            is_dry_r = (qr(1,k) * btp%ope_face_ave(2,iquad,iface) < g_over_alpha(k) * inp%dry_cutoff)
+            if (is_dry_r) then
+               qr(1,k) = g_over_alpha(k) * inp%dry_cutoff
+               qr(2,k) = 0.0;  qr(3,k) = 0.0;  qr(4,k) = 0.0
+            end if
+
             dpl = btp%ope_face_ave(1,iquad,iface) * ql(1,k)
             dpr = btp%ope_face_ave(2,iquad,iface) * qr(1,k)
             dp_lr_l(k) = dpl
@@ -1053,19 +1096,28 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
             uu = 0.5*(ul+ur)
             vv = 0.5*(vl+vr)
             ww = 0.5*(wl+wr)
-            udpl(k) = ul*dpl;  udpr(k) = ur*dpr
-            vdpl(k) = vl*dpl;  vdpr(k) = vr*dpr
-            wdpl(k) = wl*dpl;  wdpr(k) = wr*dpr
+
+            if (.not. is_dry_l) then
+               udpl(k) = ul*dpl;  vdpl(k) = vl*dpl;  wdpl(k) = wl*dpl
+            else
+               udpl(k) = 0.0;  vdpl(k) = 0.0;  wdpl(k) = 0.0
+            end if
+
+            if (.not. is_dry_r) then
+               udpr(k) = ur*dpr;  vdpr(k) = vr*dpr;  wdpr(k) = wr*dpr
+            else
+               udpr(k) = 0.0;  vdpr(k) = 0.0;  wdpr(k) = 0.0
+            end if
 
             un = uu*nxl + vv*nyl + ww*nzl
             if (un > 0.0) then
-               dp_flux(1,k)  = uu * dpl;  udp_flux(1,k) = uu*(ul*dpl);  vdp_flux(1,k) = uu*(vl*dpl);  wdp_flux(1,k) = uu*(wl*dpl)
-               dp_flux(2,k)  = vv * dpl;  udp_flux(2,k) = vv*(ul*dpl);  vdp_flux(2,k) = vv*(vl*dpl);  wdp_flux(2,k) = vv*(wl*dpl)
-               dp_flux(3,k)  = ww * dpl;  udp_flux(3,k) = ww*(ul*dpl);  vdp_flux(3,k) = ww*(vl*dpl);  wdp_flux(3,k) = ww*(wl*dpl)
+               dp_flux(1,k)  = uu * dpl;  udp_flux(1,k) = uu*udpl(k);  vdp_flux(1,k) = uu*vdpl(k);  wdp_flux(1,k) = uu*wdpl(k)
+               dp_flux(2,k)  = vv * dpl;  udp_flux(2,k) = vv*udpl(k);  vdp_flux(2,k) = vv*vdpl(k);  wdp_flux(2,k) = vv*wdpl(k)
+               dp_flux(3,k)  = ww * dpl;  udp_flux(3,k) = ww*udpl(k);  vdp_flux(3,k) = ww*vdpl(k);  wdp_flux(3,k) = ww*wdpl(k)
             else
-               dp_flux(1,k)  = uu * dpr;  udp_flux(1,k) = uu*(ur*dpr);  vdp_flux(1,k) = uu*(vr*dpr);  wdp_flux(1,k) = uu*(wr*dpr)
-               dp_flux(2,k)  = vv * dpr;  udp_flux(2,k) = vv*(ur*dpr);  vdp_flux(2,k) = vv*(vr*dpr);  wdp_flux(2,k) = vv*(wr*dpr)
-               dp_flux(3,k)  = ww * dpr;  udp_flux(3,k) = ww*(ur*dpr);  vdp_flux(3,k) = ww*(vr*dpr);  wdp_flux(3,k) = ww*(wr*dpr)
+               dp_flux(1,k)  = uu * dpr;  udp_flux(1,k) = uu*udpr(k);  vdp_flux(1,k) = uu*vdpr(k);  wdp_flux(1,k) = uu*wdpr(k)
+               dp_flux(2,k)  = vv * dpr;  udp_flux(2,k) = vv*udpr(k);  vdp_flux(2,k) = vv*vdpr(k);  wdp_flux(2,k) = vv*wdpr(k)
+               dp_flux(3,k)  = ww * dpr;  udp_flux(3,k) = ww*udpr(k);  vdp_flux(3,k) = ww*vdpr(k);  wdp_flux(3,k) = ww*wdpr(k)
             end if
          end do  ! k
 
@@ -1176,10 +1228,17 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
             H_face_q(k+1) = H_face_q(k+1) + H_corr1
          end do
 
-         weight = 1.0
+         ! Rescale so the layer sum matches the BTP-averaged H, skipping
+         ! layers whose H_face_q is already zero (dry) so a poorly
+         ! conditioned weight can't corrupt an already-correct zero.
          acceleration = sum(H_face_q(:))
-         if (acceleration > 0.0) weight = btp%H_face_ave(iquad,iface) / acceleration
-         H_face_q(:) = H_face_q(:) * weight
+         if (acceleration > 0.0) then
+            weight = btp%H_face_ave(iquad,iface) / acceleration
+            !$acc loop seq
+            do k = 1, nlayers_f
+               if (H_face_q(k) /= 0.0) H_face_q(k) = H_face_q(k) * weight
+            end do
+         end if
 
          wq = mf%jac_faceq(iquad,1,iface)
          !$acc loop seq

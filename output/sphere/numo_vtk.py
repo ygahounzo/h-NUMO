@@ -12,6 +12,7 @@ import re
 import numpy as np
 
 EARTH_R_KM = 6371.0
+CIRCUMFERENCE_KM = 2.0 * np.pi * EARTH_R_KM
 
 # h-NUMO's fixed-width Fortran ASCII output sometimes glues a negative
 # number directly onto the previous one with no separating space (the '-'

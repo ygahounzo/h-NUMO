@@ -281,6 +281,23 @@ module mod_barotropic_terms
                  if (has_w) wp_k = wp_k + hi * qprime_df(4, I, k)
               end do
 
+              ! Dry-cell protection, matching the volume/face BCL flux
+              ! routines. Thickness is CLAMPED (not zeroed) to a floor so
+              ! H_bclq's cumulative pprime_k bookkeeping stays continuous
+              ! across dry_cutoff; velocity is zeroed, which alone fully
+              ! suppresses this layer's flux terms (every flux(i,j) entry
+              ! below is a product of two velocity components) regardless of
+              ! the floored thickness. Without this, a phantom contribution
+              ! would leak into bcl_H/bcl_flux, then into
+              ! btp%H_ave/Qu_ave/Qv_ave (accumulated every BTP substep in
+              ! mod_rhs_btp.F90) -- exactly the consistency targets the
+              ! volume/face routines' deficit-redistribution logic spreads
+              ! onto the wet layers.
+              if (pp_k < (gravity/alpha_mlswe(k)) * inp%dry_cutoff) then
+                 pp_k = (gravity/alpha_mlswe(k)) * inp%dry_cutoff
+                 up_k = 0.0;  vp_k = 0.0;  wp_k = 0.0
+              end if
+
               pprime_k1 = pprime_k + pp_k
               H_bclq = 0.5 * alpha_mlswe(k) * (pprime_k1**2 - pprime_k**2)
               H_b = H_b + H_bclq

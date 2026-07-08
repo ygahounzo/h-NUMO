@@ -738,6 +738,26 @@ contains
                   end if
                end if
 
+               ! Dry-cell protection, matching the volume/face BCL flux
+               ! routines. Thickness is CLAMPED (not zeroed) to a floor so
+               ! H_bcl_ql/qr's cumulative pprime bookkeeping stays continuous
+               ! across dry_cutoff; velocity is zeroed, which alone fully
+               ! suppresses this layer's Qu/Qv/Qw flux terms (each is a
+               ! product of two velocity components) regardless of the
+               ! floored thickness. Without this, a phantom contribution
+               ! would leak into btp%H_face_ave/Qu_face_ave/Qv_face_ave/
+               ! Qw_face_ave -- exactly the consistency targets the volume/
+               ! face routines' deficit-redistribution logic spreads onto
+               ! the wet layers.
+               if (pkl < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                  pkl = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+                  ukl = 0.0;  vkl = 0.0;  wkl = 0.0
+               end if
+               if (pkr < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                  pkr = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+                  ukr = 0.0;  vkr = 0.0;  wkr = 0.0
+               end if
+
                ope_ppl_k  = one_eta * pkl
                ope_ppr_k  = one_eta * pkr
                uv_cross_l = ukl * vkl * ope_ppl_k

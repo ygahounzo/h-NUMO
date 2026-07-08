@@ -130,7 +130,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     !$acc end kernels
 
     ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
-    ! call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
     ! GPU: save stage result for next stage.
     !$acc kernels present(bcl%q1_df, q_df)

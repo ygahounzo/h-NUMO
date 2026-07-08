@@ -1013,6 +1013,7 @@ contains
         real :: one_over_sumuq, one_over_sumvq, one_over_sumwq
         real :: flux(3,4)
         real, parameter :: eps1 = 1.0e-20
+        logical :: is_dry
 
         integer :: npoin_q_l, npts_l, nlayers_l
         real    :: Pstress_l, Pbstress_l
@@ -1049,7 +1050,7 @@ contains
         !$acc           pbq, Hq, source_x, source_y, source_z,                          &
         !$acc           temp1, tau_wind_u, tau_wind_v, tempbot,                          &
         !$acc           weight, acceleration, weight_dp, weightq,                        &
-        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip)       &
+        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry) &
         !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l)
         do Iq = 1, npoin_q_l
 
@@ -1079,24 +1080,51 @@ contains
                 qb(3) = btp%uvb_ave(2,Iq)
                 qb(4) = btp%uvb_ave(3,Iq)
 
+                ! Dry-cell protection. Thickness (qp(1)) is CLAMPED, not
+                ! zeroed, to a floor so the H_tmp/p_tmp cumulative pressure
+                ! bookkeeping stays continuous across the threshold (a hard
+                ! zero would make H_tmp jump discontinuously as this layer
+                ! crosses dry_cutoff). Velocity/momentum are ZEROED outright
+                ! -- flux terms are velocity products, so this alone fully
+                ! suppresses a thin-and-fast layer's flux contribution
+                ! regardless of the (now-floored) thickness.
+                !
+                ! is_dry is decided ONCE here and reused below (rather than
+                ! re-derived from dp(k) after clamping) to avoid dividing by
+                ! qb(1) to land dp(k) exactly on the threshold -- qb(1) can
+                ! be arbitrarily small, and a fresh dp(k)-based check after a
+                ! non-divided clamp could disagree with this one whenever
+                ! qb(1) isn't exactly 1.
+                is_dry = (qp(1) * qb(1) < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff)
+                if (is_dry) qp(1) = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+
                 p_tmp(k+1) = p_tmp(k) + sqrt(btp%ope2_ave(Iq)) * qp(1)
                 H_tmp(k)   = 0.5*init%alpha_mlswe(k) * (p_tmp(k+1)**2 - p_tmp(k)**2)
 
                 dp(k)  = qp(1) * qb(1)
                 dpp(k) = qp(1)
-                u = qp(2) + qb(2)
-                v = qp(3) + qb(3)
-                w = qp(4) + qb(4)
 
-                udp(k) = u*dp(k);  vdp(k) = v*dp(k);  wdp(k) = w*dp(k)
+                if (is_dry) then
+                    udp(k) = 0.0;  vdp(k) = 0.0;  wdp(k) = 0.0
+                    u_udp(1,k) = 0.0;  u_udp(2,k) = 0.0;  u_udp(3,k) = 0.0
+                    v_vdp(1,k) = 0.0;  v_vdp(2,k) = 0.0;  v_vdp(3,k) = 0.0
+                    w_wdp(1,k) = 0.0;  w_wdp(2,k) = 0.0;  w_wdp(3,k) = 0.0
+                    temp_uu(k) = eps1;  temp_vv(k) = eps1;  temp_ww(k) = eps1
+                else
+                    u = qp(2) + qb(2)
+                    v = qp(3) + qb(3)
+                    w = qp(4) + qb(4)
 
-                u_udp(1,k) = u*udp(k);  u_udp(2,k) = v*udp(k);  u_udp(3,k) = w*udp(k)
-                v_vdp(1,k) = u*vdp(k);  v_vdp(2,k) = v*vdp(k);  v_vdp(3,k) = w*vdp(k)
-                w_wdp(1,k) = u*wdp(k);  w_wdp(2,k) = v*wdp(k);  w_wdp(3,k) = w*wdp(k)
+                    udp(k) = u*dp(k);  vdp(k) = v*dp(k);  wdp(k) = w*dp(k)
 
-                temp_uu(k) = abs(udp(k)) + eps1
-                temp_vv(k) = abs(vdp(k)) + eps1
-                temp_ww(k) = abs(wdp(k)) + eps1
+                    u_udp(1,k) = u*udp(k);  u_udp(2,k) = v*udp(k);  u_udp(3,k) = w*udp(k)
+                    v_vdp(1,k) = u*vdp(k);  v_vdp(2,k) = v*vdp(k);  v_vdp(3,k) = w*vdp(k)
+                    w_wdp(1,k) = u*wdp(k);  w_wdp(2,k) = v*wdp(k);  w_wdp(3,k) = w*wdp(k)
+
+                    temp_uu(k) = abs(udp(k)) + eps1
+                    temp_vv(k) = abs(vdp(k)) + eps1
+                    temp_ww(k) = abs(wdp(k)) + eps1
+                end if
 
                 pprime_temp(k+1) = pprime_temp(k) + qp(1)
             end do
@@ -1158,32 +1186,50 @@ contains
             !$acc loop seq
             do k = 1, nlayers_l
 
-                ! Distribute deficit to each layer proportionally.
-                weightq = temp_uu(k)*one_over_sumuq
-                u_udp(1,k) = u_udp(1,k) + weightq*uu_dp_deficitq(1)
-                u_udp(2,k) = u_udp(2,k) + weightq*uu_dp_deficitq(2)
-                u_udp(3,k) = u_udp(3,k) + weightq*uu_dp_deficitq(3)
+                ! Distribute deficit to each layer proportionally -- but only
+                ! among wet layers; a (near-)dry layer shouldn't absorb any of
+                ! the barotropic-consistency deficit correction.
+                if (dp(k) > (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                    weightq = temp_uu(k)*one_over_sumuq
+                    u_udp(1,k) = u_udp(1,k) + weightq*uu_dp_deficitq(1)
+                    u_udp(2,k) = u_udp(2,k) + weightq*uu_dp_deficitq(2)
+                    u_udp(3,k) = u_udp(3,k) + weightq*uu_dp_deficitq(3)
 
-                weightq = temp_vv(k)*one_over_sumvq
-                v_vdp(1,k) = v_vdp(1,k) + weightq*vv_dp_deficitq(1)
-                v_vdp(2,k) = v_vdp(2,k) + weightq*vv_dp_deficitq(2)
-                v_vdp(3,k) = v_vdp(3,k) + weightq*vv_dp_deficitq(3)
+                    weightq = temp_vv(k)*one_over_sumvq
+                    v_vdp(1,k) = v_vdp(1,k) + weightq*vv_dp_deficitq(1)
+                    v_vdp(2,k) = v_vdp(2,k) + weightq*vv_dp_deficitq(2)
+                    v_vdp(3,k) = v_vdp(3,k) + weightq*vv_dp_deficitq(3)
 
-                weightq = temp_ww(k)*one_over_sumwq
-                w_wdp(1,k) = w_wdp(1,k) + weightq*ww_dp_deficitq(1)
-                w_wdp(2,k) = w_wdp(2,k) + weightq*ww_dp_deficitq(2)
-                w_wdp(3,k) = w_wdp(3,k) + weightq*ww_dp_deficitq(3)
+                    weightq = temp_ww(k)*one_over_sumwq
+                    w_wdp(1,k) = w_wdp(1,k) + weightq*ww_dp_deficitq(1)
+                    w_wdp(2,k) = w_wdp(2,k) + weightq*ww_dp_deficitq(2)
+                    w_wdp(3,k) = w_wdp(3,k) + weightq*ww_dp_deficitq(3)
+                end if
 
-                ! Scale Hq so that sum over layers matches BTP-averaged H.
+                ! Scale Hq so that sum over layers matches BTP-averaged H
+                ! (skipped when this layer's own H_tmp is zero, i.e. dry).
                 Hq = H_tmp(k)
-                acceleration = sum(H_tmp(:))
-                if (acceleration > 0.0) Hq = Hq * (btp%H_ave(Iq)/acceleration)
+                if (Hq > 0.0) then
+                    weight = 1.0
+                    acceleration = sum(H_tmp(:))
+                    if (acceleration > 0.0) weight = btp%H_ave(Iq) / acceleration
+                    Hq = Hq * weight
+                end if
 
-                ! Mass flux: consistency correction distributes BTP mass surplus.
-                weight_dp  = abs(dp(k)) / (sum(abs(dp(:))) + eps1)
-                flux(1,1) = udp(k) + weight_dp*(btp%btp_mass_flux_ave(1,Iq) - sum(udp(:)))
-                flux(2,1) = vdp(k) + weight_dp*(btp%btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
-                flux(3,1) = wdp(k) + weight_dp*(btp%btp_mass_flux_ave(3,Iq) - sum(wdp(:)))
+                ! Mass flux: consistency correction distributes BTP mass
+                ! surplus among wet layers only; a dry layer's flux stays at
+                ! its own (zero) value rather than absorbing a share of the
+                ! surplus/deficit meant for layers that actually carry water.
+                if (dp(k) > (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                    weight_dp  = abs(dp(k)) / (sum(abs(dp(:))) + eps1)
+                    flux(1,1) = udp(k) + weight_dp*(btp%btp_mass_flux_ave(1,Iq) - sum(udp(:)))
+                    flux(2,1) = vdp(k) + weight_dp*(btp%btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
+                    flux(3,1) = wdp(k) + weight_dp*(btp%btp_mass_flux_ave(3,Iq) - sum(wdp(:)))
+                else
+                    flux(1,1) = udp(k)
+                    flux(2,1) = vdp(k)
+                    flux(3,1) = wdp(k)
+                end if
 
                 ! 3×4 momentum flux tensor: [space dir, momentum component].
                 flux(1,2) = u_udp(1,k) + Hq;  flux(2,2) = u_udp(2,k);       flux(3,2) = u_udp(3,k)
@@ -1913,6 +1959,7 @@ contains
         real, dimension(inp%nlayers) :: udpl, udpr, vdpl, vdpr, wdpl, wdpr
         real :: uu_dp_flux_deficit(3), vv_dp_flux_deficit(3), ww_dp_flux_deficit(3), dp_deficit(3)
         real, parameter :: eps1 = 1.0e-20
+        logical :: is_dry_l, is_dry_r
         integer :: il, jl, ir, jr, kl, kr, n
         real :: wq, hi, flux_xl, flux_xr, flux_yl, flux_yr, flux_zl, flux_zr, hl, hr
         real, dimension(2,inp%nlayers,b%nq) :: H_face
@@ -1948,7 +1995,7 @@ contains
         !$acc           nxl, nyl, nzl, wq, hi, uu, vv, ww, un,                                       &
         !$acc           flux_xl, flux_xr, flux_yl, flux_yr, flux_zl, flux_zr, hl, hr,                &
         !$acc           dpl, dpr, ul, ur, vl, vr, wl, wr, ope_l, ope_r, one_plus_eta_edge,           &
-        !$acc           weight, acceleration,                                                          &
+        !$acc           weight, acceleration, is_dry_l, is_dry_r,                                     &
         !$acc           H_r_plus, H_r_minus, z_intersect_top, z_intersect_bot, dz_intersect,          &
         !$acc           p_intersect_bot, p_intersect_top,                                             &
         !$acc           H_corr1, p_inc1, H_corr2, p_inc2)
@@ -2025,6 +2072,35 @@ contains
                     end if
                 end if
 
+                ! Dry-cell protection. Thickness is CLAMPED, not zeroed, to a
+                ! floor so the H_face pressure bookkeeping (built below from
+                ! z_face/p_face, which derive from ql(1,k)/qr(1,k)) stays
+                ! continuous across dry_cutoff -- a hard zero would make it
+                ! jump discontinuously as a layer crosses the threshold. The
+                ! velocity perturbation IS zeroed: it keeps a dry layer's
+                ! potentially noisy velocity estimate out of the uu/vv/ww
+                ! averages shared with the other side, while the actual flux
+                ! suppression for this layer comes from is_dry_l/is_dry_r
+                ! below.
+                !
+                ! is_dry_l/is_dry_r are decided ONCE here and reused below
+                ! (rather than re-derived from dpl/dpr after clamping) to
+                ! avoid dividing by qbl(1)/qbr(1) to land dpl/dpr exactly on
+                ! the threshold -- those can be arbitrarily small, and a
+                ! fresh dpl/dpr-based check after a non-divided clamp could
+                ! disagree with this one whenever qbl(1)/qbr(1) isn't
+                ! exactly 1.
+                is_dry_l = (ql(1,k) * qbl(1) < g_over_alpha(k) * inp%dry_cutoff)
+                if (is_dry_l) then
+                    ql(1,k) = g_over_alpha(k) * inp%dry_cutoff
+                    ql(2,k) = 0.0;  ql(3,k) = 0.0;  ql(4,k) = 0.0
+                end if
+                is_dry_r = (qr(1,k) * qbr(1) < g_over_alpha(k) * inp%dry_cutoff)
+                if (is_dry_r) then
+                    qr(1,k) = g_over_alpha(k) * inp%dry_cutoff
+                    qr(2,k) = 0.0;  qr(3,k) = 0.0;  qr(4,k) = 0.0
+                end if
+
                 dpl = qbl(1) * ql(1,k)
                 dpr = qbr(1) * qr(1,k)
                 ul  = ql(2,k) + qbl(2)
@@ -2040,40 +2116,54 @@ contains
                 uu = 0.5*(ul+ur)
                 vv = 0.5*(vl+vr)
                 ww = 0.5*(wl+wr)
-                udpl(k) = ul*dpl
-                udpr(k) = ur*dpr
-                vdpl(k) = vl*dpl
-                vdpr(k) = vr*dpr
-                wdpl(k) = wl*dpl
-                wdpr(k) = wr*dpr
+
+                if (.not. is_dry_l) then
+                    udpl(k) = ul*dpl
+                    vdpl(k) = vl*dpl
+                    wdpl(k) = wl*dpl
+                else
+                    udpl(k) = 0.0
+                    vdpl(k) = 0.0
+                    wdpl(k) = 0.0
+                end if
+
+                if (.not. is_dry_r) then
+                    udpr(k) = ur*dpr
+                    vdpr(k) = vr*dpr
+                    wdpr(k) = wr*dpr
+                else
+                    udpr(k) = 0.0
+                    vdpr(k) = 0.0
+                    wdpr(k) = 0.0
+                end if
 
                 un = uu*nxl + vv*nyl + ww*nzl
                 if(un > 0.0) then
                     dp_flux(1,k,iquad)  = uu * dpl
-                    udp_flux(1,k,iquad) = uu * (ul*dpl)
-                    vdp_flux(1,k,iquad) = uu * (vl*dpl)
-                    wdp_flux(1,k,iquad) = uu * (wl*dpl)
+                    udp_flux(1,k,iquad) = uu * udpl(k)
+                    vdp_flux(1,k,iquad) = uu * vdpl(k)
+                    wdp_flux(1,k,iquad) = uu * wdpl(k)
                     dp_flux(2,k,iquad)  = vv * dpl
-                    udp_flux(2,k,iquad) = vv * (ul*dpl)
-                    vdp_flux(2,k,iquad) = vv * (vl*dpl)
-                    wdp_flux(2,k,iquad) = vv * (wl*dpl)
+                    udp_flux(2,k,iquad) = vv * udpl(k)
+                    vdp_flux(2,k,iquad) = vv * vdpl(k)
+                    wdp_flux(2,k,iquad) = vv * wdpl(k)
                     dp_flux(3,k,iquad)  = ww * dpl
-                    udp_flux(3,k,iquad) = ww * (ul*dpl)
-                    vdp_flux(3,k,iquad) = ww * (vl*dpl)
-                    wdp_flux(3,k,iquad) = ww * (wl*dpl)
+                    udp_flux(3,k,iquad) = ww * udpl(k)
+                    vdp_flux(3,k,iquad) = ww * vdpl(k)
+                    wdp_flux(3,k,iquad) = ww * wdpl(k)
                 else
                     dp_flux(1,k,iquad)  = uu * dpr
-                    udp_flux(1,k,iquad) = uu * (ur*dpr)
-                    vdp_flux(1,k,iquad) = uu * (vr*dpr)
-                    wdp_flux(1,k,iquad) = uu * (wr*dpr)
+                    udp_flux(1,k,iquad) = uu * udpr(k)
+                    vdp_flux(1,k,iquad) = uu * vdpr(k)
+                    wdp_flux(1,k,iquad) = uu * wdpr(k)
                     dp_flux(2,k,iquad)  = vv * dpr
-                    udp_flux(2,k,iquad) = vv * (ur*dpr)
-                    vdp_flux(2,k,iquad) = vv * (vr*dpr)
-                    wdp_flux(2,k,iquad) = vv * (wr*dpr)
+                    udp_flux(2,k,iquad) = vv * udpr(k)
+                    vdp_flux(2,k,iquad) = vv * vdpr(k)
+                    wdp_flux(2,k,iquad) = vv * wdpr(k)
                     dp_flux(3,k,iquad)  = ww * dpr
-                    udp_flux(3,k,iquad) = ww * (ur*dpr)
-                    vdp_flux(3,k,iquad) = ww * (vr*dpr)
-                    wdp_flux(3,k,iquad) = ww * (wr*dpr)
+                    udp_flux(3,k,iquad) = ww * udpr(k)
+                    vdp_flux(3,k,iquad) = ww * vdpr(k)
+                    wdp_flux(3,k,iquad) = ww * wdpr(k)
                 end if
 
             end do
@@ -2227,15 +2317,24 @@ contains
                 end do
             end if
 
-            weight = 1.0
+            ! Rescale so the layer sum matches the BTP-averaged H, skipping
+            ! layers whose H_face is already zero (dry) so a poorly
+            ! conditioned weight can't corrupt an already-correct zero.
             acceleration = sum(H_face(1,:,iquad))
-            if(abs(acceleration) > eps1) weight = btp%H_face_ave(iquad,iface) / acceleration
-            H_face(1,:,iquad) = H_face(1,:,iquad) * weight
+            if (abs(acceleration) > eps1) then
+                weight = btp%H_face_ave(iquad,iface) / acceleration
+                do k = 1, nlayers_f
+                    if (H_face(1,k,iquad) /= 0.0) H_face(1,k,iquad) = H_face(1,k,iquad) * weight
+                end do
+            end if
 
-            weight = 1.0
             acceleration = sum(H_face(2,:,iquad))
-            if(abs(acceleration) > eps1) weight = btp%H_face_ave(iquad,iface) / acceleration
-            H_face(2,:,iquad) = H_face(2,:,iquad) * weight
+            if (abs(acceleration) > eps1) then
+                weight = btp%H_face_ave(iquad,iface) / acceleration
+                do k = 1, nlayers_f
+                    if (H_face(2,k,iquad) /= 0.0) H_face(2,k,iquad) = H_face(2,k,iquad) * weight
+                end do
+            end if
 
             wq = mf%jac_faceq(iquad,1,iface)
 
