@@ -24,6 +24,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
    use mod_layer_terms,      only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
    use mod_create_rhs_mlswe, only: layer_mass_rhs
+   use mod_initial_mlswe,    only: check_layer_thickness
 
    implicit none
 
@@ -100,6 +101,8 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    ! Update layer thickness
    q_df(1,:,:) = q_df(1,:,:) + inp%dt*rhs_dp
+
+   call check_layer_thickness(b, G, inp, q_df, 'ti_2levels_bcl', 0)
 
    dp_norm_inv = init%pbprime_df / sum(q_df(1,:,:), dim=2)
 

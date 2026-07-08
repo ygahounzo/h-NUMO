@@ -17,7 +17,8 @@ module mod_initial_mlswe
     public :: &
         bot_topo_derivatives, &
         interpolate_pbprime_init, wind_stress_coriolis, &
-        map_deriv, ssprk_coefficients, poslimiter, find_dry_elements
+        map_deriv, ssprk_coefficients, poslimiter, find_dry_elements, &
+        check_layer_thickness
 
     private
 
@@ -527,6 +528,69 @@ module mod_initial_mlswe
       !$acc end parallel loop
 
     end subroutine find_dry_elements
+
+    subroutine check_layer_thickness(b, G, inp, q, label, stage)
+        ! Scan q(1,:,:) element-by-element for negative or NaN dp.
+        ! The first rank that finds a bad element prints the location and aborts.
+        use mpi
+
+        implicit none
+
+        type(basis),  intent(in) :: b
+        type(grid),   intent(in) :: G
+        type(input),  intent(in) :: inp
+
+        real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(in) :: q
+        character(len=*), intent(in) :: label
+        integer,          intent(in) :: stage  ! pass 0 when there is no stage concept
+
+        integer :: k, e, n, m, I, irank, ierr
+        real    :: dp, pmin
+        logical :: has_nan
+
+        !$acc update host(q(1:1,:,:))
+
+        call mpi_comm_rank(mpi_comm_world, irank, ierr)
+
+        do k = 1, inp%nlayers
+            do e = 1, G%nelem
+                pmin    = huge(1.0)
+                has_nan = .false.
+                do m = 1, b%ngly
+                    do n = 1, b%nglx
+                        I  = G%intma(n,m,1,e)
+                        dp = q(1,I,k)
+                        if (dp /= dp) then
+                            has_nan = .true.
+                        else
+                            pmin = min(pmin, dp)
+                        end if
+                    end do
+                end do
+                if (.not. (pmin >= 0.0) .or. has_nan) then
+                    if (stage > 0) then
+                        if (has_nan) then
+                            write(*,'(A,A,", stage ",I1,": layer ",I3,", element ",I6,", NaN in dp, rank ",I4)') &
+                                'Fatal error ', trim(label), stage, k, e, irank
+                        else
+                            write(*,'(A,A,", stage ",I1,": layer ",I3,", element ",I6,", min dp = ",ES12.4,", rank ",I4)') &
+                                'Fatal error ', trim(label), stage, k, e, pmin, irank
+                        end if
+                    else
+                        if (has_nan) then
+                            write(*,'(A,A,": layer ",I3,", element ",I6,", NaN in dp, rank ",I4)') &
+                                'Fatal error ', trim(label), k, e, irank
+                        else
+                            write(*,'(A,A,": layer ",I3,", element ",I6,", min dp = ",ES12.4,", rank ",I4)') &
+                                'Fatal error ', trim(label), k, e, pmin, irank
+                        end if
+                    end if
+                    call mpi_abort(mpi_comm_world, 1, ierr)
+                end if
+            end do
+        end do
+
+    end subroutine check_layer_thickness
 
     function safe_div(n, d, altv) result(q)
         implicit none

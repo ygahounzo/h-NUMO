@@ -54,9 +54,9 @@ subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayer
     !local arrays
     real    :: x(4), y(4)
     integer :: inode(4)
-    integer :: ie, i, j, k, m, ii, jj, kk, il
+    integer :: ie, i, j, k, m, ii, jj
     integer :: npoints_per_cell
-    real :: dx, dy, ub, vb, uk, vk
+    real :: dx, dy, ub, vb, uk, vk, dp_b
 
     npoints_per_cell = 4 !if always 8, then no issue
 
@@ -73,13 +73,12 @@ subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayer
 
                 ii = min(i+1,b%nglx)
                 jj = min(j+1,b%ngly)
-                kk = 1
                 inode(1) = G%intma( i, j,1,ie)
                 inode(2) = G%intma(ii, j,1,ie)
                 inode(3) = G%intma( i,jj,1,ie)
                 inode(4) = G%intma(ii,jj,1,ie)
 
-                ub = 0.0; vb = 0.0
+                ub = 0.0; vb = 0.0; dp_b = 0.0
 
                 ! Barotropic
                 do m=1,npoints_per_cell
@@ -87,19 +86,27 @@ subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayer
                     x(m) = G%coord(1,inode(m))
                     y(m) = G%coord(2,inode(m))
 
-                    ub = ub + qb(3,inode(m)) / npoints_per_cell
-                    vb = vb + qb(4,inode(m)) / npoints_per_cell
+                    dp_b = dp_b + qb(1,inode(m)) / npoints_per_cell
+                    ub   = ub   + qb(3,inode(m)) / npoints_per_cell
+                    vb   = vb   + qb(4,inode(m)) / npoints_per_cell
 
                 end do !m
+
+                ! qb(3,:) and qb(4,:) are pressure-weighted momentum (u*dp, v*dp);
+                ! divide by pressure thickness dp to recover velocity.
+                if (dp_b > 0.0) then
+                    ub = ub / dp_b
+                    vb = vb / dp_b
+                end if
 
                 dx = maxval(x(:)) - minval(x(:))
                 dy = maxval(y(:)) - minval(y(:))
 
-                min_dx = min(min_dx,dx)
-                min_dy = min(min_dy,dy)
+                min_dx = min(min_dx, dx)
+                min_dy = min(min_dy, dy)
 
-                cfl_b = max(cfl_b, abs(ub)*dt_btp/min_dx)
-                cfl_b = max(cfl_b, abs(vb)*dt_btp/min_dy)
+                cfl_b = max(cfl_b, abs(ub)*dt_btp/dx)
+                cfl_b = max(cfl_b, abs(vb)*dt_btp/dy)
 
                 ! Baroclinic
                 do k = 1,nlayers
@@ -107,17 +114,12 @@ subroutine courant_cube_mlswe(G, b, cfl, cfl_b, q_layers, qb, dt, dt_btp, nlayer
                     uk = 0.0; vk = 0.0
 
                     do m = 1,npoints_per_cell
-
-                        x(m) = G%coord(1,inode(m))
-                        y(m) = G%coord(2,inode(m))
-
                         uk = uk + q_layers(2,inode(m),k) / npoints_per_cell
                         vk = vk + q_layers(3,inode(m),k) / npoints_per_cell
-
                     end do !m
 
-                    cfl = max(abs(uk)*dt/min_dx, cfl)
-                    cfl = max(abs(vk)*dt/min_dy, cfl)
+                    cfl = max(abs(uk)*dt/dx, cfl)
+                    cfl = max(abs(vk)*dt/dy, cfl)
 
                 end do !k
             end do !i

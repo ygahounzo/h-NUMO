@@ -31,7 +31,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter
+  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
 
   implicit none
 
@@ -131,6 +131,8 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
     ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+
+    call check_layer_thickness(b, G, inp, q_df, 'ti_rk3_bcl', ik)
 
     ! GPU: save stage result for next stage.
     !$acc kernels present(bcl%q1_df, q_df)
