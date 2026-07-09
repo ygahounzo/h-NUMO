@@ -438,13 +438,15 @@ contains
       real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
       real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
 
-      integer :: k, I, npoin_l, nlayers_l
-      real    :: ope
+      integer :: k, I, e, n, m, nelem_l, nlayers_l, nglx_l, ngly_l
+      real    :: ope, ub_btp, vb_btp, wb_btp
       real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
       logical :: has_w
 
-      npoin_l   = G%npoin
+      nelem_l   = G%nelem
       nlayers_l = inp%nlayers
+      nglx_l    = b%nglx
+      ngly_l    = b%ngly
       has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data create(uv_df)
@@ -455,26 +457,48 @@ contains
 
       call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
-      ! Gang over nodes: accumulate ope = sum_k(h_k)/H0 sequentially, then
-      ! write qprime.  No cross-node dependency — no atomics needed.
+      ! Element-parallel: one gang per element; uses dry_flg(e,k) to skip fully-dry
+      ! layers (left at the qprime_df=0.0 init above), and guards the qb_df(1,I)
+      ! divisions the same way extract_velocity's Part 2 barotropic correction does.
+      ! Shared boundary nodes may be written by multiple gangs — same
+      ! non-determinism as extract_velocity.
       !$acc parallel loop gang &
-      !$acc    present(qprime_df, q_df, qb_df, uv_df, init%pbprime_df) &
-      !$acc    firstprivate(npoin_l, nlayers_l, has_w) private(ope)
-      do I = 1, npoin_l
-          ope = 0.0
+      !$acc    present(G%intma, qprime_df, q_df, qb_df, uv_df, init%pbprime_df, bcl%dry_flg) &
+      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, has_w) &
+      !$acc    private(ope, ub_btp, vb_btp, wb_btp)
+      do e = 1, nelem_l
+        !$acc loop seq
+        do m = 1, ngly_l
           !$acc loop seq
-          do k = 1, nlayers_l
-              ope = ope + q_df(1,I,k)
-          end do
-          ope = ope / init%pbprime_df(I)
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
 
-          !$acc loop seq
-          do k = 1, nlayers_l
-              qprime_df(1,I,k) = q_df(1,I,k) / ope
-              qprime_df(2,I,k) = uv_df(1,I,k) - qb_df(3,I)/qb_df(1,I)
-              qprime_df(3,I,k) = uv_df(2,I,k) - qb_df(4,I)/qb_df(1,I)
-              if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - qb_df(5,I)/qb_df(1,I)
+            ope = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+                if (bcl%dry_flg(e, k) == 2) cycle
+                ope = ope + q_df(1,I,k)
+            end do
+            ope = ope / init%pbprime_df(I)
+
+            if (qb_df(1,I) > 0.0) then
+              ub_btp = qb_df(3,I) / qb_df(1,I)
+              vb_btp = qb_df(4,I) / qb_df(1,I)
+              if (has_w) wb_btp = qb_df(5,I) / qb_df(1,I)
+            else
+              ub_btp = 0.0;  vb_btp = 0.0;  wb_btp = 0.0
+            end if
+
+            !$acc loop seq
+            do k = 1, nlayers_l
+                if (bcl%dry_flg(e, k) == 2) cycle
+                if (ope > 0.0) qprime_df(1,I,k) = q_df(1,I,k) / ope
+                qprime_df(2,I,k) = uv_df(1,I,k) - ub_btp
+                qprime_df(3,I,k) = uv_df(2,I,k) - vb_btp
+                if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - wb_btp
+            end do
           end do
+        end do
       end do
       !$acc end parallel loop
 

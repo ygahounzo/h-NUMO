@@ -107,7 +107,8 @@ contains
       !$acc                   init%qb_df)
       !$acc enter data copyin(init%alpha_mlswe, init%pbprime_df_face,          &
       !$acc                   init%zbot_df, init%tau_wind_df, init%zbot_face,  &
-      !$acc                   init%grad_zbot_quad)
+      !$acc                   init%grad_zbot_quad,                             &
+      !$acc                   init%coriolis_3d_quad, init%z_interface_initial)
       !$acc enter data copyin(init%tau_wind, init%coriolis_df,                 &
       !$acc                   init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
       !$acc                   init%a_bcl, init%b_bcl)

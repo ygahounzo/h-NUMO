@@ -284,6 +284,7 @@ contains
       use mod_variables, only: btp_CS
       use mod_input,     only: input
       use mod_tensor,    only: tensor_CS
+      use mod_initial_mlswe, only: check_btp_thickness
 
       implicit none
 
@@ -329,6 +330,11 @@ contains
       !$acc kernels
       rhs_btp = 0.0
       !$acc end kernels
+
+      ! Abort with element/rank diagnostics rather than SIGFPE-ing on ub=udp/dp
+      ! below if the barotropic depth has gone negative or NaN (e.g. interface
+      ! outcropping near steep topography feeding through into qb_df).
+      call check_btp_thickness(b, G, inp, qb_df, 'create_rhs_btp_volume_qdf_qp')
 
       !$acc parallel loop gang                                                       &
       !$acc   private(dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb,       &

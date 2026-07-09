@@ -239,6 +239,53 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
 
       z_interface(:,nlayers+1) = zbot_df(:)
 
+   case ('sphere_mountain') ! Williamson et al. (1992), Test 5: single-layer zonal
+                            ! flow over an isolated mountain. Standard, widely
+                            ! validated shallow-water benchmark, used here as a
+                            ! single-layer baseline for the two-layer
+                            ! 'mountain_2layer' case below (same wind field,
+                            ! height balance, and mountain). Requires nlayers=1.
+
+      twopi = 2.0*pi
+      pio2  = pi/2.0
+      h0    = 5960.0
+      u0    = 20.0
+      hs0   = 2000.0
+      rs    = pi/9.0
+      olonc = 3.0*pi/2.0
+      olatc = pi/6.0
+      rlat  = alpha  ! alpha=0: standard (non-rotated) test 5 configuration
+
+      alpha_mlswe(1) = 1.0/1000.0
+
+      do I1 = 1, npoin
+         x = G%coord(1,I1)
+         y = G%coord(2,I1)
+         z = G%coord(3,I1)
+         olon = atan2(y, x+atol)
+         olat = asin(z/earth_radius)
+
+         if (olon < 0.0)    olon = olon + twopi
+         if (olon > twopi)  olon = olon - twopi
+         if (olat < -pi)    olat = olat + pi
+         if (olat >  pi)    olat = olat - pi
+
+         r = sqrt(min(rs*rs, (olon-olonc)**2 + (olat-olatc)**2))
+         zbot_df(I1) = -h0 + hs0*(1.0 - r/rs)
+
+         z_interface(I1,1) = -((earth_radius*omega*u0 + 0.5*u0**2) * &
+              (-cos(olon)*cos(olat)*sin(alpha) + sin(olat)*cos(alpha))**2) / gravity
+
+         u = +u0*(cos(olat)*cos(alpha) + sin(olat)*cos(olon)*sin(alpha))
+         v = -u0*sin(olon)*sin(alpha)
+
+         u_df(I1,:) = -u*sin(olon) - v*sin(olat)*cos(olon)
+         v_df(I1,:) = +u*cos(olon) - v*sin(olat)*sin(olon)
+         w_df(I1,:) = +v*cos(olat)
+      end do
+
+      z_interface(:,nlayers+1) = zbot_df(:)
+
    case ('mountain_2layer') ! Chen (2025, QJRMS, 10.1002/qj.4994) Sec 5.3: two-layer
                              ! zonal flow over mountain topography, adapting
                              ! Williamson et al. (1992) test #5 to two density
@@ -259,7 +306,8 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       pio2  = pi/2.0
       h0    = 5960.0
       u0    = 20.0
-      hs0   = 2000.0
+      ! hs0   = 2000.0
+      hs0   = 0.0
       rs    = pi/9.0
       olonc = 3.0*pi/2.0
       olatc = pi/6.0
@@ -271,6 +319,7 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       ! Flat layer interface at 3500 m above the flat sea floor, expressed in
       ! h-NUMO's zbot_df-relative height convention (sea floor at -h0).
       z_interface(:,2) = 3500.0 - h0
+      ! z_interface(:,2) = 4000.0 - h0
 
       do I1 = 1, npoin
          x = G%coord(1,I1)

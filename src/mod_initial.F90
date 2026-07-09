@@ -76,7 +76,7 @@ module mod_initial
         real x, y, z, xf, yf, zf, radius
         real lat, lon, press, temp, phis, ps
         real pb, tb, pi_f, pi_b, zradius
-        integer :: nlayers, npoin, npoin_q, npts, nface, kstages, nq
+        integer :: nlayers, npoin, npoin_q, npts, nface, kstages, nq, k
 
         !Define the number of prognostic variables
         init%nvar = 5 !rho,u,v,w,theta
@@ -150,6 +150,13 @@ module mod_initial
                 call initial_conditions_sphere(init%q_df, init%pbprime_df, init%qb_df, &
                     init%alpha_mlswe, init%pbprime_df_face, init%zbot_df, init%kvector, &
                     nlayers, b, G, inp, mf)
+                ! Build reference interface heights for APE stabilization.
+                ! z_interface_initial(:,k) = bottom of layer k-1 = top of layer k.
+                init%z_interface_initial(:, nlayers+1) = init%zbot_df(:)
+                do k = nlayers, 1, -1
+                    init%z_interface_initial(:, k) = init%z_interface_initial(:, k+1) + &
+                        (init%alpha_mlswe(k)/gravity) * init%q_df(1,:,k)
+                end do
             else
                 call initial_conditions(inp, G, b, mf, init)
             end if
