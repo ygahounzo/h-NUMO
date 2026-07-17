@@ -156,6 +156,7 @@ contains
       !$acc enter data copyin(bcl%qprime_df, bcl%dpprime_visc, bcl%dpp_graduvw, &
       !$acc                   bcl%dpp_uvp)
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
+      !$acc enter data create(bcl%lap_z_df)
 
       ! mod_ref
       ! recv_data is a receive buffer: allocate on device, no initial copy needed.

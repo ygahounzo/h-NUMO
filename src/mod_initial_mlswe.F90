@@ -589,7 +589,7 @@ module mod_initial_mlswe
                     do n = 1, nglx_l
                         I = G%intma(n,m,1,e)
                         qb_df(1,I) = threshold
-                        qb_df(2,I) = 0.0 !threshold - pbprime_df(I)
+                        qb_df(2,I) = threshold - pbprime_df(I)
                         qb_df(3,I) = 0.0
                         qb_df(4,I) = 0.0
                         if (has_w) qb_df(5,I) = 0.0

@@ -10,7 +10,7 @@ module mod_laplacian_quad
 
    implicit none
 
-   public :: bcl_create_laplacian, btp_create_laplacian
+   public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z
 
 contains
 
@@ -1054,5 +1054,126 @@ contains
       !$acc end data
 
    end subroutine bcl_create_rhs_laplacian_flux
+
+   ! ===========================================================================
+   !  compute_bcl_lap_z
+   !
+   !  Computes the element-local Laplacian of the layer-interface height z_k
+   !  at every DOF node for internal interfaces k = 2..nlayers.  The result
+   !  is stored in bcl%lap_z_df(I, k) and later used by the Chen (2025) APE
+   !  stabilization in create_rhs_dynamics_volume_bcl_sphere.
+   !
+   !  Method: two sequential element-local gradient passes with the
+   !  DG derivative matrices dpsidx_df / dpsidy_df / dpsidz_df:
+   !    1. gz(d, ip0) = Σ_ip  dpsid_df(ip, J_ip0) × z_k(J_ip)   = ∇z_k|_{J_ip0}
+   !    2. lap_z(ip0) = Σ_ip  dpsid_df(ip, J_ip0) × gz(d, ip)   = ∇²z_k|_{J_ip0}
+   !  Both sums run over the npts canonical nodes of the element.
+   !
+   !  Because DG nodes are element-local (no shared DOFs), the scatter to the
+   !  global lap_z_df array needs no atomics.
+   !
+   !  CPU-only (no OpenACC): call !$acc update device(bcl%lap_z_df) afterwards.
+   ! ===========================================================================
+   subroutine compute_bcl_lap_z(G, inp, b, init, btp, tsp, qprime_df, lap_z_df)
+
+      use mod_grid,      only: grid
+      use mod_input,     only: input
+      use mod_basis,     only: basis
+      use mod_initial,   only: initial
+      use mod_variables, only: btp_CS
+      use mod_tensor,    only: tensor_CS
+      use mod_constants, only: gravity
+
+      implicit none
+
+      type(grid),      intent(in)  :: G
+      type(input),     intent(in)  :: inp
+      type(basis),     intent(in)  :: b
+      type(initial),   intent(in)  :: init
+      type(btp_CS),    intent(in)  :: btp
+      type(tensor_CS), intent(in)  :: tsp
+      real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
+      real, dimension(G%npoin, inp%nlayers+1),              intent(out) :: lap_z_df
+
+      integer :: ie, ip0, ip, k
+      integer :: J_ip0, J_ip
+      integer :: npts_l, nelem_l, nlayers_l
+      real    :: z_loc(b%npts, inp%nlayers+1)
+      real    :: gz_x(b%npts), gz_y(b%npts), gz_z(b%npts)
+      real    :: lap_z_loc(b%npts)
+      real    :: dhdx, dhdy, dhdz
+      logical :: has_w
+
+      has_w     = (inp%nvar_bcl == 4)
+      npts_l    = b%npts
+      nelem_l   = G%nelem
+      nlayers_l = inp%nlayers
+
+      lap_z_df(:,:) = 0.0
+
+      do ie = 1, nelem_l
+
+         ! Step 1: gather z_k at all local nodes for k = 2..nlayers
+         do ip = 1, npts_l
+            J_ip = tsp%index_df_elt(ip, ie)
+            z_loc(ip, nlayers_l+1) = init%zbot_df(J_ip)
+            do k = nlayers_l, 1, -1
+               z_loc(ip, k) = z_loc(ip, k+1) + &
+                  (init%alpha_mlswe(k)/gravity) * sqrt(btp%ope2_ave_df(J_ip)) * qprime_df(1, J_ip, k)
+            end do
+         end do
+
+         ! Steps 2–3: for each internal interface k, compute the element-local
+         ! Laplacian at each node ip0 via two gradient applications.
+         do k = 2, nlayers_l
+
+            ! Step 2: gradient of z_k at each local node ip0
+            do ip0 = 1, npts_l
+               J_ip0  = tsp%index_df_elt(ip0, ie)
+               gz_x(ip0) = 0.0
+               gz_y(ip0) = 0.0
+               if (has_w) gz_z(ip0) = 0.0
+               do ip = 1, npts_l
+                  dhdx = tsp%dpsidx_df(ip, J_ip0)
+                  dhdy = tsp%dpsidy_df(ip, J_ip0)
+                  if (has_w) then
+                     dhdx = dhdx + tsp%dpsidz_df_x(ip, J_ip0)
+                     dhdy = dhdy + tsp%dpsidz_df_y(ip, J_ip0)
+                     dhdz = tsp%dpsidz_df(ip, J_ip0) + tsp%dpsidz_df_z(ip, J_ip0)
+                  end if
+                  gz_x(ip0) = gz_x(ip0) + dhdx * z_loc(ip, k)
+                  gz_y(ip0) = gz_y(ip0) + dhdy * z_loc(ip, k)
+                  if (has_w) gz_z(ip0) = gz_z(ip0) + dhdz * z_loc(ip, k)
+               end do
+            end do
+
+            ! Step 3: divergence of gradient at each local node ip0 = ∇²z_k
+            do ip0 = 1, npts_l
+               J_ip0      = tsp%index_df_elt(ip0, ie)
+               lap_z_loc(ip0) = 0.0
+               do ip = 1, npts_l
+                  dhdx = tsp%dpsidx_df(ip, J_ip0)
+                  dhdy = tsp%dpsidy_df(ip, J_ip0)
+                  if (has_w) then
+                     dhdx = dhdx + tsp%dpsidz_df_x(ip, J_ip0)
+                     dhdy = dhdy + tsp%dpsidz_df_y(ip, J_ip0)
+                     dhdz = tsp%dpsidz_df(ip, J_ip0) + tsp%dpsidz_df_z(ip, J_ip0)
+                  end if
+                  lap_z_loc(ip0) = lap_z_loc(ip0) + dhdx*gz_x(ip) + dhdy*gz_y(ip)
+                  if (has_w) lap_z_loc(ip0) = lap_z_loc(ip0) + dhdz*gz_z(ip)
+               end do
+            end do
+
+            ! Step 4: scatter (no atomics — each DOF belongs to exactly one element)
+            do ip0 = 1, npts_l
+               J_ip0 = tsp%index_df_elt(ip0, ie)
+               lap_z_df(J_ip0, k) = lap_z_loc(ip0)
+            end do
+
+         end do ! k
+
+      end do ! ie
+
+   end subroutine compute_bcl_lap_z
 
 end module mod_laplacian_quad

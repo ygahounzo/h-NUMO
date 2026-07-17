@@ -1001,7 +1001,9 @@ contains
         real :: Hq, source_x, source_y, source_z, Pstress, Pbstress
         integer :: k, I, Iq, ip
         real :: pprime_temp(inp%nlayers+1), z(inp%nlayers+1), p_tmp(inp%nlayers+1)
-        real :: z_q(inp%nlayers+1), z_ref_q(inp%nlayers+1), p_APE(inp%nlayers+1)
+        ! grad_lapz(d,k): gradient of ∇²z_k in direction d at quadrature point Iq.
+        ! Used by Chen (2025) APE; k=1 and k=nlayers+1 stay 0 (no APE at boundaries).
+        real :: grad_lapz(3, inp%nlayers+1)
         real :: tempbot, weight, acceleration, pbq
         real :: qp(4), qb(4)
         real :: dp(inp%nlayers), dpp(inp%nlayers), udp(inp%nlayers), vdp(inp%nlayers), wdp(inp%nlayers)
@@ -1033,17 +1035,17 @@ contains
         !$acc              qprime_df, rhs,                                                &
         !$acc              init%alpha_mlswe, init%zbot_df, init%pbprime_df,              &
         !$acc              init%grad_zbot_quad, init%tau_wind, init%coriolis_3d_quad,    &
-        !$acc              init%z_interface_initial,                                      &
         !$acc              btp%ope_ave, btp%uvb_ave, btp%ope2_ave, btp%ope2_ave_df,     &
         !$acc              btp%H_ave, btp%btp_mass_flux_ave,                             &
-        !$acc              btp%Qu_ave, btp%Qv_ave, btp%Qw_ave, btp%tau_bot_ave)
+        !$acc              btp%Qu_ave, btp%Qv_ave, btp%Qw_ave, btp%tau_bot_ave,         &
+        !$acc              bcl%lap_z_df)
 
         !$acc kernels present(rhs)
         rhs = 0.0
         !$acc end kernels
 
         !$acc parallel loop gang                                                          &
-        !$acc   private(pprime_temp, z, p_tmp, z_q, z_ref_q, p_APE, qp, qb, gradz, flux,  &
+        !$acc   private(pprime_temp, z, p_tmp, grad_lapz, qp, qb, gradz, flux,           &
         !$acc           dp, dpp, udp, vdp, wdp, H_tmp,                                  &
         !$acc           temp_uu, temp_vv, temp_ww,                                       &
         !$acc           u_udp, v_vdp, w_wdp,                                             &
@@ -1142,7 +1144,7 @@ contains
             !  3D gradient of layer interface elevations z_k.
             !  Sphere curvature corrections: dh/dx_i += dpsidz * dz/dx_i.
             ! ---------------------------------------------------------------
-            gradz(:,:) = 0.0;  z_q(:) = 0.0;  z_ref_q(:) = 0.0;  pbq = 0.0
+            gradz(:,:) = 0.0;  grad_lapz(:,:) = 0.0;  pbq = 0.0
             !$acc loop seq
             do ip = 1, npts_l
                 I = tsp%indexq(ip,Iq)
@@ -1154,27 +1156,26 @@ contains
                     gradz(1,k) = gradz(1,k) + (tsp%dpsidx(ip,Iq)+tsp%dpsidz_x(ip,Iq))*z(k)
                     gradz(2,k) = gradz(2,k) + (tsp%dpsidy(ip,Iq)+tsp%dpsidz_y(ip,Iq))*z(k)
                     gradz(3,k) = gradz(3,k) + (tsp%dpsidz(ip,Iq)+tsp%dpsidz_z(ip,Iq))*z(k)
-                    z_q(k)     = z_q(k)     + tsp%psih(ip,Iq)*z(k)
-                    z_ref_q(k) = z_ref_q(k) + tsp%psih(ip,Iq)*init%z_interface_initial(I,k)
                 end do
+                ! Chen (2025) APE: ∇(∇²z_k) at this quad point for internal interfaces.
+                ! bcl%lap_z_df(I,k) = ∇²z_k at DOF node I (computed in mod_splitting.F90,
+                ! uploaded to GPU before bcl_rhs; zero for k=1 and k=nlayers+1).
+                if (inp%c_APE > 0.0) then
+                    !$acc loop seq
+                    do k = 2, nlayers_l
+                        grad_lapz(1,k) = grad_lapz(1,k) + &
+                            (tsp%dpsidx(ip,Iq)+tsp%dpsidz_x(ip,Iq))*bcl%lap_z_df(I,k)
+                        grad_lapz(2,k) = grad_lapz(2,k) + &
+                            (tsp%dpsidy(ip,Iq)+tsp%dpsidz_y(ip,Iq))*bcl%lap_z_df(I,k)
+                        grad_lapz(3,k) = grad_lapz(3,k) + &
+                            (tsp%dpsidz(ip,Iq)+tsp%dpsidz_z(ip,Iq))*bcl%lap_z_df(I,k)
+                    end do
+                end if
                 gradz(1,nlayers_l+1) = init%grad_zbot_quad(1,Iq)
                 gradz(2,nlayers_l+1) = init%grad_zbot_quad(2,Iq)
                 gradz(3,nlayers_l+1) = init%grad_zbot_quad(3,Iq)
                 pbq = pbq + tsp%psih(ip,Iq)*init%pbprime_df(I)
             end do
-
-            ! Quadratic APE (Chen 2025): p_APE(k) = c_APE*g*Δρ*Δz_k at interface k.
-            ! Free surface (k=1) and seafloor (k=nlayers+1) are not stabilized.
-            p_APE(1) = 0.0
-            p_APE(nlayers_l+1) = 0.0
-            if (inp%c_APE > 0.0) then
-                !$acc loop seq
-                do k = 2, nlayers_l
-                    p_APE(k) = inp%c_APE * gravity * &
-                               (1.0/init%alpha_mlswe(k) - 1.0/init%alpha_mlswe(k-1)) * &
-                               (z_q(k) - z_ref_q(k))
-                end do
-            end if
 
             ! ---------------------------------------------------------------
             !  Consistency deficit corrections for all three flux tensors.
@@ -1273,12 +1274,14 @@ contains
                            + gravity*(p_tmp(k)*gradz(3,k) - p_tmp(k+1)*gradz(3,k+1)) &
                            - gravity*tempbot*btp%tau_bot_ave(3,Iq)
 
-                ! Quadratic APE restoring force (Chen 2025, quadratic gradient form).
-                ! p_APE(k) = c_APE*g*Δρ*(z_q(k) - z_ref_q(k)) precomputed above.
+                ! Chen (2025) APE biharmonic stabilization: −c_APE × g × ∇(∇²z_k).
+                ! Negative sign is restoring: depression in z_k → positive ∇²z_k
+                ! → divergent correction in layer k, convergent in layer k+1 → fills hole.
+                ! grad_lapz(:,1) = grad_lapz(:,nlayers+1) = 0 (no APE at boundaries).
                 if (inp%c_APE > 0.0) then
-                    source_x = source_x + gravity*(p_APE(k)*gradz(1,k) - p_APE(k+1)*gradz(1,k+1))
-                    source_y = source_y + gravity*(p_APE(k)*gradz(2,k) - p_APE(k+1)*gradz(2,k+1))
-                    source_z = source_z + gravity*(p_APE(k)*gradz(3,k) - p_APE(k+1)*gradz(3,k+1))
+                    source_x = source_x - gravity*inp%c_APE*(grad_lapz(1,k) - grad_lapz(1,k+1))
+                    source_y = source_y - gravity*inp%c_APE*(grad_lapz(2,k) - grad_lapz(2,k+1))
+                    source_z = source_z - gravity*inp%c_APE*(grad_lapz(3,k) - grad_lapz(3,k+1))
                 end if
 
                 !$acc loop seq

@@ -78,6 +78,11 @@ module mod_variables
       real, dimension(:,:,:), allocatable :: q_df       ! (nvar_bcl,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: qprime_df  ! (nvar_bcl,npoin,nlayers)
 
+      ! Element-local Laplacian of interface height z_k (Chen 2025 APE stabilization).
+      ! lap_z_df(I,k) = ∇²z_k at DOF node I, for k=2..nlayers (internal interfaces).
+      ! k=1 (free surface) and k=nlayers+1 (bottom) are zero by convention.
+      real, dimension(:,:), allocatable :: lap_z_df  ! (npoin, nlayers+1)
+
       ! RHS buffers (persistent device allocations)
       real, dimension(:,:,:), allocatable :: rhs_bcl      ! (nvar_bcl,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: rhs_visc_bcl ! (nvar_bcl-1,npoin,nlayers): u,v[,w]
@@ -211,6 +216,7 @@ contains
             bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
             bcl%q_df,                 bcl%qprime_df,                     &
             bcl%dpprime_visc,         bcl%dpprime_visc_q,                 &
+            bcl%lap_z_df,                                                  &
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
             bcl%uv_df,                bcl%qbp_df,                        &
@@ -227,6 +233,7 @@ contains
          bcl%qprime_df(inp%nvar_bcl,G%npoin,inp%nlayers),                         &
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
+         bcl%lap_z_df(G%npoin,inp%nlayers+1),                               &
          bcl%rhs_bcl(inp%nvar_bcl,G%npoin,inp%nlayers),                          &
          bcl%rhs_visc_bcl(inp%nvar_bcl-1,G%npoin,inp%nlayers),                  &
          bcl%q0_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
@@ -236,6 +243,7 @@ contains
          bcl%dry_flg(G%nelem,inp%nlayers),                                        &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
+      bcl%lap_z_df = 0.0
 
    end subroutine mod_allocate_mlswe
 

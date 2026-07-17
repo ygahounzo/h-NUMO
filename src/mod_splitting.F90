@@ -303,7 +303,7 @@ contains
     subroutine create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
         use mod_create_rhs_mlswe, only: bcl_rhs
-        use mod_laplacian_quad,   only: bcl_create_laplacian
+        use mod_laplacian_quad,   only: bcl_create_laplacian, compute_bcl_lap_z
 
         implicit none
 
@@ -335,6 +335,13 @@ contains
         !$acc end kernels
 
         if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
+
+        ! Chen (2025) APE: compute element-local ∇²z_k on CPU, then upload to GPU.
+        if (inp%c_APE > 0.0) then
+            !$acc update host(btp%ope2_ave_df, qprime_df)
+            call compute_bcl_lap_z(G, inp, b, init, btp, tsp, qprime_df, bcl%lap_z_df)
+            !$acc update device(bcl%lap_z_df)
+        end if
 
         call bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
         ! rhs stays on device; apply mass scaling and viscous term on GPU.
