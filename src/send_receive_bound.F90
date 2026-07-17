@@ -1279,7 +1279,7 @@ subroutine pack_and_send_df_btp(G, inp, b, mf, init, par, ref, send_data_dg, rec
 end subroutine pack_and_send_df_btp
 
 subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
-   q, btp_dpp_graduv, pbprime_visc, nvarb, &
+   q, btp_dpp_graduv, pbprime_visc, Uk, nvarb, nvel, &
    nreq, ireq, status)
 
    use mod_basis,         only: basis
@@ -1300,10 +1300,12 @@ subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
    type(parallel_CS), intent(in)    :: par
    type(mref),        intent(inout) :: ref
    integer,           intent(in)    :: nvarb
+   integer,           intent(in)    :: nvel
 
    real,    intent(in)  :: q(nvarb, G%npoin)
    real,    intent(in)  :: btp_dpp_graduv(nvarb, G%npoin)
    real,    intent(in)  :: pbprime_visc(G%npoin)
+   real,    intent(in)  :: Uk(nvel, G%npoin)
    integer, intent(out) :: nreq
    integer, intent(out) :: ireq(2*par%num_nbh)
    integer, intent(out) :: status(mpi_status_size, 2*par%num_nbh)
@@ -1311,27 +1313,30 @@ subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
    integer :: kk, inode, iface, el, ip, ioff, ivar
    integer :: jj, ib, inbh, nqp, istart, iend, idest, ierr, i
    integer :: ngl_f, nboun_valid_f, nvarb_lap_f
-   integer :: off_pbprime, off_graduv, off_visc
+   integer :: off_pbprime, off_graduv, off_visc, off_vel
 
    ngl_f         = b%ngl
    nboun_valid_f = ref%nboun_valid
    nvarb_lap_f   = ref%nbtp_var_lap
 
-   ! Packed layout per node: [1..nvarb]=q, [off_pbprime]=pbprime_df,
-   ! [off_graduv+1..off_graduv+nvarb]=btp_dpp_graduv, [off_visc]=pbprime_visc.
-   ! Total width must equal ref%nbtp_var_lap (= 2*nvarb + 2);
-   ! unpack_data_dg_general_lap must be read back with the same width.
+   ! Packed layout per node (nvarb_lap_f = 2*nvarb + 2 + nvel slots):
+   !   [1..nvarb]           = q (graduv, local ∇ū)
+   !   [nvarb+1]            = pbprime_df (init reference thickness)
+   !   [nvarb+2..2*nvarb+1] = btp_dpp_graduv (frozen p̄_b * ∇ū_BTP)
+   !   [2*nvarb+2]          = pbprime_visc (current p̄_b, for SIP dp averaging)
+   !   [2*nvarb+3..]        = Uk (BTP velocity ū, for SIP [u] jump)
    off_pbprime = nvarb + 1
    off_graduv  = nvarb + 1
    off_visc    = 2*nvarb + 2
+   off_vel     = 2*nvarb + 2
 
    ! GPU packing: one gang per boundary face, one vector lane per node.
    !$acc parallel loop gang private(iface, el)                                      &
    !$acc    present(G%face, G%intma, mf%imapl,                                     &
-   !$acc            init%pbprime_df, q, btp_dpp_graduv, pbprime_visc,              &
+   !$acc            init%pbprime_df, q, btp_dpp_graduv, pbprime_visc, Uk,          &
    !$acc            ref%send_data_dg_lap, ref%face_pack_list)                       &
-   !$acc    firstprivate(nvarb, ngl_f, nboun_valid_f, nvarb_lap_f, &
-   !$acc                 off_pbprime, off_graduv, off_visc)
+   !$acc    firstprivate(nvarb, nvel, ngl_f, nboun_valid_f, nvarb_lap_f,           &
+   !$acc                 off_pbprime, off_graduv, off_visc, off_vel)
    do kk = 1, nboun_valid_f
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
@@ -1351,6 +1356,10 @@ subroutine pack_and_send_df_btp_lap(G, b, mf, init, par, ref,              &
             ref%send_data_dg_lap(ioff+off_graduv+ivar) = btp_dpp_graduv(ivar, ip)
          end do
          ref%send_data_dg_lap(ioff+off_visc) = pbprime_visc(ip)
+         !$acc loop seq
+         do ivar = 1, nvel
+            ref%send_data_dg_lap(ioff+off_vel+ivar) = Uk(ivar, ip)
+         end do
       end do
    end do
    !$acc end parallel loop
@@ -1666,7 +1675,7 @@ subroutine pack_and_send_df_bcl(G, inp, b, mf, par, ref, send_data, recv_data, q
 end subroutine pack_and_send_df_bcl
 
 subroutine pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, send_data, recv_data, &
-                                     dpp_graduv, dpprime_visc, nreq, ireq, status)
+                                     dpp_graduv, dpprime_visc, qprime_df, nreq, ireq, status)
 
    use mod_basis,         only: basis
    use mod_face,          only: face_CS
@@ -1690,40 +1699,51 @@ subroutine pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, send_data, recv_dat
    real, intent(out) :: recv_data(ref%nbcl_var_lap*b%ngl*par%num_send_recv_total)
    real, intent(in)  :: dpp_graduv(inp%ngraduvw_var, G%npoin, inp%nlayers)
    real, intent(in)  :: dpprime_visc(G%npoin, inp%nlayers)
+   real, intent(in)  :: qprime_df(inp%nvar_bcl, G%npoin, inp%nlayers)
    integer, intent(out) :: nreq
    integer, intent(out) :: ireq(2*par%num_nbh)
    integer, intent(out) :: status(mpi_status_size, 2*par%num_nbh)
 
    integer :: kk, jj, i, inbh, ib, iface, el, ivar, ip, ll, inode
-   integer :: ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer, nw_f
-   integer :: nqp, istart, iend, idest, ierr
+   integer :: ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer, nw_f, nvel_f
+   integer :: nqp, istart, iend, idest, ierr, base
 
    ngl_f               = b%ngl
    nlayers_f           = inp%nlayers
    nboun_valid_f       = ref%nboun_valid
    nvarb_lap_per_layer = ref%nbcl_var_lap / inp%nlayers
    nw_f                = inp%ngraduvw_var
+   nvel_f              = inp%nvar_bcl - 1   ! velocity components (nvar_bcl-1: cartesian=2, sphere_ico/sphere_hex=3)
 
-   ! GPU pack: each gang handles one boundary face; (nw_f+1) vars per node
-   ! (ivar=1..nw_f from dpp_graduv, ivar=nw_f+1 from dpprime_visc).
+   ! Buffer layout per layer per quad node (nvarb_lap_per_layer = nw_f+1+nvel_f slots):
+   !   1..nw_f      : dpp_graduvw (dp'_k * grad u'_k)
+   !   nw_f+1       : dpprime_visc (dp'_k for penalty averaging)
+   !   nw_f+2..end  : qprime_df(2..nvel_f+1) = velocity deviation u'_k
    !$acc parallel loop gang &
-   !$acc    present(G%face, G%intma, mf%imapl, dpp_graduv, dpprime_visc, send_data, ref%face_pack_list) &
-   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer, nw_f)
+   !$acc    present(G%face, G%intma, mf%imapl, dpp_graduv, dpprime_visc, qprime_df, send_data, ref%face_pack_list) &
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, nvarb_lap_per_layer, nw_f, nvel_f)
    do kk = 1, nboun_valid_f
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
       !$acc loop seq
       do ll = 1, nlayers_f
-         !$acc loop vector private(ip)
+         !$acc loop vector private(ip, base)
          do inode = 1, ngl_f
-            ip = G%intma(mf%imapl(1,inode,1,iface), &
-                         mf%imapl(2,inode,1,iface), &
-                         mf%imapl(3,inode,1,iface), el)
+            ip   = G%intma(mf%imapl(1,inode,1,iface), &
+                           mf%imapl(2,inode,1,iface), &
+                           mf%imapl(3,inode,1,iface), el)
+            base = (kk-1)*nlayers_f*ngl_f*nvarb_lap_per_layer &
+                 + (ll-1)*ngl_f*nvarb_lap_per_layer            &
+                 + (inode-1)*nvarb_lap_per_layer
             !$acc loop seq
             do ivar = 1, nw_f
-               send_data((kk-1)*nlayers_f*ngl_f*nvarb_lap_per_layer + (ll-1)*ngl_f*nvarb_lap_per_layer + (inode-1)*nvarb_lap_per_layer + ivar) = dpp_graduv(ivar,ip,ll)
+               send_data(base + ivar) = dpp_graduv(ivar,ip,ll)
             end do
-            send_data((kk-1)*nlayers_f*ngl_f*nvarb_lap_per_layer + (ll-1)*ngl_f*nvarb_lap_per_layer + (inode-1)*nvarb_lap_per_layer + nvarb_lap_per_layer) = dpprime_visc(ip,ll)
+            send_data(base + nw_f + 1) = dpprime_visc(ip,ll)
+            !$acc loop seq
+            do ivar = 1, nvel_f
+               send_data(base + nw_f + 1 + ivar) = qprime_df(ivar+1,ip,ll)
+            end do
          end do
       end do
    end do

@@ -23,6 +23,7 @@ module mod_time_loop
     use mod_mpi_communicator, only: mpi_communicator
     use mpi
     use mod_openacc_utilities, only: openacc_initialize, openacc_enter_data
+    use mod_initial_mlswe,    only: bcl_itime
 
     implicit none
 
@@ -216,6 +217,9 @@ contains
             call mpi_barrier(mpi_comm_world, ierr)
 
             call cpu_time(time1)
+
+            ! Record current step for check_btp_thickness / check_layer_thickness messages.
+            bcl_itime = itime
 
             if (inp%nlayers == 1) then
               ! Barotropic-only path: skip the baroclinic driver entirely (see setup above).

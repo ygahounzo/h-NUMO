@@ -129,13 +129,13 @@ contains
       ! MPI precommunicator reads graduv from host — download once before packing.
       !$acc update host(graduv)
 
-      call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var)
+      call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var, Uk, inp%nvar_btp-2)
 
       ! rhs_btp_visc already zeroed on device by caller (create_rhs_btp).
       call btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, graduv)
-      call create_rhs_laplacian_flux(G, inp, b, mf, btp, rhs_btp_visc, graduv)
+      call create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, Uk, rhs_btp_visc, graduv)
 
-      call create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs_btp_visc, inp%nvar_btp-2)
+      call create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_btp_visc, inp%nvar_btp-2)
 
       ! rhs_btp_visc stays on device; read by the SSPRK GPU kernel in the caller.
       !$acc end data
@@ -179,11 +179,11 @@ contains
       ! Pre-comm GPU pack reads dpp_graduvw/dpprime_visc directly from device.
       ! rhs_lap is created on device; all kernels run GPU-to-GPU.
       !$acc data create(rhs_lap)
-      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw, bcl%dpprime_visc)
+      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw, bcl%dpprime_visc, bcl%qprime_df)
       call bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, rhs_lap)
-      call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, rhs_lap)
+      call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, tsp, rhs_lap)
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
-      call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, rhs_lap)
+      call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_lap)
 
       ! GPU: apply viscous mass-inverse scaling while rhs_lap is still on device.
       !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
@@ -513,7 +513,7 @@ contains
 
    end subroutine bcl_compute_laplacian_qp
 
-   subroutine create_rhs_laplacian_flux(G, inp, b, mf, btp, rhs, gradq)
+   subroutine create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, Uk, rhs, gradq)
       !=========================================================================
       !  Face flux contribution to the barotropic viscous RHS.
       !
@@ -537,15 +537,18 @@ contains
       use mod_basis,     only: basis
       use mod_face,      only: face_CS
       use mod_variables, only: btp_CS
+      use mod_tensor,    only: tensor_CS
 
       implicit none
 
-      type(grid),    intent(in)    :: G
-      type(input),   intent(in)    :: inp
-      type(basis),   intent(in)    :: b
-      type(face_CS), intent(in)    :: mf
-      type(btp_CS),  intent(inout) :: btp
+      type(grid),      intent(in)    :: G
+      type(input),     intent(in)    :: inp
+      type(basis),     intent(in)    :: b
+      type(face_CS),   intent(in)    :: mf
+      type(btp_CS),    intent(inout) :: btp
+      type(tensor_CS), intent(in)    :: tsp
 
+      real, intent(in)    :: Uk(inp%nvar_btp-2, G%npoin)
       real, intent(inout) :: rhs(inp%nvar_btp-2,G%npoin)
       real, intent(in)    :: gradq(inp%ngraduvw_var,G%npoin)
 
@@ -556,6 +559,7 @@ contains
       integer :: iface, i, il, jl, kl, ir, jr, kr
       integer :: iel, ier, ip, iquad, ivar, nw
       real :: flux_qu, flux_qv, flux_qw, hi, alpha, beta, iflux
+      real :: pconst, sigma, pb_avg, du_pen, dv_pen, dw_pen
       real    :: ql_s(9), qr_s(9), btp_ql_s(10), btp_qr_s(10)
       integer, dimension(b%ngl) :: I_l, I_r
       integer :: ngl_f, nface_f
@@ -569,12 +573,14 @@ contains
       nface_f = G%nface
       nw      = inp%ngraduvw_var
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      pconst  = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
       !$acc data present(G%face, G%face_type, G%intma,                       &
       !$acc               mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face, &
       !$acc               b%psi,                                               &
       !$acc               btp%btp_dpp_graduvw, btp%pbprime_visc,               &
       !$acc               btp%graduvb_face_ave,                                &
+      !$acc               tsp%wjac_df, Uk,                                     &
       !$acc               rhs, gradq)
 
       !$acc parallel loop gang                                                &
@@ -585,8 +591,9 @@ contains
       !$acc           flux_uv_visc_face,                                      &
       !$acc           qul, qur, qvl, qvr, qwl, qwr,                          &
       !$acc           qu_mean, qv_mean, qw_mean,                              &
+      !$acc           sigma, pb_avg, du_pen, dv_pen, dw_pen,                  &
       !$acc           flux_qu, flux_qv, flux_qw, hi, ivar, i, iquad)          &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w)
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w, pconst)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -755,6 +762,21 @@ contains
             flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
                     + (qw_mean(3) - iflux*qwl(3))*nz
 
+            ! SIP interior penalty on interior faces only (ier > 0).
+            ! Jump [ū] = Uk_L - Uk_R; average p̄_b_avg = 0.5*(pbprime_L + pbprime_R).
+            if (ier > 0) then
+               sigma  = pconst * wq / min(tsp%wjac_df(I_l(iquad)), tsp%wjac_df(I_r(iquad)))
+               pb_avg = 0.5 * (btp%pbprime_visc(I_l(iquad)) + btp%pbprime_visc(I_r(iquad)))
+               du_pen = Uk(1, I_l(iquad)) - Uk(1, I_r(iquad))
+               dv_pen = Uk(2, I_l(iquad)) - Uk(2, I_r(iquad))
+               flux_qu = flux_qu - sigma * pb_avg * du_pen
+               flux_qv = flux_qv - sigma * pb_avg * dv_pen
+               if (has_w) then
+                  dw_pen  = Uk(3, I_l(iquad)) - Uk(3, I_r(iquad))
+                  flux_qw = flux_qw - sigma * pb_avg * dw_pen
+               end if
+            end if
+
             ! rhs scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
             do i = 1, ngl_f
@@ -793,22 +815,24 @@ contains
 
    end subroutine create_rhs_laplacian_flux
 
-   subroutine bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, rhs)
+   subroutine bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, tsp, rhs)
 
       use mod_grid,      only: grid
       use mod_basis,     only: basis
       use mod_input,     only: input
       use mod_face,      only: face_CS
       use mod_variables, only: btp_CS, bcl_CS
+      use mod_tensor,    only: tensor_CS
 
       implicit none
 
-      type(grid),    intent(in)    :: G
-      type(basis),   intent(in)    :: b
-      type(input),   intent(in)    :: inp
-      type(face_CS), intent(in)    :: mf
-      type(btp_CS),  intent(in)    :: btp
-      type(bcl_CS),  intent(in)    :: bcl
+      type(grid),      intent(in)    :: G
+      type(basis),     intent(in)    :: b
+      type(input),     intent(in)    :: inp
+      type(face_CS),   intent(in)    :: mf
+      type(btp_CS),    intent(in)    :: btp
+      type(bcl_CS),    intent(in)    :: bcl
+      type(tensor_CS), intent(in)    :: tsp
 
       real, intent(inout) :: rhs(inp%nvar_bcl-1,G%npoin,inp%nlayers)
 
@@ -825,6 +849,8 @@ contains
       real :: ql_cur(10), qr_cur(10)
       integer :: ngl_f, nlayers_f, nface_f
       logical :: has_w
+      integer :: ip_face_L, ip_face_R
+      real :: pconst, sigma, dp_avg_pen, du_pen, dv_pen, dw_pen
 
       beta  = 0.5
       alpha = 1.0 - beta
@@ -836,19 +862,27 @@ contains
       nw        = inp%ngraduvw_var
       has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
+      ! Shahbazi 2D SIPG constant: pconst = (p+1)(p+2)/2, p = nopx = ngl_f - 1.
+      ! For ngl_f=5 (nopx=4): pconst = 15.  sigma = pconst * jac_face / jac_vol
+      ! gives correct 1/h scaling for the SIP penalty.
+      ! inp%SIPG_constant scales the penalty: 0 = LDG (no penalty), 1 = standard Shahbazi SIP.
+      pconst = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
+
       !$acc data present(G%face, G%face_type, G%intma,                          &
       !$acc              mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face,     &
       !$acc              b%psi,                                                   &
       !$acc              btp%graduvb_face_ave,                                   &
-      !$acc              bcl%dpp_graduvw, bcl%dpprime_visc,                       &
+      !$acc              bcl%dpp_graduvw, bcl%dpprime_visc, bcl%qprime_df,       &
+      !$acc              tsp%wjac_df,                                             &
       !$acc              rhs)
 
       !$acc parallel loop gang                                                    &
       !$acc   private(ql_cur, qr_cur, flux_uv_visc_face, qul, qur, qvl, qvr, qwl, qwr, &
       !$acc           qu_mean, qv_mean, qw_mean,                                     &
       !$acc           nx, ny, nz, un, wq, flux_qu, flux_qv, flux_qw, hi,            &
-      !$acc           iel, ier, ip, il, jl, kl, ir, jr, kr, iquad, k, i, ivar)  &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f, nw, has_w)
+      !$acc           iel, ier, ip, il, jl, kl, ir, jr, kr, iquad, k, i, ivar,  &
+      !$acc           ip_face_L, ip_face_R, sigma, dp_avg_pen, du_pen, dv_pen, dw_pen) &
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f, nw, has_w, pconst)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -869,6 +903,8 @@ contains
                jl = mf%imapl(2,iquad,1,iface)
                kl = mf%imapl(3,iquad,1,iface)
                ip = G%intma(il,jl,kl,iel)
+               ip_face_L = ip
+               ip_face_R = ip   ! default = same node (zero jump for boundary faces)
 
                !$acc loop seq
                do ivar = 1, nw
@@ -881,6 +917,7 @@ contains
                   jr = mf%imapr(2,iquad,1,iface)
                   kr = mf%imapr(3,iquad,1,iface)
                   ip = G%intma(ir,jr,kr,ier)
+                  ip_face_R = ip
                   !$acc loop seq
                   do ivar = 1, nw
                      qr_cur(ivar) = bcl%dpp_graduvw(ivar,ip,k)
@@ -955,6 +992,23 @@ contains
                        + (qv_mean(3) - iflux*qvl(3))*nz
                flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
                        + (qw_mean(3) - iflux*qwl(3))*nz
+
+               ! SIP interior penalty: stabilises the variable-coefficient DG Laplacian.
+               ! For constant dp_k the central-flux term has a zero eigenvalue for the
+               ! 2-Delta-x checkerboard mode; for variable dp_k it becomes POSITIVE
+               ! (anti-diffusive).  The penalty -eta*dp_avg/h*[u'_k] restores coercivity.
+               ! Applied only for interior faces (ip_face_R /= ip_face_L after the above).
+               ! Boundary faces retain ip_face_R = ip_face_L, giving zero jump and no effect.
+               sigma = pconst * wq / min(tsp%wjac_df(ip_face_L), tsp%wjac_df(ip_face_R))
+               dp_avg_pen = 0.5 * (ql_cur(nw+1) + qr_cur(nw+1))
+               du_pen = bcl%qprime_df(2,ip_face_L,k) - bcl%qprime_df(2,ip_face_R,k)
+               dv_pen = bcl%qprime_df(3,ip_face_L,k) - bcl%qprime_df(3,ip_face_R,k)
+               flux_qu = flux_qu - sigma * dp_avg_pen * du_pen
+               flux_qv = flux_qv - sigma * dp_avg_pen * dv_pen
+               if (has_w) then
+                  dw_pen = bcl%qprime_df(4,ip_face_L,k) - bcl%qprime_df(4,ip_face_R,k)
+                  flux_qw = flux_qw - sigma * dp_avg_pen * dw_pen
+               end if
 
                !$acc loop seq
                do i = 1, ngl_f

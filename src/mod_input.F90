@@ -498,7 +498,8 @@ module mod_input
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, &
-         bcl_time_method, rk_bcl_FS
+         bcl_time_method, rk_bcl_FS, &
+         SIPG_constant
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &

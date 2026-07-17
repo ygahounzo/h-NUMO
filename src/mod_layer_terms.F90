@@ -218,7 +218,7 @@ contains
       real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
       real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
 
-      real    :: ubar, vbar, wbar, wjac, wsum, mult
+      real    :: ubar, vbar, wbar, wjac, wsum, mult, btp_threshold
       integer :: I, k, e, n, m
       integer :: nlayers_l, nelem_l, nglx_l, ngly_l
       logical :: has_w
@@ -243,6 +243,7 @@ contains
       has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
       ! Compute per-layer blending thresholds on CPU (small loop over nlayers).
+      btp_threshold = 0.0
       do k = 1, nlayers_l
           if (inp%h_cutoff1 < 1.0e-2) then
               dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * 10.0
@@ -252,6 +253,8 @@ contains
               dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
           end if
           dp_range(k) = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
+          ! BTP threshold: sum of per-layer floors (same convention as btp_poslimiter).
+          btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
       end do
 
       ! Copy blending thresholds to device once; shared read-only by both kernels below.
@@ -378,7 +381,7 @@ contains
       ! CPU version (last writer wins).
       !$acc parallel loop gang &
       !$acc    present(G%intma, uv_df, q_df, qb_df, bcl%dry_flg) &
-      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, has_w) &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, has_w, btp_threshold) &
       !$acc    private(ubar, vbar, wbar)
       do e = 1, nelem_l
         !$acc loop seq
@@ -394,7 +397,7 @@ contains
               vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
               if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
             end do
-            if (qb_df(1,I) > 0.0) then
+            if (qb_df(1,I) > btp_threshold) then
               ubar = ubar / qb_df(1,I)
               vbar = vbar / qb_df(1,I)
               if (has_w) wbar = wbar / qb_df(1,I)
@@ -439,7 +442,7 @@ contains
       real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
 
       integer :: k, I, e, n, m, nelem_l, nlayers_l, nglx_l, ngly_l
-      real    :: ope, ub_btp, vb_btp, wb_btp
+      real    :: ope, ub_btp, vb_btp, wb_btp, btp_threshold, max_qprime_spd, dp_threshold
       real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
       logical :: has_w
 
@@ -448,6 +451,17 @@ contains
       nglx_l    = b%nglx
       ngly_l    = b%ngly
       has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+
+      ! BTP threshold: same convention as btp_poslimiter.
+      btp_threshold = 0.0
+      do k = 1, nlayers_l
+          btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
+      end do
+
+      ! Per-layer pressure threshold for the qprime positivity limiter.
+      ! Approximate as btp_threshold/nlayers (exact when all layers have equal buoyancy).
+      dp_threshold   = btp_threshold / real(nlayers_l)
+      max_qprime_spd = 100.0
 
       !$acc data create(uv_df)
 
@@ -464,7 +478,7 @@ contains
       ! non-determinism as extract_velocity.
       !$acc parallel loop gang &
       !$acc    present(G%intma, qprime_df, q_df, qb_df, uv_df, init%pbprime_df, bcl%dry_flg) &
-      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, has_w) &
+      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, has_w, btp_threshold) &
       !$acc    private(ope, ub_btp, vb_btp, wb_btp)
       do e = 1, nelem_l
         !$acc loop seq
@@ -481,7 +495,7 @@ contains
             end do
             ope = ope / init%pbprime_df(I)
 
-            if (qb_df(1,I) > 0.0) then
+            if (qb_df(1,I) > btp_threshold) then
               ub_btp = qb_df(3,I) / qb_df(1,I)
               vb_btp = qb_df(4,I) / qb_df(1,I)
               if (has_w) wb_btp = qb_df(5,I) / qb_df(1,I)
@@ -493,9 +507,54 @@ contains
             do k = 1, nlayers_l
                 if (bcl%dry_flg(e, k) == 2) cycle
                 if (ope > 0.0) qprime_df(1,I,k) = q_df(1,I,k) / ope
-                qprime_df(2,I,k) = uv_df(1,I,k) - ub_btp
-                qprime_df(3,I,k) = uv_df(2,I,k) - vb_btp
-                if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - wb_btp
+                ! When BTP column is at minimum, ope is tiny and qprime_df(1) inflates
+                ! by 1/ope. Zero the velocity deviation to prevent quadratic flux blow-up
+                ! in btp_bcl_coeffs_qdf (flux += pp_k * up_k^2 with inflated pp_k).
+                if (qb_df(1,I) > btp_threshold) then
+                    qprime_df(2,I,k) = uv_df(1,I,k) - ub_btp
+                    qprime_df(3,I,k) = uv_df(2,I,k) - vb_btp
+                    if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - wb_btp
+                else
+                    qprime_df(2,I,k) = 0.0
+                    qprime_df(3,I,k) = 0.0
+                    if (has_w) qprime_df(4,I,k) = 0.0
+                end if
+            end do
+          end do
+        end do
+      end do
+      !$acc end parallel loop
+
+      ! Positivity limiter on qprime_df:
+      !   - Near-dry layers (qprime_df(1) <= dp_threshold): zero velocity deviation.
+      !   - All other nodes: smooth tanh saturation — u_soft = max_spd * tanh(u/max_spd).
+      !     Unlike a hard clip, tanh is C-infinity smooth: no kink, no checkerboard noise.
+      !     For |u| << max_spd it is nearly linear; for |u| >> max_spd it saturates to ±max_spd.
+      !$acc parallel loop gang &
+      !$acc    present(G%intma, qprime_df) &
+      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, has_w, dp_threshold, max_qprime_spd)
+      do e = 1, nelem_l
+        !$acc loop seq
+        do m = 1, ngly_l
+          !$acc loop seq
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
+            !$acc loop seq
+            do k = 1, nlayers_l
+              if (qprime_df(1,I,k) <= dp_threshold) then
+                qprime_df(2,I,k) = 0.0
+                qprime_df(3,I,k) = 0.0
+                if (has_w) qprime_df(4,I,k) = 0.0
+              else
+                if (qprime_df(2,I,k) >  max_qprime_spd) qprime_df(2,I,k) =  max_qprime_spd
+                if (qprime_df(2,I,k) < -max_qprime_spd) qprime_df(2,I,k) = -max_qprime_spd
+                if (qprime_df(3,I,k) >  max_qprime_spd) qprime_df(3,I,k) =  max_qprime_spd
+                if (qprime_df(3,I,k) < -max_qprime_spd) qprime_df(3,I,k) = -max_qprime_spd
+                if (has_w) then
+                  if (qprime_df(4,I,k) >  max_qprime_spd) qprime_df(4,I,k) =  max_qprime_spd
+                  if (qprime_df(4,I,k) < -max_qprime_spd) qprime_df(4,I,k) = -max_qprime_spd
+                end if
+              end if
             end do
           end do
         end do

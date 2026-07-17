@@ -17,10 +17,15 @@ module mod_initial_mlswe
     public :: &
         bot_topo_derivatives, &
         interpolate_pbprime_init, wind_stress_coriolis, &
-        map_deriv, ssprk_coefficients, poslimiter, find_dry_elements, &
-        check_layer_thickness, check_btp_thickness
+        map_deriv, ssprk_coefficients, poslimiter, btp_poslimiter, find_dry_elements, &
+        check_layer_thickness, check_btp_thickness, &
+        bcl_itime
 
     private
+
+    ! Current BCL time-step index; set by the time loop before each BCL call
+    ! so that check_btp_thickness can report "BTP failure at step N".
+    integer, save :: bcl_itime = 0
 
 
     contains
@@ -383,9 +388,10 @@ module mod_initial_mlswe
         real, dimension(inp%nlayers),                       intent(in)    :: alpha
 
         real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
+        real    :: dp_e, max_bcl_spd
         integer :: I, k, n, m, e, nelem_l, nlayers_l, nglx_l, ngly_l
         real    :: dry_cutoff_l
-        logical :: has_w
+        logical :: has_w, has_nan_e
 
         nelem_l      = G%nelem
         nlayers_l    = inp%nlayers
@@ -394,29 +400,38 @@ module mod_initial_mlswe
         dry_cutoff_l = inp%dry_cutoff
         has_w        = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
+        ! Physical BCL interfacial wave speed is O(10 m/s); 200 m/s catches blow-up
+        ! while leaving all physical dynamics untouched.
+        max_bcl_spd = 200.0
+
         ! DG elements own their nodes exclusively — no cross-element races on q.
         !$acc parallel loop gang collapse(2) &
         !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q, alpha) &
-        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w) &
-        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, I)
+        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w, max_bcl_spd) &
+        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, I, dp_e, has_nan_e)
         do k = 1, nlayers_l
+          threshold = (gravity / alpha(k)) * dry_cutoff_l
             do e = 1, nelem_l
 
-                threshold = (gravity / alpha(k)) * dry_cutoff_l
-
-                pmin = 1.0e20
-                pavg = 0.0
-                uavg = 0.0
-                vavg = 0.0
-                wavg = 0.0
-                wsum = 0.0
+                pmin      = 1.0e20
+                pavg      = 0.0
+                uavg      = 0.0
+                vavg      = 0.0
+                wavg      = 0.0
+                wsum      = 0.0
+                has_nan_e = .false.
                 !$acc loop seq
                 do m = 1, ngly_l
                     !$acc loop seq
                     do n = 1, nglx_l
                         I    = G%intma(n,m,1,e)
                         wjac = b%wglx(n) * b%wgly(m) * mt%jac(n,m,1,e)
-                        if (q(1,I,k) < pmin) pmin = q(1,I,k)
+                        ! IEEE: NaN < x is always false, so track NaN separately.
+                        if (q(1,I,k) /= q(1,I,k)) then
+                            has_nan_e = .true.
+                        else
+                            if (q(1,I,k) < pmin) pmin = q(1,I,k)
+                        end if
                         wsum = wsum + wjac
                         pavg = pavg + wjac * q(1,I,k)
                         uavg = uavg + wjac * q(2,I,k)
@@ -429,8 +444,8 @@ module mod_initial_mlswe
                 vavg = vavg / wsum
                 if (has_w) wavg = wavg / wsum
 
-                if (pavg <= threshold) then
-                    ! Entire element dry — clamp to minimum, zero momentum.
+                if (pavg <= threshold .or. pavg /= pavg .or. has_nan_e) then
+                    ! Entire element dry (or NaN) — clamp to minimum, zero momentum.
                     !$acc loop seq
                     do m = 1, ngly_l
                         !$acc loop seq
@@ -459,11 +474,172 @@ module mod_initial_mlswe
                     end do !m
                 end if
 
+                ! Velocity cap: prevents BCL velocity blow-up from feeding huge fluxes
+                ! into the next stage RHS (advective overflow → NaN in layer thickness).
+                !$acc loop seq
+                do m = 1, ngly_l
+                    !$acc loop seq
+                    do n = 1, nglx_l
+                        I    = G%intma(n,m,1,e)
+                        dp_e = q(1,I,k)
+                        if (dp_e > 0.0) then
+                            if (q(2,I,k) >  max_bcl_spd * dp_e) q(2,I,k) =  max_bcl_spd * dp_e
+                            if (q(2,I,k) < -max_bcl_spd * dp_e) q(2,I,k) = -max_bcl_spd * dp_e
+                            if (q(3,I,k) >  max_bcl_spd * dp_e) q(3,I,k) =  max_bcl_spd * dp_e
+                            if (q(3,I,k) < -max_bcl_spd * dp_e) q(3,I,k) = -max_bcl_spd * dp_e
+                            if (has_w) then
+                                if (q(4,I,k) >  max_bcl_spd * dp_e) q(4,I,k) =  max_bcl_spd * dp_e
+                                if (q(4,I,k) < -max_bcl_spd * dp_e) q(4,I,k) = -max_bcl_spd * dp_e
+                            end if
+                        end if
+                    end do
+                end do
+
             end do !e
         end do !k
         !$acc end parallel loop
 
     end subroutine poslimiter
+
+    ! Zhang-Shu positivity limiter for the barotropic (BTP) column pressure.
+    ! Mirrors poslimiter but operates on qb_df(nvar_btp, npoin).
+    ! qb_df(1,I) = qb_df(2,I) + pbprime_df(I) must remain positive.
+    ! After limiting qb_df(1,I), qb_df(2,I) is updated to stay consistent.
+    subroutine btp_poslimiter(b, G, inp, mt, qb_df, pbprime_df, alpha)
+
+        use mod_constants, only: gravity
+
+        implicit none
+
+        type(basis),   intent(in)    :: b
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(metrics), intent(in)    :: mt
+
+        real, dimension(inp%nvar_btp, G%npoin), intent(inout) :: qb_df
+        real, dimension(G%npoin),               intent(in)    :: pbprime_df
+        real, dimension(inp%nlayers),           intent(in)    :: alpha
+
+        real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
+        real    :: max_btp_vel, dp_I
+        integer :: I, k, n, m, e, nelem_l, nglx_l, ngly_l
+        real    :: dry_cutoff_l
+        logical :: has_w, has_nan_e
+
+        nelem_l      = G%nelem
+        nglx_l       = b%nglx
+        ngly_l       = b%ngly
+        dry_cutoff_l = inp%dry_cutoff
+        has_w        = (inp%nvar_btp == 5)
+
+        ! Maximum physical barotropic velocity: sqrt(g * H_max) for a ~6000 m column.
+        ! BTP velocities beyond this are unphysical and must be from numerical blow-up.
+        max_btp_vel = 300.0
+
+        ! BTP threshold = sum of per-layer BCL thresholds (pressure equivalent of
+        ! dry_cutoff meters per layer), so the total column cannot collapse below
+        ! the sum of individual layer floors.
+        threshold = 0.0
+        do k = 1, inp%nlayers
+            threshold = threshold + (gravity / alpha(k)) * dry_cutoff_l
+        end do
+
+        !$acc parallel loop gang &
+        !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, qb_df, pbprime_df) &
+        !$acc    firstprivate(nelem_l, nglx_l, ngly_l, threshold, has_w, max_btp_vel) &
+        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, theta, denom, I, dp_I, has_nan_e)
+        do e = 1, nelem_l
+
+            pmin      = 1.0e20
+            pavg      = 0.0
+            uavg      = 0.0
+            vavg      = 0.0
+            wavg      = 0.0
+            wsum      = 0.0
+            has_nan_e = .false.
+            !$acc loop seq
+            do m = 1, ngly_l
+                !$acc loop seq
+                do n = 1, nglx_l
+                    I    = G%intma(n,m,1,e)
+                    wjac = b%wglx(n) * b%wgly(m) * mt%jac(n,m,1,e)
+                    ! IEEE: NaN < x is always false, so track NaN separately.
+                    if (qb_df(1,I) /= qb_df(1,I)) then
+                        has_nan_e = .true.
+                    else
+                        if (qb_df(1,I) < pmin) pmin = qb_df(1,I)
+                    end if
+                    wsum = wsum + wjac
+                    pavg = pavg + wjac * qb_df(1,I)
+                    uavg = uavg + wjac * qb_df(3,I)
+                    vavg = vavg + wjac * qb_df(4,I)
+                    if (has_w) wavg = wavg + wjac * qb_df(5,I)
+                end do
+            end do
+            pavg = pavg / wsum
+            uavg = uavg / wsum
+            vavg = vavg / wsum
+            if (has_w) wavg = wavg / wsum
+
+            if (pavg <= threshold .or. pavg /= pavg .or. has_nan_e) then
+                ! Entire element dry (or NaN) — clamp to threshold, zero momentum.
+                !$acc loop seq
+                do m = 1, ngly_l
+                    !$acc loop seq
+                    do n = 1, nglx_l
+                        I = G%intma(n,m,1,e)
+                        qb_df(1,I) = threshold
+                        qb_df(2,I) = 0.0 !threshold - pbprime_df(I)
+                        qb_df(3,I) = 0.0
+                        qb_df(4,I) = 0.0
+                        if (has_w) qb_df(5,I) = 0.0
+                    end do
+                end do
+            else if (pmin < threshold) then
+                ! Zhang-Shu: scale nodal deviations so min(qb_df(1,I)) = threshold.
+                denom = pavg - pmin
+                theta = merge(min(1.0, (pavg - threshold) / denom), 0.0, denom /= 0.0)
+                !$acc loop seq
+                do m = 1, ngly_l
+                    !$acc loop seq
+                    do n = 1, nglx_l
+                        I = G%intma(n,m,1,e)
+                        qb_df(1,I) = theta * (qb_df(1,I) - pavg) + pavg
+                        qb_df(2,I) = qb_df(1,I) - pbprime_df(I)
+                        qb_df(3,I) = theta * (qb_df(3,I) - uavg) + uavg
+                        qb_df(4,I) = theta * (qb_df(4,I) - vavg) + vavg
+                        if (has_w) qb_df(5,I) = theta * (qb_df(5,I) - wavg) + wavg
+                    end do
+                end do
+            end if
+
+            ! Velocity cap: clip barotropic u,v to max_btp_vel regardless of whether
+            ! the pressure correction above triggered.  This breaks the positive-feedback
+            ! loop: huge BTP momentum → huge ub_btp in extract_qprime_df_face
+            ! → huge vel' → huge BCL flux → even huger BTP momentum.
+            !$acc loop seq
+            do m = 1, ngly_l
+                !$acc loop seq
+                do n = 1, nglx_l
+                    I    = G%intma(n,m,1,e)
+                    dp_I = qb_df(1,I)
+                    if (dp_I > 0.0) then
+                        if (qb_df(3,I) >  max_btp_vel * dp_I) qb_df(3,I) =  max_btp_vel * dp_I
+                        if (qb_df(3,I) < -max_btp_vel * dp_I) qb_df(3,I) = -max_btp_vel * dp_I
+                        if (qb_df(4,I) >  max_btp_vel * dp_I) qb_df(4,I) =  max_btp_vel * dp_I
+                        if (qb_df(4,I) < -max_btp_vel * dp_I) qb_df(4,I) = -max_btp_vel * dp_I
+                        if (has_w) then
+                            if (qb_df(5,I) >  max_btp_vel * dp_I) qb_df(5,I) =  max_btp_vel * dp_I
+                            if (qb_df(5,I) < -max_btp_vel * dp_I) qb_df(5,I) = -max_btp_vel * dp_I
+                        end if
+                    end if
+                end do
+            end do
+
+        end do
+        !$acc end parallel loop
+
+    end subroutine btp_poslimiter
 
     !------------------------------------------------------------------!
     ! Classify each element per layer:
@@ -583,23 +759,23 @@ module mod_initial_mlswe
 
                     if (stage > 0) then
                         if (has_nan) then
-                            write(*,'(A,A,", stage ",I1,": layer ",I3,", element ",I6, &
+                            write(*,'(A,A,": step ",I8,", stage ",I1,", layer ",I3,", element ",I6, &
                                      &", lat=",F7.2,", lon=",F7.2,", NaN in dp, rank ",I4)') &
-                                'Fatal error ', trim(label), stage, k, e, clat, clon, irank
+                                'Fatal error ', trim(label), bcl_itime, stage, k, e, clat, clon, irank
                         else
-                            write(*,'(A,A,", stage ",I1,": layer ",I3,", element ",I6, &
+                            write(*,'(A,A,": step ",I8,", stage ",I1,", layer ",I3,", element ",I6, &
                                      &", lat=",F7.2,", lon=",F7.2,", min dp=",ES12.4,", rank ",I4)') &
-                                'Fatal error ', trim(label), stage, k, e, clat, clon, pmin, irank
+                                'Fatal error ', trim(label), bcl_itime, stage, k, e, clat, clon, pmin, irank
                         end if
                     else
                         if (has_nan) then
-                            write(*,'(A,A,": layer ",I3,", element ",I6, &
+                            write(*,'(A,A,": step ",I8,", layer ",I3,", element ",I6, &
                                      &", lat=",F7.2,", lon=",F7.2,", NaN in dp, rank ",I4)') &
-                                'Fatal error ', trim(label), k, e, clat, clon, irank
+                                'Fatal error ', trim(label), bcl_itime, k, e, clat, clon, irank
                         else
-                            write(*,'(A,A,": layer ",I3,", element ",I6, &
+                            write(*,'(A,A,": step ",I8,", layer ",I3,", element ",I6, &
                                      &", lat=",F7.2,", lon=",F7.2,", min dp=",ES12.4,", rank ",I4)') &
-                                'Fatal error ', trim(label), k, e, clat, clon, pmin, irank
+                                'Fatal error ', trim(label), bcl_itime, k, e, clat, clon, pmin, irank
                         end if
                     end if
                     call mpi_abort(mpi_comm_world, 1, ierr)
@@ -660,11 +836,11 @@ module mod_initial_mlswe
                 if (clon < 0.0) clon = clon + 360.0
 
                 if (has_nan) then
-                    write(*,'(A,A,": element ",I6,", lat=",F7.2,", lon=",F7.2,", NaN in barotropic dp, rank ",I4)') &
-                        'Fatal error ', trim(label), e, clat, clon, irank
+                    write(*,'(A,A,": step ",I8,", element ",I6,", lat=",F7.2,", lon=",F7.2,", NaN in barotropic dp, rank ",I4)') &
+                        'Fatal error ', trim(label), bcl_itime, e, clat, clon, irank
                 else
-                    write(*,'(A,A,": element ",I6,", lat=",F7.2,", lon=",F7.2,", min barotropic dp=",ES12.4,", rank ",I4)') &
-                        'Fatal error ', trim(label), e, clat, clon, pmin, irank
+                    write(*,'(A,A,": step ",I8,", element ",I6,", lat=",F7.2,", lon=",F7.2,", min barotropic dp=",ES12.4,", rank ",I4)') &
+                        'Fatal error ', trim(label), bcl_itime, e, clat, clon, pmin, irank
                 end if
                 call mpi_abort(mpi_comm_world, 1, ierr)
             end if

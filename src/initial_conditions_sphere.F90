@@ -306,8 +306,8 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       pio2  = pi/2.0
       h0    = 5960.0
       u0    = 20.0
-      ! hs0   = 2000.0
-      hs0   = 0.0
+      hs0   = 2000.0
+      ! hs0   = 0.0
       rs    = pi/9.0
       olonc = 3.0*pi/2.0
       olatc = pi/6.0

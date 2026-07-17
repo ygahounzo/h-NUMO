@@ -45,7 +45,7 @@ subroutine btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, q, qp
 
 end subroutine btp_create_precommunicator
 
-subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q, nvarb)
+subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q, nvarb, Uk, nvel)
 
    use mod_grid,             only: grid
    use mod_basis,            only: basis
@@ -69,12 +69,15 @@ subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q
 
    !Global Arrays
    integer, intent(in) :: nvarb
+   integer, intent(in) :: nvel
    real, dimension(nvarb, G%npoin), intent(inout) :: q
+   real, dimension(nvel,  G%npoin), intent(in)    :: Uk
 
-   ! nvarb = inp%ngraduvw_var (4 cartesian, 9 sphere_hex, including w).
+   ! nvarb = inp%ngraduvw_var (4 cartesian, 9 sphere_hex).
+   ! nvel  = inp%nvar_btp - 2 (2 cartesian, 3 sphere_hex).
    call pack_and_send_df_btp_lap(G, b, mf, init, par, ref,                 &
-      q, btp%btp_dpp_graduvw, btp%pbprime_visc, &
-      nvarb, mpic%nreq, mpic%ireq, mpic%status)
+      q, btp%btp_dpp_graduvw, btp%pbprime_visc, Uk, &
+      nvarb, nvel, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_lap_create_precommunicator
 
@@ -107,7 +110,7 @@ subroutine bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
 
 end subroutine bcl_create_precommunicator
 
-subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_graduv, dpprime_visc)
+subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_graduv, dpprime_visc, qprime_df)
 
    use mod_grid,             only: grid
    use mod_input,            only: input
@@ -129,11 +132,12 @@ subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_gra
 
    !Global Arrays
    real, dimension(inp%ngraduvw_var, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
-   real, dimension(G%npoin, inp%nlayers),    intent(in) :: dpprime_visc
+   real, dimension(G%npoin, inp%nlayers),                   intent(in) :: dpprime_visc
+   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers),    intent(in) :: qprime_df
 
    ! GPU pack + GPU-direct MPI non-blocking send/receive.
    call pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, ref%send_data_lap_bcl, ref%recv_data_lap_bcl, &
-      dpp_graduv, dpprime_visc, mpic%nreq, mpic%ireq, mpic%status)
+      dpp_graduv, dpprime_visc, qprime_df, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine bcl_lap_create_precommunicator
 
@@ -174,25 +178,29 @@ subroutine btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic,
 
 end subroutine btp_create_postcommunicator
 
-subroutine create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs, nvarb)
+subroutine create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs, nvarb)
 
    use mod_grid,             only: grid
+   use mod_input,            only: input
    use mod_basis,            only: basis
    use mod_face,             only: face_CS
    use mod_parallel,         only: parallel_CS
    use mod_variables,        only: btp_CS
    use mod_ref,              only: mref
    use mod_mpi_communicator, only: mpi_communicator
+   use mod_tensor,           only: tensor_CS
 
    implicit none
 
    type(grid),             intent(in)    :: G
+   type(input),            intent(in)    :: inp
    type(basis),            intent(in)    :: b
    type(face_CS),          intent(in)    :: mf
    type(parallel_CS),      intent(in)    :: par
    type(btp_CS),           intent(inout) :: btp
    type(mref),             intent(inout) :: ref
    type(mpi_communicator), intent(inout) :: mpic
+   type(tensor_CS),        intent(in)    :: tsp
 
    !Global Arrays
    integer, intent(in) :: nvarb
@@ -208,7 +216,7 @@ subroutine create_rhs_lap_postcommunicator_df(G, b, mf, par, btp, ref, mpic, rhs
       ref%recv_data_dg_lap, nvarb)
 
    !Build Inviscid Fluxes On Element Boundary
-   call create_nbhs_face_df_lap(G, b, mf, par, btp, rhs, ref, nvarb)
+   call create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb)
 
 end subroutine create_rhs_lap_postcommunicator_df
 
@@ -368,7 +376,7 @@ subroutine bcl_create_postcommunicator_momentum(G, inp, b, mf, par, btp, init, r
 
 end subroutine bcl_create_postcommunicator_momentum
 
-subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, rhs)
+subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs)
 
    use mod_grid,             only: grid
    use mod_input,            only: input
@@ -378,6 +386,7 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
    use mod_variables,        only: btp_CS
    use mod_ref,              only: mref
    use mod_mpi_communicator, only: mpi_communicator
+   use mod_tensor,           only: tensor_CS
 
    implicit none
 
@@ -389,6 +398,7 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
    type(btp_CS),           intent(inout) :: btp
    type(mref),             intent(inout) :: ref
    type(mpi_communicator), intent(inout) :: mpic
+   type(tensor_CS),        intent(in)    :: tsp
 
    !Global Arrays
    real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers), intent(inout) :: rhs
@@ -403,7 +413,7 @@ subroutine bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, 
       ref%recv_data_lap_bcl, inp%nlayers, ref%nboun_valid)
 
    ! GPU face-gang scatter into rhs on device.
-   call create_nbhs_face_df_lap_bcl(G, b, mf, par, btp, ref, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, &
+   call create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, ref%q_send_lap_bcl, ref%q_recv_lap_bcl, &
       inp%nlayers, 0, inp%nvar_bcl-1)
 
 end subroutine bcl_create_rhs_lap_postcommunicator_df

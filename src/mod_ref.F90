@@ -78,9 +78,12 @@ contains
         ! (nvel velocity components x inp%ngrd_var spatial directions: 2x2=4
         ! cartesian, 3x3=9 sphere_hex, including w). lap message =
         ! 2*(that width) + 2 (pbprime_df, pbprime_visc) for btp,
-        ! and (that width + 1 for dpprime_visc) per layer for bcl.
-        ref%nbtp_var_lap = 2*inp%ngraduvw_var + 2
-        ref%nbcl_var_lap = (inp%ngraduvw_var + 1)*inp%nlayers
+        ! and (that width + 1 for dpprime_visc + nvel for qprime_df u'_k) per layer for bcl.
+        ! nvel = nvar_bcl-1 (velocity components: 2 for cartesian, 3 for sphere_ico/sphere_hex).
+        ! ngraduvw_var/3 gives the wrong answer for cartesian (4/3=1 instead of 2).
+        ! BTP adds nvel = nvar_btp-2 extra slots for the barotropic velocity Uk (SIP penalty).
+        ref%nbtp_var_lap = 2*inp%ngraduvw_var + 2 + (inp%nvar_btp - 2)
+        ref%nbcl_var_lap = (inp%ngraduvw_var + 1 + (inp%nvar_bcl - 1))*inp%nlayers
 
         ! Compact list of valid MPI faces (face_type==2, imulti>0) in nbh_send_recv order.
         ! Computed once here so pack/unpack GPU kernels need no per-call pre-scans.

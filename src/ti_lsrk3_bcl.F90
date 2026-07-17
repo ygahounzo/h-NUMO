@@ -103,6 +103,12 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
+    ! Floor thickness before extract_velocity: if q_df(1) went negative from the
+    ! RK update, the division by thickness inside extract_velocity would produce
+    ! astronomical velocities (denominator = thickness + 1e-20 ≈ 1e-20 when
+    ! thickness < 0), corrupting momentum and triggering a NaN cascade.
+    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 

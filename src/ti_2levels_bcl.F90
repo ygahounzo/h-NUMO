@@ -24,7 +24,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
    use mod_layer_terms,      only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
    use mod_create_rhs_mlswe, only: layer_mass_rhs
-   use mod_initial_mlswe,    only: check_layer_thickness
+   use mod_initial_mlswe,    only: check_layer_thickness, poslimiter
 
    implicit none
 
@@ -75,6 +75,9 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    call layer_mom_boundary_df(G, inp, b, mf, init, q_df_pred)
 
+   ! Floor thickness before extract_velocity to prevent division by ~1e-20.
+   call poslimiter(b, G, inp, mt, q_df_pred, init%alpha_mlswe)
+
    ! Enforce barotropic-baroclinic velocity consistency on the predicted state.
    call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df_pred, qb_df)
    q_df_pred(2,:,:) = uv_df(1,:,:) * q_df_pred(1,:,:)
@@ -121,6 +124,9 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    q_df(3,:,:) = q_df(3,:,:) + inp%dt*rhs_mom(2,:,:)
 
    call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
+
+   ! Floor thickness before extract_velocity to prevent division by ~1e-20.
+   call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
    ! Enforce barotropic-baroclinic velocity consistency on the corrected state.
    call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)

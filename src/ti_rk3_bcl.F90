@@ -117,6 +117,9 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
+    ! Floor thickness before extract_velocity to prevent division by ~1e-20.
+    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 

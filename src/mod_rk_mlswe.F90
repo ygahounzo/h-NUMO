@@ -33,6 +33,7 @@ contains
       use mod_rhs_btp,           only: create_rhs_btp
       use mod_barotropic_terms,  only: btp_mom_boundary_df
       use mod_laplacian_quad,    only: btp_create_laplacian
+      use mod_initial_mlswe,     only: btp_poslimiter
 
       implicit none
 
@@ -94,6 +95,11 @@ contains
          call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
                                    btp%rhs_btp_visc, qb_df)
 
+      ! Floor qb_df before entering the sub-step loop so the very first
+      ! create_rhs_btp call never sees a corrupted (negative) BTP state from
+      ! a previous BCL stage or time step.
+      call btp_poslimiter(b, G, inp, mt, qb_df, init%pbprime_df, init%alpha_mlswe)
+
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
@@ -141,6 +147,7 @@ contains
             !$acc end parallel loop
 
             call btp_mom_boundary_df(G, b, mf, init, inp, qb_df)
+            call btp_poslimiter(b, G, inp, mt, qb_df, init%pbprime_df, init%alpha_mlswe)
 
             if (inp%kstages == 5 .and. ik == 2) then
                !$acc kernels present(btp%qb2_df, qb_df)
