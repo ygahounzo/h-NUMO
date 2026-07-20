@@ -37,8 +37,9 @@ program numo3d
   if (irank == irank0) then
      flag=0
      call print_header(flag,numproc)
+     call write_parameter_doc(numproc)
   end if
-  
+
   rhs_time = 0
 
   !   Perform Time-Integration
