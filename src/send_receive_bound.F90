@@ -1784,6 +1784,140 @@ subroutine pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, send_data, recv_dat
 
 end subroutine pack_and_send_df_bcl_lap
 
+! ---------------------------------------------------------------------------
+! pack_and_send_df_bcl_gradz
+!   CPU-only MPI pack+send of grad_z_df (3 components per DOF per layer) at
+!   MPI boundary face DOFs.  Mirrors pack_and_send_df_bcl_lap but carries
+!   only the 3-component LDG gradient of z_k (no velocity gradient, no visc).
+!   Buffer layout per face (kk), per layer (ll), per face node (inode):
+!     3 values: grad_z_df(1:3, ip, ll)
+! ---------------------------------------------------------------------------
+subroutine pack_and_send_df_bcl_gradz(G, inp, b, mf, par, ref, send_data, recv_data, &
+                                       grad_z_df, nreq, ireq, status)
+
+   use mod_basis,         only: basis
+   use mod_face,          only: face_CS
+   use mod_grid,          only: grid
+   use mod_parallel,      only: parallel_CS
+   use mod_input,         only: input
+   use mod_ref,           only: mref
+   use mpi
+   use mod_mpi_utilities, only: MPI_PRECISION
+
+   implicit none
+
+   type(grid),        intent(in)  :: G
+   type(basis),       intent(in)  :: b
+   type(face_CS),     intent(in)  :: mf
+   type(input),       intent(in)  :: inp
+   type(parallel_CS), intent(in)  :: par
+   type(mref),        intent(in)  :: ref
+
+   real, intent(out) :: send_data(ref%nbcl_var_gradz*b%ngl*par%num_send_recv_total)
+   real, intent(out) :: recv_data(ref%nbcl_var_gradz*b%ngl*par%num_send_recv_total)
+   real, intent(in)  :: grad_z_df(3, G%npoin, inp%nlayers)
+   integer, intent(out) :: nreq
+   integer, intent(out) :: ireq(2*par%num_nbh)
+   integer, intent(out) :: status(mpi_status_size, 2*par%num_nbh)
+
+   integer :: kk, jj, ll, i, inode, ip, inbh, ib, nqp, istart, iend, idest, ierr, base, iface, el
+   integer :: ngl_f, nlayers_f, nboun_valid_f
+
+   ngl_f         = b%ngl
+   nlayers_f     = inp%nlayers
+   nboun_valid_f = ref%nboun_valid
+
+   ! Pack: grad_z_df(1:3, ip, ll) for each MPI face / layer / face-node.
+   do kk = 1, nboun_valid_f
+      iface = ref%face_pack_list(kk)
+      el    = G%face(7, iface)
+      do ll = 1, nlayers_f
+         do inode = 1, ngl_f
+            ip   = G%intma(mf%imapl(1,inode,1,iface), &
+                           mf%imapl(2,inode,1,iface), &
+                           mf%imapl(3,inode,1,iface), el)
+            base = (kk-1)*nlayers_f*ngl_f*3 + (ll-1)*ngl_f*3 + (inode-1)*3
+            send_data(base+1) = grad_z_df(1, ip, ll)
+            send_data(base+2) = grad_z_df(2, ip, ll)
+            send_data(base+3) = grad_z_df(3, ip, ll)
+         end do
+      end do
+   end do
+
+   nreq   = 0
+   iend   = 0
+   jj     = 1
+   status = 0
+
+   do inbh = 1, par%num_nbh
+      nqp = 0
+      do ib = 1, par%num_send_recv(inbh)
+         do i = 1, par%nbh_send_recv_multi(jj)
+            nqp = nqp + ngl_f * ref%nbcl_var_gradz
+         end do
+         jj = jj + 1
+      end do
+      idest  = par%nbh_proc(inbh)
+      nreq   = nreq + 1
+      istart = iend + 1
+      iend   = istart + nqp - 1
+      if (nqp > 0) then
+         call mpi_irecv(recv_data(istart:iend), nqp, &
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq), ierr)
+         call mpi_isend(send_data(istart:iend), nqp, &
+            MPI_PRECISION, idest-1, 99, mpi_comm_world, ireq(nreq+1), ierr)
+      else
+         ireq(nreq)   = MPI_REQUEST_NULL
+         ireq(nreq+1) = MPI_REQUEST_NULL
+      end if
+      nreq = nreq + 1
+   end do
+
+end subroutine pack_and_send_df_bcl_gradz
+
+! ---------------------------------------------------------------------------
+! unpack_data_dg_general_gradz_bcl
+!   Unpack flat MPI buffer into q_send/q_recv(3*nlayers, ngl, nboun).
+!   Mirrors unpack_data_dg_general_lap_bcl.
+! ---------------------------------------------------------------------------
+subroutine unpack_data_dg_general_gradz_bcl(G, b, par, ref, q_send, q_recv, &
+                                              send_data, recv_data, nlayers, nboun_valid)
+
+   use mod_basis,    only: basis
+   use mod_grid,     only: grid
+   use mod_parallel, only: parallel_CS
+   use mod_ref,      only: mref
+
+   implicit none
+
+   type(grid),        intent(in) :: G
+   type(basis),       intent(in) :: b
+   type(parallel_CS), intent(in) :: par
+   type(mref),        intent(in) :: ref
+   integer,           intent(in) :: nlayers, nboun_valid
+
+   real, dimension(3*nlayers, b%ngl, par%num_send_recv_total), intent(out) :: q_send, q_recv
+   real, dimension(3*nlayers*b%ngl*par%num_send_recv_total),   intent(in)  :: send_data, recv_data
+
+   integer :: kk, ll, inode, ivar, ngl_f, nlayers_f, nboun_valid_f
+
+   ngl_f         = b%ngl
+   nlayers_f     = nlayers
+   nboun_valid_f = nboun_valid
+
+   do kk = 1, nboun_valid_f
+      do ll = 1, nlayers_f
+         do inode = 1, ngl_f
+            do ivar = 1, 3
+               q_send((ll-1)*3+ivar, inode, kk) = send_data((kk-1)*nlayers_f*ngl_f*3 + (ll-1)*ngl_f*3 + (inode-1)*3 + ivar)
+               q_recv((ll-1)*3+ivar, inode, kk) = recv_data((kk-1)*nlayers_f*ngl_f*3 + (ll-1)*ngl_f*3 + (inode-1)*3 + ivar)
+            end do
+         end do
+      end do
+   end do
+
+end subroutine unpack_data_dg_general_gradz_bcl
+
 subroutine send_bound_dg_general_consistency(G, b, par, send_data, recv_data, nlayers, nreq, ireq, status)
 
    use mod_basis,    only: basis

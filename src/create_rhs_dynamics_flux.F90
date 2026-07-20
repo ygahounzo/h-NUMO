@@ -1886,6 +1886,96 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
 
 end subroutine create_nbhs_face_df_lap_bcl
 
+! ---------------------------------------------------------------------------
+! create_nbhs_face_gradz_bcl
+!   MPI boundary face flux for ∇²z_k.  After the grad_z pre-communicator has
+!   exchanged grad_z_df at MPI boundary faces, this routine adds the central
+!   flux correction `½(grad_z_local + grad_z_recv)·n × ψ_i × wjac_face` to
+!   lap_z_df at the local element's MPI boundary face DOFs.
+!   Only the LOCAL element side is updated (the remote element is on another rank).
+! ---------------------------------------------------------------------------
+subroutine create_nbhs_face_gradz_bcl(G, inp, b, mf, par, ref, tsp, lap_z_df, &
+                                       q_send, q_recv, nlayers)
+
+   use mod_grid,      only: grid
+   use mod_basis,     only: basis
+   use mod_face,      only: face_CS
+   use mod_parallel,  only: parallel_CS
+   use mod_ref,       only: mref
+   use mod_input,     only: input
+   use mod_tensor,    only: tensor_CS
+
+   implicit none
+
+   type(grid),        intent(in)    :: G
+   type(input),       intent(in)    :: inp
+   type(basis),       intent(in)    :: b
+   type(face_CS),     intent(in)    :: mf
+   type(parallel_CS), intent(in)    :: par
+   type(mref),        intent(in)    :: ref
+   type(tensor_CS),   intent(in)    :: tsp
+   integer,           intent(in)    :: nlayers
+
+   real, intent(inout) :: lap_z_df(G%npoin, nlayers+1)
+   real, intent(in)    :: q_send(3*nlayers, b%ngl, G%nboun)
+   real, intent(in)    :: q_recv(3*nlayers, b%ngl, G%nboun)
+
+   integer :: kk, k, iquad, i, ip, iface, el, il, jl, kl
+   integer :: ngl_f, nlayers_f, nboun_valid_f, index
+   real    :: wq, nx, ny, nz, flux_gradz, hi
+   real    :: gzl_x, gzl_y, gzl_z, gzr_x, gzr_y, gzr_z
+   logical :: has_w
+
+   ngl_f         = b%ngl
+   nlayers_f     = nlayers
+   nboun_valid_f = ref%nboun_valid
+   has_w         = (inp%nvar_bcl == 4)
+
+   do kk = 1, nboun_valid_f
+      iface = ref%face_pack_list(kk)
+      el    = G%face(7, iface)
+
+      do k = 2, nlayers_f
+         index = (k-1)*3   ! offset into q_send/q_recv first dimension
+
+         do iquad = 1, ngl_f
+            ! Local (send) gradient at this face quadrature point
+            gzl_x = q_send(index+1, iquad, kk)
+            gzl_y = q_send(index+2, iquad, kk)
+            ! Neighbor (recv) gradient
+            gzr_x = q_recv(index+1, iquad, kk)
+            gzr_y = q_recv(index+2, iquad, kk)
+
+            nx = mf%normal_vector(1, iquad, 1, iface)
+            ny = mf%normal_vector(2, iquad, 1, iface)
+            wq = mf%jac_face(iquad, 1, iface)
+
+            ! Central flux: {grad_z}·n = ½(grad_z_local + grad_z_recv)·n
+            flux_gradz = 0.5*(gzl_x + gzr_x)*nx + 0.5*(gzl_y + gzr_y)*ny
+
+            if (has_w) then
+               gzl_z = q_send(index+3, iquad, kk)
+               gzr_z = q_recv(index+3, iquad, kk)
+               nz    = mf%normal_vector(3, iquad, 1, iface)
+               flux_gradz = flux_gradz + 0.5*(gzl_z + gzr_z)*nz
+            end if
+
+            ! Scatter to local element face DOFs (left element only for MPI face)
+            do i = 1, ngl_f
+               hi = b%psi(i, iquad)
+               il = mf%imapl(1, i, 1, iface)
+               jl = mf%imapl(2, i, 1, iface)
+               kl = mf%imapl(3, i, 1, iface)
+               ip = G%intma(il, jl, kl, el)
+               lap_z_df(ip, k) = lap_z_df(ip, k) + wq*hi*flux_gradz
+            end do
+
+         end do   ! iquad
+      end do   ! k
+   end do   ! kk
+
+end subroutine create_nbhs_face_gradz_bcl
+
 subroutine create_nbhs_face_quad_layer(G, b, par, q_face, q_send, q_recv, nvarb, nlayers, nq)
 
    use mod_grid,     only: grid, mod_grid_get_face_nq

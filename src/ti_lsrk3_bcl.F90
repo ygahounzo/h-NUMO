@@ -45,8 +45,9 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, dimension(inp%nvar_btp,G%npoin),             intent(inout) :: qb_df
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
-  integer :: k, ik
+  integer :: k, ik, I
   real :: dtt, dt_btp_in
+  real :: rl, rm, rn, omg, Px, Py, Pz, d_inv
   logical :: has_w
   real, parameter :: lsrk3_beta(3) = (/ 1.0/3.0, 1.0/2.0, 1.0 /)
 
@@ -61,6 +62,11 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   !$acc kernels present(bcl%q0_df, q_df)
   bcl%q0_df = q_df
   !$acc end kernels
+
+  ! Download q0_df to host once; needed by the implicit Coriolis rotation.
+  if (inp%implicit_coriolis_sph .and. has_w) then
+    !$acc update host(bcl%q0_df)
+  end if
 
   do ik = 1, 3
 
@@ -99,6 +105,30 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       if (has_w) q_df(4,:,k) = bcl%q0_df(4,:,k) + dtt * bcl%rhs_bcl(4,:,k)
     end do
     !$acc end kernels
+
+    ! 3D implicit Coriolis rotation for sphere (CPU; init%kvector/fdt2_bcl live on host).
+    ! Applies (I + ω K_r)^{-1} acting on the LSRK3-updated momentum, where the
+    ! "P-vector" blends the updated momentum with the stage-0 cross-product term
+    ! to match the semi-implicit convention used in the 2D flat-plane solver.
+    if (inp%implicit_coriolis_sph .and. has_w) then
+      !$acc update host(q_df)
+      do k = 1, inp%nlayers
+        do I = 1, G%npoin
+          rl    = init%kvector(1,I)
+          rm    = init%kvector(2,I)
+          rn    = init%kvector(3,I)
+          omg   = init%fdt2_bcl(I) * lsrk3_beta(ik)
+          Px    = q_df(2,I,k) + omg*(rn*bcl%q0_df(3,I,k) - rm*bcl%q0_df(4,I,k))
+          Py    = q_df(3,I,k) + omg*(rl*bcl%q0_df(4,I,k) - rn*bcl%q0_df(2,I,k))
+          Pz    = q_df(4,I,k) + omg*(rm*bcl%q0_df(2,I,k) - rl*bcl%q0_df(3,I,k))
+          d_inv = 1.0 / (1.0 + omg**2)
+          q_df(2,I,k) = (Px - omg*(rm*Pz - rn*Py)) * d_inv
+          q_df(3,I,k) = (Py - omg*(rn*Px - rl*Pz)) * d_inv
+          q_df(4,I,k) = (Pz - omg*(rl*Py - rm*Px)) * d_inv
+        end do
+      end do
+      !$acc update device(q_df)
+    end if
 
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)

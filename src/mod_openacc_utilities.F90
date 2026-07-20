@@ -157,6 +157,7 @@ contains
       !$acc                   bcl%dpp_uvp)
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
       !$acc enter data create(bcl%lap_z_df)
+      !$acc enter data create(bcl%grad_z_df)
 
       ! mod_ref
       ! recv_data is a receive buffer: allocate on device, no initial copy needed.
@@ -175,6 +176,8 @@ contains
       !$acc enter data create(ref%q_send_bcl, ref%q_recv_bcl)
       !$acc enter data create(ref%send_data_lap_bcl, ref%recv_data_lap_bcl)
       !$acc enter data create(ref%q_send_lap_bcl, ref%q_recv_lap_bcl)
+      !$acc enter data create(ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl)
+      !$acc enter data create(ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl)
 
       ! mod_parallel
       !$acc enter data copyin(par)

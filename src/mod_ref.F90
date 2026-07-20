@@ -35,14 +35,16 @@ module mod_ref
         real, dimension(:,:),   allocatable :: recv_data
         real, dimension(:,:,:), allocatable :: q_recv, q_send, q_recv_lap, q_send_lap
         real, dimension(:,:,:), allocatable :: q_send_bcl, q_recv_bcl, q_send_lap_bcl, q_recv_lap_bcl
+        real, dimension(:,:,:), allocatable :: q_send_gradz_bcl, q_recv_gradz_bcl
         real, dimension(:),     allocatable :: recv_data_dg, send_data_dg, recv_data_dg_lap, send_data_dg_lap
         real, dimension(:),     allocatable :: recv_data_bcl, send_data_bcl, recv_data_lap_bcl, send_data_lap_bcl
+        real, dimension(:),     allocatable :: send_data_gradz_bcl, recv_data_gradz_bcl
         real, dimension(:,:,:), allocatable :: q_recv_quad, q_send_quad, lap_q_recv_df1, lap_q_send_df1
         real, dimension(:),     allocatable :: recv_data_dg_quad, send_data_dg_quad
         real, dimension(:),     allocatable :: lap_recv_data_dg_df1, lap_send_data_dg_df1
         real, dimension(:,:,:), allocatable :: q_send_csty, q_recv_csty
         real, dimension(:),     allocatable :: recv_data_csty, send_data_csty
-        integer :: nmessage, nbtp_var, nboun_valid, nbtp_var_lap, nbcl_var_lap
+        integer :: nmessage, nbtp_var, nboun_valid, nbtp_var_lap, nbcl_var_lap, nbcl_var_gradz
         integer, allocatable :: face_pack_list(:)
     end type mref
 
@@ -83,7 +85,8 @@ contains
         ! ngraduvw_var/3 gives the wrong answer for cartesian (4/3=1 instead of 2).
         ! BTP adds nvel = nvar_btp-2 extra slots for the barotropic velocity Uk (SIP penalty).
         ref%nbtp_var_lap = 2*inp%ngraduvw_var + 2 + (inp%nvar_btp - 2)
-        ref%nbcl_var_lap = (inp%ngraduvw_var + 1 + (inp%nvar_bcl - 1))*inp%nlayers
+        ref%nbcl_var_lap   = (inp%ngraduvw_var + 1 + (inp%nvar_bcl - 1))*inp%nlayers
+        ref%nbcl_var_gradz = 3*inp%nlayers
 
         ! Compact list of valid MPI faces (face_type==2, imulti>0) in nbh_send_recv order.
         ! Computed once here so pack/unpack GPU kernels need no per-call pre-scans.
@@ -191,6 +194,22 @@ contains
             ref%send_data_lap_bcl(ref%nbcl_var_lap*b%ngl*G%nboun), &
             stat=AllocateStatus )
         if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref 1**"
+
+        if(allocated(ref%q_send_gradz_bcl)) then
+            deallocate(ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl)
+        endif
+        allocate(ref%q_send_gradz_bcl(ref%nbcl_var_gradz,b%ngl,G%nboun), &
+            ref%q_recv_gradz_bcl(ref%nbcl_var_gradz,b%ngl,G%nboun), &
+            stat=AllocateStatus )
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref (gradz q)**"
+
+        if(allocated(ref%send_data_gradz_bcl)) then
+            deallocate(ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl)
+        endif
+        allocate( ref%send_data_gradz_bcl(ref%nbcl_var_gradz*b%ngl*G%nboun), &
+            ref%recv_data_gradz_bcl(ref%nbcl_var_gradz*b%ngl*G%nboun), &
+            stat=AllocateStatus )
+        if (AllocateStatus /= 0) stop "** Not Enough Memory - Mod_Ref (gradz data)**"
 
         if(allocated(ref%q_send_csty)) then
             deallocate(ref%q_send_csty, ref%q_recv_csty)

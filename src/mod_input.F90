@@ -212,6 +212,7 @@ module mod_input
 
       character(len=20) :: bcl_time_method
       logical :: rk_bcl_FS
+      logical :: implicit_coriolis_sph
 
       logical :: lout_tree
       logical :: lout_shoreline
@@ -462,6 +463,7 @@ module mod_input
 
       character(len=20) :: bcl_time_method = '2levels'
       logical :: rk_bcl_FS = .false.
+      logical :: implicit_coriolis_sph = .false.
 
      !Namelist Input
  
@@ -499,7 +501,7 @@ module mod_input
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, &
          bcl_time_method, rk_bcl_FS, &
-         SIPG_constant
+         SIPG_constant, implicit_coriolis_sph
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -812,6 +814,7 @@ module mod_input
       inp%llinear_pert                   = llinear_pert
       inp%bcl_time_method                = bcl_time_method
       inp%rk_bcl_FS                      = rk_bcl_FS
+      inp%implicit_coriolis_sph          = implicit_coriolis_sph
 
    end subroutine mod_input_create
  

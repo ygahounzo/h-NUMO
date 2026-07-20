@@ -141,6 +141,69 @@ subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_gra
 
 end subroutine bcl_lap_create_precommunicator
 
+subroutine bcl_gradz_create_precommunicator(G, inp, b, mf, par, ref, mpic, grad_z_df)
+
+   use mod_grid,             only: grid
+   use mod_input,            only: input
+   use mod_basis,            only: basis
+   use mod_face,             only: face_CS
+   use mod_parallel,         only: parallel_CS
+   use mod_ref,              only: mref
+   use mod_mpi_communicator, only: mpi_communicator
+
+   implicit none
+
+   type(grid),             intent(in)    :: G
+   type(input),            intent(in)    :: inp
+   type(basis),            intent(in)    :: b
+   type(face_CS),          intent(in)    :: mf
+   type(parallel_CS),      intent(in)    :: par
+   type(mref),             intent(inout) :: ref
+   type(mpi_communicator), intent(inout) :: mpic
+
+   real, dimension(3, G%npoin, inp%nlayers), intent(in) :: grad_z_df
+
+   call pack_and_send_df_bcl_gradz(G, inp, b, mf, par, ref, ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl, &
+      grad_z_df, mpic%nreq, mpic%ireq, mpic%status)
+
+end subroutine bcl_gradz_create_precommunicator
+
+subroutine bcl_create_rhs_gradz_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, lap_z_df)
+
+   use mod_grid,             only: grid
+   use mod_input,            only: input
+   use mod_basis,            only: basis
+   use mod_face,             only: face_CS
+   use mod_parallel,         only: parallel_CS
+   use mod_variables,        only: btp_CS
+   use mod_ref,              only: mref
+   use mod_mpi_communicator, only: mpi_communicator
+   use mod_tensor,           only: tensor_CS
+
+   implicit none
+
+   type(grid),             intent(in)    :: G
+   type(input),            intent(in)    :: inp
+   type(basis),            intent(in)    :: b
+   type(face_CS),          intent(in)    :: mf
+   type(parallel_CS),      intent(in)    :: par
+   type(btp_CS),           intent(in)    :: btp
+   type(mref),             intent(inout) :: ref
+   type(mpi_communicator), intent(inout) :: mpic
+   type(tensor_CS),        intent(in)    :: tsp
+
+   real, dimension(G%npoin, inp%nlayers+1), intent(inout) :: lap_z_df
+
+   call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
+
+   call unpack_data_dg_general_gradz_bcl(G, b, par, ref, ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl, &
+      ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl, inp%nlayers, ref%nboun_valid)
+
+   call create_nbhs_face_gradz_bcl(G, inp, b, mf, par, ref, tsp, lap_z_df, &
+      ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl, inp%nlayers)
+
+end subroutine bcl_create_rhs_gradz_postcommunicator_df
+
 subroutine btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs, nvarb)
 
    use mod_grid,             only: grid

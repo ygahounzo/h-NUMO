@@ -1058,50 +1058,187 @@ contains
    ! ===========================================================================
    !  compute_bcl_lap_z
    !
-   !  Computes the element-local Laplacian of the layer-interface height z_k
-   !  at every DOF node for internal interfaces k = 2..nlayers.  The result
-   !  is stored in bcl%lap_z_df(I, k) and later used by the Chen (2025) APE
-   !  stabilization in create_rhs_dynamics_volume_bcl_sphere.
+   !  LDG (Local Discontinuous Galerkin) Laplacian of the layer-interface
+   !  height z_k for internal interfaces k = 2..nlayers.
    !
-   !  Method: two sequential element-local gradient passes with the
-   !  DG derivative matrices dpsidx_df / dpsidy_df / dpsidz_df:
-   !    1. gz(d, ip0) = Σ_ip  dpsid_df(ip, J_ip0) × z_k(J_ip)   = ∇z_k|_{J_ip0}
-   !    2. lap_z(ip0) = Σ_ip  dpsid_df(ip, J_ip0) × gz(d, ip)   = ∇²z_k|_{J_ip0}
-   !  Both sums run over the npts canonical nodes of the element.
+   !  Three-phase CPU implementation:
    !
-   !  Because DG nodes are element-local (no shared DOFs), the scatter to the
-   !  global lap_z_df array needs no atomics.
+   !  Phase 1 — Gradient: element-local ∇z_k stored globally in grad_z.
+   !    grad_z(d, J, k) = Σ_ip dpsid_df(ip, J) × z_k(J_ip)   d=1,2[,3]
+   !
+   !  [Pre-communicate grad_z at MPI faces — TODO: add MPI exchange here
+   !   using the same pack/send/recv pattern as bcl_lap_create_precommunicator
+   !   so that MPI boundary faces also get the correct central-flux gradient.]
+   !
+   !  Phase 2 — Central-flux correction: for every interior face, replace
+   !    grad_z at the shared boundary DOF nodes with the element average
+   !    {∇z_k} = ½(∇z_k^L + ∇z_k^R), giving the correct LDG flux.
+   !    MPI faces (face_type == 2) are skipped — they await the pre-comm TODO.
+   !
+   !  Phase 3 — Volume integral: element-local divergence of the corrected
+   !    gradient gives the LDG Laplacian:
+   !    lap_z(J_ip0) = Σ_ip dpsid_df(ip, J_ip0) × grad_z(d, J_ip, k)
    !
    !  CPU-only (no OpenACC): call !$acc update device(bcl%lap_z_df) afterwards.
    ! ===========================================================================
-   subroutine compute_bcl_lap_z(G, inp, b, init, btp, tsp, qprime_df, lap_z_df)
+   ! ===========================================================================
+   !  bcl_create_rhs_gradz_flux
+   !  Interior-face LDG central-flux correction for the lap_z_df accumulator.
+   !  Adds {grad_z}*n face term to lap_z_df at interior face DOFs (both sides).
+   ! ===========================================================================
+   subroutine bcl_create_rhs_gradz_flux(G, inp, b, mf, bcl, lap_z_df)
 
       use mod_grid,      only: grid
-      use mod_input,     only: input
       use mod_basis,     only: basis
-      use mod_initial,   only: initial
-      use mod_variables, only: btp_CS
-      use mod_tensor,    only: tensor_CS
-      use mod_constants, only: gravity
+      use mod_input,     only: input
+      use mod_face,      only: face_CS
+      use mod_variables, only: bcl_CS
 
       implicit none
 
-      type(grid),      intent(in)  :: G
-      type(input),     intent(in)  :: inp
-      type(basis),     intent(in)  :: b
-      type(initial),   intent(in)  :: init
-      type(btp_CS),    intent(in)  :: btp
-      type(tensor_CS), intent(in)  :: tsp
+      type(grid),      intent(in)    :: G
+      type(basis),     intent(in)    :: b
+      type(input),     intent(in)    :: inp
+      type(face_CS),   intent(in)    :: mf
+      type(bcl_CS),    intent(in)    :: bcl
+
+      real, intent(inout) :: lap_z_df(G%npoin, inp%nlayers+1)
+
+      integer :: iface, iel, ier, k, iquad, i, ip, il, jl, kl, ir, jr, kr
+      integer :: ip_face_L, ip_face_R
+      real    :: wq, nx, ny, nz, flux_gradz, hi
+      real    :: gzl_x, gzl_y, gzl_z, gzr_x, gzr_y, gzr_z
+      logical :: has_w
+
+      has_w = (inp%nvar_bcl == 4)
+
+      do iface = 1, G%nface
+         if (G%face_type(iface) == 2) cycle
+         iel = G%face(7, iface)
+         ier = G%face(8, iface)
+
+         do k = 2, inp%nlayers
+            do iquad = 1, b%ngl
+
+               il = mf%imapl(1,iquad,1,iface);  jl = mf%imapl(2,iquad,1,iface);  kl = mf%imapl(3,iquad,1,iface)
+               ip_face_L = G%intma(il, jl, kl, iel)
+
+               nx = mf%normal_vector(1, iquad, 1, iface)
+               ny = mf%normal_vector(2, iquad, 1, iface)
+               wq = mf%jac_face(iquad, 1, iface)
+
+               gzl_x = bcl%grad_z_df(1, ip_face_L, k)
+               gzl_y = bcl%grad_z_df(2, ip_face_L, k)
+               if (has_w) then
+                  gzl_z = bcl%grad_z_df(3, ip_face_L, k)
+                  nz    = mf%normal_vector(3, iquad, 1, iface)
+               end if
+
+               if (ier > 0) then
+                  ir = mf%imapr(1,iquad,1,iface);  jr = mf%imapr(2,iquad,1,iface);  kr = mf%imapr(3,iquad,1,iface)
+                  ip_face_R = G%intma(ir, jr, kr, ier)
+                  gzr_x = bcl%grad_z_df(1, ip_face_R, k)
+                  gzr_y = bcl%grad_z_df(2, ip_face_R, k)
+                  if (has_w) gzr_z = bcl%grad_z_df(3, ip_face_R, k)
+               else
+                  ! Neumann: mirror gradient so {grad_z}*n = gzl*n at boundary
+                  gzr_x = gzl_x
+                  gzr_y = gzl_y
+                  if (has_w) then
+                     gzr_z = gzl_z
+                     if (ier == -4) then
+                        ! Slip wall: zero normal gradient
+                        nz = mf%normal_vector(3, iquad, 1, iface)
+                        gzr_x = gzl_x - 2.0*(gzl_x*nx + gzl_y*ny + gzl_z*nz)*nx
+                        gzr_y = gzl_y - 2.0*(gzl_x*nx + gzl_y*ny + gzl_z*nz)*ny
+                        gzr_z = gzl_z - 2.0*(gzl_x*nx + gzl_y*ny + gzl_z*nz)*nz
+                     end if
+                  else
+                     if (ier == -4) then
+                        ! Slip wall: zero normal gradient
+                        gzr_x = gzl_x - 2.0*(gzl_x*nx + gzl_y*ny)*nx
+                        gzr_y = gzl_y - 2.0*(gzl_x*nx + gzl_y*ny)*ny
+                     end if
+                  end if
+               end if
+
+               flux_gradz = 0.5*(gzl_x + gzr_x)*nx + 0.5*(gzl_y + gzr_y)*ny
+               if (has_w) flux_gradz = flux_gradz + 0.5*(gzl_z + gzr_z)*nz
+
+               do i = 1, b%ngl
+                  hi = b%psi(i, iquad)
+                  il = mf%imapl(1,i,1,iface);  jl = mf%imapl(2,i,1,iface);  kl = mf%imapl(3,i,1,iface)
+                  ip = G%intma(il, jl, kl, iel)
+                  lap_z_df(ip, k) = lap_z_df(ip, k) + wq*hi*flux_gradz
+               end do
+
+               if (ier > 0) then
+                  do i = 1, b%ngl
+                     hi = b%psi(i, iquad)
+                     ir = mf%imapr(1,i,1,iface);  jr = mf%imapr(2,i,1,iface);  kr = mf%imapr(3,i,1,iface)
+                     ip = G%intma(ir, jr, kr, ier)
+                     lap_z_df(ip, k) = lap_z_df(ip, k) - wq*hi*flux_gradz
+                  end do
+               end if
+
+            end do   ! iquad
+         end do   ! k
+      end do   ! iface
+
+   end subroutine bcl_create_rhs_gradz_flux
+
+   ! ===========================================================================
+   !  compute_bcl_lap_z  —  full LDG Laplacian of interface height z_k
+   !
+   !  Mirrors the bcl_create_laplacian 4-call pattern:
+   !    Phase 1 (gradient)   → bcl%grad_z_df
+   !    pre-comm             → bcl_gradz_create_precommunicator
+   !    Phase 3 (weak vol.)  → lap_z_df (mass-weighted integral)
+   !    interior flux        → bcl_create_rhs_gradz_flux
+   !    post-comm            → bcl_create_rhs_gradz_postcommunicator_df
+   !    mass inverse         → lap_z_df = massinv * lap_z_df
+   !
+   !  CPU-only: caller must !$acc update host before and
+   !            !$acc update device(bcl%lap_z_df) after.
+   ! ===========================================================================
+   subroutine compute_bcl_lap_z(G, inp, b, mf, par, ref, mpic, init, btp, bcl, mt, tsp, qprime_df, lap_z_df)
+
+      use mod_grid,             only: grid
+      use mod_input,            only: input
+      use mod_basis,            only: basis
+      use mod_face,             only: face_CS
+      use mod_parallel,         only: parallel_CS
+      use mod_ref,              only: mref
+      use mod_mpi_communicator, only: mpi_communicator
+      use mod_initial,          only: initial
+      use mod_variables,        only: btp_CS, bcl_CS
+      use mod_metrics,          only: metrics
+      use mod_tensor,           only: tensor_CS
+      use mod_constants,        only: gravity
+
+      implicit none
+
+      type(grid),             intent(in)    :: G
+      type(input),            intent(in)    :: inp
+      type(basis),            intent(in)    :: b
+      type(face_CS),          intent(in)    :: mf
+      type(parallel_CS),      intent(in)    :: par
+      type(mref),             intent(inout) :: ref
+      type(mpi_communicator), intent(inout) :: mpic
+      type(initial),          intent(in)    :: init
+      type(btp_CS),           intent(in)    :: btp
+      type(bcl_CS),           intent(inout) :: bcl
+      type(metrics),          intent(in)    :: mt
+      type(tensor_CS),        intent(in)    :: tsp
       real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
       real, dimension(G%npoin, inp%nlayers+1),              intent(out) :: lap_z_df
 
-      integer :: ie, ip0, ip, k
-      integer :: J_ip0, J_ip
+      integer :: ie, iq_local, ip, k, I
+      integer :: Iq, Iq0
       integer :: npts_l, nelem_l, nlayers_l
       real    :: z_loc(b%npts, inp%nlayers+1)
-      real    :: gz_x(b%npts), gz_y(b%npts), gz_z(b%npts)
-      real    :: lap_z_loc(b%npts)
-      real    :: dhdx, dhdy, dhdz
+      real    :: lap_loc(b%npts, inp%nlayers)
+      real    :: dhdx, dhdy, dhdz, wq, gzx, gzy, gzz
       logical :: has_w
 
       has_w     = (inp%nvar_bcl == 4)
@@ -1109,70 +1246,103 @@ contains
       nelem_l   = G%nelem
       nlayers_l = inp%nlayers
 
-      lap_z_df(:,:) = 0.0
+      lap_z_df(:,:)        = 0.0
+      bcl%grad_z_df(:,:,:) = 0.0
 
+      ! -----------------------------------------------------------------------
+      ! Phase 1: element-local gradient of z_k -> bcl%grad_z_df.
+      ! Outer index ip = test function / evaluation point (nodal collocation).
+      ! Inner index iq_local = basis function summed over.
+      ! -----------------------------------------------------------------------
       do ie = 1, nelem_l
 
-         ! Step 1: gather z_k at all local nodes for k = 2..nlayers
          do ip = 1, npts_l
-            J_ip = tsp%index_df_elt(ip, ie)
-            z_loc(ip, nlayers_l+1) = init%zbot_df(J_ip)
+            Iq = tsp%index_df_elt(ip, ie)
+            z_loc(ip, nlayers_l+1) = init%zbot_df(Iq)
             do k = nlayers_l, 1, -1
                z_loc(ip, k) = z_loc(ip, k+1) + &
-                  (init%alpha_mlswe(k)/gravity) * sqrt(btp%ope2_ave_df(J_ip)) * qprime_df(1, J_ip, k)
+                  (init%alpha_mlswe(k)/gravity) * sqrt(btp%ope2_ave_df(Iq)) * qprime_df(1, Iq, k)
             end do
          end do
 
-         ! Steps 2–3: for each internal interface k, compute the element-local
-         ! Laplacian at each node ip0 via two gradient applications.
          do k = 2, nlayers_l
-
-            ! Step 2: gradient of z_k at each local node ip0
-            do ip0 = 1, npts_l
-               J_ip0  = tsp%index_df_elt(ip0, ie)
-               gz_x(ip0) = 0.0
-               gz_y(ip0) = 0.0
-               if (has_w) gz_z(ip0) = 0.0
-               do ip = 1, npts_l
-                  dhdx = tsp%dpsidx_df(ip, J_ip0)
-                  dhdy = tsp%dpsidy_df(ip, J_ip0)
+            do ip = 1, npts_l
+               Iq = tsp%index_df_elt(ip, ie)
+               bcl%grad_z_df(1, Iq, k) = 0.0
+               bcl%grad_z_df(2, Iq, k) = 0.0
+               if (has_w) bcl%grad_z_df(3, Iq, k) = 0.0
+               do iq_local = 1, npts_l
+                  dhdx = tsp%dpsidx_df(iq_local, Iq)
+                  dhdy = tsp%dpsidy_df(iq_local, Iq)
                   if (has_w) then
-                     dhdx = dhdx + tsp%dpsidz_df_x(ip, J_ip0)
-                     dhdy = dhdy + tsp%dpsidz_df_y(ip, J_ip0)
-                     dhdz = tsp%dpsidz_df(ip, J_ip0) + tsp%dpsidz_df_z(ip, J_ip0)
+                     dhdx = dhdx + tsp%dpsidz_df_x(iq_local, Iq)
+                     dhdy = dhdy + tsp%dpsidz_df_y(iq_local, Iq)
+                     dhdz = tsp%dpsidz_df(iq_local, Iq) + tsp%dpsidz_df_z(iq_local, Iq)
                   end if
-                  gz_x(ip0) = gz_x(ip0) + dhdx * z_loc(ip, k)
-                  gz_y(ip0) = gz_y(ip0) + dhdy * z_loc(ip, k)
-                  if (has_w) gz_z(ip0) = gz_z(ip0) + dhdz * z_loc(ip, k)
+                  bcl%grad_z_df(1, Iq, k) = bcl%grad_z_df(1, Iq, k) + dhdx * z_loc(iq_local, k)
+                  bcl%grad_z_df(2, Iq, k) = bcl%grad_z_df(2, Iq, k) + dhdy * z_loc(iq_local, k)
+                  if (has_w) bcl%grad_z_df(3, Iq, k) = bcl%grad_z_df(3, Iq, k) + dhdz * z_loc(iq_local, k)
                end do
             end do
+         end do
 
-            ! Step 3: divergence of gradient at each local node ip0 = ∇²z_k
-            do ip0 = 1, npts_l
-               J_ip0      = tsp%index_df_elt(ip0, ie)
-               lap_z_loc(ip0) = 0.0
+      end do  ! ie (Phase 1)
+
+      ! Send grad_z_df at MPI boundary face DOFs while Phase 3 runs.
+      call bcl_gradz_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%grad_z_df)
+
+      ! -----------------------------------------------------------------------
+      ! Phase 3: weak-form volume integral  -wjac * dpsi/dx * grad_z_df.
+      ! Mirrors bcl_compute_laplacian: outer loop = quadrature points (Iq),
+      ! inner loop = test functions (ip).
+      ! -----------------------------------------------------------------------
+      do ie = 1, nelem_l
+
+         do k = 2, nlayers_l
+            do ip = 1, npts_l
+               lap_loc(ip, k) = 0.0
+            end do
+         end do
+
+         do k = 2, nlayers_l
+            do iq_local = 1, npts_l
+               Iq  = tsp%index_df_elt(iq_local, ie)
+               wq  = tsp%wjac_df(Iq)
+               gzx = bcl%grad_z_df(1, Iq, k)
+               gzy = bcl%grad_z_df(2, Iq, k)
+               if (has_w) gzz = bcl%grad_z_df(3, Iq, k)
                do ip = 1, npts_l
-                  dhdx = tsp%dpsidx_df(ip, J_ip0)
-                  dhdy = tsp%dpsidy_df(ip, J_ip0)
+                  dhdx = tsp%dpsidx_df(ip, Iq)
+                  dhdy = tsp%dpsidy_df(ip, Iq)
+                  lap_loc(ip, k) = lap_loc(ip, k) - wq*(dhdx*gzx + dhdy*gzy)
                   if (has_w) then
-                     dhdx = dhdx + tsp%dpsidz_df_x(ip, J_ip0)
-                     dhdy = dhdy + tsp%dpsidz_df_y(ip, J_ip0)
-                     dhdz = tsp%dpsidz_df(ip, J_ip0) + tsp%dpsidz_df_z(ip, J_ip0)
+                     dhdz = tsp%dpsidz_df(ip, Iq) + tsp%dpsidz_df_z(ip, Iq)
+                     lap_loc(ip, k) = lap_loc(ip, k) - wq*dhdz*gzz
                   end if
-                  lap_z_loc(ip0) = lap_z_loc(ip0) + dhdx*gz_x(ip) + dhdy*gz_y(ip)
-                  if (has_w) lap_z_loc(ip0) = lap_z_loc(ip0) + dhdz*gz_z(ip)
                end do
             end do
+         end do
 
-            ! Step 4: scatter (no atomics — each DOF belongs to exactly one element)
-            do ip0 = 1, npts_l
-               J_ip0 = tsp%index_df_elt(ip0, ie)
-               lap_z_df(J_ip0, k) = lap_z_loc(ip0)
+         Iq0 = tsp%index_df_elt(1, ie)
+         do k = 2, nlayers_l
+            do ip = 1, npts_l
+               I = tsp%index_df(ip, Iq0)
+               lap_z_df(I, k) = lap_loc(ip, k)
             end do
+         end do
 
-         end do ! k
+      end do  ! ie (Phase 3)
 
-      end do ! ie
+      ! Interior face flux correction: {grad_z}*n face term.
+      call bcl_create_rhs_gradz_flux(G, inp, b, mf, bcl, lap_z_df)
+
+      ! Wait for MPI recv; apply same correction at MPI boundary faces.
+      call bcl_create_rhs_gradz_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, lap_z_df)
+
+      ! Mass inverse: convert weak-form integral to pointwise Laplacian value.
+      do k = 2, nlayers_l
+         lap_z_df(:, k) = mt%massinv(:) * lap_z_df(:, k)
+      end do
 
    end subroutine compute_bcl_lap_z
 

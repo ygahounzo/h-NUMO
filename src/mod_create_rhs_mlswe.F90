@@ -1015,17 +1015,20 @@ contains
         real :: cfx, cfy, cfz, u, v, w, weightq, weight_dp
         real :: one_over_sumuq, one_over_sumvq, one_over_sumwq
         real :: flux(3,4)
+        real :: drho_over_rho
         real, parameter :: eps1 = 1.0e-20
         logical :: is_dry
 
         integer :: npoin_q_l, npts_l, nlayers_l
-        real    :: Pstress_l, Pbstress_l
+        real    :: Pstress_l, Pbstress_l, cor_fac_l
 
         npoin_q_l = G%npoin_q
         npts_l    = b%npts
         nlayers_l = inp%nlayers
         Pstress_l  = (gravity/init%alpha_mlswe(1))           * 50.0
         Pbstress_l = (gravity/init%alpha_mlswe(inp%nlayers)) * 10.0
+        ! When implicit Coriolis is active, suppress the explicit term here.
+        cor_fac_l  = merge(0.0, 1.0, inp%implicit_coriolis_sph)
 
         bcl%sum_layer_mass_flux = 0.0
 
@@ -1054,8 +1057,8 @@ contains
         !$acc           pbq, Hq, source_x, source_y, source_z,                          &
         !$acc           temp1, tau_wind_u, tau_wind_v, tempbot,                          &
         !$acc           weight, acceleration, weight_dp, weightq,                        &
-        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry) &
-        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l)
+        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry, drho_over_rho) &
+        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l, cor_fac_l)
         do Iq = 1, npoin_q_l
 
             p_tmp(1)       = 0.0
@@ -1157,18 +1160,19 @@ contains
                     gradz(2,k) = gradz(2,k) + (tsp%dpsidy(ip,Iq)+tsp%dpsidz_y(ip,Iq))*z(k)
                     gradz(3,k) = gradz(3,k) + (tsp%dpsidz(ip,Iq)+tsp%dpsidz_z(ip,Iq))*z(k)
                 end do
-                ! Chen (2025) APE: ∇(∇²z_k) at this quad point for internal interfaces.
-                ! bcl%lap_z_df(I,k) = ∇²z_k at DOF node I (computed in mod_splitting.F90,
-                ! uploaded to GPU before bcl_rhs; zero for k=1 and k=nlayers+1).
+                ! Chen (2025) APE: (Δρ/ρ)×∇(∇²z_k) at this quad point for internal
+                ! interfaces.  Density ratio (ρ_k−ρ_{k-1})/ρ_k = 1 − α_k/α_{k-1}
+                ! is folded in here; boundary slots (k=1, k=nlayers+1) stay 0.
                 if (inp%c_APE > 0.0) then
                     !$acc loop seq
                     do k = 2, nlayers_l
+                        drho_over_rho = 1.0 - init%alpha_mlswe(k)/init%alpha_mlswe(k-1)
                         grad_lapz(1,k) = grad_lapz(1,k) + &
-                            (tsp%dpsidx(ip,Iq)+tsp%dpsidz_x(ip,Iq))*bcl%lap_z_df(I,k)
+                            drho_over_rho*(tsp%dpsidx(ip,Iq)+tsp%dpsidz_x(ip,Iq))*bcl%lap_z_df(I,k)
                         grad_lapz(2,k) = grad_lapz(2,k) + &
-                            (tsp%dpsidy(ip,Iq)+tsp%dpsidz_y(ip,Iq))*bcl%lap_z_df(I,k)
+                            drho_over_rho*(tsp%dpsidy(ip,Iq)+tsp%dpsidz_y(ip,Iq))*bcl%lap_z_df(I,k)
                         grad_lapz(3,k) = grad_lapz(3,k) + &
-                            (tsp%dpsidz(ip,Iq)+tsp%dpsidz_z(ip,Iq))*bcl%lap_z_df(I,k)
+                            drho_over_rho*(tsp%dpsidz(ip,Iq)+tsp%dpsidz_z(ip,Iq))*bcl%lap_z_df(I,k)
                     end do
                 end if
                 gradz(1,nlayers_l+1) = init%grad_zbot_quad(1,Iq)
@@ -1264,24 +1268,25 @@ contains
 
                 ! 3D source: Coriolis cross-product + pressure gradient + wind/drag.
                 ! f × u = (fy*w - fz*v, fz*u - fx*w, fx*v - fy*u); sign: -(f×u).
-                source_x = -(cfy*wdp(k) - cfz*vdp(k)) &
+                source_x = -cor_fac_l*(cfy*wdp(k) - cfz*vdp(k)) &
                            + gravity*(p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1)) &
                            + gravity*(tau_wind_u - tempbot*btp%tau_bot_ave(1,Iq))
-                source_y = -(cfz*udp(k) - cfx*wdp(k)) &
+                source_y = -cor_fac_l*(cfz*udp(k) - cfx*wdp(k)) &
                            + gravity*(p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1)) &
                            + gravity*(tau_wind_v - tempbot*btp%tau_bot_ave(2,Iq))
-                source_z = -(cfx*vdp(k) - cfy*udp(k)) &
+                source_z = -cor_fac_l*(cfx*vdp(k) - cfy*udp(k)) &
                            + gravity*(p_tmp(k)*gradz(3,k) - p_tmp(k+1)*gradz(3,k+1)) &
                            - gravity*tempbot*btp%tau_bot_ave(3,Iq)
 
-                ! Chen (2025) APE biharmonic stabilization: −c_APE × g × ∇(∇²z_k).
-                ! Negative sign is restoring: depression in z_k → positive ∇²z_k
-                ! → divergent correction in layer k, convergent in layer k+1 → fills hole.
-                ! grad_lapz(:,1) = grad_lapz(:,nlayers+1) = 0 (no APE at boundaries).
+                ! Chen (2025) APE stabilization: force on layer k uses interface z_k (top of layer k).
+                ! Chen Eq. 49: Φ̃^k = Φ^k − ν_k Δ(P^k/ρ^k)  →  momentum source = +ν_k ∇(∇²P^k/ρ^k)
+                ! Dominant baroclinic term: +ν_k (Δρ/ρ)_k g ∇(∇²z_k).
+                ! grad_lapz(:,k) carries (Δρ/ρ)_k × ∇(∇²z_k) from the accumulation above.
+                ! grad_lapz(:,1) = 0 (free surface, ν₁=0 per Chen) → no force on layer 1.
                 if (inp%c_APE > 0.0) then
-                    source_x = source_x - gravity*inp%c_APE*(grad_lapz(1,k) - grad_lapz(1,k+1))
-                    source_y = source_y - gravity*inp%c_APE*(grad_lapz(2,k) - grad_lapz(2,k+1))
-                    source_z = source_z - gravity*inp%c_APE*(grad_lapz(3,k) - grad_lapz(3,k+1))
+                    source_x = source_x + gravity*inp%c_APE*dp(k)*grad_lapz(1,k)
+                    source_y = source_y + gravity*inp%c_APE*dp(k)*grad_lapz(2,k)
+                    source_z = source_z + gravity*inp%c_APE*dp(k)*grad_lapz(3,k)
                 end if
 
                 !$acc loop seq
