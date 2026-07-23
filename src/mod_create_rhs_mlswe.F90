@@ -975,9 +975,7 @@ contains
     ! gradient. Forked rather than has_w-gated, per the reference (hnumo-sphere)
     ! design (the bcl RHS pipeline there is itself split cartesian/sphere).
     !
-    ! Known gaps vs. the cartesian create_rhs_dynamics_volume_bcl_qp, carried
-    ! over unresolved from the reference implementation:
-    !  - No ad_mlswe artificial vertical-shear viscosity term yet for sphere_hex.
+    ! Known gaps vs. the cartesian create_rhs_dynamics_volume_bcl_qp:
     !  - Coriolis is applied unconditionally here (the reference assumes an
     !    explicit rk3/lsrk3-style bcl_time_method), whereas the cartesian path
     !    only adds it when is_rk3_or_lsrk3 is true.
@@ -1018,9 +1016,14 @@ contains
         real :: drho_over_rho
         real, parameter :: eps1 = 1.0e-20
         logical :: is_dry
+        real :: a_visc(inp%nlayers), bc_visc(inp%nlayers), c_visc(inp%nlayers)
+        real :: r_visc(3, inp%nlayers), uv_visc(3, inp%nlayers)
+        real :: tau_u(inp%nlayers+1), tau_v(inp%nlayers+1), tau_w(inp%nlayers+1)
+        real :: coeff, coeff1, mult
 
         integer :: npoin_q_l, npts_l, nlayers_l
-        real    :: Pstress_l, Pbstress_l, cor_fac_l
+        real    :: Pstress_l, Pbstress_l, cor_fac_l, ad_mlswe_l, max_shear_dz_l, dt_l
+        logical :: do_ad_visc
 
         npoin_q_l = G%npoin_q
         npts_l    = b%npts
@@ -1028,7 +1031,11 @@ contains
         Pstress_l  = (gravity/init%alpha_mlswe(1))           * 50.0
         Pbstress_l = (gravity/init%alpha_mlswe(inp%nlayers)) * 10.0
         ! When implicit Coriolis is active, suppress the explicit term here.
-        cor_fac_l  = merge(0.0, 1.0, inp%implicit_coriolis_sph)
+        cor_fac_l     = merge(0.0, 1.0, inp%implicit_coriolis_sph)
+        ad_mlswe_l    = real(inp%ad_mlswe)
+        max_shear_dz_l = real(inp%max_shear_dz)
+        dt_l           = inp%dt
+        do_ad_visc    = (inp%ad_mlswe > 0.0)
 
         bcl%sum_layer_mass_flux = 0.0
 
@@ -1057,13 +1064,17 @@ contains
         !$acc           pbq, Hq, source_x, source_y, source_z,                          &
         !$acc           temp1, tau_wind_u, tau_wind_v, tempbot,                          &
         !$acc           weight, acceleration, weight_dp, weightq,                        &
-        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry, drho_over_rho) &
-        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l, cor_fac_l)
+        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry, drho_over_rho, &
+        !$acc           a_visc, bc_visc, c_visc, r_visc, uv_visc,                       &
+        !$acc           tau_u, tau_v, tau_w, coeff, coeff1, mult)                        &
+        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l,       &
+        !$acc                cor_fac_l, ad_mlswe_l, max_shear_dz_l, dt_l, do_ad_visc)
         do Iq = 1, npoin_q_l
 
             p_tmp(1)       = 0.0
             pprime_temp(:) = 0.0
             temp_uu = 0.0;  temp_vv = 0.0;  temp_ww = 0.0
+            tau_u   = 0.0;  tau_v   = 0.0;  tau_w   = 0.0
 
             ! ---------------------------------------------------------------
             !  Layer loop 1: interpolate primed state, compute velocities
@@ -1181,6 +1192,56 @@ contains
                 pbq = pbq + tsp%psih(ip,Iq)*init%pbprime_df(I)
             end do
 
+            ! Inter-layer momentum exchange (vertical viscosity), ported from
+            ! create_rhs_dynamics_volume_bcl_qp.  Uses cfx/cfy/cfz computed above.
+            ! Magnitude of 3D Coriolis = |f_k × r̂| = f_k (since |r̂|=1) = coriolis_quad.
+            if (do_ad_visc) then
+                coeff  = max(sqrt(0.5*sqrt(cfx**2+cfy**2+cfz**2)*ad_mlswe_l)/init%alpha_mlswe(1), &
+                             ad_mlswe_l/(init%alpha_mlswe(1)*max_shear_dz_l))
+                coeff1 = gravity * dt_l * coeff
+
+                !$acc loop seq
+                do k = 1, nlayers_l
+                    a_visc(k)   = -coeff
+                    bc_visc(k)  = dp(k) + 2.0*coeff1
+                    c_visc(k)   = -coeff1
+                    r_visc(1,k) = udp(k)/dp(k)
+                    r_visc(2,k) = vdp(k)/dp(k)
+                    r_visc(3,k) = wdp(k)/dp(k)
+                end do
+
+                bc_visc(1)         = dp(1) + coeff1
+                bc_visc(nlayers_l) = dp(nlayers_l) + coeff1
+                a_visc(1)          = 0.0
+                c_visc(nlayers_l)  = 0.0
+
+                !$acc loop seq
+                do k = 2, nlayers_l
+                    mult        = a_visc(k) / bc_visc(k-1)
+                    bc_visc(k)  = bc_visc(k) - mult*c_visc(k-1)
+                    r_visc(1,k) = r_visc(1,k) - mult*r_visc(1,k-1)
+                    r_visc(2,k) = r_visc(2,k) - mult*r_visc(2,k-1)
+                    r_visc(3,k) = r_visc(3,k) - mult*r_visc(3,k-1)
+                end do
+
+                uv_visc(1,nlayers_l) = r_visc(1,nlayers_l) / bc_visc(nlayers_l)
+                uv_visc(2,nlayers_l) = r_visc(2,nlayers_l) / bc_visc(nlayers_l)
+                uv_visc(3,nlayers_l) = r_visc(3,nlayers_l) / bc_visc(nlayers_l)
+                !$acc loop seq
+                do k = nlayers_l-1, 1, -1
+                    uv_visc(1,k) = (r_visc(1,k) - c_visc(k)*uv_visc(1,k+1)) / bc_visc(k)
+                    uv_visc(2,k) = (r_visc(2,k) - c_visc(k)*uv_visc(2,k+1)) / bc_visc(k)
+                    uv_visc(3,k) = (r_visc(3,k) - c_visc(k)*uv_visc(3,k+1)) / bc_visc(k)
+                end do
+
+                !$acc loop seq
+                do k = 2, nlayers_l
+                    tau_u(k) = coeff*(uv_visc(1,k-1) - uv_visc(1,k))
+                    tau_v(k) = coeff*(uv_visc(2,k-1) - uv_visc(2,k))
+                    tau_w(k) = coeff*(uv_visc(3,k-1) - uv_visc(3,k))
+                end do
+            end if
+
             ! ---------------------------------------------------------------
             !  Consistency deficit corrections for all three flux tensors.
             ! ---------------------------------------------------------------
@@ -1287,6 +1348,14 @@ contains
                     source_x = source_x + gravity*inp%c_APE*dp(k)*grad_lapz(1,k)
                     source_y = source_y + gravity*inp%c_APE*dp(k)*grad_lapz(2,k)
                     source_z = source_z + gravity*inp%c_APE*dp(k)*grad_lapz(3,k)
+                end if
+
+                ! Inter-layer stress divergence (vertical viscosity).
+                ! tau(k) = stress at interface between layer k-1 and k (0 at boundaries).
+                if (do_ad_visc) then
+                    source_x = source_x + gravity*(tau_u(k) - tau_u(k+1))
+                    source_y = source_y + gravity*(tau_v(k) - tau_v(k+1))
+                    source_z = source_z + gravity*(tau_w(k) - tau_w(k+1))
                 end if
 
                 !$acc loop seq

@@ -68,7 +68,7 @@ contains
       !$acc                  btp%btp_mass_flux_face_ave, btp%H_face_ave, btp%Qu_face_ave,  &
       !$acc                  btp%Qv_face_ave, btp%Qw_face_ave, btp%tau_wind_ave,           &
       !$acc                  btp%tau_bot_ave, btp%ope2_ave, btp%graduvb_face_ave,          &
-      !$acc                  btp%graduvb_ave, btp%qb2_df, btp%rhs_btp_visc)
+      !$acc                  btp%graduvb_ave, btp%qb2_df, btp%rhs_btp_visc, btp%nu_smag)
       btp%one_plus_eta_edge_2_ave = 0.0;  btp%uvb_ave             = 0.0
       btp%uvb_ave_df              = 0.0;  btp%ope_ave             = 0.0
       btp%btp_mass_flux_ave       = 0.0;  btp%H_ave               = 0.0
@@ -81,19 +81,8 @@ contains
       btp%tau_wind_ave            = 0.0;  btp%tau_bot_ave         = 0.0
       btp%ope2_ave                = 0.0;  btp%graduvb_face_ave    = 0.0
       btp%graduvb_ave             = 0.0;  btp%qb2_df              = 0.0
-      btp%rhs_btp_visc            = 0.0
+      btp%rhs_btp_visc            = 0.0;  btp%nu_smag             = 0.0
       !$acc end kernels
-
-      ! Frozen viscosity: compute rhs_btp_visc once per BCL stage using the
-      ! initial qb_df, then hold it fixed across all BTP substeps.
-      ! Valid when the viscous diffusion number nu*dt_btp/dx^2 << 1, which is
-      ! satisfied whenever dt_btp is set by the gravity-wave CFL (dt_btp ~ dx/c):
-      !   nu*dt_btp/dx^2 ~ nu/(c*dx)
-      ! For c~200 m/s, dx>=1 km, nu<=500: this ratio is ~2.5e-3 — negligible.
-      ! This eliminates N_btp*kstages-1 Laplacian solves and MPI halo exchanges.
-      if (inp%method_visc > 0) &
-         call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
-                                   btp%rhs_btp_visc, qb_df)
 
       ! Floor qb_df before entering the sub-step loop so the very first
       ! create_rhs_btp call never sees a corrupted (negative) BTP state from
@@ -119,13 +108,18 @@ contains
             a2  = init%ssprk_a(ik,3)
             dtt = dt_btp_in * init%ssprk_beta(ik)
 
+            if (inp%method_visc > 0) &
+               call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
+                                         btp%rhs_btp_visc, qb_df)
+
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)
 
             ! Fused: accumulate averages from old qb_df, then SSPRK update in-place.
             ! Reading qb_df(I) for averages and a1-coefficient happens before the
             ! write to qb_df(I) within the same thread — no race across nodes.
-            !$acc parallel loop present(btp%qb0_df, qb_df, btp%qb2_df, btp, init, mt) &
+            !$acc parallel loop present(btp%qb0_df, qb_df, btp%qb2_df, btp, init, mt, &
+            !$acc                        btp%nu_smag, btp%rhs_btp_visc) &
             !$acc    private(iv, visc_term) firstprivate(a0, a1, a2, dtt, nvarb_f)
             do I = 1, G%npoin
                btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
@@ -135,7 +129,7 @@ contains
                !$acc loop seq
                do iv = 3, nvarb_f
                   btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) / qb_df(1,I)
-                  visc_term = inp%visc_mlswe * btp%rhs_btp_visc(iv-2,I)
+                  visc_term = (inp%visc_mlswe + btp%nu_smag(I)) * btp%rhs_btp_visc(iv-2,I)
                   qb_df(iv,I) = a0*btp%qb0_df(iv,I) + a1*qb_df(iv,I) + a2*btp%qb2_df(iv,I) &
                                + dtt * (mt%massinv(I) * (btp%rhs_btp(iv-1,I) + visc_term))
                end do
@@ -173,7 +167,8 @@ contains
       !$acc                  btp%ope_face_ave, btp%ope2_face_ave, btp%H_face_ave,           &
       !$acc                  btp%Qu_face_ave, btp%Qv_face_ave, btp%Qw_face_ave,             &
       !$acc                  btp%btp_mass_flux_face_ave,                                    &
-      !$acc                  btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_face_ave)
+      !$acc                  btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_face_ave,    &
+      !$acc                  btp%graduvb_ave, btp%graduvb_face_ave)
       btp%uvb_ave_df               = N_inv * btp%uvb_ave_df
       btp%ope2_ave_df              = N_inv * btp%ope2_ave_df
       btp%ope2_ave                 = N_inv * btp%ope2_ave
@@ -194,6 +189,8 @@ contains
       btp%one_plus_eta_edge_2_ave  = N_inv * btp%one_plus_eta_edge_2_ave
       btp%uvb_ave                  = N_inv * btp%uvb_ave
       btp%uvb_face_ave             = N_inv * btp%uvb_face_ave
+      btp%graduvb_ave              = N_inv * btp%graduvb_ave
+      btp%graduvb_face_ave         = N_inv * btp%graduvb_face_ave
       !$acc end kernels
 
    end subroutine ti_barotropic_ssprk_mlswe

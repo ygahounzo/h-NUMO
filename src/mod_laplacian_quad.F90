@@ -10,7 +10,8 @@ module mod_laplacian_quad
 
    implicit none
 
-   public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z
+   public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z, &
+             bcl_compute_nu_smag, btp_compute_nu_smag
 
 contains
 
@@ -126,6 +127,9 @@ contains
       end do
       !$acc end parallel loop
 
+      ! Smagorinsky eddy viscosity — computed from graduv while it is still on device.
+      if (inp%C_smag > 0.0) call btp_compute_nu_smag(G, inp, btp, tsp, graduv)
+
       ! MPI precommunicator reads graduv from host — download once before packing.
       !$acc update host(graduv)
 
@@ -163,7 +167,7 @@ contains
       type(face_CS),          intent(in)    :: mf
       type(parallel_CS),      intent(in)    :: par
       type(btp_CS),           intent(in)    :: btp
-      type(bcl_CS),           intent(in)    :: bcl
+      type(bcl_CS),           intent(inout) :: bcl
       type(mref),             intent(inout) :: ref
       type(mpi_communicator), intent(inout) :: mpic
       type(metrics),          intent(in)    :: mt
@@ -185,14 +189,27 @@ contains
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
       call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_lap)
 
+      ! GPU: compute Smagorinsky eddy viscosity field before mass-inverse scaling.
+      if (inp%C_smag > 0.0) call bcl_compute_nu_smag(G, inp, b, btp, bcl, tsp)
+
       ! GPU: apply viscous mass-inverse scaling while rhs_lap is still on device.
-      !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
-      do k = 1, inp%nlayers
-         rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
-         rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
-         if (has_w) rhs_lap(3,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(3,:,k)
-      end do
-      !$acc end kernels
+      if (inp%C_smag > 0.0) then
+         !$acc kernels present(rhs_lap, mt%massinv, bcl%nu_smag) firstprivate(has_w)
+         do k = 1, inp%nlayers
+            rhs_lap(1,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(1,:,k)
+            rhs_lap(2,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(2,:,k)
+            if (has_w) rhs_lap(3,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(3,:,k)
+         end do
+         !$acc end kernels
+      else
+         !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
+         do k = 1, inp%nlayers
+            rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
+            rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
+            if (has_w) rhs_lap(3,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(3,:,k)
+         end do
+         !$acc end kernels
+      end if
 
       !$acc update host(rhs_lap)
       !$acc end data
@@ -356,6 +373,146 @@ contains
       !$acc end data
 
    end subroutine btp_compute_laplacian_qp
+
+   ! Compute Smagorinsky eddy viscosity ν_s = (C_s·Δ)²·|S| at every BCL DOF node.
+   ! Uses the velocity gradient already assembled in bcl%dpp_graduvw by the
+   ! pre-communicator phase.  Result written to bcl%nu_smag (device-resident).
+   subroutine bcl_compute_nu_smag(G, inp, b, btp, bcl, tsp)
+
+      use mod_grid,      only: grid
+      use mod_basis,     only: basis
+      use mod_input,     only: input
+      use mod_variables, only: btp_CS, bcl_CS
+      use mod_tensor,    only: tensor_CS
+
+      implicit none
+
+      type(grid),      intent(in)    :: G
+      type(basis),     intent(in)    :: b
+      type(input),     intent(in)    :: inp
+      type(btp_CS),    intent(in)    :: btp
+      type(bcl_CS),    intent(inout) :: bcl
+      type(tensor_CS), intent(in)    :: tsp
+
+      integer :: ie, iq_local, Iq, Iq0, I, ip, k
+      integer :: npts_l, nelem_l, nlayers_l
+      real    :: dp_inv, g11, g12, g21, g22, g13, g23, g31, g32, g33
+      real    :: two_S2, wjac_sum, Csm2
+      real    :: nu_loc(b%npts, inp%nlayers)
+      logical :: has_w
+      real, parameter :: eps1 = 1.0e-20
+
+      npts_l    = b%npts
+      nelem_l   = G%nelem
+      nlayers_l = inp%nlayers
+      has_w     = (inp%nvar_bcl == 4)
+      Csm2      = inp%C_smag**2
+
+      !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df,               &
+      !$acc              bcl%dpprime_visc, bcl%dpp_graduvw,                          &
+      !$acc              btp%graduvb_ave, bcl%nu_smag)
+
+      !$acc parallel loop gang                                                        &
+      !$acc   private(nu_loc, wjac_sum, dp_inv,                                      &
+      !$acc           g11, g12, g21, g22, g13, g23, g31, g32, g33,                  &
+      !$acc           two_S2, Iq, Iq0, I, ip, k, iq_local)                          &
+      !$acc   firstprivate(npts_l, nelem_l, nlayers_l, has_w, Csm2)
+      do ie = 1, nelem_l
+
+         ! Element scale: (C_s·Δ)² where Δ² = mean Jacobian (area per DOF).
+         wjac_sum = 0.0
+         !$acc loop seq
+         do iq_local = 1, npts_l
+            Iq = tsp%index_df_elt(iq_local, ie)
+            wjac_sum = wjac_sum + tsp%wjac_df(Iq)
+         end do
+         wjac_sum = Csm2 * wjac_sum / real(npts_l)
+
+         ! ν_s at each DOF: ν_s = (C_s·Δ)² · √(2 S_ij S_ij)
+         !$acc loop seq
+         do k = 1, nlayers_l
+            !$acc loop seq
+            do iq_local = 1, npts_l
+               Iq     = tsp%index_df_elt(iq_local, ie)
+               dp_inv = 1.0 / max(bcl%dpprime_visc(Iq,k), eps1)
+               g11 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduvw(1,Iq,k)) * dp_inv
+               g12 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduvw(2,Iq,k)) * dp_inv
+               g21 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduvw(3,Iq,k)) * dp_inv
+               g22 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduvw(4,Iq,k)) * dp_inv
+               ! 2 S_ij S_ij (2D terms)
+               two_S2 = 2.0*(g11**2 + g22**2) + (g12+g21)**2
+               if (has_w) then
+                  ! Additional 3D terms for sphere (indices 5-9: du_dz,dv_dz,dw_dx,dw_dy,dw_dz)
+                  g13 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(5,Iq) + bcl%dpp_graduvw(5,Iq,k)) * dp_inv
+                  g23 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(6,Iq) + bcl%dpp_graduvw(6,Iq,k)) * dp_inv
+                  g31 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(7,Iq) + bcl%dpp_graduvw(7,Iq,k)) * dp_inv
+                  g32 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(8,Iq) + bcl%dpp_graduvw(8,Iq,k)) * dp_inv
+                  g33 = (bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(9,Iq) + bcl%dpp_graduvw(9,Iq,k)) * dp_inv
+                  two_S2 = two_S2 + 2.0*g33**2 + (g13+g31)**2 + (g23+g32)**2
+               end if
+               nu_loc(iq_local,k) = wjac_sum * sqrt(two_S2)
+            end do
+         end do
+
+         ! Scatter to global DOF array (elements are disjoint in the DG layout).
+         Iq0 = tsp%index_df_elt(1, ie)
+         !$acc loop seq
+         do k = 1, nlayers_l
+            !$acc loop seq
+            do ip = 1, npts_l
+               I = tsp%index_df(ip, Iq0)
+               bcl%nu_smag(I,k) = nu_loc(ip,k)
+            end do
+         end do
+
+      end do
+      !$acc end parallel loop
+
+      !$acc end data
+
+   end subroutine bcl_compute_nu_smag
+
+   subroutine btp_compute_nu_smag(G, inp, btp, tsp, graduv)
+
+      use mod_grid,      only: grid
+      use mod_input,     only: input
+      use mod_variables, only: btp_CS
+      use mod_tensor,    only: tensor_CS
+
+      implicit none
+
+      type(grid),      intent(in)    :: G
+      type(input),     intent(in)    :: inp
+      type(btp_CS),    intent(inout) :: btp
+      type(tensor_CS), intent(in)    :: tsp
+
+      real, intent(in) :: graduv(inp%ngraduvw_var,G%npoin)
+
+      integer :: Iq
+      real    :: g11, g12, g21, g22, g13, g23, g31, g32, g33
+      real    :: two_S2, Csm2
+      logical :: has_w
+
+      has_w = (inp%nvar_btp == 5)
+      Csm2  = inp%C_smag**2
+
+      !$acc parallel loop present(graduv, btp%nu_smag, tsp%wjac_df)           &
+      !$acc   private(g11, g12, g21, g22, g13, g23, g31, g32, g33, two_S2)   &
+      !$acc   firstprivate(has_w, Csm2)
+      do Iq = 1, G%npoin
+         g11 = graduv(1,Iq); g12 = graduv(2,Iq)
+         g21 = graduv(3,Iq); g22 = graduv(4,Iq)
+         two_S2 = 2.0*(g11**2 + g22**2) + (g12+g21)**2
+         if (has_w) then
+            g13 = graduv(5,Iq); g23 = graduv(6,Iq)
+            g31 = graduv(7,Iq); g32 = graduv(8,Iq); g33 = graduv(9,Iq)
+            two_S2 = two_S2 + 2.0*g33**2 + (g13+g31)**2 + (g23+g32)**2
+         end if
+         btp%nu_smag(Iq) = Csm2 * tsp%wjac_df(Iq) * sqrt(two_S2)
+      end do
+      !$acc end parallel loop
+
+   end subroutine btp_compute_nu_smag
 
    subroutine bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, lap_q)
 

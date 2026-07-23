@@ -46,6 +46,7 @@ module mod_variables
       ! RHS and state buffers
       real, dimension(:,:),     allocatable :: rhs_btp       ! (3,npoin)
       real, dimension(:,:),     allocatable :: rhs_btp_visc  ! (nvar_btp-2,npoin): u,v[,w]
+      real, dimension(:),       allocatable :: nu_smag        ! (npoin): Smagorinsky eddy viscosity
       real, dimension(:,:),     allocatable :: qb_df         ! (nvar_btp,npoin)
 
       ! BTP time integrator work arrays (persistent GPU allocations)
@@ -96,6 +97,7 @@ module mod_variables
       real, dimension(:,:,:),   allocatable :: uv_df    ! (2,npoin,nlayers)
       real, dimension(:,:),     allocatable :: qbp_df   ! (nvar_btp,npoin)
       integer, dimension(:,:),  allocatable :: dry_flg  ! (nelem,nlayers): 0=wet,1=mixed,2=dry
+      real,    dimension(:,:),  allocatable :: nu_smag  ! (npoin,nlayers): Smagorinsky eddy viscosity
 
    end type bcl_CS
 
@@ -136,7 +138,8 @@ contains
             btp%Qu_face_ave,        btp%Qv_face_ave,   btp%Qw_face_ave,   &
             btp%uvb_face_ave,                                              &
             btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
-            btp%rhs_btp,            btp%rhs_btp_visc,       btp%qb_df,  &
+            btp%rhs_btp,            btp%rhs_btp_visc,       btp%nu_smag, &
+            btp%qb_df,  &
             btp%qb0_df,             btp%qb2_df,                         &
             btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
             btp%pbq)
@@ -193,6 +196,7 @@ contains
       allocate(                                                               &
          btp%rhs_btp(inp%nvar_btp-1,G%npoin),                                 &
          btp%rhs_btp_visc(inp%nvar_btp-2,G%npoin),                           &
+         btp%nu_smag(G%npoin),                                                &
          btp%qb_df(inp%nvar_btp,G%npoin),                                     &
          btp%qb0_df(inp%nvar_btp,G%npoin),                                    &
          btp%qb2_df(inp%nvar_btp,G%npoin),                                    &
@@ -223,7 +227,7 @@ contains
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
             bcl%uv_df,                bcl%qbp_df,                        &
-            bcl%dry_flg)
+            bcl%dry_flg,              bcl%nu_smag)
       end if
 
       allocate(                                                               &
@@ -245,6 +249,7 @@ contains
          bcl%uv_df(inp%nvar_bcl-1,G%npoin,inp%nlayers),                          &
          bcl%qbp_df(inp%nvar_btp,G%npoin),                                       &
          bcl%dry_flg(G%nelem,inp%nlayers),                                        &
+         bcl%nu_smag(G%npoin,inp%nlayers),                                        &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
       bcl%lap_z_df = 0.0

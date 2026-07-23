@@ -65,6 +65,7 @@ module mod_input
       real(kind=r8) :: dry_cutoff
       real(kind=r8) :: h_cutoff1, h_cutoff2
       real(kind=r8) :: c_APE
+      real(kind=r8) :: kappa_thick
 
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -213,6 +214,7 @@ module mod_input
       character(len=20) :: bcl_time_method
       logical :: rk_bcl_FS
       logical :: implicit_coriolis_sph
+      real    :: C_smag
 
       logical :: lout_tree
       logical :: lout_shoreline
@@ -289,6 +291,7 @@ module mod_input
       real(kind=r8) :: dry_cutoff = 1.0e-10
       real(kind=r8) :: h_cutoff1 = 0.0, h_cutoff2 = 0.0
       real(kind=r8) :: c_APE = 0.0
+      real(kind=r8) :: kappa_thick = 0.0
    
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -464,6 +467,7 @@ module mod_input
       character(len=20) :: bcl_time_method = '2levels'
       logical :: rk_bcl_FS = .false.
       logical :: implicit_coriolis_sph = .false.
+      real    :: C_smag = 0.0
 
      !Namelist Input
  
@@ -499,9 +503,9 @@ module mod_input
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, &
+         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, kappa_thick, &
          bcl_time_method, rk_bcl_FS, &
-         SIPG_constant, implicit_coriolis_sph
+         SIPG_constant, implicit_coriolis_sph, C_smag
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -657,6 +661,7 @@ module mod_input
       inp%h_cutoff1                      = h_cutoff1
       inp%h_cutoff2                      = h_cutoff2
       inp%c_APE                          = c_APE
+      inp%kappa_thick                    = kappa_thick
       inp%xdims                          = xdims
       inp%ydims                          = ydims
       inp%ztop                           = ztop
@@ -815,6 +820,7 @@ module mod_input
       inp%bcl_time_method                = bcl_time_method
       inp%rk_bcl_FS                      = rk_bcl_FS
       inp%implicit_coriolis_sph          = implicit_coriolis_sph
+      inp%C_smag                         = C_smag
 
    end subroutine mod_input_create
  

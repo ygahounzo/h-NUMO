@@ -305,6 +305,7 @@ contains
         use mod_create_rhs_mlswe, only: bcl_rhs
         use mod_laplacian_quad,   only: bcl_create_laplacian, compute_bcl_lap_z
         use mod_mpi_utilities,    only: irank, MPI_PRECISION
+        use mod_constants,        only: gravity
         use mpi
 
         implicit none
@@ -339,8 +340,8 @@ contains
 
         if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
 
-        ! Chen (2025) APE: compute element-local ∇²z_k on CPU, then upload to GPU.
-        if (inp%c_APE > 0.0) then
+        ! ∇²z_k needed for APE and/or thickness diffusion.
+        if (inp%c_APE > 0.0 .or. inp%kappa_thick > 0.0) then
             !$acc update host(btp%ope2_ave_df, qprime_df)
             call compute_bcl_lap_z(G, inp, b, mf, par, ref, mpic, init, btp, bcl, mt, tsp, qprime_df, bcl%lap_z_df)
             lap_z_loc_max = maxval(abs(bcl%lap_z_df(:, 2:inp%nlayers)))
@@ -369,6 +370,27 @@ contains
             end do
         end do
         !$acc end parallel loop
+
+        ! Thickness diffusion: +κ_h ∇²(dp'_k) added to the mass equation (row 1).
+        ! ∇²(dp'_k) ≈ (g/α_k)(∇²z_k − ∇²z_{k+1}) = (g/α_k)(lap_z_df(I,k) − lap_z_df(I,k+1)).
+        ! compute_bcl_lap_z only fills k=2..nlayers, so lap_z_df(:,1) and
+        ! lap_z_df(:,nlayers+1) are zero: free surface and bathymetry are excluded
+        ! automatically and no special-casing is required.
+        ! Outcropping check: when layer k thins, z_k sinks → ∇²z_k > 0 (local min)
+        ! → source > 0 for that layer (fills it) and < 0 for layer k-1 (drains it). ✓
+        if (inp%kappa_thick > 0.0) then
+            !$acc parallel loop gang collapse(2) &
+            !$acc    present(rhs, bcl%lap_z_df, init%alpha_mlswe) &
+            !$acc    firstprivate(nlayers_l, npoin_l)
+            do k = 1, nlayers_l
+                do I = 1, npoin_l
+                    rhs(1,I,k) = rhs(1,I,k) + inp%kappa_thick &
+                                 * (gravity / init%alpha_mlswe(k)) &
+                                 * (bcl%lap_z_df(I,k) - bcl%lap_z_df(I,k+1))
+                end do
+            end do
+            !$acc end parallel loop
+        end if
 
         !$acc update host(rhs)
 
