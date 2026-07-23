@@ -11,7 +11,8 @@ module mod_laplacian_quad
    implicit none
 
    public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z, &
-             bcl_compute_nu_smag, btp_compute_nu_smag
+             bcl_compute_nu_smag, btp_compute_nu_smag, &
+             bcl_compute_nu_dyn_sgs, btp_compute_nu_dyn_sgs
 
 contains
 
@@ -127,8 +128,10 @@ contains
       end do
       !$acc end parallel loop
 
-      ! Smagorinsky eddy viscosity — computed from graduv while it is still on device.
-      if (inp%C_smag > 0.0) call btp_compute_nu_smag(G, inp, btp, tsp, graduv)
+      ! Smagorinsky eddy viscosity (skipped for Dyn-SGS; nu_smag computed after
+      ! create_rhs_btp when the inviscid residual is available).
+      if (inp%C_smag > 0.0 .and. .not. inp%lDyn_SGS) &
+         call btp_compute_nu_smag(G, inp, btp, tsp, graduv)
 
       ! MPI precommunicator reads graduv from host — download once before packing.
       !$acc update host(graduv)
@@ -189,26 +192,37 @@ contains
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
       call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_lap)
 
-      ! GPU: compute Smagorinsky eddy viscosity field before mass-inverse scaling.
-      if (inp%C_smag > 0.0) call bcl_compute_nu_smag(G, inp, b, btp, bcl, tsp)
-
       ! GPU: apply viscous mass-inverse scaling while rhs_lap is still on device.
-      if (inp%C_smag > 0.0) then
-         !$acc kernels present(rhs_lap, mt%massinv, bcl%nu_smag) firstprivate(has_w)
+      ! Dyn-SGS path: return massinv*L(q) only; viscosity coefficient applied
+      ! later in create_rhs_bcl after the inviscid residual is available.
+      if (inp%lDyn_SGS) then
+         !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
          do k = 1, inp%nlayers
-            rhs_lap(1,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(1,:,k)
-            rhs_lap(2,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(2,:,k)
-            if (has_w) rhs_lap(3,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(3,:,k)
+            rhs_lap(1,:,k) = mt%massinv(:)*rhs_lap(1,:,k)
+            rhs_lap(2,:,k) = mt%massinv(:)*rhs_lap(2,:,k)
+            if (has_w) rhs_lap(3,:,k) = mt%massinv(:)*rhs_lap(3,:,k)
          end do
          !$acc end kernels
       else
-         !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
-         do k = 1, inp%nlayers
-            rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
-            rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
-            if (has_w) rhs_lap(3,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(3,:,k)
-         end do
-         !$acc end kernels
+         ! Smagorinsky or plain viscosity path.
+         if (inp%C_smag > 0.0) call bcl_compute_nu_smag(G, inp, b, btp, bcl, tsp)
+         if (inp%C_smag > 0.0) then
+            !$acc kernels present(rhs_lap, mt%massinv, bcl%nu_smag) firstprivate(has_w)
+            do k = 1, inp%nlayers
+               rhs_lap(1,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(1,:,k)
+               rhs_lap(2,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(2,:,k)
+               if (has_w) rhs_lap(3,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(3,:,k)
+            end do
+            !$acc end kernels
+         else
+            !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
+            do k = 1, inp%nlayers
+               rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
+               rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
+               if (has_w) rhs_lap(3,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(3,:,k)
+            end do
+            !$acc end kernels
+         end if
       end if
 
       !$acc update host(rhs_lap)
@@ -513,6 +527,224 @@ contains
       !$acc end parallel loop
 
    end subroutine btp_compute_nu_smag
+
+   ! Compute Dyn-SGS eddy viscosity (Marras et al. 2016) for the BTP from the
+   ! mass-scaled inviscid residual btp%rhs_btp(1,I) = ∂η/∂t|_inv.
+   !
+   ! Per element Ωe:
+   !   Δ²     = mean Jacobian weight per DOF
+   !   μ_res  = Δ² × max_e(massinv×|R_H(I)|) / max(max_e(|η(I)|), h_floor)
+   !   μ_max  = 0.5 × Δ × max_e(|u_b| + |v_b| [+ |w_b| on sphere])
+   !   μ_SGS  = min(μ_max, μ_res)   written to btp%nu_smag(I)
+   !
+   ! Called after create_rhs_btp so btp%rhs_btp(1,I) holds the current-step residual.
+   subroutine btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, qb_df)
+
+      use mod_grid,      only: grid
+      use mod_basis,     only: basis
+      use mod_input,     only: input
+      use mod_variables, only: btp_CS
+      use mod_tensor,    only: tensor_CS
+      use mod_metrics,   only: metrics
+
+      implicit none
+
+      type(grid),      intent(in)    :: G
+      type(basis),     intent(in)    :: b
+      type(input),     intent(in)    :: inp
+      type(btp_CS),    intent(inout) :: btp
+      type(tensor_CS), intent(in)    :: tsp
+      type(metrics),   intent(in)    :: mt
+
+      real, intent(in) :: qb_df(inp%nvar_btp, G%npoin)
+
+      integer :: ie, iq_local, Iq, Iq0, I, ip
+      integer :: npts_l, nelem_l
+      real    :: wjac_sum, delta2, delta
+      real    :: R_mass, h_ref, vel_mag, mu_res, mu_max, mu_dyn
+      real    :: nu_loc(b%npts)
+      logical :: has_w
+      real, parameter :: h_floor = 1.0e2   ! Pa floor; prevents div-by-zero near still water
+
+      npts_l  = b%npts
+      nelem_l = G%nelem
+      has_w   = (inp%nvar_btp == 5)
+
+      !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df, &
+      !$acc              btp%nu_smag, btp%rhs_btp, mt%massinv, qb_df)
+
+      !$acc parallel loop gang                                              &
+      !$acc   private(nu_loc, wjac_sum, delta2, delta,                     &
+      !$acc           R_mass, h_ref, vel_mag, mu_res, mu_max, mu_dyn,      &
+      !$acc           Iq, Iq0, I, ip, iq_local)                            &
+      !$acc   firstprivate(npts_l, nelem_l, has_w, h_floor)
+      do ie = 1, nelem_l
+
+         ! Element filter width: Δ² = mean Jacobian weight per DOF.
+         wjac_sum = 0.0
+         !$acc loop seq
+         do iq_local = 1, npts_l
+            Iq = tsp%index_df_elt(iq_local, ie)
+            wjac_sum = wjac_sum + tsp%wjac_df(Iq)
+         end do
+         delta2 = wjac_sum / real(npts_l)
+         delta  = sqrt(delta2)
+
+         ! Element-max norms.
+         R_mass  = 0.0
+         h_ref   = h_floor
+         vel_mag = 0.0
+         !$acc loop seq
+         do iq_local = 1, npts_l
+            Iq = tsp%index_df_elt(iq_local, ie)
+            ! Mass residual: scale by massinv to get ∂η/∂t|_inv [Pa/s or m/s]
+            R_mass = max(R_mass, mt%massinv(Iq) * abs(btp%rhs_btp(1,Iq)))
+            ! η = qb_df(2): sea surface height deviation
+            h_ref  = max(h_ref, abs(qb_df(2,Iq)))
+            ! Depth-averaged velocity = momentum / H
+            if (has_w) then
+               vel_mag = max(vel_mag, abs(qb_df(3,Iq)/qb_df(1,Iq)) &
+                                    + abs(qb_df(4,Iq)/qb_df(1,Iq)) &
+                                    + abs(qb_df(5,Iq)/qb_df(1,Iq)))
+            else
+               vel_mag = max(vel_mag, abs(qb_df(3,Iq)/qb_df(1,Iq)) &
+                                    + abs(qb_df(4,Iq)/qb_df(1,Iq)))
+            end if
+         end do
+
+         mu_res = delta2 * R_mass / h_ref
+         mu_max = 0.5 * delta * vel_mag
+         mu_dyn = min(mu_max, mu_res)
+
+         ! Fill element-constant nu_loc, then scatter to global DOF array.
+         !$acc loop seq
+         do ip = 1, npts_l
+            nu_loc(ip) = mu_dyn
+         end do
+
+         Iq0 = tsp%index_df_elt(1, ie)
+         !$acc loop seq
+         do ip = 1, npts_l
+            I = tsp%index_df(ip, Iq0)
+            btp%nu_smag(I) = nu_loc(ip)
+         end do
+
+      end do
+      !$acc end parallel loop
+
+      !$acc end data
+
+   end subroutine btp_compute_nu_dyn_sgs
+
+   ! Compute Dyn-SGS eddy viscosity (Marras et al. 2016) for the BCL from the
+   ! mass-scaled inviscid residual rhs(1,I,k) = ∂dp'_k/∂t|_inv.
+   !
+   ! Per element Ωe and layer k:
+   !   Δ²     = mean Jacobian weight per DOF (filter area)
+   !   μ_res  = Δ² × max_e|R_mass| / max(max_e|dp'_k|, dp_floor)
+   !   μ_max  = 0.5 × Δ × max_e(|u'_k| + |v'_k| [+ |w'_k| on sphere])
+   !   μ_SGS  = min(μ_max, μ_res)   written to bcl%nu_smag(I,k)
+   !
+   ! All units in SI: Δ [m], R_mass [Pa/s], dp' [Pa] → μ [m²/s].
+   subroutine bcl_compute_nu_dyn_sgs(G, inp, b, bcl, tsp, rhs, qprime_df)
+
+      use mod_grid,      only: grid
+      use mod_basis,     only: basis
+      use mod_input,     only: input
+      use mod_variables, only: bcl_CS
+      use mod_tensor,    only: tensor_CS
+
+      implicit none
+
+      type(grid),      intent(in)    :: G
+      type(basis),     intent(in)    :: b
+      type(input),     intent(in)    :: inp
+      type(bcl_CS),    intent(inout) :: bcl
+      type(tensor_CS), intent(in)    :: tsp
+
+      real, intent(in) :: rhs(inp%nvar_bcl, G%npoin, inp%nlayers)
+      real, intent(in) :: qprime_df(inp%nvar_bcl, G%npoin, inp%nlayers)
+
+      integer :: ie, iq_local, Iq, Iq0, I, ip, k
+      integer :: npts_l, nelem_l, nlayers_l
+      real    :: wjac_sum, delta2, delta
+      real    :: R_mass, dp_ref, vel_mag, mu_res, mu_max, mu_dyn
+      real    :: nu_loc(b%npts, inp%nlayers)
+      logical :: has_w
+      real, parameter :: dp_floor = 1.0e2   ! Pa floor (~10 m); prevents div-by-zero in thin/dry layers
+
+      npts_l    = b%npts
+      nelem_l   = G%nelem
+      nlayers_l = inp%nlayers
+      has_w     = (inp%nvar_bcl == 4)   ! w carried only on sphere_hex/sphere_ico
+
+      !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df, &
+      !$acc              bcl%nu_smag, rhs, qprime_df)
+
+      !$acc parallel loop gang                                                     &
+      !$acc   private(nu_loc, wjac_sum, delta2, delta,                             &
+      !$acc           R_mass, dp_ref, vel_mag, mu_res, mu_max, mu_dyn,             &
+      !$acc           Iq, Iq0, I, ip, k, iq_local)                                 &
+      !$acc   firstprivate(npts_l, nelem_l, nlayers_l, has_w, dp_floor)
+      do ie = 1, nelem_l
+
+         ! Element filter width: Δ² = mean Jacobian weight per DOF.
+         wjac_sum = 0.0
+         !$acc loop seq
+         do iq_local = 1, npts_l
+            Iq = tsp%index_df_elt(iq_local, ie)
+            wjac_sum = wjac_sum + tsp%wjac_df(Iq)
+         end do
+         delta2 = wjac_sum / real(npts_l)
+         delta  = sqrt(delta2)
+
+         !$acc loop seq
+         do k = 1, nlayers_l
+            R_mass  = 0.0
+            dp_ref  = dp_floor
+            vel_mag = 0.0
+            !$acc loop seq
+            do iq_local = 1, npts_l
+               Iq = tsp%index_df_elt(iq_local, ie)
+               R_mass = max(R_mass, abs(rhs(1,Iq,k)))
+               dp_ref = max(dp_ref, abs(qprime_df(1,Iq,k)))
+               ! velocity magnitude = |u'|+|v'| [+|w'| on sphere]
+               if (has_w) then
+                  vel_mag = max(vel_mag, abs(qprime_df(2,Iq,k)) &
+                                       + abs(qprime_df(3,Iq,k)) &
+                                       + abs(qprime_df(4,Iq,k)))
+               else
+                  vel_mag = max(vel_mag, abs(qprime_df(2,Iq,k)) + abs(qprime_df(3,Iq,k)))
+               end if
+            end do
+
+            mu_res = delta2 * R_mass / dp_ref
+            mu_max = 0.5 * delta * vel_mag
+            mu_dyn = min(mu_max, mu_res)
+
+            !$acc loop seq
+            do ip = 1, npts_l
+               nu_loc(ip,k) = mu_dyn
+            end do
+         end do
+
+         ! Scatter element-constant μ_SGS to all DOF nodes in element.
+         Iq0 = tsp%index_df_elt(1, ie)
+         !$acc loop seq
+         do k = 1, nlayers_l
+            !$acc loop seq
+            do ip = 1, npts_l
+               I = tsp%index_df(ip, Iq0)
+               bcl%nu_smag(I,k) = nu_loc(ip,k)
+            end do
+         end do
+
+      end do
+      !$acc end parallel loop
+
+      !$acc end data
+
+   end subroutine bcl_compute_nu_dyn_sgs
 
    subroutine bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, lap_q)
 

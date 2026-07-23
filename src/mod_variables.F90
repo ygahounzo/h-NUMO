@@ -253,6 +253,7 @@ contains
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
       bcl%lap_z_df = 0.0
+      bcl%nu_smag  = 0.0
 
    end subroutine mod_allocate_mlswe
 
