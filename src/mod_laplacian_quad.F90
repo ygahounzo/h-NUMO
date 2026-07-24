@@ -744,6 +744,15 @@ contains
          mu_cfl = delta2 / (16.0 * dt_l)
          mu_dyn = min(mu_dyn, max(0.0, mu_cfl - visc_l))
 
+         ! Pragmatic user-viscosity cap (not from the paper): μ_max/μ_res scale
+         ! with Δ/Δ² respectively, so on coarse (ocean-basin) meshes they are
+         ! inherently huge (~1e8 m²/s here) and saturate the CFL cap above,
+         ! overriding visc_mlswe by ~100x rather than acting as a bounded local
+         ! correction.  2026-07-24 mountain_2layer test: lDyn_SGS=.false. (0x
+         ! extra diffusion) already ran cleanly at this resolution, so 5x sits
+         ! well inside the demonstrated-stable range.
+         mu_dyn = min(mu_dyn, 5.0 * visc_l)
+
          ! Fill element-constant nu_loc, then scatter to global DOF array.
          !$acc loop seq
          do ip = 1, npts_l
@@ -988,6 +997,9 @@ contains
             ! explicit BCL step past its stability limit.
             mu_cfl = delta2 / (16.0 * dt_l)
             mu_dyn = min(mu_dyn, max(0.0, mu_cfl - visc_l))
+
+            ! Pragmatic user-viscosity cap -- see btp_compute_nu_dyn_sgs.
+            mu_dyn = min(mu_dyn, 5.0 * visc_l)
 
             !$acc loop seq
             do ip = 1, npts_l
