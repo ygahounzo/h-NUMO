@@ -581,7 +581,6 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
    integer :: kk, ivar, iquad, i, ip, iface, el, il, jl, kl
    integer :: ngl_f, nboun_f, nw, nvel
    real :: wq, iflux, alpha, beta, nxl, nyl, nzl, hi, flux_qu, flux_qv, flux_qw
-   real :: pconst, sigma, pb_avg, du_pen, dv_pen, dw_pen
    logical :: has_w
 
    real, dimension(3) :: qu_mean, qv_mean, qw_mean
@@ -597,14 +596,12 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
    nw      = inp%ngraduvw_var
    nvel    = inp%nvar_btp - 2
    has_w   = (nvarb == 3)
-   pconst  = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
    !$acc parallel loop gang                                                  &
    !$acc    private(iface, el, iquad, i, ip, ivar,                           &
    !$acc            nxl, nyl, nzl, wq, hi, flux_qu, flux_qv, flux_qw,        &
    !$acc            qu_mean, qv_mean, qw_mean, flux_uv_visc_face,            &
    !$acc            qul, qur, qvl, qvr, qwl, qwr, grad_uvb_pb_l, grad_uvb_pb_r, &
-   !$acc            sigma, pb_avg, du_pen, dv_pen, dw_pen,                   &
    !$acc            il, jl, kl)                                              &
    !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector,             &
    !$acc            mf%jac_face, b%psi,                                      &
@@ -612,7 +609,7 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
    !$acc            ref%q_send_lap, ref%q_recv_lap,                          &
    !$acc            tsp%wjac_df,                                             &
    !$acc            btp%graduvb_face_ave, rhs)                               &
-   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux, nw, nvel, has_w, pconst)
+   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux, nw, nvel, has_w)
    do kk = 1, nboun_f
       iface = par%nbh_send_recv(kk)
       el    = G%face(7, iface)
@@ -668,23 +665,6 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
                  + (qv_mean(3) - iflux*qvl(3))*nzl
          flux_qw = (qw_mean(1) - iflux*qwl(1))*nxl + (qw_mean(2) - iflux*qwl(2))*nyl &
                  + (qw_mean(3) - iflux*qwl(3))*nzl
-
-         ! SIP penalty on MPI faces: local wjac_df only (remote Jacobian not communicated).
-         ! Buffer slots 2*nw+3..2*nw+2+nvel hold the packed BTP velocity Uk.
-         il     = mf%imapl(1, iquad, 1, iface)
-         jl     = mf%imapl(2, iquad, 1, iface)
-         kl     = mf%imapl(3, iquad, 1, iface)
-         ip     = G%intma(il, jl, kl, el)
-         sigma  = pconst * wq / tsp%wjac_df(ip)
-         pb_avg = 0.5 * (ref%q_send_lap(2*nw+2, iquad, kk) + ref%q_recv_lap(2*nw+2, iquad, kk))
-         du_pen = ref%q_send_lap(2*nw+3, iquad, kk) - ref%q_recv_lap(2*nw+3, iquad, kk)
-         dv_pen = ref%q_send_lap(2*nw+4, iquad, kk) - ref%q_recv_lap(2*nw+4, iquad, kk)
-         flux_qu = flux_qu - sigma * pb_avg * du_pen
-         flux_qv = flux_qv - sigma * pb_avg * dv_pen
-         if (has_w) then
-            dw_pen  = ref%q_send_lap(2*nw+5, iquad, kk) - ref%q_recv_lap(2*nw+5, iquad, kk)
-            flux_qw = flux_qw - sigma * pb_avg * dw_pen
-         end if
 
          !$acc loop seq
          do i = 1, ngl_f
@@ -1768,7 +1748,6 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
    integer :: kk, k, iquad, i, ivar, iface, el, il, jl, kl, ip, index
    integer :: ngl_f, nlayers_f, nboun_valid_f, nw, nvel_pen, nvarb
    real    :: wq, nxl, nyl, nzl, hi, flux_qu, flux_qv, flux_qw, alpha, beta, iflux
-   real    :: pconst, sigma, dp_avg_pen, du_pen, dv_pen, dw_pen
    logical :: has_w
    real, dimension(9,2) :: flux_uv_visc_face
    real, dimension(3)   :: qu_mean, qv_mean, qw_mean, qul, qur, qvl, qvr, qwl, qwr
@@ -1783,15 +1762,13 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
    nvel_pen = nvel   ! use the passed velocity-component count (nvar_bcl-1)
    nvarb    = nw + 1 + nvel_pen   ! buffer vars per layer per quad node
    has_w    = (nvel == 3)
-   pconst   = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
    !$acc parallel loop gang &
    !$acc    present(ref%face_pack_list, G%face, G%intma, mf%imapl, mf%jac_face, &
    !$acc            mf%normal_vector, b%psi, btp%graduvb_face_ave, q_send, q_recv, &
    !$acc            tsp%wjac_df, rhs) &
-   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, alpha, beta, iflux, nw, nvel_pen, nvarb, has_w, pconst) &
-   !$acc    private(flux_uv_visc_face, qu_mean, qv_mean, qw_mean, qul, qur, qvl, qvr, qwl, qwr, &
-   !$acc            sigma, dp_avg_pen, du_pen, dv_pen, dw_pen)
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, alpha, beta, iflux, nw, nvel_pen, nvarb, has_w) &
+   !$acc    private(flux_uv_visc_face, qu_mean, qv_mean, qw_mean, qul, qur, qvl, qvr, qwl, qwr)
    do kk = 1, nboun_valid_f
       iface = ref%face_pack_list(kk)
       el    = G%face(7, iface)
@@ -1845,24 +1822,6 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
                     + (qv_mean(3) - iflux*qvl(3))*nzl
             flux_qw = (qw_mean(1) - iflux*qwl(1))*nxl + (qw_mean(2) - iflux*qwl(2))*nyl &
                     + (qw_mean(3) - iflux*qwl(3))*nzl
-
-            ! SIP penalty on MPI faces: same formula as interior faces but using the
-            ! local element's wjac_df only (remote Jacobian not communicated).
-            ! q_send = local (L), q_recv = remote (R) neighbour.
-            il = mf%imapl(1,iquad,1,iface)
-            jl = mf%imapl(2,iquad,1,iface)
-            kl = mf%imapl(3,iquad,1,iface)
-            ip = G%intma(il,jl,kl,el)
-            sigma      = pconst * wq / tsp%wjac_df(ip)
-            dp_avg_pen = 0.5 * (q_send(index+nw+1,iquad,kk) + q_recv(index+nw+1,iquad,kk))
-            du_pen     = q_send(index+nw+2,iquad,kk) - q_recv(index+nw+2,iquad,kk)
-            dv_pen     = q_send(index+nw+3,iquad,kk) - q_recv(index+nw+3,iquad,kk)
-            flux_qu    = flux_qu - sigma * dp_avg_pen * du_pen
-            flux_qv    = flux_qv - sigma * dp_avg_pen * dv_pen
-            if (has_w) then
-               dw_pen  = q_send(index+nw+4,iquad,kk) - q_recv(index+nw+4,iquad,kk)
-               flux_qw = flux_qw - sigma * dp_avg_pen * dw_pen
-            end if
 
             do i = 1, ngl_f
                hi = b%psi(i, iquad)

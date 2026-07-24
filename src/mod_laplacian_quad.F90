@@ -533,9 +533,16 @@ contains
    !
    ! Per element Ωe:
    !   Δ²     = mean Jacobian weight per DOF
-   !   μ_res  = Δ² × max_e(massinv×|R_H(I)|) / max(max_e(|η(I)|), h_floor)
+   !   μ_res  = Δ² × max_e(massinv×|R_H(I)|) / max(max_e(pb(I)), h_floor)
    !   μ_max  = 0.5 × Δ × max_e(|u_b| + |v_b| [+ |w_b| on sphere])
    !   μ_SGS  = min(μ_max, μ_res)   written to btp%nu_smag(I)
+   !
+   ! The residual is normalized by the FULL column mass pb = qb_df(1) (~5e7 Pa),
+   ! matching bcl_compute_nu_dyn_sgs which divides by the full layer dp.  It must
+   ! NOT be normalized by the SSH deviation η = qb_df(2): η ≈ 0 at cold start, so
+   ! dividing by max(|η|, 100 Pa) sent μ_res to the μ_max cap (~1e6 m²/s at
+   ! Δ≈58 km, |u|≈20 m/s) globe-wide during spin-up, violating the explicit
+   ! diffusive CFL and NaN-ing the BTP solver within hours.
    !
    ! Called after create_rhs_btp so btp%rhs_btp(1,I) holds the current-step residual.
    subroutine btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, qb_df)
@@ -562,22 +569,30 @@ contains
       integer :: npts_l, nelem_l
       real    :: wjac_sum, delta2, delta
       real    :: R_mass, h_ref, vel_mag, mu_res, mu_max, mu_dyn
+      real    :: dt_l, visc_l, mu_cfl
       real    :: nu_loc(b%npts)
       logical :: has_w
-      real, parameter :: h_floor = 1.0e2   ! Pa floor; prevents div-by-zero near still water
+      real, parameter :: h_floor = 1.0e2   ! Pa floor; div-by-zero guard only — pb ~ 5e7 Pa
+                                           ! in any wet column, so the floor is normally inert
 
       npts_l  = b%npts
       nelem_l = G%nelem
       has_w   = (inp%nvar_btp == 5)
 
+      ! Explicit diffusive-CFL guard for the cap below: the (unpenalized,
+      ! central-flux) viscous operator's spectral radius is ~(visc+μ)·16/Δ²
+      ! (LGL endpoint-weight estimate), so keep visc+μ ≤ Δ²/(16·dt_btp).
+      dt_l   = inp%dt_btp
+      visc_l = inp%visc_mlswe
+
       !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df, &
       !$acc              btp%nu_smag, btp%rhs_btp, mt%massinv, qb_df)
 
       !$acc parallel loop gang                                              &
-      !$acc   private(nu_loc, wjac_sum, delta2, delta,                     &
+      !$acc   private(nu_loc, wjac_sum, delta2, delta, mu_cfl,             &
       !$acc           R_mass, h_ref, vel_mag, mu_res, mu_max, mu_dyn,      &
       !$acc           Iq, Iq0, I, ip, iq_local)                            &
-      !$acc   firstprivate(npts_l, nelem_l, has_w, h_floor)
+      !$acc   firstprivate(npts_l, nelem_l, has_w, h_floor, dt_l, visc_l)
       do ie = 1, nelem_l
 
          ! Element filter width: Δ² = mean Jacobian weight per DOF.
@@ -599,8 +614,9 @@ contains
             Iq = tsp%index_df_elt(iq_local, ie)
             ! Mass residual: scale by massinv to get ∂η/∂t|_inv [Pa/s or m/s]
             R_mass = max(R_mass, mt%massinv(Iq) * abs(btp%rhs_btp(1,Iq)))
-            ! η = qb_df(2): sea surface height deviation
-            h_ref  = max(h_ref, abs(qb_df(2,Iq)))
+            ! Normalization scale: full column mass pb = qb_df(1) (see header —
+            ! NOT η = qb_df(2), which is ~0 at cold start).
+            h_ref  = max(h_ref, abs(qb_df(1,Iq)))
             ! Depth-averaged velocity = momentum / H
             if (has_w) then
                vel_mag = max(vel_mag, abs(qb_df(3,Iq)/qb_df(1,Iq)) &
@@ -615,6 +631,13 @@ contains
          mu_res = delta2 * R_mass / h_ref
          mu_max = 0.5 * delta * vel_mag
          mu_dyn = min(mu_max, mu_res)
+
+         ! Explicit diffusive-CFL cap: A_H = visc+μ must satisfy the explicit
+         ! stability limit of the viscous operator at dt_btp.  μ is reduced so
+         ! visc+μ never exceeds it; if visc alone exceeds the limit, that is
+         ! the user's parameter choice and μ contributes nothing.
+         mu_cfl = delta2 / (16.0 * dt_l)
+         mu_dyn = min(mu_dyn, max(0.0, mu_cfl - visc_l))
 
          ! Fill element-constant nu_loc, then scatter to global DOF array.
          !$acc loop seq
@@ -669,6 +692,7 @@ contains
       integer :: npts_l, nelem_l, nlayers_l
       real    :: wjac_sum, delta2, delta
       real    :: R_mass, dp_ref, vel_mag, mu_res, mu_max, mu_dyn
+      real    :: dt_l, visc_l, mu_cfl
       real    :: nu_loc(b%npts, inp%nlayers)
       logical :: has_w
       real, parameter :: dp_floor = 1.0e2   ! Pa floor (~10 m); prevents div-by-zero in thin/dry layers
@@ -678,14 +702,19 @@ contains
       nlayers_l = inp%nlayers
       has_w     = (inp%nvar_bcl == 4)   ! w carried only on sphere_hex/sphere_ico
 
+      ! Explicit diffusive-CFL guard for the cap below (see btp_compute_nu_dyn_sgs).
+      ! BCL viscosity is applied at the baroclinic step dt, not dt_btp.
+      dt_l   = inp%dt
+      visc_l = inp%visc_mlswe
+
       !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df, &
       !$acc              bcl%nu_smag, rhs, qprime_df)
 
       !$acc parallel loop gang                                                     &
-      !$acc   private(nu_loc, wjac_sum, delta2, delta,                             &
+      !$acc   private(nu_loc, wjac_sum, delta2, delta, mu_cfl,                     &
       !$acc           R_mass, dp_ref, vel_mag, mu_res, mu_max, mu_dyn,             &
       !$acc           Iq, Iq0, I, ip, k, iq_local)                                 &
-      !$acc   firstprivate(npts_l, nelem_l, nlayers_l, has_w, dp_floor)
+      !$acc   firstprivate(npts_l, nelem_l, nlayers_l, has_w, dp_floor, dt_l, visc_l)
       do ie = 1, nelem_l
 
          ! Element filter width: Δ² = mean Jacobian weight per DOF.
@@ -721,6 +750,13 @@ contains
             mu_res = delta2 * R_mass / dp_ref
             mu_max = 0.5 * delta * vel_mag
             mu_dyn = min(mu_max, mu_res)
+
+            ! Explicit diffusive-CFL cap: keep visc+μ inside the explicit
+            ! stability limit of the viscous operator at dt.  Without this,
+            ! μ from strong transients (e.g. mountain wakes) can push the
+            ! explicit BCL step past its stability limit.
+            mu_cfl = delta2 / (16.0 * dt_l)
+            mu_dyn = min(mu_dyn, max(0.0, mu_cfl - visc_l))
 
             !$acc loop seq
             do ip = 1, npts_l
@@ -948,7 +984,6 @@ contains
       integer :: iface, i, il, jl, kl, ir, jr, kr
       integer :: iel, ier, ip, iquad, ivar, nw
       real :: flux_qu, flux_qv, flux_qw, hi, alpha, beta, iflux
-      real :: pconst, sigma, pb_avg, du_pen, dv_pen, dw_pen
       real    :: ql_s(9), qr_s(9), btp_ql_s(10), btp_qr_s(10)
       integer, dimension(b%ngl) :: I_l, I_r
       integer :: ngl_f, nface_f
@@ -962,7 +997,6 @@ contains
       nface_f = G%nface
       nw      = inp%ngraduvw_var
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
-      pconst  = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
       !$acc data present(G%face, G%face_type, G%intma,                       &
       !$acc               mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face, &
@@ -980,9 +1014,8 @@ contains
       !$acc           flux_uv_visc_face,                                      &
       !$acc           qul, qur, qvl, qvr, qwl, qwr,                          &
       !$acc           qu_mean, qv_mean, qw_mean,                              &
-      !$acc           sigma, pb_avg, du_pen, dv_pen, dw_pen,                  &
       !$acc           flux_qu, flux_qv, flux_qw, hi, ivar, i, iquad)          &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w, pconst)
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -1151,21 +1184,6 @@ contains
             flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
                     + (qw_mean(3) - iflux*qwl(3))*nz
 
-            ! SIP interior penalty on interior faces only (ier > 0).
-            ! Jump [ū] = Uk_L - Uk_R; average p̄_b_avg = 0.5*(pbprime_L + pbprime_R).
-            if (ier > 0) then
-               sigma  = pconst * wq / min(tsp%wjac_df(I_l(iquad)), tsp%wjac_df(I_r(iquad)))
-               pb_avg = 0.5 * (btp%pbprime_visc(I_l(iquad)) + btp%pbprime_visc(I_r(iquad)))
-               du_pen = Uk(1, I_l(iquad)) - Uk(1, I_r(iquad))
-               dv_pen = Uk(2, I_l(iquad)) - Uk(2, I_r(iquad))
-               flux_qu = flux_qu - sigma * pb_avg * du_pen
-               flux_qv = flux_qv - sigma * pb_avg * dv_pen
-               if (has_w) then
-                  dw_pen  = Uk(3, I_l(iquad)) - Uk(3, I_r(iquad))
-                  flux_qw = flux_qw - sigma * pb_avg * dw_pen
-               end if
-            end if
-
             ! rhs scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
             do i = 1, ngl_f
@@ -1239,7 +1257,6 @@ contains
       integer :: ngl_f, nlayers_f, nface_f
       logical :: has_w
       integer :: ip_face_L, ip_face_R
-      real :: pconst, sigma, dp_avg_pen, du_pen, dv_pen, dw_pen
 
       beta  = 0.5
       alpha = 1.0 - beta
@@ -1250,12 +1267,6 @@ contains
       nface_f   = G%nface
       nw        = inp%ngraduvw_var
       has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
-
-      ! Shahbazi 2D SIPG constant: pconst = (p+1)(p+2)/2, p = nopx = ngl_f - 1.
-      ! For ngl_f=5 (nopx=4): pconst = 15.  sigma = pconst * jac_face / jac_vol
-      ! gives correct 1/h scaling for the SIP penalty.
-      ! inp%SIPG_constant scales the penalty: 0 = LDG (no penalty), 1 = standard Shahbazi SIP.
-      pconst = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
       !$acc data present(G%face, G%face_type, G%intma,                          &
       !$acc              mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face,     &
@@ -1270,8 +1281,8 @@ contains
       !$acc           qu_mean, qv_mean, qw_mean,                                     &
       !$acc           nx, ny, nz, un, wq, flux_qu, flux_qv, flux_qw, hi,            &
       !$acc           iel, ier, ip, il, jl, kl, ir, jr, kr, iquad, k, i, ivar,  &
-      !$acc           ip_face_L, ip_face_R, sigma, dp_avg_pen, du_pen, dv_pen, dw_pen) &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f, nw, has_w, pconst)
+      !$acc           ip_face_L, ip_face_R) &
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nlayers_f, nface_f, nw, has_w)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -1381,23 +1392,6 @@ contains
                        + (qv_mean(3) - iflux*qvl(3))*nz
                flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
                        + (qw_mean(3) - iflux*qwl(3))*nz
-
-               ! SIP interior penalty: stabilises the variable-coefficient DG Laplacian.
-               ! For constant dp_k the central-flux term has a zero eigenvalue for the
-               ! 2-Delta-x checkerboard mode; for variable dp_k it becomes POSITIVE
-               ! (anti-diffusive).  The penalty -eta*dp_avg/h*[u'_k] restores coercivity.
-               ! Applied only for interior faces (ip_face_R /= ip_face_L after the above).
-               ! Boundary faces retain ip_face_R = ip_face_L, giving zero jump and no effect.
-               sigma = pconst * wq / min(tsp%wjac_df(ip_face_L), tsp%wjac_df(ip_face_R))
-               dp_avg_pen = 0.5 * (ql_cur(nw+1) + qr_cur(nw+1))
-               du_pen = bcl%qprime_df(2,ip_face_L,k) - bcl%qprime_df(2,ip_face_R,k)
-               dv_pen = bcl%qprime_df(3,ip_face_L,k) - bcl%qprime_df(3,ip_face_R,k)
-               flux_qu = flux_qu - sigma * dp_avg_pen * du_pen
-               flux_qv = flux_qv - sigma * dp_avg_pen * dv_pen
-               if (has_w) then
-                  dw_pen = bcl%qprime_df(4,ip_face_L,k) - bcl%qprime_df(4,ip_face_R,k)
-                  flux_qw = flux_qw - sigma * dp_avg_pen * dw_pen
-               end if
 
                !$acc loop seq
                do i = 1, ngl_f

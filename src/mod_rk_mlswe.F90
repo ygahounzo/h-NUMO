@@ -108,8 +108,23 @@ contains
             a2  = init%ssprk_a(ik,3)
             dtt = dt_btp_in * init%ssprk_beta(ik)
 
-            ! Pre-scale pbprime_visc and btp_dpp_graduvw by A_H = (visc + μ_SGS_prev) for
+            ! Inviscid residual first -- create_rhs_btp depends only on qb_df/
+            ! qprime_df, not on nu_smag or the Laplacian, so it can run before
+            ! the viscosity machinery below.  This lets Dyn-SGS use THIS stage's
+            ! own residual for THIS stage's viscous term (see below), instead of
+            ! lagging by one RK stage as the previous ordering did.
+            call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
+               btp%rhs_btp, qb_df, qprime_df)
+
+            ! Dyn-SGS: compute btp%nu_smag from the residual just computed above,
+            ! before it is used to scale this same stage's viscous term.
+            if (inp%lDyn_SGS) &
+               call btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, qb_df)
+
+            ! Pre-scale pbprime_visc and btp_dpp_graduvw by A_H = (visc + μ_SGS) for
             ! correct ∇·(A_H×H_s×∇u) with {A_H×H_s} face averaging (DG-correct form).
+            ! μ_SGS here is this same stage's own coefficient (see above), not the
+            ! previous stage's.
             if (inp%lDyn_SGS .and. inp%method_visc > 0) then
                 nw_btp_l = inp%ngraduvw_var
                 !$acc parallel loop gang present(btp%pbprime_visc, btp%btp_dpp_graduvw, btp%nu_smag) &
@@ -143,14 +158,6 @@ contains
                 end do
                 !$acc end parallel loop
             end if
-
-            call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
-               btp%rhs_btp, qb_df, qprime_df)
-
-            ! Dyn-SGS: update btp%nu_smag from the current-step inviscid residual
-            ! (btp%rhs_btp(1,I)) now that it is available on the device.
-            if (inp%lDyn_SGS) &
-               call btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, qb_df)
 
             ! Fused: accumulate averages from old qb_df, then SSPRK update in-place.
             ! Reading qb_df(I) for averages and a1-coefficient happens before the
