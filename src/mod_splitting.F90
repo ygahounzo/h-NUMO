@@ -386,7 +386,7 @@ contains
             !$acc end parallel loop
 
             ! Step B: compute per-element Dyn-SGS coefficient → bcl%nu_smag(I,k).
-            call bcl_compute_nu_dyn_sgs(G, inp, b, bcl, tsp, rhs, qprime_df)
+            call bcl_compute_nu_dyn_sgs(G, inp, b, bcl, tsp, init, rhs, qprime_df, q_df)
 
             ! Step C: pre-scale dpprime_visc/dpp_graduvw by A_H = (visc + μ_SGS) so
             ! the Laplacian assembles ∇·(A_H×dp×∇u) with {A_H×dp} face averaging

@@ -119,7 +119,7 @@ contains
             ! Dyn-SGS: compute btp%nu_smag from the residual just computed above,
             ! before it is used to scale this same stage's viscous term.
             if (inp%lDyn_SGS) &
-               call btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, qb_df)
+               call btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, init, qb_df)
 
             ! Pre-scale pbprime_visc and btp_dpp_graduvw by A_H = (visc + μ_SGS) for
             ! correct ∇·(A_H×H_s×∇u) with {A_H×H_s} face averaging (DG-correct form).
