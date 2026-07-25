@@ -1,0 +1,81 @@
+! HNUMO parameter documentation
+! Auto-generated at run start.
+! Format:  NAME = value                              ! [units] Description
+!
+! === Run Identity ===
+
+TEST_CASE = "mountain_2layer"                         ! test case identifier
+EQN_SET = "set2nc",                                   ! equation set (mlswe, ...)
+FNAME_ROOT = "mlswe_sphere_300.0000_dg_rk35"          ! output file root name
+NPROC = 64                                            ! number of MPI ranks
+
+! === Grid ===
+
+GEOMETRY_TYPE = "sphere_hex"                          ! mesh geometry (sphere, cube, ...)
+NLAYERS = 2                                           ! number of baroclinic layers
+NELX_ROOT = 25                                        ! root elements in x (before refinement)
+NELY_ROOT = 10                                        ! root elements in y (before refinement)
+REFINEMENT_LEVELS = 0                                 ! uniform h-refinement levels
+NELX = 25                                             ! effective elements in x after refinement
+NELY = 10                                             ! effective elements in y after refinement
+NOPX = 4                                              ! polynomial order in x
+NOPY = 4                                              ! polynomial order in y
+NGLX = 5                                              ! quadrature points per edge (nopx+1)
+NELEM_GLOBAL = 3750                                   ! total global elements
+NPOIN_GLOBAL = 93750                                  ! total global DG DOFs
+NBOUN_GLOBAL = 0                                      ! total global MPI boundary faces
+
+! === Time Integration ===
+
+TIME_INITIAL =   0.000000E+00                         ! [s] simulation start time
+TIME_FINAL =   2.592000E+06                           ! [s] simulation end time
+TIME_SCALE =   8.640000E+04                           ! [s] time scale for diagnostic output
+DT =   3.000000E+02                                   ! [s] baroclinic time step
+DT_BTP =   2.500000E+01                               ! [s] barotropic time step
+TI_METHOD_BTP = "rk35"                                ! barotropic time integration method
+BCL_TIME_METHOD = "lsrk3"                             ! baroclinic time integration method
+KSTAGES_BTP = 5                                       ! barotropic RK stages
+KSTAGES_BCL = 3                                       ! baroclinic RK stages
+RK_BCL_FS = F                                         ! baroclinic free-surface coupling flag
+IMPLICIT_CORIOLIS_SPH = T                             ! 3D implicit Coriolis for sphere (LSRK3 only)
+
+! === Physics ===
+
+F0 =   0.000000E+00                                   ! [s-1] reference Coriolis parameter
+BETA =   0.000000E+00                                 ! [m-1 s-1] beta-plane parameter
+AD_MLSWE =   0.000000E+00                             ! [m2 s-1] momentum diffusivity
+CD_MLSWE =   0.000000E+00                             ! [m2 s-1] thickness diffusivity
+DP_TAU_BOT =   0.000000E+00                           ! bottom drag coefficient
+DP_TAU_WIND =   0.000000E+00                          ! wind stress coefficient
+BOTFR = 0                                             ! bottom friction type (0=none)
+
+! === Viscosity / Stabilization ===
+
+METHOD_VISC = 1                                       ! LDG viscosity (0=off, 1=LDG)
+VISC_MLSWE =   8.000000E+04                           ! [m2 s-1] explicit LDG viscosity coefficient
+SIPG_CONSTANT =   0.000000E+00                        ! SIP penalty multiplier (0=LDG, 1=Shahbazi)
+C_APE =   0.000000E+00                                ! [m2] Chen (2025) APE stabilization coefficient
+C_SMAG =   0.000000E+00                               ! [-] Smagorinsky constant (0=off)
+L_DYN_SGS = F                                         ! Dyn-SGS residual viscosity (Marras 2016)
+
+! === Layer Thickness Limits ===
+
+DRY_CUTOFF =   1.000000E+00                           ! [m] minimum layer thickness (wetting/drying)
+H_CUTOFF1 =   1.000000E+02                            ! [m] lower health-check thickness threshold
+H_CUTOFF2 =   1.000000E+03                            ! [m] upper health-check thickness threshold
+ADJUST_H_VERTICAL_SUM = 2                             ! enforce vertical sum conservation (0=off)
+ADJUST_BCL_MOM_FLUX = 1                               ! adjust BCL momentum flux for consistency (0=off)
+
+! === Diagnostics and Output ===
+
+OUT_TYPE = "vtk"                                      ! output format (netcdf, vtk, ...)
+NVTK_FILES = 1                                        ! number of parallel VTK output files
+LPRINT_DIAGNOSTICS = T                                ! enable run-time diagnostics
+IPRINT_DIAGNOSTICS = 1                                ! print diagnostics every N time steps
+LCHECK_CONSERVED = T                                  ! check mass/energy conservation
+
+! === Restart ===
+
+TIME_RESTART =   8.640000E+04                         ! [s] restart dump interval
+IRESTART_FILE_NUMBER = 0                              ! restart file index to read (0=cold start)
+
