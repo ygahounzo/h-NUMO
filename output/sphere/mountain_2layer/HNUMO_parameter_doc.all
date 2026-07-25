@@ -7,7 +7,7 @@
 TEST_CASE = "mountain_2layer"                         ! test case identifier
 EQN_SET = "set2nc",                                   ! equation set (mlswe, ...)
 FNAME_ROOT = "mlswe_sphere_300.0000_dg_rk35"          ! output file root name
-NPROC = 64                                            ! number of MPI ranks
+NPROC = 100                                           ! number of MPI ranks
 
 ! === Grid ===
 
@@ -28,7 +28,7 @@ NBOUN_GLOBAL = 0                                      ! total global MPI boundar
 ! === Time Integration ===
 
 TIME_INITIAL =   0.000000E+00                         ! [s] simulation start time
-TIME_FINAL =   2.592000E+06                           ! [s] simulation end time
+TIME_FINAL =   4.320000E+06                           ! [s] simulation end time
 TIME_SCALE =   8.640000E+04                           ! [s] time scale for diagnostic output
 DT =   3.000000E+02                                   ! [s] baroclinic time step
 DT_BTP =   2.500000E+01                               ! [s] barotropic time step

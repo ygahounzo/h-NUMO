@@ -27,9 +27,11 @@ dt_btp = 1.8,
 time_initial = 0.0,
 time_final   = 10800,
 time_restart = 10.0,
+write_restart_time = 3000.0, ! [time_scale units] writes a RESTART files (<=0 disables)
+                             ! Check RESTART/hNUMO.res
 time_scale = 1, !1=seconds, 3600=hours, 86400=days
 !lrestart_file = .true.,
-!irestart_file_number = 2
+!irestart_file_number = 2   ! set to the INDEX from RESTART/hNUMO.res to resume
 
 ! mlswe parameter
 ad_mlswe = 0.0,

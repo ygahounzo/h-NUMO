@@ -13,9 +13,249 @@ module mod_restart
 
     implicit none
 
-    public :: read_mlswe, restart_mlswe
+    public :: read_mlswe, restart_mlswe, write_restart_nc
 
     contains
+
+!---------------------------------------------------------------------!
+!> @brief Writes the full prognostic state needed to restart the run
+!> to a numbered NetCDF file under RESTART/ (created on rank 0 if
+!> missing). Called periodically (every inp%write_restart_time) and
+!> once, unconditionally, at the end of the run.
+!---------------------------------------------------------------------!
+subroutine write_restart_nc(G, inp, gg, par, init, q_df, qb, irestart_nc, time, itime)
+
+    use mod_grid,          only: grid
+    use mod_input,         only: input
+    use mod_global_grid,   only: grid_global
+    use mod_parallel,      only: parallel_CS
+    use mod_initial,       only: initial
+    use mod_constants,     only: gravity
+    use mod_mpi_utilities, only: irank, irank0
+    use netcdf
+
+    implicit none
+
+    type(grid),        intent(in) :: G
+    type(input),       intent(in) :: inp
+    type(grid_global), intent(in) :: gg
+    type(parallel_CS), intent(in) :: par
+    type(initial),     intent(in) :: init
+
+    real, intent(in)    :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
+    real, intent(in)    :: qb(inp%nvar_btp, G%npoin)
+    integer, intent(in) :: irestart_nc
+    real, intent(in)    :: time
+    integer, intent(in) :: itime
+
+    character(len=*), parameter :: restart_dir = 'RESTART'
+    character(len=*), parameter :: restart_log = 'RESTART/hNUMO.res'
+    character(len=25) :: restart_fname
+    character(len=25) :: hdr_filename = 'FILENAME'
+    logical :: log_exists
+    integer :: log_unit
+
+    character(len=200) :: fn
+    character(len=4)   :: num
+    logical :: has_w
+    integer :: j, k, iloop, ncid, dimids_2d(2)
+    real :: q(5, G%npoin, inp%nlayers)
+    real :: q_gg(5, gg%npoin_g, inp%nlayers), ql(5, G%npoin), zbot_g(gg%npoin_g)
+    real :: coord_dg_gathered(3, gg%npoin_g), qb_g(inp%nvar_btp, gg%npoin_g), q_g(5, gg%npoin_g)
+    real, dimension(G%npoin,    inp%nlayers+1) :: mslwe_elevation
+    real, dimension(gg%npoin_g, inp%nlayers+1) :: eta
+
+    character (len = *), parameter :: TIME_NAME      = "time"
+    character (len = *), parameter :: NK_NAME        = "nlayers"
+    character (len = *), parameter :: NPOIN_NAME     = "npoin"
+    character (len = *), parameter :: DT_NAME        = "dt"
+    character (len = *), parameter :: DT_BTP_NAME    = "dt_btp"
+    character (len = *), parameter :: X_NAME         = "x"
+    character (len = *), parameter :: Y_NAME         = "y"
+    character (len = *), parameter :: PB_NAME        = "pb"
+    character (len = *), parameter :: PBUB_NAME      = "pbub"
+    character (len = *), parameter :: PBVB_NAME      = "pbvb"
+    character (len = *), parameter :: PBWB_NAME      = "pbwb"
+    character (len = *), parameter :: H_NAME         = "h"
+    character (len = *), parameter :: U_NAME         = "u"
+    character (len = *), parameter :: V_NAME         = "v"
+    character (len = *), parameter :: W_NAME         = "w"
+    character (len = *), parameter :: ETA_NAME       = "eta"
+    character (len = *), parameter :: INTERFACE_NAME = "zi"
+
+    integer :: time_dimid, npoin_dimid, nlayers_dimid, zi_dimid
+    integer :: dt_varid, dt_btp_varid, pb_varid
+    integer :: pbub_varid, pbvb_varid, pbwb_varid, h_varid, u_varid, v_varid, w_varid, e_varid
+    integer :: x_varid, y_varid
+
+    has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+
+    do k = 1, inp%nlayers
+        q(1,:,k) = (init%alpha_mlswe(k)/gravity)*q_df(1,:,k)
+        q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+        q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+        if (has_w) then
+            q(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+        else
+            q(4,:,k) = q_df(1,:,k)
+        end if
+    end do
+
+    mslwe_elevation = 0.0
+    mslwe_elevation(:, inp%nlayers+1) = init%zbot_df
+
+    do k = inp%nlayers, 1, -1
+        mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + q(1,:,k)
+    end do
+
+    q(5,:,1) = mslwe_elevation(:,1)
+    q(5,:,2:inp%nlayers) = mslwe_elevation(:,2:inp%nlayers)
+
+    ! Gather Data onto Head node
+    do k = 1, inp%nlayers
+        ql = q(:,:,k)
+        call gather_data(G, inp, gg, par, q_g, ql, 5)
+        q_gg(:,:,k) = q_g(:,:)
+    enddo
+
+    call gather_data(G, inp, gg, par, qb_g,               qb,             inp%nvar_btp)
+    call gather_data(G, inp, gg, par, coord_dg_gathered,   G%coord,        3)
+    call gather_data(G, inp, gg, par, zbot_g,              init%zbot_df,   1)
+
+    eta(:, 1:inp%nlayers) = q_gg(5,:,1:inp%nlayers)
+    eta(:, inp%nlayers+1) = zbot_g
+
+    if (irank == irank0) then
+
+        call execute_command_line('mkdir -p ' // restart_dir)
+
+        write(num,'(i4)') irestart_nc
+        iloop = 3 - int(log10(real(irestart_nc)))
+        do j = 1, iloop
+            num(j:j) = '0'
+        end do
+
+        restart_fname = 'restart_mlswe_' // num // '.nc'
+        fn = trim(restart_dir) // '/' // trim(restart_fname)
+
+        ! Create NetCDF file
+        call check(nf90_create(trim(fn), nf90_clobber+nf90_64bit_offset, ncid))
+
+        ! Define dimensions
+        call check(nf90_def_dim(ncid, TIME_NAME,      NF90_UNLIMITED,   time_dimid))
+        call check(nf90_def_dim(ncid, NPOIN_NAME,     gg%npoin_g,       npoin_dimid))
+        call check(nf90_def_dim(ncid, NK_NAME,        inp%nlayers,      nlayers_dimid))
+        call check(nf90_def_dim(ncid, INTERFACE_NAME, inp%nlayers+1,    zi_dimid))
+
+        call check(nf90_put_att(ncid, NF90_GLOBAL, "filename", trim(fn)))
+        call check(nf90_put_att(ncid, NF90_GLOBAL, "npoin", "Number of points in the mesh"))
+        call check(nf90_put_att(ncid, NF90_GLOBAL, "zi", "Number of interfaces"))
+
+        ! Name each variable
+        call check(nf90_def_var(ncid, DT_NAME,     NF90_DOUBLE, 1,          dt_varid))
+        call check(nf90_put_att(ncid, dt_varid,     "name", "Baroclinic time step"))
+        call check(nf90_put_att(ncid, dt_varid,     "units", "seconds"))
+        call check(nf90_def_var(ncid, DT_BTP_NAME, NF90_DOUBLE, 1,          dt_btp_varid))
+        call check(nf90_put_att(ncid, dt_btp_varid, "name", "Barotropic time step"))
+        call check(nf90_put_att(ncid, dt_btp_varid, "units", "seconds"))
+        call check(nf90_def_var(ncid, X_NAME, NF90_DOUBLE, npoin_dimid, x_varid))
+        call check(nf90_put_att(ncid, x_varid, "name", "cartesian coordinates"))
+        call check(nf90_put_att(ncid, x_varid, "axis", "X"))
+        call check(nf90_def_var(ncid, Y_NAME, NF90_DOUBLE, npoin_dimid, y_varid))
+        call check(nf90_put_att(ncid, y_varid, "name", "cartesian coordinates"))
+        call check(nf90_put_att(ncid, y_varid, "axis", "Y"))
+        call check(nf90_def_var(ncid, PB_NAME,   NF90_DOUBLE, npoin_dimid, pb_varid))
+        call check(nf90_put_att(ncid, pb_varid,   "name", "Barotropic pressure pb"))
+        call check(nf90_put_att(ncid, pb_varid,   "units", "N/m^2"))
+        call check(nf90_def_var(ncid, PBUB_NAME, NF90_DOUBLE, npoin_dimid, pbub_varid))
+        call check(nf90_put_att(ncid, pbub_varid, "name", "Barotropic u-momentum"))
+        call check(nf90_put_att(ncid, pbub_varid, "units", "kg.m/s"))
+        call check(nf90_def_var(ncid, PBVB_NAME, NF90_DOUBLE, npoin_dimid, pbvb_varid))
+        call check(nf90_put_att(ncid, pbvb_varid, "name", "Barotropic v-momentum"))
+        call check(nf90_put_att(ncid, pbvb_varid, "units", "kg.m/s"))
+        if (has_w) then
+            call check(nf90_def_var(ncid, PBWB_NAME, NF90_DOUBLE, npoin_dimid, pbwb_varid))
+            call check(nf90_put_att(ncid, pbwb_varid, "name", "Barotropic w-momentum"))
+            call check(nf90_put_att(ncid, pbwb_varid, "units", "kg.m/s"))
+        end if
+        dimids_2d = (/npoin_dimid, nlayers_dimid/)
+        call check(nf90_def_var(ncid, H_NAME, NF90_DOUBLE, dimids_2d, h_varid))
+        call check(nf90_put_att(ncid, h_varid, "name", "Layer thickness"))
+        call check(nf90_put_att(ncid, h_varid, "units", "m"))
+        call check(nf90_def_var(ncid, U_NAME, NF90_DOUBLE, dimids_2d, u_varid))
+        call check(nf90_put_att(ncid, u_varid, "name", "Baroclinic u-velocity"))
+        call check(nf90_put_att(ncid, u_varid, "units", "m/s"))
+        call check(nf90_def_var(ncid, V_NAME, NF90_DOUBLE, dimids_2d, v_varid))
+        call check(nf90_put_att(ncid, v_varid, "name", "Baroclinic v-velocity"))
+        call check(nf90_put_att(ncid, v_varid, "units", "m/s"))
+        if (has_w) then
+            call check(nf90_def_var(ncid, W_NAME, NF90_DOUBLE, dimids_2d, w_varid))
+            call check(nf90_put_att(ncid, w_varid, "name", "Baroclinic w-velocity"))
+            call check(nf90_put_att(ncid, w_varid, "units", "m/s"))
+        end if
+        dimids_2d = (/npoin_dimid, zi_dimid/)
+        call check(nf90_def_var(ncid, ETA_NAME, NF90_DOUBLE, dimids_2d, e_varid))
+        call check(nf90_put_att(ncid, e_varid, "name", "Interface Height Relative to Mean Sea Level"))
+        call check(nf90_put_att(ncid, e_varid, "units", "m"))
+
+        ! End define mode
+        call check(nf90_enddef(ncid))
+
+        ! Write data
+        call check(nf90_put_var(ncid, dt_varid,     inp%dt))
+        call check(nf90_put_var(ncid, dt_btp_varid, inp%dt_btp))
+        call check(nf90_put_var(ncid, x_varid,    coord_dg_gathered(1,:)))
+        call check(nf90_put_var(ncid, y_varid,    coord_dg_gathered(2,:)))
+        call check(nf90_put_var(ncid, pb_varid,   qb_g(1,:)))
+        call check(nf90_put_var(ncid, pbub_varid, qb_g(3,:)))
+        call check(nf90_put_var(ncid, pbvb_varid, qb_g(4,:)))
+        if (has_w) call check(nf90_put_var(ncid, pbwb_varid, qb_g(5,:)))
+        call check(nf90_put_var(ncid, h_varid, q_gg(1,:,:)))
+        call check(nf90_put_var(ncid, u_varid, q_gg(2,:,:)))
+        call check(nf90_put_var(ncid, v_varid, q_gg(3,:,:)))
+        if (has_w) call check(nf90_put_var(ncid, w_varid, q_gg(4,:,:)))
+        call check(nf90_put_var(ncid, e_varid, eta(:,:)))
+
+        ! Close NetCDF file
+        call check(nf90_close(ncid))
+
+        print *, "Restart written: ", trim(fn)
+
+        ! Log the restart index against the simulation time, so the user
+        ! knows what TIME_INITIAL to set in numo3d.in to resume from it.
+        inquire(file=restart_log, exist=log_exists)
+        if (.not. log_exists) then
+            open(newunit=log_unit, file=restart_log, status='new', action='write')
+            write(log_unit,'(a)') '# h-NUMO restart index'
+            write(log_unit,'(a)') '# To resume: set TIME_INITIAL to the value below and IRESTART_FILE_NUMBER to INDEX in numo3d.in'
+            write(log_unit,'(a)') '# (RESTART/restart_mlswe_####.nc is picked up automatically regardless of OUT_TYPE).'
+            write(log_unit,'(a)')
+            write(log_unit,'(a6,2x,a25,1x,a24,2x,a10)') 'INDEX', hdr_filename, 'TIME_INITIAL[time_scale]', 'ITIME'
+        else
+            open(newunit=log_unit, file=restart_log, status='old', action='write', position='append')
+        end if
+
+        write(log_unit,'(i6,2x,a25,1x,f24.6,2x,i10)') irestart_nc, restart_fname, time/inp%time_scale, itime
+
+        close(log_unit)
+
+    end if
+
+    contains
+
+    !-----------------------!
+    !>@brief Check status
+    !-----------------------!
+    subroutine check(status)
+        integer, intent(in) :: status
+
+        if(status /= nf90_noerr) then
+            print *, trim(nf90_strerror(status))
+            stop "Stopped"
+        end if
+    end subroutine check
+
+end subroutine write_restart_nc
 
 subroutine restart_mlswe(G, inp, b, init, q_df, qb_df, qp_df_out, fname)
 
@@ -134,7 +374,7 @@ subroutine read_mlswe(G, inp, b, q_df, qb_df, fname)
         pos = index(fname, '.nc')
 
         if (pos > 0 .and. pos + 2 == len_trim(fname)) then
-            ! call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, inp%nlayers)
+            call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, inp%nlayers)
         else
             call load_data_mlswe(fname, qb_grp, q_grp, npoin_grp, inp%nlayers)
         end if
@@ -191,6 +431,57 @@ subroutine load_data_mlswe(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
 
     close(10)
 end subroutine load_data_mlswe
+
+!---------------------------------------------------------------------!
+!> @brief NetCDF counterpart of load_data_mlswe: reads the pb/pbub/pbvb
+!> and per-layer h/u/v fields written by write_restart_nc back into the
+!> same gathered layout load_data_mlswe produces (w is not needed to
+!> restart the run and is not read back, matching the txt path).
+!---------------------------------------------------------------------!
+subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
+
+    use netcdf
+
+    implicit none
+
+    character(len=*), intent(in) :: name_data_file
+    integer, intent(in) :: npoin_g, nlayers
+
+    real, dimension(3, npoin_g),          intent(out) :: qb_df_g
+    real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
+
+    integer :: ncid, varid
+
+    call check(nf90_open(trim(name_data_file), nf90_nowrite, ncid))
+
+    call check(nf90_inq_varid(ncid, 'pb',   varid))
+    call check(nf90_get_var(ncid, varid, qb_df_g(1,:)))
+    call check(nf90_inq_varid(ncid, 'pbub', varid))
+    call check(nf90_get_var(ncid, varid, qb_df_g(2,:)))
+    call check(nf90_inq_varid(ncid, 'pbvb', varid))
+    call check(nf90_get_var(ncid, varid, qb_df_g(3,:)))
+
+    call check(nf90_inq_varid(ncid, 'h', varid))
+    call check(nf90_get_var(ncid, varid, q_df_g(1,:,:)))
+    call check(nf90_inq_varid(ncid, 'u', varid))
+    call check(nf90_get_var(ncid, varid, q_df_g(2,:,:)))
+    call check(nf90_inq_varid(ncid, 'v', varid))
+    call check(nf90_get_var(ncid, varid, q_df_g(3,:,:)))
+
+    call check(nf90_close(ncid))
+
+    contains
+
+    subroutine check(status)
+        integer, intent(in) :: status
+
+        if(status /= nf90_noerr) then
+            print *, trim(nf90_strerror(status))
+            stop "Stopped"
+        end if
+    end subroutine check
+
+end subroutine load_data_mlswe_nc
 
 !---------------------------------------------------------------------!
 !> @brief This subroutine creates communicators for ngroups of

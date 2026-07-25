@@ -191,6 +191,7 @@ module mod_initial
         inp%time_initial = inp%time_initial*inp%time_scale
         inp%time_final = inp%time_final*inp%time_scale
         inp%time_restart = inp%time_restart*inp%time_scale
+        inp%write_restart_time = inp%write_restart_time*inp%time_scale
 
     end subroutine mod_initial_create
 

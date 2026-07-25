@@ -36,7 +36,7 @@ contains
 
     subroutine time_loop(G, inp, b, gg, par, mf, btp, bcl, init, ref, mpic, tsp, mt)
 
-        use mod_restart,          only: restart_mlswe
+        use mod_restart,          only: restart_mlswe, write_restart_nc
         use mod_rk_mlswe,         only: ti_barotropic_ssprk_mlswe
         use mod_layer_terms,      only: extract_qprime_df_face
         use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
@@ -64,6 +64,8 @@ contains
         real :: mass_conserv0_g(inp%nlayers)
         integer :: m, itime
         integer :: irestart, ntime, inorm
+        integer :: iwrite_restart, irestart_nc
+        logical :: lexist_restart_nc
         integer :: iloop, i, j, icol, ivar, npoin_bound, ifnp, idone, ii
         character :: fnp1*4, fnp4*4, fnp2*9, fnp*100, fnpm*72, fnpg*72
         character :: s_layers*3, fnp11*18, fnps*100
@@ -112,6 +114,14 @@ contains
         irestart = nint(inp%time_restart / inp%dt)
         if(irestart == 0) irestart = 1
 
+        irestart_nc = 0
+        if (inp%write_restart_time > 0.0) then
+            iwrite_restart = nint(inp%write_restart_time / inp%dt)
+            if(iwrite_restart == 0) iwrite_restart = 1
+        else
+            iwrite_restart = 0
+        end if
+
         time = inp%time_initial
 
         if (inp%time_initial == 0) then
@@ -144,25 +154,25 @@ contains
             itime = inp%irestart_file_number
             inorm = inp%irestart_file_number
 
-            if(trim(inp%out_type) == 'txt' .or. trim(inp%out_type) == 'nc') then
+            ifnp = inp%irestart_file_number
 
-                ifnp = inp%irestart_file_number
+            write(fnp4,'(i4)') ifnp
 
-                write(fnp4,'(i4)') ifnp
+            iloop = 3 - int(log10(real(ifnp)))
+            do j = 1, iloop
+                fnp4(j:j) = '0'
+            end do
 
-                iloop = 3 - int(log10(real(ifnp)))
-                do j = 1, iloop
-                    fnp4(j:j) = '0'
-                end do
+            ! Prefer a RESTART/restart_mlswe_####.nc file if one exists for this
+            ! restart index, regardless of out_type; otherwise fall back to the
+            ! legacy text restart file (mlswe####).
+            fnp = trim('RESTART/restart_mlswe_') // trim(fnp4) // trim('.nc')
+            inquire(file=trim(fnp), exist=lexist_restart_nc)
+            if (.not. lexist_restart_nc) fnp = trim('mlswe') // trim(fnp4)
 
-                fnp = trim('mlswe') // trim(fnp4)
-                if(trim(inp%out_type) == 'nc') fnp = trim('mlswe') // trim(fnp4) // trim('.nc')
+            call restart_mlswe(G, inp, b, init, bcl%q_df, btp%qb_df, qout_mlswe, fnp)
 
-                call restart_mlswe(G, inp, b, init, bcl%q_df, btp%qb_df, qout_mlswe, fnp)
-
-            end if
-
-            if(irank == 0) print *, ' Done Reading'
+            if(irank == 0) print *, ' Done Reading: ', trim(fnp)
         end if
 
         if(inp%lcheck_conserved) then
@@ -274,6 +284,14 @@ contains
                 end if
             end if
 
+            if (iwrite_restart > 0) then
+                if (mod(itime, iwrite_restart) == 0) then
+                    !$acc update host(bcl%q_df, btp%qb_df)
+                    irestart_nc = irestart_nc + 1
+                    call write_restart_nc(G, inp, gg, par, init, bcl%q_df, btp%qb_df, irestart_nc, time, itime)
+                end if
+            end if
+
         end do
 
         time2 = wtime()
@@ -287,6 +305,14 @@ contains
         end if
         call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df, time, itime, inp%dt, idone, &
                                      mass_conserv0_g, ntime, fnp11, unit0)
+
+        ! Always write a final restart (regardless of the periodic interval)
+        ! so the run can be resumed from its exact end state.
+        if (iwrite_restart > 0) then
+            !$acc update host(bcl%q_df, btp%qb_df)
+            irestart_nc = irestart_nc + 1
+            call write_restart_nc(G, inp, gg, par, init, bcl%q_df, btp%qb_df, irestart_nc, time, itime)
+        end if
 
     end subroutine time_loop
 

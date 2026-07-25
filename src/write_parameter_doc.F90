@@ -125,6 +125,7 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a)')
    write(fu,'(a,es14.6,t55,a)') 'TIME_RESTART = ',         inp%time_restart,          '! [s] restart dump interval'
    write(fu,'(a,i0,t55,a)')     'IRESTART_FILE_NUMBER = ', inp%irestart_file_number,  '! restart file index to read (0=cold start)'
+   write(fu,'(a,es14.6,t55,a)') 'WRITE_RESTART_TIME = ',   inp%write_restart_time,    '! [s] .nc restart interval in RESTART/ (<=0 disables); always written at end of run'
    write(fu,'(a)')
 
    close(fu)

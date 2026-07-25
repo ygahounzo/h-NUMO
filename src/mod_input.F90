@@ -28,6 +28,7 @@ module mod_input
       real(kind=r8) :: restoring_time
       logical       :: lrestoring_sponge
       real(kind=r8) :: time_initial, time_final, time_restart
+      real(kind=r8) :: write_restart_time  ! [time_scale units] interval for periodic .nc restart writes (<=0 disables); a restart is also always written at the end of the run
       real(kind=r8) :: lf2_filter, lf2_raw_filter, lf2_alpha, lf2_nu
 
       real(kind=r8) :: time_dynamic_amr
@@ -260,6 +261,7 @@ module mod_input
       real(kind=r8) :: restoring_time = 1000000000
       logical       :: lrestoring_sponge = .false.
       real(kind=r8) :: time_initial, time_final, time_restart, lf2_filter, lf2_raw_filter, lf2_alpha, lf2_nu
+      real(kind=r8) :: write_restart_time = 0.0_r8
 
       real(kind=r8) :: time_dynamic_amr=0.0
       real(kind=r8) :: interval_end=0.0
@@ -478,7 +480,7 @@ module mod_input
      namelist /input_nml/ dt, &
          restoring_time, &
          lrestoring_sponge, &
-         time_initial, time_final, time_dynamic_amr, time_restart, time_scale, irestart_file_number,&
+         time_initial, time_final, time_dynamic_amr, time_restart, write_restart_time, time_scale, irestart_file_number,&
          lrestart_file, test_case, &
          ti_method_btp, &
          kstages, &
@@ -621,6 +623,7 @@ module mod_input
       inp%time_initial                   = time_initial
       inp%time_final                     = time_final
       inp%time_restart                   = time_restart
+      inp%write_restart_time             = write_restart_time
       inp%lf2_filter                     = lf2_filter
       inp%lf2_raw_filter                 = lf2_raw_filter
       inp%lf2_alpha                      = lf2_alpha
