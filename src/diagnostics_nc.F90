@@ -1,10 +1,13 @@
-subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
+subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, idone)
 
     use mod_grid,          only: grid
     use mod_input,         only: input
+    use mod_basis,         only: basis
     use mod_global_grid,   only: grid_global
     use mod_parallel,      only: parallel_CS
     use mod_initial,       only: initial
+    use mod_tensor,        only: tensor_CS
+    use mod_gradient,      only: compute_vorticity_mlswe
     use mod_constants,     only: gravity
     use mod_mpi_utilities, only: irank, irank0
     use netcdf
@@ -13,9 +16,11 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
 
     type(grid),        intent(in) :: G
     type(input),       intent(in) :: inp
+    type(basis),       intent(in) :: b
     type(grid_global), intent(in) :: gg
     type(parallel_CS), intent(in) :: par
     type(initial),     intent(in) :: init
+    type(tensor_CS),   intent(in) :: tsp
 
     real, intent(in)  :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
     real, intent(in)  :: qb(inp%nvar_btp, G%npoin)
@@ -30,6 +35,9 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
     real :: coord_dg_gathered(3, gg%npoin_g), qb_g(inp%nvar_btp, gg%npoin_g), q_g(5, gg%npoin_g)
     real, dimension(G%npoin,    inp%nlayers+1) :: mslwe_elevation
     real, dimension(gg%npoin_g, inp%nlayers+1) :: eta
+    real, dimension(G%npoin)      :: abs_vort_l, pot_vort_l
+    real, dimension(gg%npoin_g)   :: abs_vort_g1, pot_vort_g1
+    real :: abs_vort_gg(gg%npoin_g, inp%nlayers), pot_vort_gg(gg%npoin_g, inp%nlayers)
     character(len=100) :: fn
 
     character (len = *), parameter :: TIME_NAME      = "time"
@@ -50,11 +58,14 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
     character (len = *), parameter :: W_NAME         = "w"
     character (len = *), parameter :: ETA_NAME       = "eta"
     character (len = *), parameter :: INTERFACE_NAME = "zi"
+    character (len = *), parameter :: AVORT_NAME     = "AbsVorticity"
+    character (len = *), parameter :: PVORT_NAME     = "PotVorticity"
 
     integer :: time_dimid, npoin_dimid, nlayers_dimid, parameter_dimid
     integer :: dt_varid, dt_btp_varid, zb_varid, pb_varid
     integer :: pbub_varid, pbvb_varid, pbwb_varid, h_varid, u_varid, v_varid, w_varid, e_varid
     integer :: zi_dimid, x_varid, y_varid
+    integer :: avort_varid, pvort_varid
 
     has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
@@ -78,6 +89,22 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
 
     q(5,:,1) = mslwe_elevation(:,1)
     q(5,:,2:inp%nlayers) = mslwe_elevation(:,2:inp%nlayers)
+
+    ! Absolute vorticity η=ζ+f and potential vorticity η/h per layer -- see
+    ! mod_gradient.F90's compute_vorticity_mlswe for the formula (same routine
+    ! used by the VTK path in write_output.F90). Gated by inp%lwrite_vorticity;
+    ! the AbsVorticity/PotVorticity netCDF variables are only defined/written
+    ! below when it is enabled.
+    if (inp%lwrite_vorticity) then
+        do k = 1, inp%nlayers
+            call compute_vorticity_mlswe(G, b, tsp, init, has_w, q(2,:,k), q(3,:,k), q(4,:,k), q(1,:,k), &
+                                          abs_vort_l, pot_vort_l)
+            call gather_data(G, inp, gg, par, abs_vort_g1, abs_vort_l, 1)
+            call gather_data(G, inp, gg, par, pot_vort_g1, pot_vort_l, 1)
+            abs_vort_gg(:,k) = abs_vort_g1(:)
+            pot_vort_gg(:,k) = pot_vort_g1(:)
+        end do
+    end if
 
     ! Gather Data onto Head node
     do k = 1, inp%nlayers
@@ -170,6 +197,16 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         call check(nf90_put_att(ncid, e_varid, "name", "Interface Height Relative to Mean Sea Level"))
         call check(nf90_put_att(ncid, e_varid, "units", "m"))
 
+        if (inp%lwrite_vorticity) then
+            dimids_2d = (/npoin_dimid, nlayers_dimid/)
+            call check(nf90_def_var(ncid, AVORT_NAME, NF90_DOUBLE, dimids_2d, avort_varid))
+            call check(nf90_put_att(ncid, avort_varid, "name", "Absolute vorticity"))
+            call check(nf90_put_att(ncid, avort_varid, "units", "s-1"))
+            call check(nf90_def_var(ncid, PVORT_NAME, NF90_DOUBLE, dimids_2d, pvort_varid))
+            call check(nf90_put_att(ncid, pvort_varid, "name", "Potential vorticity"))
+            call check(nf90_put_att(ncid, pvort_varid, "units", "m-1 s-1"))
+        end if
+
         ! End define mode
         call check(nf90_enddef(ncid))
 
@@ -187,6 +224,10 @@ subroutine diagnostics_nc(G, inp, gg, par, init, q, q_df, qb, itime, idone)
         call check(nf90_put_var(ncid, v_varid, q_gg(3,:,:)))
         if (has_w) call check(nf90_put_var(ncid, w_varid, q_gg(4,:,:)))
         call check(nf90_put_var(ncid, e_varid, eta(:,:)))
+        if (inp%lwrite_vorticity) then
+            call check(nf90_put_var(ncid, avort_varid, abs_vort_gg(:,:)))
+            call check(nf90_put_var(ncid, pvort_varid, pot_vort_gg(:,:)))
+        end if
 
         ! Close NetCDF file
         call check(nf90_close(ncid))

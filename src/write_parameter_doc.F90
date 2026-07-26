@@ -115,6 +115,7 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a)')
    write(fu,'(a,a,t55,a)')   'OUT_TYPE = "',          trim(inp%out_type)//'"',    '! output format (netcdf, vtk, ...)'
    write(fu,'(a,i0,t55,a)') 'NVTK_FILES = ',         inp%nvtk_files,             '! number of parallel VTK output files'
+   write(fu,'(a,l1,t55,a)') 'LWRITE_VORTICITY = ',   inp%lwrite_vorticity,       '! write AbsVorticity/PotVorticity to output files'
    write(fu,'(a,l1,t55,a)') 'LPRINT_DIAGNOSTICS = ', inp%lprint_diagnostics,     '! enable run-time diagnostics'
    write(fu,'(a,i0,t55,a)') 'IPRINT_DIAGNOSTICS = ', inp%iprint_diagnostics,     '! print diagnostics every N time steps'
    write(fu,'(a,l1,t55,a)') 'LCHECK_CONSERVED = ',   inp%lcheck_conserved,       '! check mass/energy conservation'

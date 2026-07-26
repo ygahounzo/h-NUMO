@@ -476,24 +476,24 @@ module mod_initial_mlswe
 
                 ! Velocity cap: prevents BCL velocity blow-up from feeding huge fluxes
                 ! into the next stage RHS (advective overflow → NaN in layer thickness).
-                !$acc loop seq
-                do m = 1, ngly_l
-                    !$acc loop seq
-                    do n = 1, nglx_l
-                        I    = G%intma(n,m,1,e)
-                        dp_e = q(1,I,k)
-                        if (dp_e > 0.0) then
-                            if (q(2,I,k) >  max_bcl_spd * dp_e) q(2,I,k) =  max_bcl_spd * dp_e
-                            if (q(2,I,k) < -max_bcl_spd * dp_e) q(2,I,k) = -max_bcl_spd * dp_e
-                            if (q(3,I,k) >  max_bcl_spd * dp_e) q(3,I,k) =  max_bcl_spd * dp_e
-                            if (q(3,I,k) < -max_bcl_spd * dp_e) q(3,I,k) = -max_bcl_spd * dp_e
-                            if (has_w) then
-                                if (q(4,I,k) >  max_bcl_spd * dp_e) q(4,I,k) =  max_bcl_spd * dp_e
-                                if (q(4,I,k) < -max_bcl_spd * dp_e) q(4,I,k) = -max_bcl_spd * dp_e
-                            end if
-                        end if
-                    end do
-                end do
+                ! !$acc loop seq
+                ! do m = 1, ngly_l
+                !     !$acc loop seq
+                !     do n = 1, nglx_l
+                !         I    = G%intma(n,m,1,e)
+                !         dp_e = q(1,I,k)
+                !         if (dp_e > 0.0) then
+                !             if (q(2,I,k) >  max_bcl_spd * dp_e) q(2,I,k) =  max_bcl_spd * dp_e
+                !             if (q(2,I,k) < -max_bcl_spd * dp_e) q(2,I,k) = -max_bcl_spd * dp_e
+                !             if (q(3,I,k) >  max_bcl_spd * dp_e) q(3,I,k) =  max_bcl_spd * dp_e
+                !             if (q(3,I,k) < -max_bcl_spd * dp_e) q(3,I,k) = -max_bcl_spd * dp_e
+                !             if (has_w) then
+                !                 if (q(4,I,k) >  max_bcl_spd * dp_e) q(4,I,k) =  max_bcl_spd * dp_e
+                !                 if (q(4,I,k) < -max_bcl_spd * dp_e) q(4,I,k) = -max_bcl_spd * dp_e
+                !             end if
+                !         end if
+                !     end do
+                ! end do
 
             end do !e
         end do !k
@@ -617,24 +617,24 @@ module mod_initial_mlswe
             ! the pressure correction above triggered.  This breaks the positive-feedback
             ! loop: huge BTP momentum → huge ub_btp in extract_qprime_df_face
             ! → huge vel' → huge BCL flux → even huger BTP momentum.
-            !$acc loop seq
-            do m = 1, ngly_l
-                !$acc loop seq
-                do n = 1, nglx_l
-                    I    = G%intma(n,m,1,e)
-                    dp_I = qb_df(1,I)
-                    if (dp_I > 0.0) then
-                        if (qb_df(3,I) >  max_btp_vel * dp_I) qb_df(3,I) =  max_btp_vel * dp_I
-                        if (qb_df(3,I) < -max_btp_vel * dp_I) qb_df(3,I) = -max_btp_vel * dp_I
-                        if (qb_df(4,I) >  max_btp_vel * dp_I) qb_df(4,I) =  max_btp_vel * dp_I
-                        if (qb_df(4,I) < -max_btp_vel * dp_I) qb_df(4,I) = -max_btp_vel * dp_I
-                        if (has_w) then
-                            if (qb_df(5,I) >  max_btp_vel * dp_I) qb_df(5,I) =  max_btp_vel * dp_I
-                            if (qb_df(5,I) < -max_btp_vel * dp_I) qb_df(5,I) = -max_btp_vel * dp_I
-                        end if
-                    end if
-                end do
-            end do
+            ! !$acc loop seq
+            ! do m = 1, ngly_l
+            !     !$acc loop seq
+            !     do n = 1, nglx_l
+            !         I    = G%intma(n,m,1,e)
+            !         dp_I = qb_df(1,I)
+            !         if (dp_I > 0.0) then
+            !             if (qb_df(3,I) >  max_btp_vel * dp_I) qb_df(3,I) =  max_btp_vel * dp_I
+            !             if (qb_df(3,I) < -max_btp_vel * dp_I) qb_df(3,I) = -max_btp_vel * dp_I
+            !             if (qb_df(4,I) >  max_btp_vel * dp_I) qb_df(4,I) =  max_btp_vel * dp_I
+            !             if (qb_df(4,I) < -max_btp_vel * dp_I) qb_df(4,I) = -max_btp_vel * dp_I
+            !             if (has_w) then
+            !                 if (qb_df(5,I) >  max_btp_vel * dp_I) qb_df(5,I) =  max_btp_vel * dp_I
+            !                 if (qb_df(5,I) < -max_btp_vel * dp_I) qb_df(5,I) = -max_btp_vel * dp_I
+            !             end if
+            !         end if
+            !     end do
+            ! end do
 
         end do
         !$acc end parallel loop

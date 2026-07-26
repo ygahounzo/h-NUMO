@@ -142,7 +142,7 @@ contains
                             fnp1(j:j) = '0'
                         end do
                         write(fnp2,'(a1,a3,a5)') "l", fnp1, "_0000"
-                        call write_output_mlswe(G, inp, b, init, gg, par, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
+                        call write_output_mlswe(G, inp, b, init, gg, par, tsp, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
                     end do
                 end if
             end if
@@ -274,7 +274,7 @@ contains
                             fnp4(j:j) = '0'
                         end do
                         write(fnp2,'(a1,a3,a1,a4)') "l", fnp4, "_", fnp1
-                        call write_output_mlswe(G, inp, b, init, gg, par, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
+                        call write_output_mlswe(G, inp, b, init, gg, par, tsp, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
                     end do
                 end if
 
