@@ -35,9 +35,9 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
     real :: coord_dg_gathered(3, gg%npoin_g), qb_g(inp%nvar_btp, gg%npoin_g), q_g(5, gg%npoin_g)
     real, dimension(G%npoin,    inp%nlayers+1) :: mslwe_elevation
     real, dimension(gg%npoin_g, inp%nlayers+1) :: eta
-    real, dimension(G%npoin)      :: abs_vort_l, pot_vort_l
-    real, dimension(gg%npoin_g)   :: abs_vort_g1, pot_vort_g1
-    real :: abs_vort_gg(gg%npoin_g, inp%nlayers), pot_vort_gg(gg%npoin_g, inp%nlayers)
+    real, dimension(G%npoin)      :: rel_vort_l, abs_vort_l, pot_vort_l
+    real, dimension(gg%npoin_g)   :: rel_vort_g1, abs_vort_g1, pot_vort_g1
+    real :: rel_vort_gg(gg%npoin_g, inp%nlayers), abs_vort_gg(gg%npoin_g, inp%nlayers), pot_vort_gg(gg%npoin_g, inp%nlayers)
     character(len=100) :: fn
 
     character (len = *), parameter :: TIME_NAME      = "time"
@@ -58,6 +58,7 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
     character (len = *), parameter :: W_NAME         = "w"
     character (len = *), parameter :: ETA_NAME       = "eta"
     character (len = *), parameter :: INTERFACE_NAME = "zi"
+    character (len = *), parameter :: RVORT_NAME     = "RelVorticity"
     character (len = *), parameter :: AVORT_NAME     = "AbsVorticity"
     character (len = *), parameter :: PVORT_NAME     = "PotVorticity"
 
@@ -65,7 +66,7 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
     integer :: dt_varid, dt_btp_varid, zb_varid, pb_varid
     integer :: pbub_varid, pbvb_varid, pbwb_varid, h_varid, u_varid, v_varid, w_varid, e_varid
     integer :: zi_dimid, x_varid, y_varid
-    integer :: avort_varid, pvort_varid
+    integer :: rvort_varid, avort_varid, pvort_varid
 
     has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
@@ -98,9 +99,11 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
     if (inp%lwrite_vorticity) then
         do k = 1, inp%nlayers
             call compute_vorticity_mlswe(G, b, tsp, init, has_w, q(2,:,k), q(3,:,k), q(4,:,k), q(1,:,k), &
-                                          abs_vort_l, pot_vort_l)
+                                          rel_vort_l, abs_vort_l, pot_vort_l)
+            call gather_data(G, inp, gg, par, rel_vort_g1, rel_vort_l, 1)
             call gather_data(G, inp, gg, par, abs_vort_g1, abs_vort_l, 1)
             call gather_data(G, inp, gg, par, pot_vort_g1, pot_vort_l, 1)
+            rel_vort_gg(:,k) = rel_vort_g1(:)
             abs_vort_gg(:,k) = abs_vort_g1(:)
             pot_vort_gg(:,k) = pot_vort_g1(:)
         end do
@@ -199,6 +202,9 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
 
         if (inp%lwrite_vorticity) then
             dimids_2d = (/npoin_dimid, nlayers_dimid/)
+            call check(nf90_def_var(ncid, RVORT_NAME, NF90_DOUBLE, dimids_2d, rvort_varid))
+            call check(nf90_put_att(ncid, rvort_varid, "name", "Relative vorticity"))
+            call check(nf90_put_att(ncid, rvort_varid, "units", "s-1"))
             call check(nf90_def_var(ncid, AVORT_NAME, NF90_DOUBLE, dimids_2d, avort_varid))
             call check(nf90_put_att(ncid, avort_varid, "name", "Absolute vorticity"))
             call check(nf90_put_att(ncid, avort_varid, "units", "s-1"))
@@ -225,6 +231,7 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
         if (has_w) call check(nf90_put_var(ncid, w_varid, q_gg(4,:,:)))
         call check(nf90_put_var(ncid, e_varid, eta(:,:)))
         if (inp%lwrite_vorticity) then
+            call check(nf90_put_var(ncid, rvort_varid, rel_vort_gg(:,:)))
             call check(nf90_put_var(ncid, avort_varid, abs_vort_gg(:,:)))
             call check(nf90_put_var(ncid, pvort_varid, pot_vort_gg(:,:)))
         end if

@@ -34,7 +34,7 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, tsp, q_df, qout, qb, fnp
     integer, intent(in) :: layer
     real, dimension(:,:), allocatable :: q_aux
     real, dimension(:,:), allocatable :: mslwe_elevation
-    real, dimension(:), allocatable :: abs_vort, pot_vort
+    real, dimension(:), allocatable :: rel_vort, abs_vort, pot_vort
     real :: time
     logical :: has_w
     integer :: k
@@ -43,7 +43,7 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, tsp, q_df, qout, qb, fnp
 
     allocate(q_aux(init%nvar, G%npoin))
     allocate(mslwe_elevation(G%npoin, inp%nlayers+1))
-    allocate(abs_vort(G%npoin), pot_vort(G%npoin))
+    allocate(rel_vort(G%npoin), abs_vort(G%npoin), pot_vort(G%npoin))
 
     has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
@@ -66,22 +66,24 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, tsp, q_df, qout, qb, fnp
     end do
     qout(5,:) = mslwe_elevation(:,layer)
 
-    ! Absolute vorticity η = ζ + f and potential vorticity q = η/h for this
-    ! layer -- see mod_gradient.F90's compute_vorticity_mlswe for the formula.
-    ! Gated by inp%lwrite_vorticity since it costs an extra element loop per
-    ! layer per dump; outvtk_g_binary_mlswe skips writing these fields when off.
+    ! Relative vorticity ζ, absolute vorticity η = ζ + f, and potential
+    ! vorticity q = η/h for this layer -- see mod_gradient.F90's
+    ! compute_vorticity_mlswe for the formula. Gated by inp%lwrite_vorticity
+    ! since it costs an extra element loop per layer per dump;
+    ! outvtk_g_binary_mlswe skips writing these fields when off.
     if (inp%lwrite_vorticity) then
         call compute_vorticity_mlswe(G, b, tsp, init, has_w, qout(2,:), qout(3,:), qout(4,:), qout(1,:), &
-                                      abs_vort, pot_vort)
+                                      rel_vort, abs_vort, pot_vort)
     else
+        rel_vort = 0.0
         abs_vort = 0.0
         pot_vort = 0.0
     end if
 
     fnp = trim(inp%fname_root) // '_' // trim(fnp1) // '.vtk'
-    call outvtk_g_binary_mlswe(G, inp, b, init, gg, par, qout, qb, abs_vort, pot_vort, fnp, time)
+    call outvtk_g_binary_mlswe(G, inp, b, init, gg, par, qout, qb, rel_vort, abs_vort, pot_vort, fnp, time)
 
-    deallocate(q_aux, mslwe_elevation, abs_vort, pot_vort)
+    deallocate(q_aux, mslwe_elevation, rel_vort, abs_vort, pot_vort)
 
 end subroutine write_output_mlswe
 

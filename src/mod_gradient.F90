@@ -24,8 +24,9 @@ module mod_gradient
 contains
 
     !----------------------------------------------------------------------!
-    !>@brief Absolute vorticity η=ζ+f and potential vorticity q=η/h for one
-    !> MLSWE layer.  ζ is the local-vertical (radial, on the sphere) component
+    !>@brief Relative vorticity ζ, absolute vorticity η=ζ+f, and potential
+    !> vorticity q=η/h for one MLSWE layer.  ζ is the local-vertical (radial,
+    !> on the sphere) component
     !> of the curl of the layer velocity (u,v,w), computed via the same DG
     !> element-local strong-form derivative pattern as btp_bcl_coeffs_qdf
     !> (mod_barotropic_terms.F90).  One-shot diagnostic snapshot, so no LDG
@@ -35,7 +36,7 @@ contains
     !> .false. -- matches the Cartesian/no-w case, where kvector=(0,0,1) and
     !> ζ reduces to the standard planar ζ=∂v/∂x-∂u/∂y.
     !----------------------------------------------------------------------!
-    subroutine compute_vorticity_mlswe(G, b, tsp, init, has_w, u, v, w, h, abs_vort, pot_vort)
+    subroutine compute_vorticity_mlswe(G, b, tsp, init, has_w, u, v, w, h, rel_vort, abs_vort, pot_vort)
 
         use mod_grid,    only: grid
         use mod_tensor,  only: tensor_CS
@@ -49,7 +50,7 @@ contains
         type(initial),   intent(in)  :: init
         logical,         intent(in)  :: has_w
         real,            intent(in)  :: u(G%npoin), v(G%npoin), w(G%npoin), h(G%npoin)
-        real,            intent(out) :: abs_vort(G%npoin), pot_vort(G%npoin)
+        real,            intent(out) :: rel_vort(G%npoin), abs_vort(G%npoin), pot_vort(G%npoin)
 
         integer :: Iq, ip, I
         real :: dhdx, dhdy, dhdz
@@ -89,6 +90,7 @@ contains
                  + init%kvector(2,Iq)*(du_dz - dw_dx) &
                  + init%kvector(3,Iq)*(dv_dx - du_dy)
 
+            rel_vort(Iq) = zeta
             abs_vort(Iq) = zeta + init%coriolis_df(Iq)
             pot_vort(Iq) = abs_vort(Iq) / h(Iq)
         end do

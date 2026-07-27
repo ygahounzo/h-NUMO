@@ -15,7 +15,7 @@
 !> 20 May 2024
 !---------------------------------------------------------------------!
 
-subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_vort, fname, time)
+subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_vort, pot_vort, fname, time)
 
     use mod_mpi_utilities, only: irank, irank0, MPI_PRECISION
     use mod_parallel,      only: parallel_CS
@@ -36,7 +36,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_
     type(parallel_CS), intent(in) :: par
 
     real, intent(in) :: q(init%nvar, G%npoin), qb(inp%nvar_btp, G%npoin)
-    real, intent(in) :: abs_vort(G%npoin), pot_vort(G%npoin)
+    real, intent(in) :: rel_vort(G%npoin), abs_vort(G%npoin), pot_vort(G%npoin)
     real, intent(in) :: time
     character, intent(in) :: fname*100
     logical :: has_w
@@ -60,7 +60,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_
 
     real,    dimension(:,:,:), allocatable :: q_l
     real,    dimension(:,:),   allocatable :: q_g, coord_dg_gathered, qb_g
-    real,    dimension(:),     allocatable :: abs_vort_g, pot_vort_g
+    real,    dimension(:),     allocatable :: rel_vort_g, abs_vort_g, pot_vort_g
     real,    dimension(:),     allocatable :: km
     real,    dimension(:),     allocatable :: x_uns, y_uns, z_uns
     integer, dimension(:),     allocatable :: eltype, conn
@@ -140,7 +140,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_
             eltype(ncells), conn(ncells*(b%CELL_CHILDREN+1)),                  &
             var_uns_grid(gg%npoin_g), var_uns_grid_ref(gg%npoin_g),             &
             qb_g(inp%nvar_btp, gg%npoin_g),                                    &
-            abs_vort_g(gg%npoin_g), pot_vort_g(gg%npoin_g), stat=AllocateStatus)
+            rel_vort_g(gg%npoin_g), abs_vort_g(gg%npoin_g), pot_vort_g(gg%npoin_g), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"
     end if
 
@@ -148,6 +148,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_
     call gather_data(G, inp, gg, par, q_g, q, init%nvar)
     call gather_data(G, inp, gg, par, qb_g, qb, inp%nvar_btp)
     call gather_data(G, inp, gg, par, coord_dg_gathered, G%coord, 3)
+    call gather_data(G, inp, gg, par, rel_vort_g, rel_vort, 1)
     call gather_data(G, inp, gg, par, abs_vort_g, abs_vort, 1)
     call gather_data(G, inp, gg, par, pot_vort_g, pot_vort, 1)
 
@@ -249,6 +250,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_
         end if
 
         if (inp%lwrite_vorticity) then
+            call vtk_var_scal_R8(gg%npoin_g, 'RelVorticity', rel_vort_g)
             call vtk_var_scal_R8(gg%npoin_g, 'AbsVorticity', abs_vort_g)
             call vtk_var_scal_R8(gg%npoin_g, 'PotVorticity', pot_vort_g)
         end if
@@ -256,7 +258,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, abs_vort, pot_
         call vtk_end()
 
         deallocate(q_g, qb_g)
-        deallocate(abs_vort_g, pot_vort_g)
+        deallocate(rel_vort_g, abs_vort_g, pot_vort_g)
         deallocate(var_uns_grid, var_uns_grid_ref)
         deallocate(conn_g_pts)
 
