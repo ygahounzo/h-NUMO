@@ -32,7 +32,7 @@ contains
       use mod_tensor,            only: tensor_CS
       use mod_rhs_btp,           only: create_rhs_btp
       use mod_barotropic_terms,  only: btp_mom_boundary_df
-      use mod_laplacian_quad,    only: btp_create_laplacian, btp_compute_nu_dyn_sgs
+      use mod_laplacian_quad,    only: btp_create_laplacian
       use mod_initial_mlswe,     only: btp_poslimiter
 
       implicit none
@@ -53,8 +53,8 @@ contains
       real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(in)    :: qprime_df
       real,                                               intent(in)    :: dt_btp_in
 
-      integer :: mstep, ik, I, iv, iw, nvarb_f, nw_btp_l
-      real    :: N_inv, a0, a1, a2, dtt, visc_term, A_H_btp
+      integer :: mstep, ik, I, iv, nvarb_f
+      real    :: N_inv, a0, a1, a2, dtt, visc_term
       logical :: has_w
 
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
@@ -108,56 +108,12 @@ contains
             a2  = init%ssprk_a(ik,3)
             dtt = dt_btp_in * init%ssprk_beta(ik)
 
-            ! Inviscid residual first -- create_rhs_btp depends only on qb_df/
-            ! qprime_df, not on nu_smag or the Laplacian, so it can run before
-            ! the viscosity machinery below.  This lets Dyn-SGS use THIS stage's
-            ! own residual for THIS stage's viscous term (see below), instead of
-            ! lagging by one RK stage as the previous ordering did.
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)
-
-            ! Dyn-SGS: compute btp%nu_smag from the residual just computed above,
-            ! before it is used to scale this same stage's viscous term.
-            if (inp%lDyn_SGS) &
-               call btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, init, qb_df)
-
-            ! Pre-scale pbprime_visc and btp_dpp_graduvw by A_H = (visc + μ_SGS) for
-            ! correct ∇·(A_H×H_s×∇u) with {A_H×H_s} face averaging (DG-correct form).
-            ! μ_SGS here is this same stage's own coefficient (see above), not the
-            ! previous stage's.
-            if (inp%lDyn_SGS .and. inp%method_visc > 0) then
-                nw_btp_l = inp%ngraduvw_var
-                !$acc parallel loop gang present(btp%pbprime_visc, btp%btp_dpp_graduvw, btp%nu_smag) &
-                !$acc    private(A_H_btp, iw) firstprivate(nw_btp_l)
-                do I = 1, G%npoin
-                    A_H_btp = inp%visc_mlswe + btp%nu_smag(I)
-                    btp%pbprime_visc(I) = A_H_btp * btp%pbprime_visc(I)
-                    !$acc loop seq
-                    do iw = 1, nw_btp_l
-                        btp%btp_dpp_graduvw(iw,I) = A_H_btp * btp%btp_dpp_graduvw(iw,I)
-                    end do
-                end do
-                !$acc end parallel loop
-            end if
 
             if (inp%method_visc > 0) &
                call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
                                          btp%rhs_btp_visc, qb_df)
-
-            ! Restore originals (A_H_btp = visc_mlswe + nu_smag >= visc_mlswe > 0).
-            if (inp%lDyn_SGS .and. inp%method_visc > 0) then
-                !$acc parallel loop gang present(btp%pbprime_visc, btp%btp_dpp_graduvw, btp%nu_smag) &
-                !$acc    private(A_H_btp, iw) firstprivate(nw_btp_l)
-                do I = 1, G%npoin
-                    A_H_btp = inp%visc_mlswe + btp%nu_smag(I)
-                    btp%pbprime_visc(I) = btp%pbprime_visc(I) / A_H_btp
-                    !$acc loop seq
-                    do iw = 1, nw_btp_l
-                        btp%btp_dpp_graduvw(iw,I) = btp%btp_dpp_graduvw(iw,I) / A_H_btp
-                    end do
-                end do
-                !$acc end parallel loop
-            end if
 
             ! Fused: accumulate averages from old qb_df, then SSPRK update in-place.
             ! Reading qb_df(I) for averages and a1-coefficient happens before the
@@ -173,11 +129,9 @@ contains
                !$acc loop seq
                do iv = 3, nvarb_f
                   btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) / qb_df(1,I)
-                  if (inp%lDyn_SGS) then
-                     visc_term = btp%rhs_btp_visc(iv-2,I)
-                  else
-                     visc_term = (inp%visc_mlswe + btp%nu_smag(I)) * btp%rhs_btp_visc(iv-2,I)
-                  end if
+                  ! visc_mlswe(+nu_smag) already baked into rhs_btp_visc via the
+                  ! pbprime_visc/btp_dpp_graduvw pre-scale in btp_create_laplacian.
+                  visc_term = btp%rhs_btp_visc(iv-2,I)
                   qb_df(iv,I) = a0*btp%qb0_df(iv,I) + a1*qb_df(iv,I) + a2*btp%qb2_df(iv,I) &
                                + dtt * (mt%massinv(I) * (btp%rhs_btp(iv-1,I) + visc_term))
                end do

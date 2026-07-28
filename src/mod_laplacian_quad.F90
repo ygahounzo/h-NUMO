@@ -11,8 +11,7 @@ module mod_laplacian_quad
    implicit none
 
    public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z, &
-             bcl_compute_nu_smag, btp_compute_nu_smag, &
-             bcl_compute_nu_dyn_sgs, btp_compute_nu_dyn_sgs
+             bcl_compute_nu_smag, btp_compute_nu_smag
 
 contains
 
@@ -47,8 +46,8 @@ contains
 
       real, dimension(inp%nvar_btp-2,G%npoin) :: Uk
       real, dimension(inp%ngraduvw_var,G%npoin) :: graduv
-      integer :: I, Iq, ip
-      real    :: dhdx, dhdy, dhdz
+      integer :: I, Iq, ip, iw, nw_btp_l
+      real    :: dhdx, dhdy, dhdz, A_H_btp
       real    :: du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz
       logical :: has_w
 
@@ -111,8 +110,25 @@ contains
       end do
       !$acc end parallel loop
 
-      ! Accumulate time-average on device.
-      !$acc parallel loop present(btp, graduv) firstprivate(has_w)
+      ! Smagorinsky eddy viscosity
+      if (inp%C_smag > 0.0) &
+         call btp_compute_nu_smag(G, inp, btp, tsp, graduv)
+
+      ! Accumulate the graduv time-average, and write pbprime_visc_scaled/
+      ! btp_dpp_graduvw_scaled = A_H×(pbprime_visc/btp_dpp_graduvw), A_H =
+      ! (visc + nu_smag), for correct ∇·(A_H×Δp×∇u) with {A_H×Δp} face
+      ! averaging.  Writing into separate _scaled fields (rather than
+      ! mutating pbprime_visc/btp_dpp_graduvw in place) avoids needing to
+      ! restore them afterward -- those are shared fields, fixed for the
+      ! whole BTP sub-step loop by btp_bcl_coeffs_qdf, so corrupting them
+      ! here would corrupt every subsequent BTP sub-stage this BCL step.
+      ! When C_smag=0, A_H≡visc_mlswe is a true spatial constant and this is
+      ! a no-op relative to scaling rhs_btp_visc afterward instead; it
+      ! matters once nu_smag varies in space.
+      nw_btp_l = inp%ngraduvw_var
+      !$acc parallel loop gang present(btp, graduv, btp%pbprime_visc, btp%pbprime_visc_scaled, &
+      !$acc                            btp%btp_dpp_graduvw, btp%btp_dpp_graduvw_scaled, btp%nu_smag) &
+      !$acc    private(A_H_btp, iw) firstprivate(has_w, nw_btp_l)
       do I = 1, G%npoin
          btp%graduvb_ave(1,I) = btp%graduvb_ave(1,I) + graduv(1,I)
          btp%graduvb_ave(2,I) = btp%graduvb_ave(2,I) + graduv(2,I)
@@ -125,13 +141,15 @@ contains
             btp%graduvb_ave(8,I) = btp%graduvb_ave(8,I) + graduv(8,I)
             btp%graduvb_ave(9,I) = btp%graduvb_ave(9,I) + graduv(9,I)
          end if
+
+         A_H_btp = inp%visc_mlswe + btp%nu_smag(I)
+         btp%pbprime_visc_scaled(I) = A_H_btp * btp%pbprime_visc(I)
+         !$acc loop seq
+         do iw = 1, nw_btp_l
+             btp%btp_dpp_graduvw_scaled(iw,I) = A_H_btp * btp%btp_dpp_graduvw(iw,I)
+         end do
       end do
       !$acc end parallel loop
-
-      ! Smagorinsky eddy viscosity (skipped for Dyn-SGS; nu_smag computed after
-      ! create_rhs_btp when the inviscid residual is available).
-      if (inp%C_smag > 0.0 .and. .not. inp%lDyn_SGS) &
-         call btp_compute_nu_smag(G, inp, btp, tsp, graduv)
 
       ! MPI precommunicator reads graduv from host — download once before packing.
       !$acc update host(graduv)
@@ -178,52 +196,65 @@ contains
 
       real, intent(out) :: rhs_lap(inp%nvar_bcl-1,G%npoin,inp%nlayers)
 
-      integer :: k
+      integer :: k, I, iw, nw_bcl_l, nlayers_l, npoin_l
+      real    :: A_H_bcl
       logical :: has_w
 
       has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+      nw_bcl_l  = inp%ngraduvw_var
+      nlayers_l = inp%nlayers
+      npoin_l   = G%npoin
 
-      ! Pre-comm GPU pack reads dpp_graduvw/dpprime_visc directly from device.
       ! rhs_lap is created on device; all kernels run GPU-to-GPU.
       !$acc data create(rhs_lap)
-      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw, bcl%dpprime_visc, bcl%qprime_df)
+
+      ! Smagorinsky eddy viscosity -- must run before the scaling below, which
+      ! reads bcl%nu_smag; only depends on the already-stable btp%graduvb_ave
+      ! (BTP sub-stepping for this stage has already completed) and the raw
+      ! (unscaled) dpprime_visc/dpp_graduvw.
+      if (inp%C_smag > 0.0) call bcl_compute_nu_smag(G, inp, b, btp, bcl, tsp)
+
+      ! Write dpprime_visc_scaled/dpp_graduvw_scaled = A_H*(dpprime_visc/dpp_graduvw),
+      ! A_H = (visc + nu_smag), for correct ∇·(A_H×Δp×∇u) with {A_H×Δp} face
+      ! averaging (DG-correct form, same as btp_create_laplacian).  Writing into
+      ! separate _scaled fields avoids mutating the shared dpprime_visc/dpp_graduvw
+      ! in place.  When C_smag=0, A_H≡visc_mlswe is a true spatial constant and
+      ! this is a no-op relative to scaling rhs_lap afterward instead.
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(bcl%dpprime_visc, bcl%dpprime_visc_scaled, bcl%dpp_graduvw, &
+      !$acc             bcl%dpp_graduvw_scaled, bcl%nu_smag) &
+      !$acc    private(A_H_bcl, iw) firstprivate(nlayers_l, npoin_l, nw_bcl_l)
+      do k = 1, nlayers_l
+         do I = 1, npoin_l
+            A_H_bcl = inp%visc_mlswe + bcl%nu_smag(I,k)
+            bcl%dpprime_visc_scaled(I,k) = A_H_bcl * bcl%dpprime_visc(I,k)
+            !$acc loop seq
+            do iw = 1, nw_bcl_l
+                bcl%dpp_graduvw_scaled(iw,I,k) = A_H_bcl * bcl%dpp_graduvw(iw,I,k)
+            end do
+         end do
+      end do
+      !$acc end parallel loop
+
+      ! Pre-comm GPU pack reads the scaled dpp_graduvw/dpprime_visc from device,
+      ! so the DG-correct {A_H×Δp} face averaging is consistent across MPI
+      ! boundaries too.
+      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw_scaled, bcl%dpprime_visc_scaled, bcl%qprime_df)
       call bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, rhs_lap)
       call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, tsp, rhs_lap)
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
       call bcl_create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_lap)
 
-      ! GPU: apply viscous mass-inverse scaling while rhs_lap is still on device.
-      ! Dyn-SGS path: return massinv*L(q) only; viscosity coefficient applied
-      ! later in create_rhs_bcl after the inviscid residual is available.
-      if (inp%lDyn_SGS) then
-         !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
-         do k = 1, inp%nlayers
-            rhs_lap(1,:,k) = mt%massinv(:)*rhs_lap(1,:,k)
-            rhs_lap(2,:,k) = mt%massinv(:)*rhs_lap(2,:,k)
-            if (has_w) rhs_lap(3,:,k) = mt%massinv(:)*rhs_lap(3,:,k)
-         end do
-         !$acc end kernels
-      else
-         ! Smagorinsky or plain viscosity path.
-         if (inp%C_smag > 0.0) call bcl_compute_nu_smag(G, inp, b, btp, bcl, tsp)
-         if (inp%C_smag > 0.0) then
-            !$acc kernels present(rhs_lap, mt%massinv, bcl%nu_smag) firstprivate(has_w)
-            do k = 1, inp%nlayers
-               rhs_lap(1,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(1,:,k)
-               rhs_lap(2,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(2,:,k)
-               if (has_w) rhs_lap(3,:,k) = (inp%visc_mlswe + bcl%nu_smag(:,k))*mt%massinv(:)*rhs_lap(3,:,k)
-            end do
-            !$acc end kernels
-         else
-            !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
-            do k = 1, inp%nlayers
-               rhs_lap(1,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(1,:,k)
-               rhs_lap(2,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(2,:,k)
-               if (has_w) rhs_lap(3,:,k) = inp%visc_mlswe*mt%massinv(:)*rhs_lap(3,:,k)
-            end do
-            !$acc end kernels
-         end if
-      end if
+      ! GPU: apply mass-inverse scaling while rhs_lap is still on device.
+      ! Viscosity is already baked into rhs_lap via the pre-scaled dpprime_visc/
+      ! dpp_graduvw above.
+      !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
+      do k = 1, inp%nlayers
+         rhs_lap(1,:,k) = mt%massinv(:)*rhs_lap(1,:,k)
+         rhs_lap(2,:,k) = mt%massinv(:)*rhs_lap(2,:,k)
+         if (has_w) rhs_lap(3,:,k) = mt%massinv(:)*rhs_lap(3,:,k)
+      end do
+      !$acc end kernels
 
       !$acc update host(rhs_lap)
       !$acc end data
@@ -332,7 +363,7 @@ contains
 
       !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%index_df,  &
       !$acc              tsp%dpsidz_df, tsp%dpsidz_df_x, tsp%dpsidz_df_y, tsp%dpsidz_df_z, &
-      !$acc              btp%pbprime_visc, btp%btp_dpp_graduvw, grad_dpuvp,           &
+      !$acc              btp%pbprime_visc_scaled, btp%btp_dpp_graduvw_scaled, grad_dpuvp, &
       !$acc              rhs_btp_visc)
 
       !$acc kernels present(rhs_btp_visc)
@@ -345,16 +376,16 @@ contains
       do Iq = 1, npoin_l
 
          wq    = tsp%wjac_df(Iq)
-         qq(1) = btp%pbprime_visc(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduvw(1,Iq)
-         qq(2) = btp%pbprime_visc(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduvw(2,Iq)
-         qq(3) = btp%pbprime_visc(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduvw(3,Iq)
-         qq(4) = btp%pbprime_visc(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduvw(4,Iq)
+         qq(1) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduvw_scaled(1,Iq)
+         qq(2) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduvw_scaled(2,Iq)
+         qq(3) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduvw_scaled(3,Iq)
+         qq(4) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduvw_scaled(4,Iq)
          if (has_w) then
-            qq(5) = btp%pbprime_visc(Iq)*grad_dpuvp(5,Iq) + btp%btp_dpp_graduvw(5,Iq)
-            qq(6) = btp%pbprime_visc(Iq)*grad_dpuvp(6,Iq) + btp%btp_dpp_graduvw(6,Iq)
-            qq(7) = btp%pbprime_visc(Iq)*grad_dpuvp(7,Iq) + btp%btp_dpp_graduvw(7,Iq)
-            qq(8) = btp%pbprime_visc(Iq)*grad_dpuvp(8,Iq) + btp%btp_dpp_graduvw(8,Iq)
-            qq(9) = btp%pbprime_visc(Iq)*grad_dpuvp(9,Iq) + btp%btp_dpp_graduvw(9,Iq)
+            qq(5) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(5,Iq) + btp%btp_dpp_graduvw_scaled(5,Iq)
+            qq(6) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(6,Iq) + btp%btp_dpp_graduvw_scaled(6,Iq)
+            qq(7) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(7,Iq) + btp%btp_dpp_graduvw_scaled(7,Iq)
+            qq(8) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(8,Iq) + btp%btp_dpp_graduvw_scaled(8,Iq)
+            qq(9) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(9,Iq) + btp%btp_dpp_graduvw_scaled(9,Iq)
          end if
 
          !$acc loop seq
@@ -528,503 +559,6 @@ contains
 
    end subroutine btp_compute_nu_smag
 
-   ! Compute Dyn-SGS eddy viscosity (Marras et al. 2016) for the BTP from the
-   ! mass-scaled inviscid residual btp%rhs_btp(1,I) = ∂η/∂t|_inv.
-   !
-   ! Per element Ωe (Marras et al. 2016, Eqs. 7-9):
-   !   Δ²     = mean Jacobian weight per DOF
-   !   μ_res  = Δ² × max( massinv×|R_H(I)| / ‖pb-p̂b‖∞,Ω ,
-   !                      massinv×|R_Hu(I)| / ‖Hu-Ĥu‖∞,Ω )
-   !            -- Eq. 8 takes the max of the MASS-residual ratio and the
-   !               MOMENTUM-residual ratio (previously only the mass ratio
-   !               was computed, so a large momentum residual with a small
-   !               mass residual -- e.g. pure shear/wave-breaking with little
-   !               thickness change -- went entirely undetected).  The
-   !               denominators are GLOBAL (whole domain Ω, MPI-reduced,
-   !               deviation from the domain MEAN p̂b/Ĥu), not a per-element
-   !               max of the raw field: normalizing by max_e(|pb|) directly
-   !               (~5e7 Pa everywhere) made μ_res uniformly tiny almost
-   !               everywhere regardless of the actual local anomaly size.
-   !   μ_max  = 0.5 × Δ × max_e(|u_b| + |v_b| [+ |w_b|] + sqrt(alpha_bottom×pb))
-   !            -- total wave speed (advective + barotropic gravity wave), per
-   !               Eq. 9's |u|+sqrt(g*H); previously omitted the gravity-wave
-   !               term entirely, capping μ_SGS an order of magnitude below
-   !               what Eq. 9 allows (sqrt(g*H)~243 m/s vs |u|~20 m/s here).
-   !   μ_SGS  = min(μ_max, μ_res)   written to btp%nu_smag(I)
-   !
-   ! Called after create_rhs_btp so btp%rhs_btp(1,I) holds the current-step residual.
-   subroutine btp_compute_nu_dyn_sgs(G, inp, b, btp, tsp, mt, init, qb_df)
-
-      use mod_grid,          only: grid
-      use mod_basis,         only: basis
-      use mod_input,         only: input
-      use mod_variables,     only: btp_CS
-      use mod_tensor,        only: tensor_CS
-      use mod_metrics,       only: metrics
-      use mod_initial,       only: initial
-      use mod_mpi_utilities, only: MPI_PRECISION
-      use mpi
-
-      implicit none
-
-      type(grid),      intent(in)    :: G
-      type(basis),     intent(in)    :: b
-      type(input),     intent(in)    :: inp
-      type(btp_CS),    intent(inout) :: btp
-      type(tensor_CS), intent(in)    :: tsp
-      type(metrics),   intent(in)    :: mt
-      type(initial),   intent(in)    :: init
-
-      real, intent(in) :: qb_df(inp%nvar_btp, G%npoin)
-
-      integer :: ie, iq_local, Iq, Iq0, I, ip
-      integer :: npts_l, nelem_l, nlayers_l, npoin_l, nglx_l, ngly_l
-      integer :: I00, IN0, I0N, INN
-      real    :: delta2, delta, dx_len, dy_len
-      real    :: R_mass, vel_mag, mu_res, mu_max, mu_dyn, wave_spd
-      real    :: R_mom, ratio_mass, ratio_mom
-      real    :: dt_l, visc_l, mu_cfl, alpha_bot
-      real    :: nu_loc(b%npts)
-      logical :: has_w
-      real, parameter :: h_floor   = 1.0e2   ! Pa floor; div-by-zero guard only
-      real, parameter :: mom_floor = 1.0     ! Pa*(m/s) floor; div-by-zero guard
-
-      ! Global (MPI-reduced) normalization scales for μ_res (Eq. 8's ‖·‖∞,Ω).
-      real    :: mom_mag_I
-      real    :: local_sum_pb, local_sum_mom, local_sum_w
-      real    :: sums_local(3), sums_global(3)
-      real    :: pb_hat, mom_hat
-      real    :: local_dev_pb, local_dev_mom
-      real    :: devs_local(2), devs_global(2)
-      real    :: h_ref_g, mom_ref_g
-      integer :: ierr_mpi
-
-      npts_l    = b%npts
-      nelem_l   = G%nelem
-      npoin_l   = G%npoin
-      nlayers_l = inp%nlayers
-      nglx_l    = b%nglx
-      ngly_l    = b%ngly
-      has_w     = (inp%nvar_btp == 5)
-      alpha_bot = init%alpha_mlswe(nlayers_l)
-
-      ! Explicit diffusive-CFL guard for the cap below: the (unpenalized,
-      ! central-flux) viscous operator's spectral radius is ~(visc+μ)·16/Δ²
-      ! (LGL endpoint-weight estimate), so keep visc+μ ≤ Δ²/(16·dt_btp).
-      dt_l   = inp%dt_btp
-      visc_l = inp%visc_mlswe
-
-      ! --- Pass 1: local (this-rank) mass-weighted domain-integral sums, for
-      !     the global means p̂b, Ĥu (Ĥu approximated as the scalar magnitude
-      !     |Hu_x|+|Hu_y|[+|Hu_z|], consistent with how μ_max already combines
-      !     velocity components). ---
-      local_sum_pb  = 0.0
-      local_sum_mom = 0.0
-      local_sum_w   = 0.0
-      !$acc parallel loop present(tsp%wjac_df, qb_df) firstprivate(npoin_l, has_w) &
-      !$acc    private(mom_mag_I) reduction(+:local_sum_pb, local_sum_mom, local_sum_w)
-      do I = 1, npoin_l
-         if (has_w) then
-            mom_mag_I = abs(qb_df(3,I)) + abs(qb_df(4,I)) + abs(qb_df(5,I))
-         else
-            mom_mag_I = abs(qb_df(3,I)) + abs(qb_df(4,I))
-         end if
-         local_sum_pb  = local_sum_pb  + tsp%wjac_df(I) * qb_df(1,I)
-         local_sum_mom = local_sum_mom + tsp%wjac_df(I) * mom_mag_I
-         local_sum_w   = local_sum_w   + tsp%wjac_df(I)
-      end do
-      !$acc end parallel loop
-
-      sums_local = (/ local_sum_pb, local_sum_mom, local_sum_w /)
-      call mpi_allreduce(sums_local, sums_global, 3, MPI_PRECISION, mpi_sum, mpi_comm_world, ierr_mpi)
-      pb_hat  = sums_global(1) / sums_global(3)
-      mom_hat = sums_global(2) / sums_global(3)
-
-      ! --- Pass 2: local max deviation from the GLOBAL mean just computed. ---
-      local_dev_pb  = 0.0
-      local_dev_mom = 0.0
-      !$acc parallel loop present(qb_df) firstprivate(npoin_l, has_w, pb_hat, mom_hat) &
-      !$acc    private(mom_mag_I) reduction(max:local_dev_pb, local_dev_mom)
-      do I = 1, npoin_l
-         if (has_w) then
-            mom_mag_I = abs(qb_df(3,I)) + abs(qb_df(4,I)) + abs(qb_df(5,I))
-         else
-            mom_mag_I = abs(qb_df(3,I)) + abs(qb_df(4,I))
-         end if
-         local_dev_pb  = max(local_dev_pb,  abs(qb_df(1,I) - pb_hat))
-         local_dev_mom = max(local_dev_mom, abs(mom_mag_I  - mom_hat))
-      end do
-      !$acc end parallel loop
-
-      devs_local = (/ local_dev_pb, local_dev_mom /)
-      call mpi_allreduce(devs_local, devs_global, 2, MPI_PRECISION, mpi_max, mpi_comm_world, ierr_mpi)
-      h_ref_g   = max(devs_global(1), h_floor)
-      mom_ref_g = max(devs_global(2), mom_floor)
-
-      !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df, &
-      !$acc              G%intma, G%coord, &
-      !$acc              btp%nu_smag, btp%rhs_btp, mt%massinv, qb_df)
-
-      !$acc parallel loop gang                                              &
-      !$acc   private(nu_loc, delta2, delta, dx_len, dy_len, mu_cfl, wave_spd, &
-      !$acc           I00, IN0, I0N, INN,                                  &
-      !$acc           R_mass, vel_mag, mu_res, mu_max, mu_dyn,             &
-      !$acc           R_mom, ratio_mass, ratio_mom,                        &
-      !$acc           Iq, Iq0, I, ip, iq_local)                            &
-      !$acc   firstprivate(npts_l, nelem_l, nglx_l, ngly_l, has_w, dt_l, visc_l, alpha_bot, h_ref_g, mom_ref_g)
-      do ie = 1, nelem_l
-
-         ! Element filter width Δ̄ = min(Δx,Δy)/(N+1) (Marras et al. 2016 Sec.
-         ! 4, before Eq. 6) -- the MIN of the two physical side lengths, each
-         ! divided by the number of points per direction, NOT an area-per-DOF
-         ! proxy (sqrt(Δx·Δy)/(N+1), a geometric mean that overestimates the
-         ! true filter width for anisotropic/distorted elements, common on
-         ! this icosahedral sphere mesh).  Side length = average of the two
-         ! parallel edges' 3D corner-to-corner distances.
-         I00 = G%intma(1,      1,      1, ie)
-         IN0 = G%intma(nglx_l, 1,      1, ie)
-         I0N = G%intma(1,      ngly_l, 1, ie)
-         INN = G%intma(nglx_l, ngly_l, 1, ie)
-         dx_len = 0.5 * ( sqrt(sum((G%coord(:,IN0)-G%coord(:,I00))**2)) &
-                        + sqrt(sum((G%coord(:,INN)-G%coord(:,I0N))**2)) )
-         dy_len = 0.5 * ( sqrt(sum((G%coord(:,I0N)-G%coord(:,I00))**2)) &
-                        + sqrt(sum((G%coord(:,INN)-G%coord(:,IN0))**2)) )
-         delta  = min(dx_len/real(nglx_l), dy_len/real(ngly_l))
-         delta2 = delta*delta
-
-         ! Element-max residual norms (numerators only -- denominators are
-         ! the global h_ref_g/mom_ref_g computed once above).
-         R_mass  = 0.0
-         R_mom   = 0.0
-         vel_mag = 0.0
-         !$acc loop seq
-         do iq_local = 1, npts_l
-            Iq = tsp%index_df_elt(iq_local, ie)
-            ! Mass residual: scale by massinv to get ∂η/∂t|_inv [Pa/s or m/s]
-            R_mass = max(R_mass, mt%massinv(Iq) * abs(btp%rhs_btp(1,Iq)))
-            ! Momentum residual R(Hu): rows 2.. of rhs_btp are the u,v[,w]
-            ! momentum equations (see mod_rk_mlswe.F90 RK combine: rhs_btp(iv-1)
-            ! feeds qb_df(iv), iv=3..nvarb_f).  Hu = qb_df(3:), the momentum
-            ! variables themselves (pb*u, pb*v[, pb*w]).
-            if (has_w) then
-               R_mom = max(R_mom, mt%massinv(Iq) * (abs(btp%rhs_btp(2,Iq)) &
-                                  + abs(btp%rhs_btp(3,Iq)) + abs(btp%rhs_btp(4,Iq))))
-            else
-               R_mom = max(R_mom, mt%massinv(Iq) * (abs(btp%rhs_btp(2,Iq)) + abs(btp%rhs_btp(3,Iq))))
-            end if
-            ! Marras et al. 2016 Eq. 9: μ_max bounds the coefficient by the total
-            ! wave speed |u| + sqrt(g*H), not advection alone.  Barotropic gravity
-            ! wave speed here (same form as the Rusanov flux in
-            ! create_rhs_dynamics_flux.F90): c = sqrt(alpha_bottom * pb).
-            wave_spd = sqrt(alpha_bot * qb_df(1,Iq))
-            ! Depth-averaged velocity = momentum / H
-            if (has_w) then
-               vel_mag = max(vel_mag, abs(qb_df(3,Iq)/qb_df(1,Iq)) &
-                                    + abs(qb_df(4,Iq)/qb_df(1,Iq)) &
-                                    + abs(qb_df(5,Iq)/qb_df(1,Iq)) &
-                                    + wave_spd)
-            else
-               vel_mag = max(vel_mag, abs(qb_df(3,Iq)/qb_df(1,Iq)) &
-                                    + abs(qb_df(4,Iq)/qb_df(1,Iq)) &
-                                    + wave_spd)
-            end if
-         end do
-
-         ! Eq. 8: μ_res = Δ² × max(mass-residual ratio, momentum-residual ratio).
-         ratio_mass = R_mass / h_ref_g
-         ratio_mom  = R_mom / mom_ref_g
-         mu_res = delta2 * max(ratio_mass, ratio_mom)
-         mu_max = 0.5 * delta * vel_mag
-         mu_dyn = min(mu_max, mu_res)
-
-         ! Explicit diffusive-CFL cap: A_H = visc+μ must satisfy the explicit
-         ! stability limit of the viscous operator at dt_btp.  μ is reduced so
-         ! visc+μ never exceeds it; if visc alone exceeds the limit, that is
-         ! the user's parameter choice and μ contributes nothing.
-         mu_cfl = delta2 / (16.0 * dt_l)
-         mu_dyn = min(mu_dyn, max(0.0, mu_cfl - visc_l))
-
-         ! Pragmatic user-viscosity cap (not from the paper): μ_max/μ_res scale
-         ! with Δ/Δ² respectively, so on coarse (ocean-basin) meshes they are
-         ! inherently huge (~1e8 m²/s here) and saturate the CFL cap above,
-         ! overriding visc_mlswe by ~100x rather than acting as a bounded local
-         ! correction.  2026-07-24 mountain_2layer test: lDyn_SGS=.false. (0x
-         ! extra diffusion) already ran cleanly at this resolution, so 5x sits
-         ! well inside the demonstrated-stable range.
-         mu_dyn = min(mu_dyn, 5.0 * visc_l)
-
-         ! Fill element-constant nu_loc, then scatter to global DOF array.
-         !$acc loop seq
-         do ip = 1, npts_l
-            nu_loc(ip) = mu_dyn
-         end do
-
-         Iq0 = tsp%index_df_elt(1, ie)
-         !$acc loop seq
-         do ip = 1, npts_l
-            I = tsp%index_df(ip, Iq0)
-            btp%nu_smag(I) = nu_loc(ip)
-         end do
-
-      end do
-      !$acc end parallel loop
-
-      !$acc end data
-
-   end subroutine btp_compute_nu_dyn_sgs
-
-   ! Compute Dyn-SGS eddy viscosity (Marras et al. 2016) for the BCL from the
-   ! mass-scaled inviscid residual rhs(1,I,k) = ∂dp'_k/∂t|_inv.
-   !
-   ! Per element Ωe and layer k (Eqs. 7-9):
-   !   Δ²     = mean Jacobian weight per DOF (filter area)
-   !   μ_res  = Δ² × max( |R_mass| / ‖dp'_k-d̂p_k‖∞,Ω , |R_mom| / ‖Hu_k-Ĥu_k‖∞,Ω )
-   !            -- Eq. 8's max of the mass- and momentum-residual ratios,
-   !               denominators GLOBAL (MPI-reduced, per layer k) rather than
-   !               per-element (see btp_compute_nu_dyn_sgs header for why).
-   !               The momentum ratio uses the actual layer momentum
-   !               q_df(2:4,k) (dp_k*u_k etc.), NOT qprime_df (which stores
-   !               the velocity PERTURBATION u'_k, not momentum).
-   !   μ_max  = 0.5 × Δ × max_e(|u'_k| + |v'_k| [+ |w'_k|] + c_k)
-   !            -- c_k = internal gravity wave speed for layer k, matching
-   !               Eq. 9's |u|+sqrt(g*H) (previously omitted, same bug as
-   !               btp_compute_nu_dyn_sgs).  c_k = sqrt(drho_over_rho_k *
-   !               alpha_k * dp'_k), drho_over_rho_k = 1-alpha_k/alpha_(k-1)
-   !               (same reduced-gravity factor used for the APE term in
-   !               mod_create_rhs_mlswe.F90).  Layer 1 has no interface above
-   !               within the BCL split (that's the free surface, handled by
-   !               BTP), so it uses the full alpha_1 -- a conservative
-   !               (larger, safe) ceiling rather than an unreduced-gravity
-   !               underestimate.
-   !   μ_SGS  = min(μ_max, μ_res)   written to bcl%nu_smag(I,k)
-   !
-   ! q_df (actual momentum, dp_k*u_k etc.) is needed only for the momentum-
-   ! residual normalization in μ_res; qprime_df remains the source for μ_max's
-   ! velocity-perturbation terms.
-   ! All units in SI: Δ [m], R_mass [Pa/s], dp' [Pa] → μ [m²/s].
-   subroutine bcl_compute_nu_dyn_sgs(G, inp, b, bcl, tsp, init, rhs, qprime_df, q_df)
-
-      use mod_grid,          only: grid
-      use mod_basis,         only: basis
-      use mod_input,         only: input
-      use mod_variables,     only: bcl_CS
-      use mod_tensor,        only: tensor_CS
-      use mod_initial,       only: initial
-      use mod_mpi_utilities, only: MPI_PRECISION
-      use mpi
-
-      implicit none
-
-      type(grid),      intent(in)    :: G
-      type(basis),     intent(in)    :: b
-      type(input),     intent(in)    :: inp
-      type(bcl_CS),    intent(inout) :: bcl
-      type(tensor_CS), intent(in)    :: tsp
-      type(initial),   intent(in)    :: init
-
-      real, intent(in) :: rhs(inp%nvar_bcl, G%npoin, inp%nlayers)
-      real, intent(in) :: qprime_df(inp%nvar_bcl, G%npoin, inp%nlayers)
-      real, intent(in) :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
-
-      integer :: ie, iq_local, Iq, Iq0, I, ip, k
-      integer :: npts_l, nelem_l, nlayers_l, npoin_l, nglx_l, ngly_l
-      integer :: I00, IN0, I0N, INN
-      real    :: delta2, delta, dx_len, dy_len
-      real    :: R_mass, vel_mag, mu_res, mu_max, mu_dyn, wave_spd, drho_over_rho
-      real    :: R_mom, ratio_mass, ratio_mom
-      real    :: dt_l, visc_l, mu_cfl
-      real    :: nu_loc(b%npts, inp%nlayers)
-      logical :: has_w
-      real, parameter :: dp_floor  = 1.0e2   ! Pa floor (~10 m); div-by-zero guard
-      real, parameter :: mom_floor = 1.0     ! Pa*(m/s) floor; div-by-zero guard
-
-      ! Global (MPI-reduced) per-layer normalization scales for μ_res.
-      real    :: mom_mag_I
-      real    :: sums_local(2*inp%nlayers+1), sums_global(2*inp%nlayers+1)
-      real    :: devs_local(2*inp%nlayers), devs_global(2*inp%nlayers)
-      real    :: dp_hat(inp%nlayers), mom_hat(inp%nlayers)
-      real    :: dp_ref_g(inp%nlayers), mom_ref_g(inp%nlayers)
-      real    :: local_sum_w
-      integer :: ierr_mpi
-
-      npts_l    = b%npts
-      nelem_l   = G%nelem
-      npoin_l   = G%npoin
-      nlayers_l = inp%nlayers
-      nglx_l    = b%nglx
-      ngly_l    = b%ngly
-      has_w     = (inp%nvar_bcl == 4)   ! w carried only on sphere_hex/sphere_ico
-
-      ! Explicit diffusive-CFL guard for the cap below (see btp_compute_nu_dyn_sgs).
-      ! BCL viscosity is applied at the baroclinic step dt, not dt_btp.
-      dt_l   = inp%dt
-      visc_l = inp%visc_mlswe
-
-      ! --- Pass 1: local mass-weighted domain-integral sums per layer, for the
-      !     global means d̂p_k, Ĥu_k (dp'_k is signed; Ĥu_k uses the scalar
-      !     magnitude |Hu_x|+|Hu_y|[+|Hu_z|], as in btp_compute_nu_dyn_sgs).
-      !     The weight sum (domain measure) is layer-independent (same mesh). ---
-      local_sum_w = 0.0
-      !$acc parallel loop present(tsp%wjac_df) firstprivate(npoin_l) reduction(+:local_sum_w)
-      do I = 1, npoin_l
-         local_sum_w = local_sum_w + tsp%wjac_df(I)
-      end do
-      !$acc end parallel loop
-
-      do k = 1, nlayers_l
-         sums_local(2*k-1) = 0.0
-         sums_local(2*k)   = 0.0
-         !$acc parallel loop present(tsp%wjac_df, qprime_df, q_df) &
-         !$acc    firstprivate(npoin_l, has_w, k) private(mom_mag_I) &
-         !$acc    reduction(+:sums_local(2*k-1), sums_local(2*k))
-         do I = 1, npoin_l
-            if (has_w) then
-               mom_mag_I = abs(q_df(2,I,k)) + abs(q_df(3,I,k)) + abs(q_df(4,I,k))
-            else
-               mom_mag_I = abs(q_df(2,I,k)) + abs(q_df(3,I,k))
-            end if
-            sums_local(2*k-1) = sums_local(2*k-1) + tsp%wjac_df(I) * qprime_df(1,I,k)
-            sums_local(2*k)   = sums_local(2*k)   + tsp%wjac_df(I) * mom_mag_I
-         end do
-         !$acc end parallel loop
-      end do
-      sums_local(2*nlayers_l+1) = local_sum_w
-
-      call mpi_allreduce(sums_local, sums_global, 2*nlayers_l+1, MPI_PRECISION, mpi_sum, mpi_comm_world, ierr_mpi)
-
-      do k = 1, nlayers_l
-         dp_hat(k)  = sums_global(2*k-1) / sums_global(2*nlayers_l+1)
-         mom_hat(k) = sums_global(2*k)   / sums_global(2*nlayers_l+1)
-      end do
-
-      ! --- Pass 2: local max deviation from the GLOBAL per-layer means. ---
-      do k = 1, nlayers_l
-         devs_local(2*k-1) = 0.0
-         devs_local(2*k)   = 0.0
-         !$acc parallel loop present(qprime_df, q_df) &
-         !$acc    firstprivate(npoin_l, has_w, k, dp_hat(k), mom_hat(k)) private(mom_mag_I) &
-         !$acc    reduction(max:devs_local(2*k-1), devs_local(2*k))
-         do I = 1, npoin_l
-            if (has_w) then
-               mom_mag_I = abs(q_df(2,I,k)) + abs(q_df(3,I,k)) + abs(q_df(4,I,k))
-            else
-               mom_mag_I = abs(q_df(2,I,k)) + abs(q_df(3,I,k))
-            end if
-            devs_local(2*k-1) = max(devs_local(2*k-1), abs(qprime_df(1,I,k) - dp_hat(k)))
-            devs_local(2*k)   = max(devs_local(2*k),   abs(mom_mag_I        - mom_hat(k)))
-         end do
-         !$acc end parallel loop
-      end do
-
-      call mpi_allreduce(devs_local, devs_global, 2*nlayers_l, MPI_PRECISION, mpi_max, mpi_comm_world, ierr_mpi)
-
-      do k = 1, nlayers_l
-         dp_ref_g(k)  = max(devs_global(2*k-1), dp_floor)
-         mom_ref_g(k) = max(devs_global(2*k),   mom_floor)
-      end do
-
-      !$acc data present(tsp%wjac_df, tsp%index_df_elt, tsp%index_df, &
-      !$acc              G%intma, G%coord, &
-      !$acc              bcl%nu_smag, rhs, qprime_df, q_df, init%alpha_mlswe)
-
-      !$acc parallel loop gang                                                     &
-      !$acc   private(nu_loc, delta2, delta, dx_len, dy_len, mu_cfl, wave_spd, drho_over_rho, &
-      !$acc           I00, IN0, I0N, INN,                                          &
-      !$acc           R_mass, vel_mag, mu_res, mu_max, mu_dyn,                     &
-      !$acc           R_mom, ratio_mass, ratio_mom,                                &
-      !$acc           Iq, Iq0, I, ip, k, iq_local)                                 &
-      !$acc   firstprivate(npts_l, nelem_l, nlayers_l, nglx_l, ngly_l, has_w, dt_l, visc_l, dp_ref_g, mom_ref_g)
-      do ie = 1, nelem_l
-
-         ! Element filter width Δ̄ = min(Δx,Δy)/(N+1) (Marras et al. 2016 Sec.
-         ! 4, before Eq. 6) -- see btp_compute_nu_dyn_sgs for why this replaces
-         ! the earlier area-per-DOF (geometric-mean) proxy.
-         I00 = G%intma(1,      1,      1, ie)
-         IN0 = G%intma(nglx_l, 1,      1, ie)
-         I0N = G%intma(1,      ngly_l, 1, ie)
-         INN = G%intma(nglx_l, ngly_l, 1, ie)
-         dx_len = 0.5 * ( sqrt(sum((G%coord(:,IN0)-G%coord(:,I00))**2)) &
-                        + sqrt(sum((G%coord(:,INN)-G%coord(:,I0N))**2)) )
-         dy_len = 0.5 * ( sqrt(sum((G%coord(:,I0N)-G%coord(:,I00))**2)) &
-                        + sqrt(sum((G%coord(:,INN)-G%coord(:,IN0))**2)) )
-         delta  = min(dx_len/real(nglx_l), dy_len/real(ngly_l))
-         delta2 = delta*delta
-
-         !$acc loop seq
-         do k = 1, nlayers_l
-            if (k == 1) then
-               drho_over_rho = 1.0
-            else
-               drho_over_rho = 1.0 - init%alpha_mlswe(k)/init%alpha_mlswe(k-1)
-            end if
-            R_mass  = 0.0
-            R_mom   = 0.0
-            vel_mag = 0.0
-            !$acc loop seq
-            do iq_local = 1, npts_l
-               Iq = tsp%index_df_elt(iq_local, ie)
-               R_mass = max(R_mass, abs(rhs(1,Iq,k)))
-               ! Momentum residual R(Hu_k): rhs rows 2.. are already massinv-
-               ! scaled by the caller (create_rhs_bcl Step A) before this call.
-               if (has_w) then
-                  R_mom = max(R_mom, abs(rhs(2,Iq,k)) + abs(rhs(3,Iq,k)) + abs(rhs(4,Iq,k)))
-               else
-                  R_mom = max(R_mom, abs(rhs(2,Iq,k)) + abs(rhs(3,Iq,k)))
-               end if
-               ! Internal gravity wave speed for this layer (see header).
-               wave_spd = sqrt(drho_over_rho * init%alpha_mlswe(k) * abs(qprime_df(1,Iq,k)))
-               ! velocity magnitude = |u'|+|v'| [+|w'| on sphere] + wave_spd
-               if (has_w) then
-                  vel_mag = max(vel_mag, abs(qprime_df(2,Iq,k)) &
-                                       + abs(qprime_df(3,Iq,k)) &
-                                       + abs(qprime_df(4,Iq,k)) &
-                                       + wave_spd)
-               else
-                  vel_mag = max(vel_mag, abs(qprime_df(2,Iq,k)) + abs(qprime_df(3,Iq,k)) + wave_spd)
-               end if
-            end do
-
-            ! Eq. 8: μ_res = Δ² × max(mass-residual ratio, momentum-residual ratio).
-            ratio_mass = R_mass / dp_ref_g(k)
-            ratio_mom  = R_mom / mom_ref_g(k)
-            mu_res = delta2 * max(ratio_mass, ratio_mom)
-            mu_max = 0.5 * delta * vel_mag
-            mu_dyn = min(mu_max, mu_res)
-
-            ! Explicit diffusive-CFL cap: keep visc+μ inside the explicit
-            ! stability limit of the viscous operator at dt.  Without this,
-            ! μ from strong transients (e.g. mountain wakes) can push the
-            ! explicit BCL step past its stability limit.
-            mu_cfl = delta2 / (16.0 * dt_l)
-            mu_dyn = min(mu_dyn, max(0.0, mu_cfl - visc_l))
-
-            ! Pragmatic user-viscosity cap -- see btp_compute_nu_dyn_sgs.
-            mu_dyn = min(mu_dyn, 5.0 * visc_l)
-
-            !$acc loop seq
-            do ip = 1, npts_l
-               nu_loc(ip,k) = mu_dyn
-            end do
-         end do
-
-         ! Scatter element-constant μ_SGS to all DOF nodes in element.
-         Iq0 = tsp%index_df_elt(1, ie)
-         !$acc loop seq
-         do k = 1, nlayers_l
-            !$acc loop seq
-            do ip = 1, npts_l
-               I = tsp%index_df(ip, Iq0)
-               bcl%nu_smag(I,k) = nu_loc(ip,k)
-            end do
-         end do
-
-      end do
-      !$acc end parallel loop
-
-      !$acc end data
-
-   end subroutine bcl_compute_nu_dyn_sgs
-
    subroutine bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, lap_q)
 
       use mod_grid,      only: grid
@@ -1058,7 +592,7 @@ contains
       !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df,        &
       !$acc              tsp%dpsidz_df, tsp%dpsidz_df_x, tsp%dpsidz_df_y, tsp%dpsidz_df_z, &
       !$acc              tsp%index_df_elt, tsp%index_df,                     &
-      !$acc              btp%graduvb_ave, bcl%dpprime_visc, bcl%dpp_graduvw, lap_q)
+      !$acc              btp%graduvb_ave, bcl%dpprime_visc_scaled, bcl%dpp_graduvw_scaled, lap_q)
 
       !$acc kernels present(lap_q)
       lap_q = 0.0
@@ -1085,16 +619,16 @@ contains
             do iq_local = 1, npts_l
                Iq = tsp%index_df_elt(iq_local, ie)
                wq = tsp%wjac_df(Iq)
-               qq(1) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduvw(1,Iq,k)
-               qq(2) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduvw(2,Iq,k)
-               qq(3) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduvw(3,Iq,k)
-               qq(4) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduvw(4,Iq,k)
+               qq(1) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(1,Iq) + bcl%dpp_graduvw_scaled(1,Iq,k)
+               qq(2) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(2,Iq) + bcl%dpp_graduvw_scaled(2,Iq,k)
+               qq(3) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(3,Iq) + bcl%dpp_graduvw_scaled(3,Iq,k)
+               qq(4) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(4,Iq) + bcl%dpp_graduvw_scaled(4,Iq,k)
                if (has_w) then
-                  qq(5) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(5,Iq) + bcl%dpp_graduvw(5,Iq,k)
-                  qq(6) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(6,Iq) + bcl%dpp_graduvw(6,Iq,k)
-                  qq(7) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(7,Iq) + bcl%dpp_graduvw(7,Iq,k)
-                  qq(8) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(8,Iq) + bcl%dpp_graduvw(8,Iq,k)
-                  qq(9) = bcl%dpprime_visc(Iq,k)*btp%graduvb_ave(9,Iq) + bcl%dpp_graduvw(9,Iq,k)
+                  qq(5) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(5,Iq) + bcl%dpp_graduvw_scaled(5,Iq,k)
+                  qq(6) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(6,Iq) + bcl%dpp_graduvw_scaled(6,Iq,k)
+                  qq(7) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(7,Iq) + bcl%dpp_graduvw_scaled(7,Iq,k)
+                  qq(8) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(8,Iq) + bcl%dpp_graduvw_scaled(8,Iq,k)
+                  qq(9) = bcl%dpprime_visc_scaled(Iq,k)*btp%graduvb_ave(9,Iq) + bcl%dpp_graduvw_scaled(9,Iq,k)
                end if
                !$acc loop seq
                do ip = 1, npts_l
@@ -1227,6 +761,7 @@ contains
       integer :: iface, i, il, jl, kl, ir, jr, kr
       integer :: iel, ier, ip, iquad, ivar, nw
       real :: flux_qu, flux_qv, flux_qw, hi, alpha, beta, iflux
+      real :: pconst, sigma, pb_avg, du_pen, dv_pen, dw_pen
       real    :: ql_s(9), qr_s(9), btp_ql_s(10), btp_qr_s(10)
       integer, dimension(b%ngl) :: I_l, I_r
       integer :: ngl_f, nface_f
@@ -1240,11 +775,12 @@ contains
       nface_f = G%nface
       nw      = inp%ngraduvw_var
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      pconst  = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
       !$acc data present(G%face, G%face_type, G%intma,                       &
       !$acc               mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face, &
       !$acc               b%psi,                                               &
-      !$acc               btp%btp_dpp_graduvw, btp%pbprime_visc,               &
+      !$acc               btp%btp_dpp_graduvw_scaled, btp%pbprime_visc_scaled, &
       !$acc               btp%graduvb_face_ave,                                &
       !$acc               tsp%wjac_df, Uk,                                     &
       !$acc               rhs, gradq)
@@ -1257,8 +793,9 @@ contains
       !$acc           flux_uv_visc_face,                                      &
       !$acc           qul, qur, qvl, qvr, qwl, qwr,                          &
       !$acc           qu_mean, qv_mean, qw_mean,                              &
+      !$acc           sigma, pb_avg, du_pen, dv_pen, dw_pen,                  &
       !$acc           flux_qu, flux_qv, flux_qw, hi, ivar, i, iquad)          &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w)
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w, pconst)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -1297,9 +834,9 @@ contains
             !$acc loop seq
             do ivar = 1, nw
                ql_s(ivar)     = gradq(ivar,ip)
-               btp_ql_s(ivar) = btp%btp_dpp_graduvw(ivar,ip)
+               btp_ql_s(ivar) = btp%btp_dpp_graduvw_scaled(ivar,ip)
             end do
-            btp_ql_s(nw+1) = btp%pbprime_visc(ip)
+            btp_ql_s(nw+1) = btp%pbprime_visc_scaled(ip)
 
             if (ier > 0) then
 
@@ -1308,9 +845,9 @@ contains
                !$acc loop seq
                do ivar = 1, nw
                   qr_s(ivar)     = gradq(ivar,ip)
-                  btp_qr_s(ivar) = btp%btp_dpp_graduvw(ivar,ip)
+                  btp_qr_s(ivar) = btp%btp_dpp_graduvw_scaled(ivar,ip)
                end do
-               btp_qr_s(nw+1) = btp%pbprime_visc(ip)
+               btp_qr_s(nw+1) = btp%pbprime_visc_scaled(ip)
 
             else
                !$acc loop seq
@@ -1427,6 +964,21 @@ contains
             flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
                     + (qw_mean(3) - iflux*qwl(3))*nz
 
+            ! SIP interior penalty on interior faces only (ier > 0).
+            ! Jump [ū] = Uk_L - Uk_R; average p̄_b_avg = 0.5*(pbprime_L + pbprime_R).
+            if (ier > 0) then
+               sigma  = pconst * wq / min(tsp%wjac_df(I_l(iquad)), tsp%wjac_df(I_r(iquad)))
+               pb_avg = 0.5 * (btp%pbprime_visc_scaled(I_l(iquad)) + btp%pbprime_visc_scaled(I_r(iquad)))
+               du_pen = Uk(1, I_l(iquad)) - Uk(1, I_r(iquad))
+               dv_pen = Uk(2, I_l(iquad)) - Uk(2, I_r(iquad))
+               flux_qu = flux_qu - sigma * pb_avg * du_pen
+               flux_qv = flux_qv - sigma * pb_avg * dv_pen
+               if (has_w) then
+                  dw_pen  = Uk(3, I_l(iquad)) - Uk(3, I_r(iquad))
+                  flux_qw = flux_qw - sigma * pb_avg * dw_pen
+               end if
+            end if
+
             ! rhs scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
             do i = 1, ngl_f
@@ -1515,7 +1067,7 @@ contains
       !$acc              mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face,     &
       !$acc              b%psi,                                                   &
       !$acc              btp%graduvb_face_ave,                                   &
-      !$acc              bcl%dpp_graduvw, bcl%dpprime_visc, bcl%qprime_df,       &
+      !$acc              bcl%dpp_graduvw_scaled, bcl%dpprime_visc_scaled, bcl%qprime_df, &
       !$acc              tsp%wjac_df,                                             &
       !$acc              rhs)
 
@@ -1551,9 +1103,9 @@ contains
 
                !$acc loop seq
                do ivar = 1, nw
-                  ql_cur(ivar) = bcl%dpp_graduvw(ivar,ip,k)
+                  ql_cur(ivar) = bcl%dpp_graduvw_scaled(ivar,ip,k)
                end do
-               ql_cur(nw+1) = bcl%dpprime_visc(ip,k)
+               ql_cur(nw+1) = bcl%dpprime_visc_scaled(ip,k)
 
                if (ier > 0) then
                   ir = mf%imapr(1,iquad,1,iface)
@@ -1563,9 +1115,9 @@ contains
                   ip_face_R = ip
                   !$acc loop seq
                   do ivar = 1, nw
-                     qr_cur(ivar) = bcl%dpp_graduvw(ivar,ip,k)
+                     qr_cur(ivar) = bcl%dpp_graduvw_scaled(ivar,ip,k)
                   end do
-                  qr_cur(nw+1) = bcl%dpprime_visc(ip,k)
+                  qr_cur(nw+1) = bcl%dpprime_visc_scaled(ip,k)
                else
                   !$acc loop seq
                   do ivar = 1, nw+1

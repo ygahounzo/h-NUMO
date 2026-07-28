@@ -75,8 +75,10 @@ subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q
 
    ! nvarb = inp%ngraduvw_var (4 cartesian, 9 sphere_hex).
    ! nvel  = inp%nvar_btp - 2 (2 cartesian, 3 sphere_hex).
+   ! Packs the A_H-scaled fields (see btp_create_laplacian) so the DG-correct
+   ! {A_H*Δp} face averaging is consistent across MPI boundaries too.
    call pack_and_send_df_btp_lap(G, b, mf, init, par, ref,                 &
-      q, btp%btp_dpp_graduvw, btp%pbprime_visc, Uk, &
+      q, btp%btp_dpp_graduvw_scaled, btp%pbprime_visc_scaled, Uk, &
       nvarb, nvel, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_lap_create_precommunicator

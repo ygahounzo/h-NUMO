@@ -19,6 +19,7 @@ module mod_variables
       real, dimension(:),       allocatable :: one_plus_eta, one_plus_eta_df
       real, dimension(:),       allocatable :: ope2_ave_df, one_plus_eta_out
       real, dimension(:),       allocatable :: pbprime_visc
+      real, dimension(:),       allocatable :: pbprime_visc_scaled  ! A_H*pbprime_visc, DG-correct viscous flux (see btp_create_laplacian)
       real, dimension(:),       allocatable :: ope_ave, H_ave
       real, dimension(:),       allocatable :: ope2_ave
 
@@ -30,6 +31,7 @@ module mod_variables
       real, dimension(:,:),     allocatable :: btp_mass_flux_ave, uvb_ave, uvb_ave_df
       real, dimension(:,:),     allocatable :: btp_dpp_uvp, graduvb_ave
       real, dimension(:,:),     allocatable :: btp_dpp_graduvw  ! (ngraduvw_var,npoin): du_dx,du_dy,dv_dx,dv_dy [,graduvz(2)=du_dz,dv_dz, gradw(3)=dw_dx,dw_dy,dw_dz on sphere]
+      real, dimension(:,:),     allocatable :: btp_dpp_graduvw_scaled  ! A_H*btp_dpp_graduvw, DG-correct viscous flux (see btp_create_laplacian)
       real, dimension(:,:),     allocatable :: tau_wind_ave, tau_bot_ave
 
       ! Face / edge arrays
@@ -68,8 +70,10 @@ module mod_variables
       ! Viscosity / gradient arrays
       real, dimension(:,:,:),     allocatable :: dpp_uvp
       real, dimension(:,:,:),     allocatable :: dpp_graduvw  ! (ngraduvw_var,npoin,nlayers): du_dx,du_dy,dv_dx,dv_dy [,graduvz(2)=du_dz,dv_dz, gradw(3)=dw_dx,dw_dy,dw_dz on sphere]
+      real, dimension(:,:,:),     allocatable :: dpp_graduvw_scaled  ! A_H*dpp_graduvw, DG-correct viscous flux (see bcl_create_laplacian)
       real, dimension(:,:,:,:,:), allocatable :: graduv_dpp_face
       real, dimension(:,:),     allocatable :: dpprime_visc, dpprime_visc_q
+      real, dimension(:,:),     allocatable :: dpprime_visc_scaled  ! A_H*dpprime_visc, DG-correct viscous flux (see bcl_create_laplacian)
 
       ! BCL mass-flux accumulators
       real, dimension(:,:),   allocatable :: sum_layer_mass_flux
@@ -123,13 +127,14 @@ contains
          deallocate(                                                         &
             btp%one_plus_eta,       btp%one_plus_eta_df,                   &
             btp%ope2_ave_df,        btp%one_plus_eta_out,                  &
-            btp%pbprime_visc,                                              &
+            btp%pbprime_visc,       btp%pbprime_visc_scaled,               &
             btp%ope_ave,            btp%H_ave,                             &
             btp%Qu_ave,             btp%Qv_ave,        btp%Qw_ave,        &
             btp%ope2_ave,                                                  &
             btp%tau_wind,           btp%tau_bot,                           &
             btp%btp_mass_flux_ave,  btp%uvb_ave,       btp%uvb_ave_df,    &
-            btp%btp_dpp_graduvw,    btp%btp_dpp_uvp,   btp%graduvb_ave,   &
+            btp%btp_dpp_graduvw,    btp%btp_dpp_graduvw_scaled,            &
+            btp%btp_dpp_uvp,        btp%graduvb_ave,                       &
             btp%tau_wind_ave,       btp%tau_bot_ave,                       &
             btp%one_plus_eta_edge,  btp%one_plus_eta_edge_2,               &
             btp%one_plus_eta_edge_2_ave, btp%H_face_ave,                   &
@@ -152,6 +157,7 @@ contains
          btp%ope2_ave_df(G%npoin),                                            &
          btp%one_plus_eta_out(G%npoin),                                       &
          btp%pbprime_visc(G%npoin),                                           &
+         btp%pbprime_visc_scaled(G%npoin),                                    &
          btp%ope_ave(G%npoin_q),      btp%H_ave(G%npoin_q),                     &
          btp%ope2_ave(G%npoin_q),                                                &
          stat=stat)
@@ -167,6 +173,7 @@ contains
          btp%uvb_ave(inp%nvar_btp-2,G%npoin_q),                               &
          btp%uvb_ave_df(inp%nvar_btp-2,G%npoin),                              &
          btp%btp_dpp_graduvw(inp%ngraduvw_var,G%npoin),                       &
+         btp%btp_dpp_graduvw_scaled(inp%ngraduvw_var,G%npoin),                &
          btp%btp_dpp_uvp(2,G%npoin),                                          &
          btp%graduvb_ave(inp%ngraduvw_var,G%npoin),                          &
          btp%tau_wind_ave(2,G%npoin_q),                                       &
@@ -219,10 +226,12 @@ contains
       if (allocated(bcl%dpp_uvp)) then
          deallocate(                                                         &
             bcl%dpp_uvp,              bcl%dpp_graduvw,                    &
+            bcl%dpp_graduvw_scaled,                                        &
             bcl%graduv_dpp_face,                                           &
             bcl%sum_layer_mass_flux,  bcl%sum_layer_mass_flux_face,        &
             bcl%q_df,                 bcl%qprime_df,                     &
             bcl%dpprime_visc,         bcl%dpprime_visc_q,                 &
+            bcl%dpprime_visc_scaled,                                      &
             bcl%lap_z_df,             bcl%grad_z_df,                      &
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
@@ -233,6 +242,7 @@ contains
       allocate(                                                               &
          bcl%dpp_uvp(3,G%npoin,inp%nlayers),                                      &
          bcl%dpp_graduvw(inp%ngraduvw_var,G%npoin,inp%nlayers),                    &
+         bcl%dpp_graduvw_scaled(inp%ngraduvw_var,G%npoin,inp%nlayers),             &
          bcl%graduv_dpp_face(5,2,b%ngl,G%nface,inp%nlayers),                        &
          bcl%sum_layer_mass_flux(2,G%npoin_q),                                &
          bcl%sum_layer_mass_flux_face(2,b%nq,G%nface),                          &
@@ -240,6 +250,7 @@ contains
          bcl%qprime_df(inp%nvar_bcl,G%npoin,inp%nlayers),                         &
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
+         bcl%dpprime_visc_scaled(G%npoin,inp%nlayers),                       &
          bcl%lap_z_df(G%npoin,inp%nlayers+1),                               &
          bcl%grad_z_df(3,G%npoin,inp%nlayers),                             &
          bcl%rhs_bcl(inp%nvar_bcl,G%npoin,inp%nlayers),                          &

@@ -216,7 +216,6 @@ module mod_input
       logical :: rk_bcl_FS
       logical :: implicit_coriolis_sph
       real    :: C_smag
-      logical :: lDyn_SGS
       logical :: lwrite_vorticity
 
       logical :: lout_tree
@@ -472,7 +471,6 @@ module mod_input
       logical :: rk_bcl_FS = .false.
       logical :: implicit_coriolis_sph = .false.
       real    :: C_smag = 0.0
-      logical :: lDyn_SGS = .false.
       logical :: lwrite_vorticity = .true.
 
      !Namelist Input
@@ -511,7 +509,7 @@ module mod_input
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, kappa_thick, &
          bcl_time_method, rk_bcl_FS, &
-         SIPG_constant, implicit_coriolis_sph, C_smag, lDyn_SGS, lwrite_vorticity
+         SIPG_constant, implicit_coriolis_sph, C_smag, lwrite_vorticity
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -828,7 +826,6 @@ module mod_input
       inp%rk_bcl_FS                      = rk_bcl_FS
       inp%implicit_coriolis_sph          = implicit_coriolis_sph
       inp%C_smag                         = C_smag
-      inp%lDyn_SGS                       = lDyn_SGS
       inp%lwrite_vorticity               = lwrite_vorticity
 
    end subroutine mod_input_create

@@ -95,7 +95,6 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a,es14.6,t55,a)') 'SIPG_CONSTANT = ',   inp%SIPG_constant,  '! SIP penalty multiplier (0=LDG, 1=Shahbazi)'
    write(fu,'(a,es14.6,t55,a)') 'C_APE = ',           inp%c_APE,          '! [m2] Chen (2025) APE stabilization coefficient'
    write(fu,'(a,es14.6,t55,a)') 'C_SMAG = ',          inp%C_smag,         '! [-] Smagorinsky constant (0=off)'
-   write(fu,'(a,l1,t55,a)')     'L_DYN_SGS = ',       inp%lDyn_SGS,       '! Dyn-SGS residual viscosity (Marras 2016)'
    write(fu,'(a)')
 
    ! -----------------------------------------------------------------------

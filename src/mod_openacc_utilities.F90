@@ -146,6 +146,7 @@ contains
       !$acc                   btp%Qw_face_ave)
       !$acc enter data copyin(btp%uvb_ave_df, btp%btp_dpp_graduvw,             &
       !$acc                   btp%pbprime_visc)
+      !$acc enter data create(btp%pbprime_visc_scaled, btp%btp_dpp_graduvw_scaled)
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)
       !$acc enter data create(btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
@@ -156,6 +157,7 @@ contains
       !$acc enter data copyin(bcl%q_df)
       !$acc enter data copyin(bcl%qprime_df, bcl%dpprime_visc, bcl%dpp_graduvw, &
       !$acc                   bcl%dpp_uvp)
+      !$acc enter data create(bcl%dpprime_visc_scaled, bcl%dpp_graduvw_scaled)
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
       !$acc enter data create(bcl%lap_z_df)
       !$acc enter data create(bcl%grad_z_df)

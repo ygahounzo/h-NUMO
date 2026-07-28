@@ -303,8 +303,7 @@ contains
     subroutine create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
         use mod_create_rhs_mlswe, only: bcl_rhs
-        use mod_laplacian_quad,   only: bcl_create_laplacian, compute_bcl_lap_z, &
-                                        bcl_compute_nu_dyn_sgs
+        use mod_laplacian_quad,   only: bcl_create_laplacian, compute_bcl_lap_z
         use mod_mpi_utilities,    only: irank, MPI_PRECISION
         use mod_constants,        only: gravity
         use mpi
@@ -327,9 +326,9 @@ contains
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df, q_df
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
 
-        integer :: k, I, iv, iw, nlayers_l, npoin_l, nvarb_l, nw_f_l
+        integer :: k, I, iv, nlayers_l, npoin_l, nvarb_l
         integer :: ierr_diag
-        real    :: visc_term, lap_z_loc_max, lap_z_glb_max, A_H
+        real    :: visc_term, lap_z_loc_max, lap_z_glb_max
 
         nlayers_l = inp%nlayers
         npoin_l   = G%npoin
@@ -349,11 +348,6 @@ contains
             !$acc update device(bcl%lap_z_df)
         end if
 
-        ! Inviscid residual first -- bcl_rhs depends only on q_df/qprime_df, not on
-        ! nu_smag, dpprime_visc/dpp_graduvw, or bcl%rhs_visc_bcl, so it can run
-        ! before the viscosity machinery below.  This lets Dyn-SGS use THIS stage's
-        ! own residual for THIS stage's viscous term (see below), instead of
-        ! lagging by one call to create_rhs_bcl as the previous ordering did.
         call bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
         ! rhs stays on device; apply mass scaling and viscous term on GPU.
 
@@ -361,104 +355,24 @@ contains
         ! bcl%rhs_visc_bcl carries one row per momentum component (u,v[,w]),
         ! i.e. rows 1..nvar_bcl-1, matching rhs rows 2..nvar_bcl.
         !
-        ! Dyn-SGS path: rhs_visc_bcl = massinv*∇·((visc+μ)×dp×∇u), pre-scaled below.
-        !   Step A: apply massinv to all rhs rows (gives ∂q/∂t|_inv at each node).
-        !   Step B: compute μ_SGS from THIS stage's mass residual rhs(1,:,k).
-        !   Step C: pre-scale by A_H = (visc+μ), assemble the Laplacian, restore.
-        !   Step D: add pre-scaled rhs_visc_bcl to momentum rows (viscosity already baked in).
-        !
-        ! Standard path: nu_smag is a strain-rate quantity recomputed fresh inside
-        ! bcl_create_laplacian every call, so there is no residual-causality
-        ! ordering constraint; rhs_visc_bcl = (visc+nu_smag)*massinv*L(q).
-        if (inp%lDyn_SGS) then
-            ! Step A: massinv scaling of all variables.
-            !$acc parallel loop gang collapse(2) &
-            !$acc    present(rhs, mt%massinv) private(iv) &
-            !$acc    firstprivate(nlayers_l, npoin_l, nvarb_l)
-            do k = 1, nlayers_l
-                do I = 1, npoin_l
-                    !$acc loop seq
-                    do iv = 1, nvarb_l
-                        rhs(iv,I,k) = mt%massinv(I)*rhs(iv,I,k)
-                    end do
+        ! nu_smag is a strain-rate quantity recomputed fresh inside
+        ! bcl_create_laplacian every call; rhs_visc_bcl = (visc+nu_smag)*massinv*L(q).
+        if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
+
+        !$acc parallel loop gang collapse(2) &
+        !$acc    present(rhs, bcl%rhs_visc_bcl, mt%massinv) private(iv, visc_term) &
+        !$acc    firstprivate(nlayers_l, npoin_l, nvarb_l)
+        do k = 1, nlayers_l
+            do I = 1, npoin_l
+                rhs(1,I,k) = mt%massinv(I)*rhs(1,I,k)
+                !$acc loop seq
+                do iv = 2, nvarb_l
+                    visc_term = bcl%rhs_visc_bcl(iv-1,I,k)
+                    rhs(iv,I,k) = mt%massinv(I)*rhs(iv,I,k) + visc_term
                 end do
             end do
-            !$acc end parallel loop
-
-            ! Step B: compute per-element Dyn-SGS coefficient → bcl%nu_smag(I,k).
-            call bcl_compute_nu_dyn_sgs(G, inp, b, bcl, tsp, init, rhs, qprime_df, q_df)
-
-            ! Step C: pre-scale dpprime_visc/dpp_graduvw by A_H = (visc + μ_SGS) so
-            ! the Laplacian assembles ∇·(A_H×dp×∇u) with {A_H×dp} face averaging
-            ! (DG-correct form), then restore.  μ_SGS here is this same stage's
-            ! own coefficient (Step B above), not a previous stage's.
-            if (inp%method_visc > 0) then
-                nw_f_l = inp%ngraduvw_var
-                !$acc parallel loop gang collapse(2) &
-                !$acc    present(bcl%dpprime_visc, bcl%dpp_graduvw, bcl%nu_smag) &
-                !$acc    private(A_H, iw) firstprivate(nlayers_l, npoin_l, nw_f_l)
-                do k = 1, nlayers_l
-                    do I = 1, npoin_l
-                        A_H = inp%visc_mlswe + bcl%nu_smag(I,k)
-                        bcl%dpprime_visc(I,k) = A_H * bcl%dpprime_visc(I,k)
-                        !$acc loop seq
-                        do iw = 1, nw_f_l
-                            bcl%dpp_graduvw(iw,I,k) = A_H * bcl%dpp_graduvw(iw,I,k)
-                        end do
-                    end do
-                end do
-                !$acc end parallel loop
-
-                call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
-
-                ! Restore original dp arrays (A_H = visc_mlswe + nu_smag >= visc_mlswe > 0).
-                !$acc parallel loop gang collapse(2) &
-                !$acc    present(bcl%dpprime_visc, bcl%dpp_graduvw, bcl%nu_smag) &
-                !$acc    private(A_H, iw) firstprivate(nlayers_l, npoin_l, nw_f_l)
-                do k = 1, nlayers_l
-                    do I = 1, npoin_l
-                        A_H = inp%visc_mlswe + bcl%nu_smag(I,k)
-                        bcl%dpprime_visc(I,k) = bcl%dpprime_visc(I,k) / A_H
-                        !$acc loop seq
-                        do iw = 1, nw_f_l
-                            bcl%dpp_graduvw(iw,I,k) = bcl%dpp_graduvw(iw,I,k) / A_H
-                        end do
-                    end do
-                end do
-                !$acc end parallel loop
-            end if
-
-            ! Step D: add massinv*∇·((visc+μ)×dp×∇u) to momentum rows (viscosity pre-baked).
-            !$acc parallel loop gang collapse(2) &
-            !$acc    present(rhs, bcl%rhs_visc_bcl) private(iv) &
-            !$acc    firstprivate(nlayers_l, npoin_l, nvarb_l)
-            do k = 1, nlayers_l
-                do I = 1, npoin_l
-                    !$acc loop seq
-                    do iv = 2, nvarb_l
-                        rhs(iv,I,k) = rhs(iv,I,k) + bcl%rhs_visc_bcl(iv-1,I,k)
-                    end do
-                end do
-            end do
-            !$acc end parallel loop
-        else
-            if (inp%method_visc > 0) call bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, bcl%rhs_visc_bcl)
-
-            !$acc parallel loop gang collapse(2) &
-            !$acc    present(rhs, bcl%rhs_visc_bcl, mt%massinv) private(iv, visc_term) &
-            !$acc    firstprivate(nlayers_l, npoin_l, nvarb_l)
-            do k = 1, nlayers_l
-                do I = 1, npoin_l
-                    rhs(1,I,k) = mt%massinv(I)*rhs(1,I,k)
-                    !$acc loop seq
-                    do iv = 2, nvarb_l
-                        visc_term = bcl%rhs_visc_bcl(iv-1,I,k)
-                        rhs(iv,I,k) = mt%massinv(I)*rhs(iv,I,k) + visc_term
-                    end do
-                end do
-            end do
-            !$acc end parallel loop
-        end if
+        end do
+        !$acc end parallel loop
 
         ! Thickness diffusion: +κ_h ∇²(dp'_k) added to the mass equation (row 1).
         ! ∇²(dp'_k) ≈ (g/α_k)(∇²z_k − ∇²z_{k+1}) = (g/α_k)(lap_z_df(I,k) − lap_z_df(I,k+1)).
