@@ -27,6 +27,7 @@ program numo3d
   use mod_metrics,         only: metrics
   use mod_ref,             only: mref
   use mod_mpi_communicator, only: mpi_communicator
+  use mod_laplacian_quad,  only: diagnose_min_grid_scale
 
   implicit none
 
@@ -64,6 +65,11 @@ program numo3d
      call print_header(gg, inp, flag, numproc)
      call write_parameter_doc(gg, inp, b, numproc)
   end if
+
+  ! One-time startup diagnostic: worst-case (smallest) element across the
+  ! whole mesh and the resulting explicit visc_mlswe ceiling (all ranks
+  ! participate in the MPI reduction; only rank 0 prints).
+  call diagnose_min_grid_scale(G, b, tsp, inp)
 
   rhs_time = 0
 

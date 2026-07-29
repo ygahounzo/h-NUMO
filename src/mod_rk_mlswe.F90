@@ -87,7 +87,7 @@ contains
       ! Floor qb_df before entering the sub-step loop so the very first
       ! create_rhs_btp call never sees a corrupted (negative) BTP state from
       ! a previous BCL stage or time step.
-      call btp_poslimiter(b, G, inp, mt, qb_df, init%pbprime_df, init%alpha_mlswe)
+      ! call btp_poslimiter(b, G, inp, mt, qb_df, init%pbprime_df, init%alpha_mlswe)
 
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
@@ -143,7 +143,7 @@ contains
             !$acc end parallel loop
 
             call btp_mom_boundary_df(G, b, mf, init, inp, qb_df)
-            call btp_poslimiter(b, G, inp, mt, qb_df, init%pbprime_df, init%alpha_mlswe)
+            ! call btp_poslimiter(b, G, inp, mt, qb_df, init%pbprime_df, init%alpha_mlswe)
 
             if (inp%kstages == 5 .and. ik == 2) then
                !$acc kernels present(btp%qb2_df, qb_df)

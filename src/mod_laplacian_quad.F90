@@ -11,9 +11,87 @@ module mod_laplacian_quad
    implicit none
 
    public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z, &
-             bcl_compute_nu_smag, btp_compute_nu_smag
+             bcl_compute_nu_smag, btp_compute_nu_smag, diagnose_min_grid_scale
 
 contains
+
+   !----------------------------------------------------------------------!
+   !>@brief One-time startup diagnostic: scans every element in the mesh
+   !> (across all ranks) for the smallest element-edge-based filter width
+   !> Delta = min(dx_len, dy_len)/(N+1) -- same convention as the paper's
+   !> Delta_bar before Eq. 6 -- and reports the resulting explicit
+   !> diffusive-CFL ceiling A_H <= Delta^2/(16*dt) for both the BCL and BTP
+   !> viscous operators.  This is the actual visc_mlswe ceiling for THIS
+   !> mesh: the domain-average element size is not representative when the
+   !> mesh has non-uniform element quality (e.g. sphere_ico), and exceeding
+   !> the ceiling at even a single worst-case element causes a fast, violent
+   !> linear blow-up localized at that element -- as opposed to running out
+   !> of (nonlinear, slower) dissipation for a wave-breaking event.
+   !----------------------------------------------------------------------!
+   subroutine diagnose_min_grid_scale(G, b, tsp, inp)
+
+      use mod_grid,          only: grid
+      use mod_basis,         only: basis
+      use mod_tensor,        only: tensor_CS
+      use mod_input,         only: input
+      use mod_mpi_utilities, only: irank, irank0, MPI_PRECISION
+      use mpi
+
+      implicit none
+
+      type(grid),      intent(in) :: G
+      type(basis),     intent(in) :: b
+      type(tensor_CS), intent(in) :: tsp
+      type(input),     intent(in) :: inp
+
+      integer :: ie, nglx_l, ngly_l, npts_l
+      integer :: I00, IN0, I0N
+      real    :: dx_len, dy_len, delta, delta2
+      real    :: delta2_min_local, delta2_min_global
+      real    :: mu_cfl_bcl, mu_cfl_btp
+      integer :: ierr_mpi
+
+      nglx_l = b%nglx
+      ngly_l = b%ngly
+      npts_l = b%npts
+
+      delta2_min_local = huge(1.0)
+
+      do ie = 1, G%nelem
+         I00 = tsp%index_df_elt(1, ie)
+         IN0 = tsp%index_df_elt(nglx_l, ie)
+         I0N = tsp%index_df_elt((ngly_l-1)*nglx_l + 1, ie)
+
+         dx_len = sqrt((G%coord(1,I00)-G%coord(1,IN0))**2 + &
+                       (G%coord(2,I00)-G%coord(2,IN0))**2 + &
+                       (G%coord(3,I00)-G%coord(3,IN0))**2)
+         dy_len = sqrt((G%coord(1,I00)-G%coord(1,I0N))**2 + &
+                       (G%coord(2,I00)-G%coord(2,I0N))**2 + &
+                       (G%coord(3,I00)-G%coord(3,I0N))**2)
+
+         delta  = min(dx_len/real(nglx_l), dy_len/real(ngly_l))
+         delta2 = delta*delta
+
+         delta2_min_local = min(delta2_min_local, delta2)
+      end do
+
+      call mpi_allreduce(delta2_min_local, delta2_min_global, 1, MPI_PRECISION, &
+                          mpi_min, mpi_comm_world, ierr_mpi)
+
+      mu_cfl_bcl = delta2_min_global / (16.0 * inp%dt)
+      mu_cfl_btp = delta2_min_global / (16.0 * inp%dt_btp)
+
+      if (irank == irank0) then
+         write(*,'(A)') ' ========================================================================'
+         write(*,'(A)') ' Grid-scale diagnostic (worst-case element across whole mesh, all ranks):'
+         write(*,'(A,ES14.6,A)') '   min Delta^2  = ', delta2_min_global, ' m^2'
+         write(*,'(A,ES14.6,A)') '   min Delta    = ', sqrt(delta2_min_global), ' m'
+         write(*,'(A,ES14.6,A,ES14.6,A)') '   explicit visc_mlswe ceiling (BCL, dt=', inp%dt, 's): ', mu_cfl_bcl, ' m^2/s'
+         write(*,'(A,ES14.6,A,ES14.6,A)') '   explicit visc_mlswe ceiling (BTP, dt_btp=', inp%dt_btp, 's): ', mu_cfl_btp, ' m^2/s'
+         write(*,'(A)') ' ========================================================================'
+      end if
+
+   end subroutine diagnose_min_grid_scale
 
    subroutine btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, rhs_btp_visc, qb_df)
 

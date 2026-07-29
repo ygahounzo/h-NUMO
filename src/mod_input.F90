@@ -66,7 +66,6 @@ module mod_input
       real(kind=r8) :: dry_cutoff
       real(kind=r8) :: h_cutoff1, h_cutoff2
       real(kind=r8) :: c_APE
-      real(kind=r8) :: kappa_thick
 
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -294,7 +293,6 @@ module mod_input
       real(kind=r8) :: dry_cutoff = 1.0e-10
       real(kind=r8) :: h_cutoff1 = 0.0, h_cutoff2 = 0.0
       real(kind=r8) :: c_APE = 0.0
-      real(kind=r8) :: kappa_thick = 0.0
    
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -507,7 +505,7 @@ module mod_input
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, kappa_thick, &
+         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, &
          bcl_time_method, rk_bcl_FS, &
          SIPG_constant, implicit_coriolis_sph, C_smag, lwrite_vorticity
  
@@ -666,7 +664,6 @@ module mod_input
       inp%h_cutoff1                      = h_cutoff1
       inp%h_cutoff2                      = h_cutoff2
       inp%c_APE                          = c_APE
-      inp%kappa_thick                    = kappa_thick
       inp%xdims                          = xdims
       inp%ydims                          = ydims
       inp%ztop                           = ztop
