@@ -145,6 +145,11 @@ contains
 
     end subroutine evaluate_consistency_face
 
+    ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere)
+    ! and looped/sectioned over ivar — no has_w branching, matching the
+    ! convention in rhs_layer_shear_stress. qb_df's barotropic momentum
+    ! components are contiguous at qb_df(3:2+nc,I) (u,v,[w]); confirmed
+    ! against extract_velocity/extract_qprime_df_face's identical indexing.
     subroutine velocity_df(G, inp, q_df, qb_df)
 
         implicit none
@@ -155,39 +160,32 @@ contains
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
         real, dimension(inp%nvar_btp, G%npoin),              intent(in)    :: qb_df
 
-        real    :: ubar, vbar, wbar
-        integer :: I, k
+        real    :: bar(inp%nvar_bcl-1)
+        integer :: I, k, ivar, nc
         real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
-        logical :: has_w
 
-        has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+        nc = inp%nvar_bcl - 1
 
         uv_df = 0.0
 
         do k = 1, inp%nlayers
-            uv_df(1,:,k) = q_df(2,:,k) / q_df(1,:,k)
-            uv_df(2,:,k) = q_df(3,:,k) / q_df(1,:,k)
-            if (has_w) uv_df(3,:,k) = q_df(4,:,k) / q_df(1,:,k)
+            do ivar = 1, nc
+                uv_df(ivar,:,k) = q_df(ivar+1,:,k) / q_df(1,:,k)
+            end do
         end do
 
         do I = 1, G%npoin
-            ubar = 0.0; vbar = 0.0; wbar = 0.0
+            bar = 0.0
 
             do k = 1, inp%nlayers
-                ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
-                vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
-                if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
+                bar(:) = bar(:) + uv_df(:,I,k) * q_df(1,I,k)
             end do
 
-            if(qb_df(1,I) > 0.0) then
-                ubar = ubar / qb_df(1,I)
-                vbar = vbar / qb_df(1,I)
-                if (has_w) wbar = wbar / qb_df(1,I)
+            if (qb_df(1,I) > 0.0) then
+                bar(:) = bar(:) / qb_df(1,I)
 
                 do k = 1, inp%nlayers
-                    uv_df(1,I,k) = uv_df(1,I,k) - ubar + qb_df(3,I)/qb_df(1,I)
-                    uv_df(2,I,k) = uv_df(2,I,k) - vbar + qb_df(4,I)/qb_df(1,I)
-                    if (has_w) uv_df(3,I,k) = uv_df(3,I,k) - wbar + qb_df(5,I)/qb_df(1,I)
+                    uv_df(:,I,k) = uv_df(:,I,k) - bar(:) + qb_df(3:2+nc,I)/qb_df(1,I)
                 end do
             else
                 uv_df(:,I,:) = 0.0
@@ -195,13 +193,17 @@ contains
         end do
 
         do k = 1, inp%nlayers
-            q_df(2,:,k) = uv_df(1,:,k) * q_df(1,:,k)
-            q_df(3,:,k) = uv_df(2,:,k) * q_df(1,:,k)
-            if (has_w) q_df(4,:,k) = uv_df(3,:,k) * q_df(1,:,k)
+            do ivar = 1, nc
+                q_df(ivar+1,:,k) = uv_df(ivar,:,k) * q_df(1,:,k)
+            end do
         end do
 
     end subroutine velocity_df
 
+    ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere);
+    ! has_w branching replaced by array-section slicing (q_df(2:nc+1,...),
+    ! qb_df(3:2+nc,...)) since I/k are always fixed scalars at each point of
+    ! use, matching the convention in rhs_layer_shear_stress/velocity_df.
     subroutine extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
       implicit none
@@ -218,20 +220,20 @@ contains
       real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
       real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
 
-      real    :: ubar, vbar, wbar, wjac, wsum, mult, btp_threshold
-      integer :: I, k, e, n, m
+      real    :: wjac, wsum, mult, btp_threshold
+      integer :: I, k, e, n, m, nc
       integer :: nlayers_l, nelem_l, nglx_l, ngly_l
-      logical :: has_w
       real, parameter :: eps = 1.0e-20
 
-      real :: dp_avg(inp%nlayers), udp_avg(inp%nlayers), vdp_avg(inp%nlayers)
-      real :: wdp_avg(inp%nlayers)
+      real :: dp_avg(inp%nlayers)
+      real :: mdp_avg(inp%nvar_bcl-1, inp%nlayers)
       real :: dp_max(inp%nlayers), dp_min(inp%nlayers)
       real :: dp_cutoff1(inp%nlayers), dp_cutoff2(inp%nlayers), dp_range(inp%nlayers)
       real :: a(inp%nlayers), bc(inp%nlayers), c_td(inp%nlayers)
-      real :: r(inp%nlayers, 3)
-      real :: u_ave(inp%nlayers), v_ave(inp%nlayers), w_ave(inp%nlayers)
+      real :: r(inp%nlayers, inp%nvar_bcl-1)
+      real :: vel_ave(inp%nvar_bcl-1, inp%nlayers)
       real :: weight(inp%nlayers)
+      real :: bar(inp%nvar_bcl-1)
 
       ! GPU: classify dry elements (all arrays already on device).
       call find_dry_elements(G, inp, b, tsp, bcl%q_df, init%alpha_mlswe, bcl%dry_flg)
@@ -240,7 +242,7 @@ contains
       nelem_l   = G%nelem
       nglx_l    = b%nglx
       ngly_l    = b%ngly
-      has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+      nc        = inp%nvar_bcl - 1
 
       ! Compute per-layer blending thresholds on CPU (small loop over nlayers).
       btp_threshold = 0.0
@@ -266,16 +268,16 @@ contains
       ! same determinism as the sequential CPU version (last writer wins).
       !$acc parallel loop gang &
       !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df) &
-      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, has_w) &
-      !$acc    private(dp_avg, udp_avg, vdp_avg, wdp_avg, dp_max, dp_min, &
-      !$acc            a, bc, c_td, r, u_ave, v_ave, w_ave, weight, &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc) &
+      !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, &
+      !$acc            a, bc, c_td, r, vel_ave, weight, &
       !$acc            wsum, wjac, mult)
       do e = 1, nelem_l
 
         wsum = 0.0
         !$acc loop seq
         do k = 1, nlayers_l
-            dp_avg(k) = 0.0;  udp_avg(k) = 0.0;  vdp_avg(k) = 0.0;  wdp_avg(k) = 0.0
+            dp_avg(k) = 0.0;  mdp_avg(:,k) = 0.0
             dp_max(k) = -huge(1.0);  dp_min(k) = huge(1.0)
         end do
 
@@ -288,22 +290,18 @@ contains
                 wsum = wsum + wjac
                 !$acc loop seq
                 do k = 1, nlayers_l
-                    dp_avg(k)  = dp_avg(k)  + wjac * q_df(1,I,k)
-                    udp_avg(k) = udp_avg(k) + wjac * q_df(2,I,k)
-                    vdp_avg(k) = vdp_avg(k) + wjac * q_df(3,I,k)
-                    if (has_w) wdp_avg(k) = wdp_avg(k) + wjac * q_df(4,I,k)
-                    dp_max(k)  = max(dp_max(k), q_df(1,I,k))
-                    dp_min(k)  = min(dp_min(k), q_df(1,I,k))
+                    dp_avg(k)    = dp_avg(k)    + wjac * q_df(1,I,k)
+                    mdp_avg(:,k) = mdp_avg(:,k) + wjac * q_df(2:nc+1,I,k)
+                    dp_max(k)    = max(dp_max(k), q_df(1,I,k))
+                    dp_min(k)    = min(dp_min(k), q_df(1,I,k))
                 end do
             end do
         end do
 
         !$acc loop seq
         do k = 1, nlayers_l
-          dp_avg(k)  = dp_avg(k)  / wsum
-          udp_avg(k) = udp_avg(k) / wsum
-          vdp_avg(k) = vdp_avg(k) / wsum
-          if (has_w) wdp_avg(k) = wdp_avg(k) / wsum
+          dp_avg(k)    = dp_avg(k)    / wsum
+          mdp_avg(:,k) = mdp_avg(:,k) / wsum
         end do
 
         ! Build tridiagonal system for mass-weighted cell-average velocity.
@@ -312,9 +310,7 @@ contains
           weight(k) = (dp_max(k) - dp_cutoff1(k)) / dp_range(k)
           weight(k) = max(min(weight(k), 1.0), 0.0)
           bc(k)   = 1.0
-          r(k, 1) = weight(k) * udp_avg(k) / (dp_avg(k) + eps)
-          r(k, 2) = weight(k) * vdp_avg(k) / (dp_avg(k) + eps)
-          if (has_w) r(k, 3) = weight(k) * wdp_avg(k) / (dp_avg(k) + eps)
+          r(k, :) = weight(k) * mdp_avg(:,k) / (dp_avg(k) + eps)
         end do
         a(1)            = 0.0
         c_td(1)         = -(1.0 - weight(1))
@@ -331,19 +327,13 @@ contains
         do k = 2, nlayers_l
             mult   = a(k) / bc(k-1)
             bc(k)  = bc(k)  - mult * c_td(k-1)
-            r(k,1) = r(k,1) - mult * r(k-1,1)
-            r(k,2) = r(k,2) - mult * r(k-1,2)
-            if (has_w) r(k,3) = r(k,3) - mult * r(k-1,3)
+            r(k,:) = r(k,:) - mult * r(k-1,:)
         end do
         ! Back substitution.
-        u_ave(nlayers_l) = r(nlayers_l,1) / bc(nlayers_l)
-        v_ave(nlayers_l) = r(nlayers_l,2) / bc(nlayers_l)
-        if (has_w) w_ave(nlayers_l) = r(nlayers_l,3) / bc(nlayers_l)
+        vel_ave(:,nlayers_l) = r(nlayers_l,:) / bc(nlayers_l)
         !$acc loop seq
         do k = nlayers_l-1, 1, -1
-          u_ave(k) = (r(k,1) - c_td(k) * u_ave(k+1)) / bc(k)
-          v_ave(k) = (r(k,2) - c_td(k) * v_ave(k+1)) / bc(k)
-          if (has_w) w_ave(k) = (r(k,3) - c_td(k) * w_ave(k+1)) / bc(k)
+          vel_ave(:,k) = (r(k,:) - c_td(k) * vel_ave(:,k+1)) / bc(k)
         end do
 
         ! Recompute weight using dp_min for the pointwise blending.
@@ -361,12 +351,8 @@ contains
             I = G%intma(n, m, 1, e)
             !$acc loop seq
             do k = 1, nlayers_l
-              uv_df(1,I,k) = weight(k) * q_df(2,I,k) / (q_df(1,I,k) + eps) &
-                            + (1.0 - weight(k)) * u_ave(k)
-              uv_df(2,I,k) = weight(k) * q_df(3,I,k) / (q_df(1,I,k) + eps) &
-                            + (1.0 - weight(k)) * v_ave(k)
-              if (has_w) uv_df(3,I,k) = weight(k) * q_df(4,I,k) / (q_df(1,I,k) + eps) &
-                                       + (1.0 - weight(k)) * w_ave(k)
+              uv_df(:,I,k) = weight(k) * q_df(2:nc+1,I,k) / (q_df(1,I,k) + eps) &
+                            + (1.0 - weight(k)) * vel_ave(:,k)
             end do
           end do
         end do
@@ -381,39 +367,31 @@ contains
       ! CPU version (last writer wins).
       !$acc parallel loop gang &
       !$acc    present(G%intma, uv_df, q_df, qb_df, bcl%dry_flg) &
-      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, has_w, btp_threshold) &
-      !$acc    private(ubar, vbar, wbar)
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
+      !$acc    private(bar)
       do e = 1, nelem_l
         !$acc loop seq
         do m = 1, ngly_l
           !$acc loop seq
           do n = 1, nglx_l
             I = G%intma(n, m, 1, e)
-            ubar = 0.0;  vbar = 0.0;  wbar = 0.0
+            bar = 0.0
             !$acc loop seq
             do k = 1, nlayers_l
               if (bcl%dry_flg(e, k) == 2) cycle
-              ubar = ubar + uv_df(1,I,k) * q_df(1,I,k)
-              vbar = vbar + uv_df(2,I,k) * q_df(1,I,k)
-              if (has_w) wbar = wbar + uv_df(3,I,k) * q_df(1,I,k)
+              bar(:) = bar(:) + uv_df(:,I,k) * q_df(1,I,k)
             end do
             if (qb_df(1,I) > btp_threshold) then
-              ubar = ubar / qb_df(1,I)
-              vbar = vbar / qb_df(1,I)
-              if (has_w) wbar = wbar / qb_df(1,I)
+              bar(:) = bar(:) / qb_df(1,I)
               !$acc loop seq
               do k = 1, nlayers_l
                 if (bcl%dry_flg(e, k) == 2) cycle
-                uv_df(1,I,k) = uv_df(1,I,k) - (ubar - qb_df(3,I)/qb_df(1,I))
-                uv_df(2,I,k) = uv_df(2,I,k) - (vbar - qb_df(4,I)/qb_df(1,I))
-                if (has_w) uv_df(3,I,k) = uv_df(3,I,k) - (wbar - qb_df(5,I)/qb_df(1,I))
+                uv_df(:,I,k) = uv_df(:,I,k) - (bar(:) - qb_df(3:2+nc,I)/qb_df(1,I))
               end do
             else
               !$acc loop seq
               do k = 1, nlayers_l
-                uv_df(1,I,k) = 0.0
-                uv_df(2,I,k) = 0.0
-                if (has_w) uv_df(3,I,k) = 0.0
+                uv_df(:,I,k) = 0.0
               end do
             end if
           end do
@@ -425,6 +403,10 @@ contains
 
     end subroutine extract_velocity
 
+    ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere);
+    ! has_w branching replaced by array-section slicing since I/k are always
+    ! fixed scalars at each point of use, matching the convention in
+    ! rhs_layer_shear_stress/velocity_df/extract_velocity.
     subroutine extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df, q_df, qb_df)
 
       implicit none
@@ -441,16 +423,16 @@ contains
       real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
       real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
 
-      integer :: k, I, e, n, m, nelem_l, nlayers_l, nglx_l, ngly_l
-      real    :: ope, ub_btp, vb_btp, wb_btp, btp_threshold, max_qprime_spd, dp_threshold
+      integer :: k, I, e, n, m, nelem_l, nlayers_l, nglx_l, ngly_l, nc
+      real    :: ope, btp_threshold, max_qprime_spd, dp_threshold
       real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
-      logical :: has_w
+      real    :: vel_btp(inp%nvar_bcl-1)
 
       nelem_l   = G%nelem
       nlayers_l = inp%nlayers
       nglx_l    = b%nglx
       ngly_l    = b%ngly
-      has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+      nc        = inp%nvar_bcl - 1
 
       ! BTP threshold: same convention as btp_poslimiter.
       btp_threshold = 0.0
@@ -478,8 +460,8 @@ contains
       ! non-determinism as extract_velocity.
       !$acc parallel loop gang &
       !$acc    present(G%intma, qprime_df, q_df, qb_df, uv_df, init%pbprime_df, bcl%dry_flg) &
-      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, has_w, btp_threshold) &
-      !$acc    private(ope, ub_btp, vb_btp, wb_btp)
+      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
+      !$acc    private(ope, vel_btp)
       do e = 1, nelem_l
         !$acc loop seq
         do m = 1, ngly_l
@@ -496,11 +478,9 @@ contains
             ope = ope / init%pbprime_df(I)
 
             if (qb_df(1,I) > btp_threshold) then
-              ub_btp = qb_df(3,I) / qb_df(1,I)
-              vb_btp = qb_df(4,I) / qb_df(1,I)
-              if (has_w) wb_btp = qb_df(5,I) / qb_df(1,I)
+              vel_btp(:) = qb_df(3:2+nc,I) / qb_df(1,I)
             else
-              ub_btp = 0.0;  vb_btp = 0.0;  wb_btp = 0.0
+              vel_btp(:) = 0.0
             end if
 
             !$acc loop seq
@@ -511,13 +491,9 @@ contains
                 ! by 1/ope. Zero the velocity deviation to prevent quadratic flux blow-up
                 ! in btp_bcl_coeffs_qdf (flux += pp_k * up_k^2 with inflated pp_k).
                 if (qb_df(1,I) > btp_threshold) then
-                    qprime_df(2,I,k) = uv_df(1,I,k) - ub_btp
-                    qprime_df(3,I,k) = uv_df(2,I,k) - vb_btp
-                    if (has_w) qprime_df(4,I,k) = uv_df(3,I,k) - wb_btp
+                    qprime_df(2:nc+1,I,k) = uv_df(:,I,k) - vel_btp(:)
                 else
-                    qprime_df(2,I,k) = 0.0
-                    qprime_df(3,I,k) = 0.0
-                    if (has_w) qprime_df(4,I,k) = 0.0
+                    qprime_df(2:nc+1,I,k) = 0.0
                 end if
             end do
           end do
@@ -577,15 +553,17 @@ contains
 
         real, intent(inout) :: q(inp%nvar_bcl, G%npoin, inp%nlayers)
 
-        integer :: iface, n, il, jl, kl, el, er, I, k
-        integer :: nface_l, ngl_l, nlayers_l
+        integer :: iface, n, il, jl, kl, el, er, I, k, ivar
+        integer :: nface_l, ngl_l, nlayers_l, nc
         real    :: nx, ny, nz, upnl_k
+        real    :: nvec(inp%nvar_bcl-1)
         logical :: has_w
 
         nface_l   = G%nface
         ngl_l     = b%ngl
         nlayers_l = inp%nlayers
-        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+        nc        = inp%nvar_bcl - 1
+        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex; still needed below -- the tangency projection and solid_body restore are sphere-only physics, not just wider components
 
         ! Sphere tangency constraint: remove radial momentum component at all
         ! nodes per layer so momentum stays tangent to the sphere surface.
@@ -612,8 +590,8 @@ contains
 
         !$acc parallel loop gang &
         !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector, q) &
-        !$acc    firstprivate(nface_l, ngl_l, nlayers_l, has_w) &
-        !$acc    private(il, jl, kl, el, er, I, nx, ny, nz, upnl_k)
+        !$acc    firstprivate(nface_l, ngl_l, nlayers_l, nc) &
+        !$acc    private(il, jl, kl, el, er, I, nvec, upnl_k)
         do iface = 1, nface_l
 
             el = G%face(7,iface)
@@ -626,22 +604,22 @@ contains
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
-                    nx = mf%normal_vector(1,n,1,iface)
-                    ny = mf%normal_vector(2,n,1,iface)
-                    nz = 0.0
-                    if (has_w) nz = mf%normal_vector(3,n,1,iface)
+                    ! Only ever reads components 1:nc of normal_vector (2 flat,
+                    ! 3 sphere), same as the has_w-gated nz read this replaces.
+                    nvec(1:nc) = mf%normal_vector(1:nc,n,1,iface)
                     !$acc loop seq
                     do k = 1, nlayers_l
-                        upnl_k = q(2,I,k)*nx + q(3,I,k)*ny
-                        if (has_w) upnl_k = upnl_k + q(4,I,k)*nz
-                        !$acc atomic update
-                        q(2,I,k) = q(2,I,k) - upnl_k*nx
-                        !$acc atomic update
-                        q(3,I,k) = q(3,I,k) - upnl_k*ny
-                        if (has_w) then
+                        ! Reflection v' = v - (v.n)n is dimension-agnostic
+                        upnl_k = 0.0
+                        !$acc loop seq
+                        do ivar = 1, nc
+                            upnl_k = upnl_k + q(ivar+1,I,k)*nvec(ivar)
+                        end do
+                        !$acc loop seq
+                        do ivar = 1, nc
                             !$acc atomic update
-                            q(4,I,k) = q(4,I,k) - upnl_k*nz
-                        end if
+                            q(ivar+1,I,k) = q(ivar+1,I,k) - upnl_k*nvec(ivar)
+                        end do
                     end do
                 end do
 
@@ -654,14 +632,11 @@ contains
                     I  = G%intma(il,jl,kl,el)
                     !$acc loop seq
                     do k = 1, nlayers_l
-                        !$acc atomic write
-                        q(2,I,k) = 0.0
-                        !$acc atomic write
-                        q(3,I,k) = 0.0
-                        if (has_w) then
+                        !$acc loop seq
+                        do ivar = 1, nc
                             !$acc atomic write
-                            q(4,I,k) = 0.0
-                        end if
+                            q(ivar+1,I,k) = 0.0
+                        end do
                     end do
                 end do
             end if

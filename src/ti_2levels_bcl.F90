@@ -23,7 +23,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    use mod_rk_mlswe,         only: ti_barotropic_ssprk_mlswe
    use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
    use mod_layer_terms,      only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-   use mod_create_rhs_mlswe, only: layer_mass_rhs
+   use mod_create_rhs_mlswe, only: layer_mass_rhs, bcl_apply_implicit_vertical_viscosity
    use mod_initial_mlswe,    only: check_layer_thickness, poslimiter
 
    implicit none
@@ -47,55 +47,64 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
    real, dimension(inp%nvar_btp, G%npoin),              intent(inout) :: qb_df
 
-   real, dimension(inp%nvar_btp, G%npoin)              :: qb_df_n
    real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers) :: qprime_df_n, qprime_df_pred, q_df_pred
-   real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers) :: uv_df
    real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers) :: q_df_temp
    real, dimension(G%npoin, inp%nlayers)    :: rhs_dp
    real, dimension(G%npoin)                 :: dp_norm_inv
-   real, dimension(G%npoin)                 :: tempu, tempv
    integer :: k, I
    logical :: has_w
-
-   ! Semi-implicit Coriolis rotation coefficients/locals (both stages, always
-   ! applied — Coriolis is never added explicitly in the RHS).
-   ! Cartesian (2D beta-plane): init%fdt2_bcl, init%a_bcl, init%b_bcl (mod_initial_mlswe.F90).
    real :: rl, rm, rn, omg, Px, Py, Pz, d_inv
+   real :: tempu_s, tempv_s
 
    has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+
+   !$acc data create(qprime_df_n, qprime_df_pred, q_df_pred, q_df_temp, rhs_dp, dp_norm_inv)
 
    ! ==================== Prediction step =================================
    ! Forward Euler predictor: advance all baroclinic variables by dt using
    ! the RHS evaluated at t=n.
 
-   qb_df_n = qb_df
+   ! qb_df at t=n
+   !$acc kernels present(bcl%qbp_df, qb_df)
+   bcl%qbp_df = qb_df
+   !$acc end kernels
 
-   call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, q_df, qb_df_n)
+   call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, q_df, bcl%qbp_df)
 
+   !$acc kernels present(qprime_df_n, bcl%qprime_df)
    qprime_df_n = bcl%qprime_df
+   !$acc end kernels
 
    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
 
-   !$acc update device(bcl%qprime_df)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df, inp%dt_btp)
    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
+   !$acc kernels present(q_df_pred, q_df, bcl%rhs_bcl)
    q_df_pred = q_df + inp%dt*bcl%rhs_bcl
+   !$acc end kernels
 
-   ! Semi-implicit Coriolis rotation (predictor stage), applied unconditionally
-   ! — Coriolis is never added explicitly in create_rhs_bcl's RHS
+   ! Semi-implicit Coriolis rotation (predictor stage)
    if (.not. has_w) then
       ! Cartesian 2D beta-plane rotation.
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(init%fdt2_bcl, init%a_bcl, init%b_bcl, q_df_pred, q_df) &
+      !$acc    private(tempu_s, tempv_s)
       do k = 1, inp%nlayers
-         tempu(:) = q_df_pred(2,:,k) + init%fdt2_bcl(:)*q_df(3,:,k)
-         tempv(:) = q_df_pred(3,:,k) - init%fdt2_bcl(:)*q_df(2,:,k)
-         q_df_pred(2,:,k) = init%a_bcl(:)*tempu(:) + init%b_bcl(:)*tempv(:)
-         q_df_pred(3,:,k) = -init%b_bcl(:)*tempu(:) + init%a_bcl(:)*tempv(:)
+         do I = 1, G%npoin
+            tempu_s = q_df_pred(2,I,k) + init%fdt2_bcl(I)*q_df(3,I,k)
+            tempv_s = q_df_pred(3,I,k) - init%fdt2_bcl(I)*q_df(2,I,k)
+            q_df_pred(2,I,k) =  init%a_bcl(I)*tempu_s + init%b_bcl(I)*tempv_s
+            q_df_pred(3,I,k) = -init%b_bcl(I)*tempu_s + init%a_bcl(I)*tempv_s
+         end do
       end do
+      !$acc end parallel loop
    else
       ! Spherical 3D rotation, (I + omega*K_r)^-1 where K_r is the
       ! cross-product matrix for the local radial unit vector init%kvector.
-      !$acc update host(q_df_pred)
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(init%kvector, init%fdt2_bcl, q_df_pred, q_df) &
+      !$acc    private(rl, rm, rn, omg, Px, Py, Pz, d_inv)
       do k = 1, inp%nlayers
          do I = 1, G%npoin
             rl    = init%kvector(1,I)
@@ -111,7 +120,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
             q_df_pred(4,I,k) = (Pz - omg*(rl*Py - rm*Px)) * d_inv
          end do
       end do
-      !$acc update device(q_df_pred)
+      !$acc end parallel loop
    end if
 
    call layer_mom_boundary_df(G, inp, b, mf, init, q_df_pred)
@@ -120,35 +129,43 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    call poslimiter(b, G, inp, mt, q_df_pred, init%alpha_mlswe)
 
    ! Enforce barotropic-baroclinic velocity consistency on the predicted state.
-   call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df_pred, qb_df)
-   q_df_pred(2,:,:) = uv_df(1,:,:) * q_df_pred(1,:,:)
-   q_df_pred(3,:,:) = uv_df(2,:,:) * q_df_pred(1,:,:)
-   if (has_w) q_df_pred(4,:,:) = uv_df(3,:,:) * q_df_pred(1,:,:)
+   call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df_pred, qb_df)
+   !$acc kernels present(q_df_pred, bcl%uv_df)
+   q_df_pred(2,:,:) = bcl%uv_df(1,:,:) * q_df_pred(1,:,:)
+   q_df_pred(3,:,:) = bcl%uv_df(2,:,:) * q_df_pred(1,:,:)
+   if (has_w) q_df_pred(4,:,:) = bcl%uv_df(3,:,:) * q_df_pred(1,:,:)
+   !$acc end kernels
 
    ! ==================== Correction step =================================
    ! Re-integrate the barotropic from t=n using the
    ! average of the t=n and predicted qprime, then update
    ! continuity and momentum separately.
 
-   qb_df = qb_df_n
+   !$acc kernels present(qb_df, bcl%qbp_df)
+   qb_df = bcl%qbp_df
+   !$acc end kernels
 
    call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df_pred, q_df_pred, qb_df)
 
    ! Centre-in-time average of the baroclinic layer-thickness forcing.
+   !$acc kernels present(bcl%qprime_df, qprime_df_pred)
    bcl%qprime_df = 0.5*(qprime_df_pred + bcl%qprime_df)
+   !$acc end kernels
 
    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
-   !$acc update device(bcl%qprime_df)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df, inp%dt_btp)
 
    ! Layer continuity equation
    call layer_mass_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs_dp, bcl%qprime_df)
 
    ! Update layer thickness
+   !$acc kernels present(q_df, rhs_dp)
    q_df(1,:,:) = q_df(1,:,:) + inp%dt*rhs_dp
+   !$acc end kernels
 
    call check_layer_thickness(b, G, inp, q_df, 'ti_2levels_bcl', 0)
 
+   !$acc kernels present(dp_norm_inv, init%pbprime_df, q_df, bcl%qprime_df, qprime_df_n)
    dp_norm_inv = init%pbprime_df / sum(q_df(1,:,:), dim=2)
 
    do k = 1, inp%nlayers
@@ -157,6 +174,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    ! Average of dp' for the pressure gradient in the momentum RHS.
    bcl%qprime_df(1,:,:) = 0.5*(bcl%qprime_df(1,:,:) + qprime_df_n(1,:,:))
+   !$acc end kernels
 
    ! Layer momentum equation.
    ! Reuses create_rhs_bcl. Row 1
@@ -167,21 +185,31 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    ! Explicit momentum update, kept in q_df_temp (not written into q_df yet):
    ! q_df(2,3,(4),:,:) still holds its time-n value and is needed below as the
    ! Coriolis rotation's cross-term source.
+   !$acc kernels present(q_df_temp, q_df, bcl%rhs_bcl)
    q_df_temp(2,:,:) = q_df(2,:,:) + inp%dt*bcl%rhs_bcl(2,:,:)
    q_df_temp(3,:,:) = q_df(3,:,:) + inp%dt*bcl%rhs_bcl(3,:,:)
    if (has_w) q_df_temp(4,:,:) = q_df(4,:,:) + inp%dt*bcl%rhs_bcl(4,:,:)
+   !$acc end kernels
 
    ! Semi-implicit Coriolis rotation (corrector stage) — same formulas as
-   ! the predictor stage above, applied unconditionally.
+   ! the predictor stage above
    if (.not. has_w) then
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(init%fdt2_bcl, init%a_bcl, init%b_bcl, q_df_temp, q_df) &
+      !$acc    private(tempu_s, tempv_s)
       do k = 1, inp%nlayers
-         tempu(:) = q_df_temp(2,:,k) + init%fdt2_bcl(:)*q_df(3,:,k)
-         tempv(:) = q_df_temp(3,:,k) - init%fdt2_bcl(:)*q_df(2,:,k)
-         q_df(2,:,k) = init%a_bcl(:)*tempu(:) + init%b_bcl(:)*tempv(:)
-         q_df(3,:,k) = -init%b_bcl(:)*tempu(:) + init%a_bcl(:)*tempv(:)
+         do I = 1, G%npoin
+            tempu_s = q_df_temp(2,I,k) + init%fdt2_bcl(I)*q_df(3,I,k)
+            tempv_s = q_df_temp(3,I,k) - init%fdt2_bcl(I)*q_df(2,I,k)
+            q_df(2,I,k) =  init%a_bcl(I)*tempu_s + init%b_bcl(I)*tempv_s
+            q_df(3,I,k) = -init%b_bcl(I)*tempu_s + init%a_bcl(I)*tempv_s
+         end do
       end do
+      !$acc end parallel loop
    else
-      !$acc update host(q_df_temp)
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(init%kvector, init%fdt2_bcl, q_df_temp, q_df) &
+      !$acc    private(rl, rm, rn, omg, Px, Py, Pz, d_inv)
       do k = 1, inp%nlayers
          do I = 1, G%npoin
             rl    = init%kvector(1,I)
@@ -197,7 +225,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
             q_df(4,I,k) = (Pz - omg*(rl*Py - rm*Px)) * d_inv
          end do
       end do
-      !$acc update device(q_df)
+      !$acc end parallel loop
    end if
 
    call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
@@ -206,9 +234,18 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
    ! Enforce barotropic-baroclinic velocity consistency on the corrected state.
-   call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
-   q_df(2,:,:) = uv_df(1,:,:) * q_df(1,:,:)
-   q_df(3,:,:) = uv_df(2,:,:) * q_df(1,:,:)
-   if (has_w) q_df(4,:,:) = uv_df(3,:,:) * q_df(1,:,:)
+   call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
+   !$acc kernels present(q_df, bcl%uv_df)
+   q_df(2,:,:) = bcl%uv_df(1,:,:) * q_df(1,:,:)
+   q_df(3,:,:) = bcl%uv_df(2,:,:) * q_df(1,:,:)
+   if (has_w) q_df(4,:,:) = bcl%uv_df(3,:,:) * q_df(1,:,:)
+   !$acc end kernels
+
+   !$acc end data
+
+   ! Inter-layer (ad_mlswe) vertical viscosity, applied implicitly once per
+   ! full step rather than embedded in the RHS above.
+   ! No-op internally when inp%ad_mlswe<=0.
+   call bcl_apply_implicit_vertical_viscosity(G, inp, b, mf, init, tsp, mt, bcl, q_df, qb_df)
 
 end subroutine ti_2levels_bcl

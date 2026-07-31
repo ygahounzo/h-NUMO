@@ -26,6 +26,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
   use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
+  use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
 
   implicit none
 
@@ -46,7 +47,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
   integer :: k, ik, I
-  real :: dtt, dt_btp_in
+  real :: dtt, dt_btp_in, beta_ik
   real :: rl, rm, rn, omg, Px, Py, Pz, d_inv
   real :: a, bb, tempu, tempv
   logical :: has_w
@@ -63,10 +64,6 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   !$acc kernels present(bcl%q0_df, q_df)
   bcl%q0_df = q_df
   !$acc end kernels
-
-  ! Download q0_df to host once; needed by the semi-implicit Coriolis
-  ! rotation, always applied below (both flat and spherical geometry).
-  !$acc update host(bcl%q0_df)
 
   do ik = 1, 3
 
@@ -106,20 +103,24 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     end do
     !$acc end kernels
 
-    ! Semi-implicit Coriolis rotation (CPU; init%kvector/fdt2_bcl live on
-    ! host), always applied — Coriolis is never added explicitly in the RHS
-    ! (mod_create_rhs_mlswe.F90). Applies (I + ω K_r)^{-1} acting on the
-    ! LSRK3-updated momentum, where the "P-vector" blends the updated
-    ! momentum with the stage-0 cross-product term.
-    !$acc update host(q_df)
+    ! Semi-implicit Coriolis rotation (GPU), always applied — Coriolis is
+    ! never added explicitly in the RHS (mod_create_rhs_mlswe.F90). Applies
+    ! (I + ω K_r)^{-1} acting on the LSRK3-updated momentum, where the
+    ! "P-vector" blends the updated momentum with the stage-0 cross-product
+    ! term (bcl%q0_df, fixed for the whole stage loop, present on device).
+    beta_ik = lsrk3_beta(ik)
     if (has_w) then
       ! 3D spherical rotation.
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(init%kvector, init%fdt2_bcl, q_df, bcl%q0_df) &
+      !$acc    private(rl, rm, rn, omg, Px, Py, Pz, d_inv) &
+      !$acc    firstprivate(beta_ik)
       do k = 1, inp%nlayers
         do I = 1, G%npoin
           rl    = init%kvector(1,I)
           rm    = init%kvector(2,I)
           rn    = init%kvector(3,I)
-          omg   = init%fdt2_bcl(I) * lsrk3_beta(ik)
+          omg   = init%fdt2_bcl(I) * beta_ik
           Px    = q_df(2,I,k) + omg*(rn*bcl%q0_df(3,I,k) - rm*bcl%q0_df(4,I,k))
           Py    = q_df(3,I,k) + omg*(rl*bcl%q0_df(4,I,k) - rn*bcl%q0_df(2,I,k))
           Pz    = q_df(4,I,k) + omg*(rm*bcl%q0_df(2,I,k) - rl*bcl%q0_df(3,I,k))
@@ -129,12 +130,17 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
           q_df(4,I,k) = (Pz - omg*(rl*Py - rm*Px)) * d_inv
         end do
       end do
+      !$acc end parallel loop
     else
       ! 2D Cartesian beta-plane rotation — has_w=(0,0,1) specialization of
       ! the 3D formula above.
+      !$acc parallel loop gang collapse(2) &
+      !$acc    present(init%fdt2_bcl, q_df, bcl%q0_df) &
+      !$acc    private(omg, a, bb, tempu, tempv) &
+      !$acc    firstprivate(beta_ik)
       do k = 1, inp%nlayers
         do I = 1, G%npoin
-          omg   = init%fdt2_bcl(I) * lsrk3_beta(ik)
+          omg   = init%fdt2_bcl(I) * beta_ik
           a     = 1.0 / (1.0 + omg**2)
           bb    = omg / (1.0 + omg**2)
           tempu = q_df(2,I,k) + omg*bcl%q0_df(3,I,k)
@@ -143,8 +149,8 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
           q_df(3,I,k) = -bb*tempu + a*tempv
         end do
       end do
+      !$acc end parallel loop
     end if
-    !$acc update device(q_df)
 
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
@@ -173,5 +179,10 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     call check_layer_thickness(b, G, inp, q_df, 'ti_lsrk3_bcl', ik)
 
   end do
+
+  ! Inter-layer (ad_mlswe) vertical viscosity, applied implicitly once per
+  ! full step (Thetis Eq. 43 pattern) rather than embedded in the per-stage
+  ! RHS above. No-op internally when inp%ad_mlswe<=0.
+  call bcl_apply_implicit_vertical_viscosity(G, inp, b, mf, init, tsp, mt, bcl, q_df, qb_df)
 
 end subroutine ti_lsrk3_bcl
