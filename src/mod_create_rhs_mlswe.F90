@@ -78,9 +78,14 @@ contains
         integer :: k
 
         call bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
-        call create_layers_volume_mass(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
-        call create_layer_mass_flux(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
-        call bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, ref, mpic, dp_advec)
+        if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
+            call create_layers_volume_mass_sphere(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
+            call create_layer_mass_flux_sphere(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
+        else
+            call create_layers_volume_mass(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
+            call create_layer_mass_flux(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
+        end if
+        call bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, init, ref, mpic, dp_advec)
 
         do k = 1, inp%nlayers
             dp_advec(:,k) = mt%massinv(:) * dp_advec(:,k)
@@ -940,9 +945,6 @@ contains
                             p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1))
 
                 if (is_rk3_or_lsrk3) then
-                    source_x = source_x + init%coriolis_quad(Iq) * vdp(k)
-                    source_y = source_y - init%coriolis_quad(Iq) * udp(k)
-
                     if (do_ad_visc) then
                         source_x = source_x + gravity*(tau_u(k) - tau_u(k+1))
                         source_y = source_y + gravity*(tau_v(k) - tau_v(k+1))
@@ -1031,7 +1033,10 @@ contains
         Pstress_l  = (gravity/init%alpha_mlswe(1))           * 50.0
         Pbstress_l = (gravity/init%alpha_mlswe(inp%nlayers)) * 10.0
         ! When implicit Coriolis is active, suppress the explicit term here.
-        cor_fac_l     = merge(0.0, 1.0, inp%implicit_coriolis_sph)
+        ! Coriolis is always handled by the semi-implicit rotation in each
+        ! ti_*_bcl integrator (ti_2levels_bcl/ti_rk3_bcl/ti_lsrk3_bcl) now —
+        ! never added explicitly here.
+        cor_fac_l     = 0.0
         ad_mlswe_l    = real(inp%ad_mlswe)
         max_shear_dz_l = real(inp%max_shear_dz)
         dt_l           = inp%dt
@@ -2514,7 +2519,7 @@ contains
 
         real :: wq, hi, dp_temp
         integer :: k, I, Iq, ip
-        real, dimension(3) :: qp, qb
+        real, dimension(inp%nvar_bcl) :: qp, qb
         real, parameter :: eps = 1.0e-10
         real, dimension(inp%nlayers) :: dpp, udp, vdp
         real :: flux(2)
@@ -2574,7 +2579,7 @@ contains
         real, dimension(b%nq, inp%nlayers) :: flux_edge_u, flux_edge_v, flux_dp
         real :: dpl, dpr, uu, vv, flux, un, ul, ur, vl, vr, weight, dp_deficit(2)
         real :: dp_lr(2,inp%nlayers)
-        real, dimension(3) :: ql, qr, qbl, qbr
+        real, dimension(inp%nvar_bcl) :: ql, qr, qbl, qbr
         real, parameter :: eps = 1.0e-10
         real :: flux_u, flux_v
 
@@ -2699,5 +2704,283 @@ contains
         end do
 
     end subroutine create_layer_mass_flux
+
+    ! Sphere counterpart of create_layers_volume_mass: 4-wide (mass,u,v,w)
+    ! interpolation and a sphere-corrected 3-component test-function gradient
+    ! (dpsidx/y/z + curvature terms dpsidz_x/y/z), mirroring the mass-specific
+    ! subset of create_rhs_dynamics_volume_bcl_sphere's layer loop 1 and its
+    ! mass-flux consistency correction (mod_create_rhs_mlswe.F90, layer loop 1
+    ! and the flux(*,1) block) -- no Coriolis/pressure-gradient/viscosity/APE,
+    ! those are momentum-only.
+    subroutine create_layers_volume_mass_sphere(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
+
+        implicit none
+
+        type(grid),      intent(in)    :: G
+        type(input),     intent(in)    :: inp
+        type(basis),     intent(in)    :: b
+        type(btp_CS),    intent(in)    :: btp
+        type(bcl_CS),    intent(inout) :: bcl
+        type(initial),   intent(in)    :: init
+        type(tensor_CS), intent(in)    :: tsp
+
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
+        real, dimension(G%npoin, inp%nlayers),    intent(out) :: dp_advec
+
+        real :: wq, hi, dhdx, dhdy, dhdz
+        integer :: k, I, Iq, ip
+        real, dimension(4) :: qp, qb
+        real, parameter :: eps1 = 1.0e-20
+        real, dimension(inp%nlayers) :: dp, udp, vdp, wdp
+        real :: flux(3), weight_dp
+        logical :: is_dry
+
+        dp_advec = 0.0
+
+        do concurrent(Iq = 1:G%npoin_q)
+
+            qb(1) = btp%ope_ave(Iq)
+            qb(2) = btp%uvb_ave(1,Iq)
+            qb(3) = btp%uvb_ave(2,Iq)
+            qb(4) = btp%uvb_ave(3,Iq)
+            wq    = tsp%wjac(Iq)
+
+            do k = 1, inp%nlayers
+                qp = 0.0
+                do ip = 1, b%npts
+                    I  = tsp%indexq(ip,Iq)
+                    hi = tsp%psih(ip,Iq)
+                    qp(1) = qp(1) + hi*qprime_df(1,I,k)
+                    qp(2) = qp(2) + hi*qprime_df(2,I,k)
+                    qp(3) = qp(3) + hi*qprime_df(3,I,k)
+                    qp(4) = qp(4) + hi*qprime_df(4,I,k)
+                end do
+
+                ! Dry-cell protection, same convention as create_rhs_dynamics_volume_bcl_sphere.
+                is_dry = (qp(1) * qb(1) < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff)
+                if (is_dry) qp(1) = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+
+                dp(k) = qp(1) * qb(1)
+
+                if (is_dry) then
+                    udp(k) = 0.0;  vdp(k) = 0.0;  wdp(k) = 0.0
+                else
+                    udp(k) = (qp(2) + qb(2)) * dp(k)
+                    vdp(k) = (qp(3) + qb(3)) * dp(k)
+                    wdp(k) = (qp(4) + qb(4)) * dp(k)
+                end if
+            end do
+
+            do k = 1, inp%nlayers
+                ! Mass flux: consistency correction distributes BTP mass
+                ! surplus among wet layers only (same weighting as the
+                ! combined sphere routine's flux(*,1) block).
+                if (dp(k) > (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
+                    weight_dp = abs(dp(k)) / (sum(abs(dp(:))) + eps1)
+                    flux(1) = udp(k) + weight_dp*(btp%btp_mass_flux_ave(1,Iq) - sum(udp(:)))
+                    flux(2) = vdp(k) + weight_dp*(btp%btp_mass_flux_ave(2,Iq) - sum(vdp(:)))
+                    flux(3) = wdp(k) + weight_dp*(btp%btp_mass_flux_ave(3,Iq) - sum(wdp(:)))
+                else
+                    flux(1) = udp(k)
+                    flux(2) = vdp(k)
+                    flux(3) = wdp(k)
+                end if
+
+                do ip = 1, b%npts
+                    I = tsp%indexq(ip,Iq)
+                    dhdx = tsp%dpsidx(ip,Iq) + tsp%dpsidz_x(ip,Iq)
+                    dhdy = tsp%dpsidy(ip,Iq) + tsp%dpsidz_y(ip,Iq)
+                    dhdz = tsp%dpsidz(ip,Iq) + tsp%dpsidz_z(ip,Iq)
+                    dp_advec(I,k) = dp_advec(I,k) + wq*(dhdx*flux(1) + dhdy*flux(2) + dhdz*flux(3))
+                end do
+            end do
+        end do
+
+    end subroutine create_layers_volume_mass_sphere
+
+    ! Sphere counterpart of create_layer_mass_flux: 4-wide interpolation,
+    ! 3-component face normal, 3D wall reflection, mirroring the mass-specific
+    ! subset of Apply_bcl_fluxes_sphere (ql/qr interpolation, dry-cell
+    ! clamping, upwind dp_flux selection, dp_deficit consistency correction,
+    ! final scatter) -- no momentum flux tensor (udp_flux/vdp_flux/wdp_flux)
+    ! or its consistency correction, those are momentum-only.
+    subroutine create_layer_mass_flux_sphere(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
+
+        implicit none
+
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(basis),   intent(in)    :: b
+        type(face_CS), intent(in)    :: mf
+        type(btp_CS),  intent(in)    :: btp
+        type(bcl_CS),  intent(inout) :: bcl
+        type(initial), intent(in)    :: init
+
+        real, dimension(G%npoin, inp%nlayers),    intent(inout) :: dp_advec
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+
+        integer :: k, iface, iquad, el, er, il, jl, ir, jr, I, kl, kr, n
+        real :: wq, nxl, nyl, nzl, hi
+        real, dimension(3,inp%nlayers,b%nq) :: dp_flux
+        real :: dpl, dpr, uu, vv, ww, un, ul, ur, vl, vr, wl, wr
+        real :: dp_lr(2,inp%nlayers)
+        real, dimension(inp%nvar_bcl,inp%nlayers) :: ql, qr
+        real, dimension(inp%nvar_bcl) :: qbl, qbr
+        real, parameter :: eps1 = 1.0e-20
+        real :: dp_deficit(3), weight
+        real :: g_over_alpha(inp%nlayers)
+        logical :: is_dry_l, is_dry_r
+        integer :: ngl_f, nq_f, nlayers_f, nface_f
+
+        ngl_f     = b%ngl
+        nq_f      = b%nq
+        nlayers_f = inp%nlayers
+        nface_f   = G%nface
+
+        do concurrent(iface = 1:nface_f, iquad = 1:nq_f)
+
+            if (G%face_type(iface) == 2) cycle
+
+            el = G%face(7,iface)
+            er = G%face(8,iface)
+
+            do k = 1, nlayers_f
+                g_over_alpha(k) = gravity / init%alpha_mlswe(k)
+            end do
+
+            qbl(1) = btp%ope_face_ave(1,iquad,iface)
+            qbl(2) = btp%uvb_face_ave(1,1,iquad,iface)
+            qbl(3) = btp%uvb_face_ave(2,1,iquad,iface)
+            qbl(4) = btp%uvb_face_ave(3,1,iquad,iface)
+            qbr(1) = btp%ope_face_ave(2,iquad,iface)
+            qbr(2) = btp%uvb_face_ave(1,2,iquad,iface)
+            qbr(3) = btp%uvb_face_ave(2,2,iquad,iface)
+            qbr(4) = btp%uvb_face_ave(3,2,iquad,iface)
+
+            nxl = mf%normal_vector_q(1,iquad,1,iface)
+            nyl = mf%normal_vector_q(2,iquad,1,iface)
+            nzl = mf%normal_vector_q(3,iquad,1,iface)
+
+            ql = 0.0; qr = 0.0
+            do k = 1, nlayers_f
+
+                do n = 1, ngl_f
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
+                    hi = b%psiq(n,iquad)
+                    ql(1,k) = ql(1,k) + hi*qprime_df(1,I,k)
+                    ql(2,k) = ql(2,k) + hi*qprime_df(2,I,k)
+                    ql(3,k) = ql(3,k) + hi*qprime_df(3,I,k)
+                    ql(4,k) = ql(4,k) + hi*qprime_df(4,I,k)
+                end do
+
+                if (er > 0) then
+                    do n = 1, ngl_f
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
+                        hi = b%psiq(n,iquad)
+                        qr(1,k) = qr(1,k) + hi*qprime_df(1,I,k)
+                        qr(2,k) = qr(2,k) + hi*qprime_df(2,I,k)
+                        qr(3,k) = qr(3,k) + hi*qprime_df(3,I,k)
+                        qr(4,k) = qr(4,k) + hi*qprime_df(4,I,k)
+                    end do
+                else
+                    qr(:,k) = ql(:,k)
+                    if (er == -4) then
+                        un = ql(2,k)*nxl + ql(3,k)*nyl + ql(4,k)*nzl
+                        qr(2,k) = ql(2,k) - 2.0*un*nxl
+                        qr(3,k) = ql(3,k) - 2.0*un*nyl
+                        qr(4,k) = ql(4,k) - 2.0*un*nzl
+                    elseif (er == -2) then
+                        qr(2,k) = -ql(2,k)
+                        qr(3,k) = -ql(3,k)
+                        qr(4,k) = -ql(4,k)
+                    end if
+                end if
+
+                is_dry_l = (ql(1,k) * qbl(1) < g_over_alpha(k) * inp%dry_cutoff)
+                if (is_dry_l) then
+                    ql(1,k) = g_over_alpha(k) * inp%dry_cutoff
+                    ql(2,k) = 0.0;  ql(3,k) = 0.0;  ql(4,k) = 0.0
+                end if
+                is_dry_r = (qr(1,k) * qbr(1) < g_over_alpha(k) * inp%dry_cutoff)
+                if (is_dry_r) then
+                    qr(1,k) = g_over_alpha(k) * inp%dry_cutoff
+                    qr(2,k) = 0.0;  qr(3,k) = 0.0;  qr(4,k) = 0.0
+                end if
+
+                dpl = qbl(1) * ql(1,k)
+                dpr = qbr(1) * qr(1,k)
+                ul  = ql(2,k) + qbl(2)
+                ur  = qr(2,k) + qbr(2)
+                vl  = ql(3,k) + qbl(3)
+                vr  = qr(3,k) + qbr(3)
+                wl  = ql(4,k) + qbl(4)
+                wr  = qr(4,k) + qbr(4)
+
+                dp_lr(1,k) = dpl
+                dp_lr(2,k) = dpr
+
+                uu = 0.5*(ul+ur)
+                vv = 0.5*(vl+vr)
+                ww = 0.5*(wl+wr)
+
+                un = uu*nxl + vv*nyl + ww*nzl
+                if (un > 0.0) then
+                    dp_flux(1,k,iquad) = uu * dpl
+                    dp_flux(2,k,iquad) = vv * dpl
+                    dp_flux(3,k,iquad) = ww * dpl
+                else
+                    dp_flux(1,k,iquad) = uu * dpr
+                    dp_flux(2,k,iquad) = vv * dpr
+                    dp_flux(3,k,iquad) = ww * dpr
+                end if
+
+            end do
+
+            dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,:,iquad))
+            dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,:,iquad))
+            dp_deficit(3) = btp%btp_mass_flux_face_ave(3,iquad,iface) - sum(dp_flux(3,:,iquad))
+
+            wq = mf%jac_faceq(iquad,1,iface)
+
+            do k = 1, nlayers_f
+
+                weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
+                if ((dp_deficit(1)*nxl + dp_deficit(2)*nyl + dp_deficit(3)*nzl) < 0.0) &
+                    weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
+                dp_flux(1,k,iquad) = dp_flux(1,k,iquad) + weight * dp_deficit(1)
+                dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + weight * dp_deficit(2)
+                dp_flux(3,k,iquad) = dp_flux(3,k,iquad) + weight * dp_deficit(3)
+
+                do n = 1, ngl_f
+                    hi = b%psiq(n,iquad)
+                    il = mf%imapl(1,n,1,iface)
+                    jl = mf%imapl(2,n,1,iface)
+                    kl = mf%imapl(3,n,1,iface)
+                    I  = G%intma(il,jl,kl,el)
+                    dp_advec(I,k) = dp_advec(I,k) - wq*hi*(nxl*dp_flux(1,k,iquad) + nyl*dp_flux(2,k,iquad) + nzl*dp_flux(3,k,iquad))
+                end do
+
+                if (er > 0) then
+                    do n = 1, ngl_f
+                        hi = b%psiq(n,iquad)
+                        ir = mf%imapr(1,n,1,iface)
+                        jr = mf%imapr(2,n,1,iface)
+                        kr = mf%imapr(3,n,1,iface)
+                        I  = G%intma(ir,jr,kr,er)
+                        dp_advec(I,k) = dp_advec(I,k) + wq*hi*(nxl*dp_flux(1,k,iquad) + nyl*dp_flux(2,k,iquad) + nzl*dp_flux(3,k,iquad))
+                    end do
+                end if
+
+            end do
+
+        end do
+
+    end subroutine create_layer_mass_flux_sphere
 
 end module mod_create_rhs_mlswe

@@ -72,7 +72,6 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a,i0,t55,a)')     'KSTAGES_BTP = ',     inp%kstages,        '! barotropic RK stages'
    write(fu,'(a,i0,t55,a)')     'KSTAGES_BCL = ',     inp%kstages_bcl,    '! baroclinic RK stages'
    write(fu,'(a,l1,t55,a)')     'RK_BCL_FS = ',            inp%rk_bcl_FS,            '! baroclinic free-surface coupling flag'
-   write(fu,'(a,l1,t55,a)')     'IMPLICIT_CORIOLIS_SPH = ', inp%implicit_coriolis_sph, '! 3D implicit Coriolis for sphere (LSRK3 only)'
    write(fu,'(a)')
 
    ! -----------------------------------------------------------------------

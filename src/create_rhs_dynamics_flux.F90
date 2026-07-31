@@ -1332,7 +1332,7 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send,
    real :: dp_lr(2,inp%nlayers), dp_deficit(2)
    real, dimension(b%nq,inp%nlayers) :: flux_edge_u, flux_edge_v
    real, dimension(inp%nvar_bcl) :: ql, qr
-   real, dimension(3,b%nq) :: qbl, qbr
+   real, dimension(inp%nvar_bcl,b%nq) :: qbl, qbr
    real, parameter :: eps = 1.0e-10
 
    jj=1
@@ -1451,6 +1451,183 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, q_send,
    end do !iface
 
 end subroutine create_nbhs_face_bcl_continuity
+
+! Sphere counterpart of create_nbhs_face_bcl_continuity: 4-wide (mass,u,v,w)
+! interpolation, 3-component face normal, mirroring the mass-specific subset
+! of create_nbhs_face_bcl_sphere (:979-1298) -- ql/qr interpolation, dry-cell
+! clamping, upwind dp_flux selection, dp_deficit consistency correction, final
+! one-sided scatter. No pressure/geopotential bookkeeping (H_face_q/z_face/
+! p_face) or momentum flux tensor (udp_flux/vdp_flux/wdp_flux) -- confirmed by
+! direct reading that mass flux (dp_flux, built purely from ql/qr/dry-clamping/
+! upwind selection) has no dependency on either, those are momentum-only.
+subroutine create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, multirate)
+
+   use mod_grid,      only: grid
+   use mod_input,     only: input
+   use mod_basis,     only: basis
+   use mod_face,      only: face_CS
+   use mod_parallel,  only: parallel_CS
+   use mod_variables, only: btp_CS
+   use mod_initial,   only: initial
+   use mod_constants, only: gravity
+
+   implicit none
+
+   type(grid),        intent(in)    :: G
+   type(input),       intent(in)    :: inp
+   type(basis),       intent(in)    :: b
+   type(face_CS),     intent(in)    :: mf
+   type(parallel_CS), intent(in)    :: par
+   type(btp_CS),       intent(inout) :: btp
+   type(initial),     intent(in)    :: init
+   integer,           intent(in)    :: multirate
+
+   !global arrays
+   real, intent(inout) :: rhs(G%npoin, inp%nlayers)
+   real, intent(in)    :: q_send(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+   real, intent(in)    :: q_recv(inp%nvar_bcl*inp%nlayers, b%ngl, par%num_send_recv_total)
+
+   !local variables
+   integer :: jj, inbh, ib, kk, ivar, imulti
+   integer :: k, iface, iquad, el, il, jl, kl, I, n, index
+
+   real :: wq, nxl, nyl, nzl, hi
+   real :: dpl, dpr, uu, vv, ww, un, ul, ur, vl, vr, wl, wr, flux, weight
+   real :: dp_lr(2,inp%nlayers), dp_deficit(3)
+   real, dimension(3,b%nq,inp%nlayers) :: dp_flux
+   real, dimension(inp%nvar_bcl) :: ql, qr
+   real, dimension(inp%nvar_bcl,b%nq) :: qbl, qbr
+   real, parameter :: eps1 = 1.0e-20
+   real :: g_over_alpha(inp%nlayers)
+   logical :: is_dry_l, is_dry_r
+
+   do k = 1, inp%nlayers
+      g_over_alpha(k) = gravity / init%alpha_mlswe(k)
+   end do
+
+   jj = 1
+   kk = 1
+
+   do inbh = 1, par%num_nbh
+      do ib = 1, par%num_send_recv(inbh)
+         iface  = par%nbh_send_recv(jj)
+         imulti = par%nbh_send_recv_multi(jj)
+
+         el = G%face(7,iface)
+
+         qbl(1,:) = btp%ope_face_ave(1,:,iface)
+         qbl(2,:) = btp%uvb_face_ave(1,1,:,iface)
+         qbl(3,:) = btp%uvb_face_ave(2,1,:,iface)
+         qbl(4,:) = btp%uvb_face_ave(3,1,:,iface)
+         qbr(1,:) = btp%ope_face_ave(2,:,iface)
+         qbr(2,:) = btp%uvb_face_ave(1,2,:,iface)
+         qbr(3,:) = btp%uvb_face_ave(2,2,:,iface)
+         qbr(4,:) = btp%uvb_face_ave(3,2,:,iface)
+
+         do iquad = 1, b%nq
+
+            nxl = mf%normal_vector_q(1,iquad,1,iface)
+            nyl = mf%normal_vector_q(2,iquad,1,iface)
+            nzl = mf%normal_vector_q(3,iquad,1,iface)
+
+            do k = 1, inp%nlayers
+
+               index = inp%nvar_bcl*(k-1)
+
+               ql = 0.0; qr = 0.0
+               do n = 1, b%ngl
+                  hi = b%psiq(n,iquad)
+                  do ivar = 1, inp%nvar_bcl
+                     ql(ivar) = ql(ivar) + hi*q_send(index+ivar,n,kk)
+                     qr(ivar) = qr(ivar) + hi*q_recv(index+ivar,n,kk)
+                  end do
+               end do
+
+               ! Dry-cell protection, same convention as create_nbhs_face_bcl_sphere.
+               is_dry_l = (ql(1) * qbl(1,iquad) < g_over_alpha(k) * inp%dry_cutoff)
+               if (is_dry_l) then
+                  ql(1) = g_over_alpha(k) * inp%dry_cutoff
+                  ql(2) = 0.0; ql(3) = 0.0; ql(4) = 0.0
+               end if
+               is_dry_r = (qr(1) * qbr(1,iquad) < g_over_alpha(k) * inp%dry_cutoff)
+               if (is_dry_r) then
+                  qr(1) = g_over_alpha(k) * inp%dry_cutoff
+                  qr(2) = 0.0; qr(3) = 0.0; qr(4) = 0.0
+               end if
+
+               dpl = qbl(1,iquad) * ql(1)
+               dpr = qbr(1,iquad) * qr(1)
+
+               dp_lr(1,k) = dpl
+               dp_lr(2,k) = dpr
+
+               ul = ql(2) + qbl(2,iquad)
+               ur = qr(2) + qbr(2,iquad)
+               vl = ql(3) + qbl(3,iquad)
+               vr = qr(3) + qbr(3,iquad)
+               wl = ql(4) + qbl(4,iquad)
+               wr = qr(4) + qbr(4,iquad)
+
+               uu = 0.5*(ul + ur)
+               vv = 0.5*(vl + vr)
+               ww = 0.5*(wl + wr)
+
+               un = uu*nxl + vv*nyl + ww*nzl
+               if (un > 0.0) then
+                  dp_flux(1,iquad,k) = uu * dpl
+                  dp_flux(2,iquad,k) = vv * dpl
+                  dp_flux(3,iquad,k) = ww * dpl
+               else
+                  dp_flux(1,iquad,k) = uu * dpr
+                  dp_flux(2,iquad,k) = vv * dpr
+                  dp_flux(3,iquad,k) = ww * dpr
+               end if
+
+            end do ! k
+
+            dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,iquad,:))
+            dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,iquad,:))
+            dp_deficit(3) = btp%btp_mass_flux_face_ave(3,iquad,iface) - sum(dp_flux(3,iquad,:))
+
+            do k = 1, inp%nlayers
+               weight = dp_lr(1,k) / (sum(abs(dp_lr(1,:))+eps1))
+               if ((dp_deficit(1)*nxl + dp_deficit(2)*nyl + dp_deficit(3)*nzl) < 0.0) &
+                  weight = dp_lr(2,k) / (sum(abs(dp_lr(2,:))+eps1))
+               dp_flux(1,iquad,k) = dp_flux(1,iquad,k) + weight*dp_deficit(1)
+               dp_flux(2,iquad,k) = dp_flux(2,iquad,k) + weight*dp_deficit(2)
+               dp_flux(3,iquad,k) = dp_flux(3,iquad,k) + weight*dp_deficit(3)
+            end do ! k
+         end do ! iquad
+
+         do k = 1, inp%nlayers
+            do iquad = 1, b%nq
+
+               wq  = mf%jac_faceq(iquad,1,iface)
+               nxl = mf%normal_vector_q(1,iquad,1,iface)
+               nyl = mf%normal_vector_q(2,iquad,1,iface)
+               nzl = mf%normal_vector_q(3,iquad,1,iface)
+
+               flux = nxl*dp_flux(1,iquad,k) + nyl*dp_flux(2,iquad,k) + nzl*dp_flux(3,iquad,k)
+
+               do n = 1, b%ngl
+                  hi = b%psiq(n,iquad)
+                  il = mf%imapl(1,n,1,iface)
+                  jl = mf%imapl(2,n,1,iface)
+                  kl = mf%imapl(3,n,1,iface)
+                  I = G%intma(il,jl,kl,el)
+
+                  rhs(I,k) = rhs(I,k) - wq*hi*flux
+               end do
+            end do
+         end do
+
+         kk = kk+1
+         jj = jj+1
+      end do
+
+   end do !iface
+
+end subroutine create_nbhs_face_bcl_continuity_sphere
 
 subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, q_send, q_recv, multirate)
 

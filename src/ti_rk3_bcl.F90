@@ -51,8 +51,10 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   real, dimension(inp%nvar_btp,G%npoin),             intent(inout) :: qb_df
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
-  integer :: k, ik
+  integer :: k, ik, I
   real :: dtt, a1, a2
+  real :: rl, rm, rn, omg, Px, Py, Pz, d_inv
+  real :: a, bb, tempu, tempv
   logical :: has_w
 
   has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
@@ -67,6 +69,10 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   bcl%q0_df = q_df
   bcl%q1_df = q_df
   !$acc end kernels
+
+  ! Download q0_df to host once; needed by the semi-implicit Coriolis
+  ! rotation, always applied below (both flat and spherical geometry).
+  !$acc update host(bcl%q0_df)
 
   do ik = 1, inp%kstages_bcl
 
@@ -113,6 +119,47 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
       if (has_w) q_df(4,:,k) = a1*bcl%q0_df(4,:,k) + a2*bcl%q1_df(4,:,k) + dtt*bcl%rhs_bcl(4,:,k)
     end do
     !$acc end kernels
+
+    ! Semi-implicit Coriolis rotation (CPU; init%kvector/fdt2_bcl live on
+    ! host), always applied — Coriolis is never added explicitly in the RHS
+    ! (mod_create_rhs_mlswe.F90). Same formulas as ti_lsrk3_bcl.F90, using
+    ! this stage's fractional dt (init%ssprk_beta_bcl(ik), playing the same
+    ! role lsrk3_beta(ik) plays there) and bcl%q0_df (fixed for the whole
+    ! stage loop, set once above) as the cross-term source.
+    !$acc update host(q_df)
+    if (has_w) then
+      ! 3D spherical rotation.
+      do k = 1, inp%nlayers
+        do I = 1, G%npoin
+          rl    = init%kvector(1,I)
+          rm    = init%kvector(2,I)
+          rn    = init%kvector(3,I)
+          omg   = init%fdt2_bcl(I) * init%ssprk_beta_bcl(ik)
+          Px    = q_df(2,I,k) + omg*(rn*bcl%q0_df(3,I,k) - rm*bcl%q0_df(4,I,k))
+          Py    = q_df(3,I,k) + omg*(rl*bcl%q0_df(4,I,k) - rn*bcl%q0_df(2,I,k))
+          Pz    = q_df(4,I,k) + omg*(rm*bcl%q0_df(2,I,k) - rl*bcl%q0_df(3,I,k))
+          d_inv = 1.0 / (1.0 + omg**2)
+          q_df(2,I,k) = (Px - omg*(rm*Pz - rn*Py)) * d_inv
+          q_df(3,I,k) = (Py - omg*(rn*Px - rl*Pz)) * d_inv
+          q_df(4,I,k) = (Pz - omg*(rl*Py - rm*Px)) * d_inv
+        end do
+      end do
+    else
+      ! 2D Cartesian beta-plane rotation — has_w=(0,0,1) specialization of
+      ! the 3D formula above.
+      do k = 1, inp%nlayers
+        do I = 1, G%npoin
+          omg   = init%fdt2_bcl(I) * init%ssprk_beta_bcl(ik)
+          a     = 1.0 / (1.0 + omg**2)
+          bb    = omg / (1.0 + omg**2)
+          tempu = q_df(2,I,k) + omg*bcl%q0_df(3,I,k)
+          tempv = q_df(3,I,k) - omg*bcl%q0_df(2,I,k)
+          q_df(2,I,k) =  a*tempu + bb*tempv
+          q_df(3,I,k) = -bb*tempu + a*tempv
+        end do
+      end do
+    end if
+    !$acc update device(q_df)
 
     ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
