@@ -220,10 +220,14 @@ contains
       real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
       real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
 
-      real    :: wjac, wsum, mult, btp_threshold
+      real    :: wjac, wsum, mult, btp_threshold, pbprime_avg
       integer :: I, k, e, n, m, nc
       integer :: nlayers_l, nelem_l, nglx_l, ngly_l
       real, parameter :: eps = 1.0e-20
+      ! Default blending band = a fixed fraction of this element's own
+      ! reference depth (init%pbprime_df), not an absolute meters value --
+      ! see use_pbprime_scaling below.
+      real, parameter :: blend_frac_lo = 0.01, blend_frac_hi = 0.10
 
       real :: dp_avg(inp%nlayers)
       real :: mdp_avg(inp%nvar_bcl-1, inp%nlayers)
@@ -234,6 +238,7 @@ contains
       real :: vel_ave(inp%nvar_bcl-1, inp%nlayers)
       real :: weight(inp%nlayers)
       real :: bar(inp%nvar_bcl-1)
+      logical :: use_pbprime_scaling
 
       ! GPU: classify dry elements (all arrays already on device).
       call find_dry_elements(G, inp, b, tsp, bcl%q_df, init%alpha_mlswe, bcl%dry_flg)
@@ -243,38 +248,34 @@ contains
       nglx_l    = b%nglx
       ngly_l    = b%ngly
       nc        = inp%nvar_bcl - 1
+      ! h_cutoff1/h_cutoff2 (absolute meters) remain available as an explicit
+      ! override for anyone who wants to hand-tune the blending band; when
+      ! unset (default 0.0), the band scales itself off this element's own
+      ! reference depth instead of a hardcoded ocean-scale constant, so it
+      ! self-adapts to the problem's depth without any namelist tuning.
+      use_pbprime_scaling = (inp%h_cutoff1 < 1.0e-2)
 
-      ! Compute per-layer blending thresholds on CPU (small loop over nlayers).
+      ! BTP threshold: sum of per-layer floors (same convention as btp_poslimiter).
       btp_threshold = 0.0
       do k = 1, nlayers_l
-          if (inp%h_cutoff1 < 1.0e-2) then
-              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * 10.0
-              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * 100.0
-          else
-              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
-              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
-          end if
-          dp_range(k) = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
-          ! BTP threshold: sum of per-layer floors (same convention as btp_poslimiter).
           btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
       end do
-
-      ! Copy blending thresholds to device once; shared read-only by both kernels below.
-      !$acc data copyin(dp_cutoff1, dp_cutoff2, dp_range)
 
       ! Part 1: element-parallel velocity blending.
       ! One gang per element; all inner loops are sequential within the gang.
       ! Shared boundary nodes written by multiple gangs with different blended values —
       ! same determinism as the sequential CPU version (last writer wins).
       !$acc parallel loop gang &
-      !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df) &
-      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc) &
-      !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, &
+      !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df, &
+      !$acc            init%pbprime_df, init%alpha_mlswe) &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, use_pbprime_scaling) &
+      !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, dp_cutoff1, dp_cutoff2, dp_range, &
       !$acc            a, bc, c_td, r, vel_ave, weight, &
-      !$acc            wsum, wjac, mult)
+      !$acc            wsum, wjac, mult, pbprime_avg)
       do e = 1, nelem_l
 
         wsum = 0.0
+        pbprime_avg = 0.0
         !$acc loop seq
         do k = 1, nlayers_l
             dp_avg(k) = 0.0;  mdp_avg(:,k) = 0.0
@@ -288,6 +289,7 @@ contains
                 I    = G%intma(n, m, 1, e)
                 wjac = b%wglx(n) * b%wgly(m) * mt%jac(n, m, 1, e)
                 wsum = wsum + wjac
+                pbprime_avg = pbprime_avg + wjac * init%pbprime_df(I)
                 !$acc loop seq
                 do k = 1, nlayers_l
                     dp_avg(k)    = dp_avg(k)    + wjac * q_df(1,I,k)
@@ -302,6 +304,23 @@ contains
         do k = 1, nlayers_l
           dp_avg(k)    = dp_avg(k)    / wsum
           mdp_avg(:,k) = mdp_avg(:,k) / wsum
+        end do
+        pbprime_avg = pbprime_avg / wsum
+
+        ! Blending-band thresholds (see use_pbprime_scaling note above).
+        ! pbprime_avg is already in the same dp-scaled units as q_df(1,...)
+        ! (confirmed via ti_2levels_bcl.F90's dp_norm_inv usage), so no
+        ! gravity/alpha_mlswe conversion is needed for the auto-scaled branch.
+        !$acc loop seq
+        do k = 1, nlayers_l
+          if (use_pbprime_scaling) then
+              dp_cutoff1(k) = blend_frac_lo * pbprime_avg / real(nlayers_l)
+              dp_cutoff2(k) = blend_frac_hi * pbprime_avg / real(nlayers_l)
+          else
+              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
+              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
+          end if
+          dp_range(k) = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
         end do
 
         ! Build tridiagonal system for mass-weighted cell-average velocity.
@@ -398,8 +417,6 @@ contains
         end do
       end do
       !$acc end parallel loop
-
-      !$acc end data
 
     end subroutine extract_velocity
 

@@ -69,9 +69,9 @@ contains
         if (inp%c_APE > 0.0) then
             !$acc update host(btp%ope2_ave_df, qprime_df)
             call compute_bcl_lap_z(G, inp, b, mf, par, ref, mpic, init, btp, bcl, mt, tsp, qprime_df, bcl%lap_z_df)
-            lap_z_loc_max = maxval(abs(bcl%lap_z_df(:, 2:inp%nlayers)))
-            call MPI_Reduce(lap_z_loc_max, lap_z_glb_max, 1, MPI_PRECISION, MPI_MAX, 0, MPI_COMM_WORLD, ierr_diag)
-            if (irank == 0) write(*,'("lap_z global max =",es12.4)') lap_z_glb_max
+            ! lap_z_loc_max = maxval(abs(bcl%lap_z_df(:, 2:inp%nlayers)))
+            ! call MPI_Reduce(lap_z_loc_max, lap_z_glb_max, 1, MPI_PRECISION, MPI_MAX, 0, MPI_COMM_WORLD, ierr_diag)
+            ! if (irank == 0) write(*,'("lap_z global max =",es12.4)') lap_z_glb_max
             !$acc update device(bcl%lap_z_df)
         end if
 
