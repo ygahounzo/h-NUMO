@@ -79,8 +79,7 @@ contains
         ! rhs stays on device; apply mass scaling and viscous term on GPU.
 
         ! Momentum rows (u,v[,w]) get mass-matrix scaling plus viscosity.
-        ! bcl%rhs_visc_bcl carries one row per momentum component (u,v[,w]),
-        ! i.e. rows 1..nvar_bcl-1, matching rhs rows 2..nvar_bcl.
+        ! bcl%rhs_visc_bcl carries one row per momentum component (u,v[,w])
         !
         ! nu_smag is a strain-rate quantity recomputed fresh inside
         ! bcl_create_laplacian every call; rhs_visc_bcl = (visc+nu_smag)*massinv*L(q).

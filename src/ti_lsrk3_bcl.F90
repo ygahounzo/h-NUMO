@@ -4,8 +4,7 @@
 !   phi^(n+1/2) = phi^n + (dt/2) * F(phi^(n+1/3))
 !   phi^(n+1)   = phi^n + dt     * F(phi^(n+1/2))
 !   Author: Yao Gahounzo
-!   Computing PhD
-!   Boise State University
+!   COAPS, Florida State University
 ! ==========================================================================================================================
 
 subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_df, qb_df)
@@ -103,8 +102,8 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     end do
     !$acc end kernels
 
-    ! Semi-implicit Coriolis rotation (GPU), always applied — Coriolis is
-    ! never added explicitly in the RHS (mod_create_rhs_mlswe.F90). Applies
+    ! Semi-implicit Coriolis rotation — Coriolis is
+    ! never added explicitly in the RHS. Applies
     ! (I + ω K_r)^{-1} acting on the LSRK3-updated momentum, where the
     ! "P-vector" blends the updated momentum with the stage-0 cross-product
     ! term (bcl%q0_df, fixed for the whole stage loop, present on device).
@@ -152,19 +151,18 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       !$acc end parallel loop
     end if
 
-    ! GPU: wall BC — gang over faces, atomic updates for corner nodes.
+    ! Wall BCs: enforce zero normal momentum at the wall (u.n = 0) and zero tangential
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
     ! Floor thickness before extract_velocity: if q_df(1) went negative from the
     ! RK update, the division by thickness inside extract_velocity would produce
-    ! astronomical velocities (denominator = thickness + 1e-20 ≈ 1e-20 when
-    ! thickness < 0), corrupting momentum and triggering a NaN cascade.
+    ! astronomical velocities, corrupting momentum and triggering a NaN cascade.
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
-    ! GPU: extract baroclinic velocity (removes barotropic component).
+    ! Extract baroclinic velocity.
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 
-    ! GPU: reconstruct momentum from corrected velocity.
+    ! Reconstruct momentum from corrected velocity.
     !$acc kernels present(q_df, bcl%uv_df)
     do k = 1, inp%nlayers
       q_df(2,:,k) = bcl%uv_df(1,:,k) * q_df(1,:,k)
@@ -173,7 +171,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     end do
     !$acc end kernels
 
-    ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
+    ! Positivity limiter.
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
 
     call check_layer_thickness(b, G, inp, q_df, 'ti_lsrk3_bcl', ik)

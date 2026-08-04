@@ -54,7 +54,7 @@ contains
       real,                                               intent(in)    :: dt_btp_in
 
       integer :: mstep, ik, I, iv, nvarb_f
-      real    :: N_inv, a0, a1, a2, dtt, visc_term
+      real    :: N_inv, a0, a1, a2, dtt, visc_term, inv_qb1
       logical :: has_w
 
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
@@ -114,16 +114,19 @@ contains
             ! Reading qb_df(I) for averages and a1-coefficient happens before the
             ! write to qb_df(I) within the same thread — no race across nodes.
             !$acc parallel loop present(btp%qb0_df, qb_df, btp%qb2_df, btp, init, mt, &
-            !$acc                        btp%nu_smag, btp%rhs_btp_visc) &
-            !$acc    private(iv, visc_term) firstprivate(a0, a1, a2, dtt, nvarb_f)
+            !$acc                        btp%rhs_btp_visc) &
+            !$acc    private(iv, visc_term, inv_qb1) firstprivate(a0, a1, a2, dtt, nvarb_f)
             do I = 1, G%npoin
                btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
 
                ! Momentum components: u,v[,w] -> uvb_ave_df(1..nvarb_f-2), rhs_btp(2..nvarb_f-1),
                ! rhs_btp_visc(1..nvarb_f-2) (one viscosity row per momentum component).
+               ! qb_df(1,I) is unchanged until after this loop, so its reciprocal is
+               ! computed once and reused rather than dividing on every iv.
+               inv_qb1 = 1.0 / qb_df(1,I)
                !$acc loop seq
                do iv = 3, nvarb_f
-                  btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) / qb_df(1,I)
+                  btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) * inv_qb1
                   ! visc_mlswe(+nu_smag) already baked into rhs_btp_visc via the
                   ! pbprime_visc/btp_dpp_graduvw pre-scale in btp_create_laplacian.
                   visc_term = btp%rhs_btp_visc(iv-2,I)

@@ -518,42 +518,6 @@ contains
       end do
       !$acc end parallel loop
 
-      ! Positivity limiter on qprime_df:
-      !   - Near-dry layers (qprime_df(1) <= dp_threshold): zero velocity deviation.
-      !   - All other nodes: smooth tanh saturation — u_soft = max_spd * tanh(u/max_spd).
-      !     Unlike a hard clip, tanh is C-infinity smooth: no kink, no checkerboard noise.
-      !     For |u| << max_spd it is nearly linear; for |u| >> max_spd it saturates to ±max_spd.
-      ! !$acc parallel loop gang &
-      ! !$acc    present(G%intma, qprime_df) &
-      ! !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, has_w, dp_threshold, max_qprime_spd)
-      ! do e = 1, nelem_l
-      !   !$acc loop seq
-      !   do m = 1, ngly_l
-      !     !$acc loop seq
-      !     do n = 1, nglx_l
-      !       I = G%intma(n, m, 1, e)
-      !       !$acc loop seq
-      !       do k = 1, nlayers_l
-      !         if (qprime_df(1,I,k) <= dp_threshold) then
-      !           qprime_df(2,I,k) = 0.0
-      !           qprime_df(3,I,k) = 0.0
-      !           if (has_w) qprime_df(4,I,k) = 0.0
-      !         else
-      !           if (qprime_df(2,I,k) >  max_qprime_spd) qprime_df(2,I,k) =  max_qprime_spd
-      !           if (qprime_df(2,I,k) < -max_qprime_spd) qprime_df(2,I,k) = -max_qprime_spd
-      !           if (qprime_df(3,I,k) >  max_qprime_spd) qprime_df(3,I,k) =  max_qprime_spd
-      !           if (qprime_df(3,I,k) < -max_qprime_spd) qprime_df(3,I,k) = -max_qprime_spd
-      !           if (has_w) then
-      !             if (qprime_df(4,I,k) >  max_qprime_spd) qprime_df(4,I,k) =  max_qprime_spd
-      !             if (qprime_df(4,I,k) < -max_qprime_spd) qprime_df(4,I,k) = -max_qprime_spd
-      !           end if
-      !         end if
-      !       end do
-      !     end do
-      !   end do
-      ! end do
-      ! !$acc end parallel loop
-
       !$acc end data
 
     end subroutine extract_qprime_df_face
@@ -580,7 +544,7 @@ contains
         ngl_l     = b%ngl
         nlayers_l = inp%nlayers
         nc        = inp%nvar_bcl - 1
-        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex; still needed below -- the tangency projection and solid_body restore are sphere-only physics, not just wider components
+        has_w     = (inp%nvar_bcl == 4) ! w (vertical momentum)
 
         ! Sphere tangency constraint: remove radial momentum component at all
         ! nodes per layer so momentum stays tangent to the sphere surface.

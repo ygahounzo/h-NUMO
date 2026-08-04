@@ -208,7 +208,7 @@ module mod_initial_mlswe
         ! f at DOF nodes: sphere uses 2*Omega*sin(lat) = 2*Omega*kvector(3)
         if (inp%geometry_type == 'sphere_hex' .or. inp%geometry_type == 'sphere_ico') then
             if (trim(inp%test_case) == 'gravity_wave') then
-                ! Non-rotating test (Chen 2025, Sec 5.2): f = 0 everywhere.
+                ! Non-rotating test: f = 0 everywhere.
                 do concurrent (I = 1:G%npoin)
                     coriolis_df(I) = 0.0
                 end do
@@ -388,7 +388,7 @@ module mod_initial_mlswe
         real, dimension(inp%nlayers),                       intent(in)    :: alpha
 
         real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
-        real    :: dp_e, max_bcl_spd
+        real    :: dp_e
         integer :: I, k, n, m, e, nelem_l, nlayers_l, nglx_l, ngly_l
         real    :: dry_cutoff_l
         logical :: has_w, has_nan_e
@@ -400,14 +400,10 @@ module mod_initial_mlswe
         dry_cutoff_l = inp%dry_cutoff
         has_w        = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
-        ! Physical BCL interfacial wave speed is O(10 m/s); 200 m/s catches blow-up
-        ! while leaving all physical dynamics untouched.
-        max_bcl_spd = 200.0
-
         ! DG elements own their nodes exclusively — no cross-element races on q.
         !$acc parallel loop gang collapse(2) &
         !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q, alpha) &
-        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w, max_bcl_spd) &
+        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w) &
         !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, I, dp_e, has_nan_e)
         do k = 1, nlayers_l
           threshold = (gravity / alpha(k)) * dry_cutoff_l
@@ -473,28 +469,6 @@ module mod_initial_mlswe
                         end do !n
                     end do !m
                 end if
-
-                ! Velocity cap: prevents BCL velocity blow-up from feeding huge fluxes
-                ! into the next stage RHS (advective overflow → NaN in layer thickness).
-                ! !$acc loop seq
-                ! do m = 1, ngly_l
-                !     !$acc loop seq
-                !     do n = 1, nglx_l
-                !         I    = G%intma(n,m,1,e)
-                !         dp_e = q(1,I,k)
-                !         if (dp_e > 0.0) then
-                !             if (q(2,I,k) >  max_bcl_spd * dp_e) q(2,I,k) =  max_bcl_spd * dp_e
-                !             if (q(2,I,k) < -max_bcl_spd * dp_e) q(2,I,k) = -max_bcl_spd * dp_e
-                !             if (q(3,I,k) >  max_bcl_spd * dp_e) q(3,I,k) =  max_bcl_spd * dp_e
-                !             if (q(3,I,k) < -max_bcl_spd * dp_e) q(3,I,k) = -max_bcl_spd * dp_e
-                !             if (has_w) then
-                !                 if (q(4,I,k) >  max_bcl_spd * dp_e) q(4,I,k) =  max_bcl_spd * dp_e
-                !                 if (q(4,I,k) < -max_bcl_spd * dp_e) q(4,I,k) = -max_bcl_spd * dp_e
-                !             end if
-                !         end if
-                !     end do
-                ! end do
-
             end do !e
         end do !k
         !$acc end parallel loop
@@ -521,7 +495,7 @@ module mod_initial_mlswe
         real, dimension(inp%nlayers),           intent(in)    :: alpha
 
         real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
-        real    :: max_btp_vel, dp_I
+        real    :: dp_I
         integer :: I, k, n, m, e, nelem_l, nglx_l, ngly_l
         real    :: dry_cutoff_l
         logical :: has_w, has_nan_e
@@ -531,10 +505,6 @@ module mod_initial_mlswe
         ngly_l       = b%ngly
         dry_cutoff_l = inp%dry_cutoff
         has_w        = (inp%nvar_btp == 5)
-
-        ! Maximum physical barotropic velocity: sqrt(g * H_max) for a ~6000 m column.
-        ! BTP velocities beyond this are unphysical and must be from numerical blow-up.
-        max_btp_vel = 300.0
 
         ! BTP threshold = sum of per-layer BCL thresholds (pressure equivalent of
         ! dry_cutoff meters per layer), so the total column cannot collapse below
@@ -546,7 +516,7 @@ module mod_initial_mlswe
 
         !$acc parallel loop gang &
         !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, qb_df, pbprime_df) &
-        !$acc    firstprivate(nelem_l, nglx_l, ngly_l, threshold, has_w, max_btp_vel) &
+        !$acc    firstprivate(nelem_l, nglx_l, ngly_l, threshold, has_w) &
         !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, theta, denom, I, dp_I, has_nan_e)
         do e = 1, nelem_l
 
@@ -612,29 +582,6 @@ module mod_initial_mlswe
                     end do
                 end do
             end if
-
-            ! Velocity cap: clip barotropic u,v to max_btp_vel regardless of whether
-            ! the pressure correction above triggered.  This breaks the positive-feedback
-            ! loop: huge BTP momentum → huge ub_btp in extract_qprime_df_face
-            ! → huge vel' → huge BCL flux → even huger BTP momentum.
-            ! !$acc loop seq
-            ! do m = 1, ngly_l
-            !     !$acc loop seq
-            !     do n = 1, nglx_l
-            !         I    = G%intma(n,m,1,e)
-            !         dp_I = qb_df(1,I)
-            !         if (dp_I > 0.0) then
-            !             if (qb_df(3,I) >  max_btp_vel * dp_I) qb_df(3,I) =  max_btp_vel * dp_I
-            !             if (qb_df(3,I) < -max_btp_vel * dp_I) qb_df(3,I) = -max_btp_vel * dp_I
-            !             if (qb_df(4,I) >  max_btp_vel * dp_I) qb_df(4,I) =  max_btp_vel * dp_I
-            !             if (qb_df(4,I) < -max_btp_vel * dp_I) qb_df(4,I) = -max_btp_vel * dp_I
-            !             if (has_w) then
-            !                 if (qb_df(5,I) >  max_btp_vel * dp_I) qb_df(5,I) =  max_btp_vel * dp_I
-            !                 if (qb_df(5,I) < -max_btp_vel * dp_I) qb_df(5,I) = -max_btp_vel * dp_I
-            !             end if
-            !         end if
-            !     end do
-            ! end do
 
         end do
         !$acc end parallel loop
