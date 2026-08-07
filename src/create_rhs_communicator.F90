@@ -400,9 +400,9 @@ subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, init,
 
    !Build Inviscid Fluxes On Element Boundary
    if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
-      call create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
+      call create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
    else
-      call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, btp, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
+      call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
    end if
 
 end subroutine bcl_create_postcommunicator_continuity
@@ -443,7 +443,7 @@ subroutine bcl_create_postcommunicator_momentum(G, inp, b, mf, par, btp, init, r
    call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl, ref%nboun_valid)
 
    !Build Inviscid Fluxes On Element Boundary
-   call create_nbhs_face_bcl_momentum(G, inp, b, mf, par, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
+   call create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
 
 end subroutine bcl_create_postcommunicator_momentum
 

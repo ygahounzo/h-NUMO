@@ -181,6 +181,6 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   ! Inter-layer (ad_mlswe) vertical viscosity, applied implicitly once per
   ! full step rather than embedded in the RHS above.
   ! No-op internally when inp%ad_mlswe<=0.
-  ! call bcl_apply_implicit_vertical_viscosity(G, inp, b, mf, init, tsp, mt, bcl, q_df, qb_df)
+  call bcl_apply_implicit_vertical_viscosity(G, inp, b, mf, init, tsp, mt, bcl, q_df, qb_df)
 
 end subroutine ti_lsrk3_bcl

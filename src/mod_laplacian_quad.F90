@@ -125,7 +125,7 @@ contains
       real, dimension(inp%nvar_btp-2,G%npoin) :: Uk
       real, dimension(inp%ngraduvw_var,G%npoin) :: graduv
       integer :: I, Iq, ip, iw, nw_btp_l
-      real    :: dhdx, dhdy, dhdz, A_H_btp
+      real    :: dhdx, dhdy, dhdz, A_H_btp, visc_btp_l
       real    :: du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz
       logical :: has_w
 
@@ -204,9 +204,10 @@ contains
       ! a no-op relative to scaling rhs_btp_visc afterward instead; it
       ! matters once nu_smag varies in space.
       nw_btp_l = inp%ngraduvw_var
+      visc_btp_l = inp%visc_mlswe
       !$acc parallel loop gang present(btp, graduv, btp%pbprime_visc, btp%pbprime_visc_scaled, &
       !$acc                            btp%btp_dpp_graduvw, btp%btp_dpp_graduvw_scaled, btp%nu_smag) &
-      !$acc    private(A_H_btp, iw) firstprivate(has_w, nw_btp_l)
+      !$acc    private(A_H_btp, iw) firstprivate(has_w, nw_btp_l, visc_btp_l)
       do I = 1, G%npoin
          btp%graduvb_ave(1,I) = btp%graduvb_ave(1,I) + graduv(1,I)
          btp%graduvb_ave(2,I) = btp%graduvb_ave(2,I) + graduv(2,I)
@@ -220,7 +221,7 @@ contains
             btp%graduvb_ave(9,I) = btp%graduvb_ave(9,I) + graduv(9,I)
          end if
 
-         A_H_btp = inp%visc_mlswe + btp%nu_smag(I)
+         A_H_btp = visc_btp_l + btp%nu_smag(I)
          btp%pbprime_visc_scaled(I) = A_H_btp * btp%pbprime_visc(I)
          !$acc loop seq
          do iw = 1, nw_btp_l
@@ -275,13 +276,14 @@ contains
       real, intent(out) :: rhs_lap(inp%nvar_bcl-1,G%npoin,inp%nlayers)
 
       integer :: k, I, iw, nw_bcl_l, nlayers_l, npoin_l
-      real    :: A_H_bcl
+      real    :: A_H_bcl, visc_bcl_l
       logical :: has_w
 
       has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
       nw_bcl_l  = inp%ngraduvw_var
       nlayers_l = inp%nlayers
       npoin_l   = G%npoin
+      visc_bcl_l = inp%visc_mlswe
 
       ! rhs_lap is created on device; all kernels run GPU-to-GPU.
       !$acc data create(rhs_lap)
@@ -301,10 +303,10 @@ contains
       !$acc parallel loop gang collapse(2) &
       !$acc    present(bcl%dpprime_visc, bcl%dpprime_visc_scaled, bcl%dpp_graduvw, &
       !$acc             bcl%dpp_graduvw_scaled, bcl%nu_smag) &
-      !$acc    private(A_H_bcl, iw) firstprivate(nlayers_l, npoin_l, nw_bcl_l)
+      !$acc    private(A_H_bcl, iw) firstprivate(nlayers_l, npoin_l, nw_bcl_l, visc_bcl_l)
       do k = 1, nlayers_l
          do I = 1, npoin_l
-            A_H_bcl = inp%visc_mlswe + bcl%nu_smag(I,k)
+            A_H_bcl = visc_bcl_l + bcl%nu_smag(I,k)
             bcl%dpprime_visc_scaled(I,k) = A_H_bcl * bcl%dpprime_visc(I,k)
             !$acc loop seq
             do iw = 1, nw_bcl_l

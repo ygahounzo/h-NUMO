@@ -57,8 +57,9 @@ contains
       !  Read-write accumulation arrays (btp, bcl) are also entered here so
       !  they persist across barotropic substep calls.
       !
-      !  All directives use async to overlap transfers; a blocking !$acc wait
-      !  at the end ensures everything is resident before the first kernel launch.
+      !  All transfers below are synchronous (run once at startup, on the
+      !  default queue); the trailing !$acc wait is a defensive no-op that
+      !  simply confirms everything is resident before the first kernel launch.
       ! =========================================================================
       use mod_bc, only: bc_count, bc_list
 
@@ -99,6 +100,11 @@ contains
       !$acc                   tsp%indexq,  tsp%indexq_e,                       &
       !$acc                   tsp%wjac_df, tsp%psih_df, tsp%dpsidx_df,         &
       !$acc                   tsp%dpsidy_df, tsp%index_df, tsp%index_df_elt)
+      ! Sphere vertical-momentum gradient terms (dpsidz*): populated on host
+      ! at init in mod_tensor.F90 before any kernel runs, same as dpsidx/dpsidy.
+      !$acc enter data copyin(tsp%dpsidz, tsp%dpsidz_x, tsp%dpsidz_y,          &
+      !$acc                   tsp%dpsidz_z, tsp%dpsidz_df, tsp%dpsidz_df_x,    &
+      !$acc                   tsp%dpsidz_df_y, tsp%dpsidz_df_z)
 
       ! mod_initial
       !$acc enter data copyin(init)
@@ -162,6 +168,9 @@ contains
       !$acc enter data create(bcl%lap_z_df)
       !$acc enter data create(bcl%grad_z_df)
       !$acc enter data create(bcl%nu_smag)
+      ! dry_flg is written first by find_dry_elements (not host-initialized) --
+      ! create, not copyin, matching nu_smag/rhs_bcl above.
+      !$acc enter data create(bcl%dry_flg)
 
       ! mod_ref
       ! recv_data is a receive buffer: allocate on device, no initial copy needed.

@@ -389,6 +389,7 @@ module mod_initial_mlswe
 
         real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
         real    :: dp_e
+        real    :: threshold_k(inp%nlayers)
         integer :: I, k, n, m, e, nelem_l, nlayers_l, nglx_l, ngly_l
         real    :: dry_cutoff_l
         logical :: has_w, has_nan_e
@@ -400,14 +401,21 @@ module mod_initial_mlswe
         dry_cutoff_l = inp%dry_cutoff
         has_w        = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
+        ! Precomputed per-layer, not per-loop-iteration, so the k/e loop headers
+        ! below stay tightly nested (required for collapse(2)).
+        do k = 1, nlayers_l
+            threshold_k(k) = (gravity / alpha(k)) * dry_cutoff_l
+        end do
+
         ! DG elements own their nodes exclusively — no cross-element races on q.
         !$acc parallel loop gang collapse(2) &
+        !$acc    copyin(threshold_k) &
         !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q, alpha) &
         !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w) &
         !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, I, dp_e, has_nan_e)
         do k = 1, nlayers_l
-          threshold = (gravity / alpha(k)) * dry_cutoff_l
             do e = 1, nelem_l
+                threshold = threshold_k(k)
 
                 pmin      = 1.0e20
                 pavg      = 0.0
