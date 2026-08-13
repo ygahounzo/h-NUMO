@@ -235,7 +235,6 @@ contains
 
       call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var, Uk, inp%nvar_btp-2)
 
-      ! rhs_btp_visc already zeroed on device by caller (create_rhs_btp).
       call btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, graduv)
       call create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, Uk, rhs_btp_visc, graduv)
 

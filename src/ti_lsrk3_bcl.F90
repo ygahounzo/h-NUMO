@@ -45,7 +45,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, dimension(inp%nvar_btp,G%npoin),             intent(inout) :: qb_df
   real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers), intent(inout) :: q_df
 
-  integer :: k, ik, I
+  integer :: k, ik, I, nominal_N_btp
   real :: dtt, dt_btp_in, beta_ik
   real :: rl, rm, rn, omg, Px, Py, Pz, d_inv
   real :: a, bb, tempu, tempv
@@ -53,6 +53,8 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   real, parameter :: lsrk3_beta(3) = (/ 1.0/3.0, 1.0/2.0, 1.0 /)
 
   has_w = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
+
+  nominal_N_btp = init%N_btp ! restored below; ES branch overwrites it per stage
 
   ! Save stage-0 qb_df on GPU for the ES branch reset each stage.
   !$acc kernels present(bcl%qbp_df, qb_df)
@@ -177,6 +179,8 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     call check_layer_thickness(b, G, inp, q_df, 'ti_lsrk3_bcl', ik)
 
   end do
+
+  init%N_btp = nominal_N_btp
 
   ! Inter-layer (ad_mlswe) vertical viscosity, applied implicitly once per
   ! full step rather than embedded in the RHS above.

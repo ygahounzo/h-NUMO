@@ -55,7 +55,6 @@ contains
       !    and device btp%*_face_ave.  rhs_btp stays on device until step 5.
       call btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs_btp, inp%nvar_btp-1)
       ! rhs_btp stays on device; mass-matrix scaling is fused into the SSPRK update in the caller.
-      ! rhs_btp_visc is precomputed once before the BTP substep loop by the caller.
 
    end subroutine create_rhs_btp
 

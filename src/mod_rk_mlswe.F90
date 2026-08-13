@@ -33,7 +33,6 @@ contains
       use mod_rhs_btp,           only: create_rhs_btp
       use mod_barotropic_terms,  only: btp_mom_boundary_df
       use mod_laplacian_quad,    only: btp_create_laplacian
-      use mod_initial_mlswe,     only: btp_poslimiter
 
       implicit none
 
@@ -55,9 +54,7 @@ contains
 
       integer :: mstep, ik, I, iv, nvarb_f
       real    :: N_inv, a0, a1, a2, dtt, visc_term, inv_qb1
-      logical :: has_w
 
-      has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
       nvarb_f = inp%nvar_btp
 
       ! Zero-initialise all accumulation buffers on device.
@@ -87,14 +84,9 @@ contains
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
-         !$acc parallel loop present(btp%qb0_df, qb_df) private(iv) firstprivate(nvarb_f)
-         do I = 1, G%npoin
-            !$acc loop seq
-            do iv = 1, nvarb_f
-               btp%qb0_df(iv,I) = qb_df(iv,I)
-            end do
-         end do
-         !$acc end parallel loop
+         !$acc kernels present(btp%qb0_df, qb_df)
+         btp%qb0_df = qb_df
+         !$acc end kernels
 
          do ik = 1, inp%kstages
 
@@ -110,11 +102,9 @@ contains
                call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
                                          btp%rhs_btp_visc, qb_df)
 
-            ! Fused: accumulate averages from old qb_df, then SSPRK update in-place.
-            ! Reading qb_df(I) for averages and a1-coefficient happens before the
-            ! write to qb_df(I) within the same thread — no race across nodes.
-            !$acc parallel loop present(btp%qb0_df, qb_df, btp%qb2_df, btp, init, mt, &
-            !$acc                        btp%rhs_btp_visc) &
+            !$acc parallel loop present(btp%qb0_df, btp%qb2_df, btp%rhs_btp_visc,        &
+            !$acc                        btp%ope2_ave_df, btp%uvb_ave_df, btp%rhs_btp,   &
+            !$acc                        init%pbprime_df, mt%massinv, qb_df)             &
             !$acc    private(iv, visc_term, inv_qb1) firstprivate(a0, a1, a2, dtt, nvarb_f)
             do I = 1, G%npoin
                btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
@@ -127,8 +117,6 @@ contains
                !$acc loop seq
                do iv = 3, nvarb_f
                   btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) * inv_qb1
-                  ! visc_mlswe(+nu_smag) already baked into rhs_btp_visc via the
-                  ! pbprime_visc/btp_dpp_graduvw pre-scale in btp_create_laplacian.
                   visc_term = btp%rhs_btp_visc(iv-2,I)
                   qb_df(iv,I) = a0*btp%qb0_df(iv,I) + a1*qb_df(iv,I) + a2*btp%qb2_df(iv,I) &
                                + dtt * (mt%massinv(I) * (btp%rhs_btp(iv-1,I) + visc_term))
@@ -152,7 +140,7 @@ contains
 
       end do
 
-      ! tau_wind is constant over sub-steps; skip the broken CPU accumulation loop.
+      ! tau_wind is constant over sub-steps; skip the accumulation loop.
       !$acc kernels present(btp%tau_wind_ave, init%tau_wind)
       btp%tau_wind_ave = init%tau_wind
       !$acc end kernels

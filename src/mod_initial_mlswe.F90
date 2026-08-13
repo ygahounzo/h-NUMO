@@ -17,7 +17,7 @@ module mod_initial_mlswe
     public :: &
         bot_topo_derivatives, &
         interpolate_pbprime_init, wind_stress_coriolis, &
-        map_deriv, ssprk_coefficients, poslimiter, btp_poslimiter, find_dry_elements, &
+        map_deriv, ssprk_coefficients, poslimiter, find_dry_elements, &
         check_layer_thickness, check_btp_thickness, &
         bcl_itime
 
@@ -482,119 +482,6 @@ module mod_initial_mlswe
         !$acc end parallel loop
 
     end subroutine poslimiter
-
-    ! Zhang-Shu positivity limiter for the barotropic (BTP) column pressure.
-    ! Mirrors poslimiter but operates on qb_df(nvar_btp, npoin).
-    ! qb_df(1,I) = qb_df(2,I) + pbprime_df(I) must remain positive.
-    ! After limiting qb_df(1,I), qb_df(2,I) is updated to stay consistent.
-    subroutine btp_poslimiter(b, G, inp, mt, qb_df, pbprime_df, alpha)
-
-        use mod_constants, only: gravity
-
-        implicit none
-
-        type(basis),   intent(in)    :: b
-        type(grid),    intent(in)    :: G
-        type(input),   intent(in)    :: inp
-        type(metrics), intent(in)    :: mt
-
-        real, dimension(inp%nvar_btp, G%npoin), intent(inout) :: qb_df
-        real, dimension(G%npoin),               intent(in)    :: pbprime_df
-        real, dimension(inp%nlayers),           intent(in)    :: alpha
-
-        real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
-        real    :: dp_I
-        integer :: I, k, n, m, e, nelem_l, nglx_l, ngly_l
-        real    :: dry_cutoff_l
-        logical :: has_w, has_nan_e
-
-        nelem_l      = G%nelem
-        nglx_l       = b%nglx
-        ngly_l       = b%ngly
-        dry_cutoff_l = inp%dry_cutoff
-        has_w        = (inp%nvar_btp == 5)
-
-        ! BTP threshold = sum of per-layer BCL thresholds (pressure equivalent of
-        ! dry_cutoff meters per layer), so the total column cannot collapse below
-        ! the sum of individual layer floors.
-        threshold = 0.0
-        do k = 1, inp%nlayers
-            threshold = threshold + (gravity / alpha(k)) * dry_cutoff_l
-        end do
-
-        !$acc parallel loop gang &
-        !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, qb_df, pbprime_df) &
-        !$acc    firstprivate(nelem_l, nglx_l, ngly_l, threshold, has_w) &
-        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, theta, denom, I, dp_I, has_nan_e)
-        do e = 1, nelem_l
-
-            pmin      = 1.0e20
-            pavg      = 0.0
-            uavg      = 0.0
-            vavg      = 0.0
-            wavg      = 0.0
-            wsum      = 0.0
-            has_nan_e = .false.
-            !$acc loop seq
-            do m = 1, ngly_l
-                !$acc loop seq
-                do n = 1, nglx_l
-                    I    = G%intma(n,m,1,e)
-                    wjac = b%wglx(n) * b%wgly(m) * mt%jac(n,m,1,e)
-                    ! IEEE: NaN < x is always false, so track NaN separately.
-                    if (qb_df(1,I) /= qb_df(1,I)) then
-                        has_nan_e = .true.
-                    else
-                        if (qb_df(1,I) < pmin) pmin = qb_df(1,I)
-                    end if
-                    wsum = wsum + wjac
-                    pavg = pavg + wjac * qb_df(1,I)
-                    uavg = uavg + wjac * qb_df(3,I)
-                    vavg = vavg + wjac * qb_df(4,I)
-                    if (has_w) wavg = wavg + wjac * qb_df(5,I)
-                end do
-            end do
-            pavg = pavg / wsum
-            uavg = uavg / wsum
-            vavg = vavg / wsum
-            if (has_w) wavg = wavg / wsum
-
-            if (pavg <= threshold .or. pavg /= pavg .or. has_nan_e) then
-                ! Entire element dry (or NaN) — clamp to threshold, zero momentum.
-                !$acc loop seq
-                do m = 1, ngly_l
-                    !$acc loop seq
-                    do n = 1, nglx_l
-                        I = G%intma(n,m,1,e)
-                        qb_df(1,I) = threshold
-                        qb_df(2,I) = threshold - pbprime_df(I)
-                        qb_df(3,I) = 0.0
-                        qb_df(4,I) = 0.0
-                        if (has_w) qb_df(5,I) = 0.0
-                    end do
-                end do
-            else if (pmin < threshold) then
-                ! Zhang-Shu: scale nodal deviations so min(qb_df(1,I)) = threshold.
-                denom = pavg - pmin
-                theta = merge(min(1.0, (pavg - threshold) / denom), 0.0, denom /= 0.0)
-                !$acc loop seq
-                do m = 1, ngly_l
-                    !$acc loop seq
-                    do n = 1, nglx_l
-                        I = G%intma(n,m,1,e)
-                        qb_df(1,I) = theta * (qb_df(1,I) - pavg) + pavg
-                        qb_df(2,I) = qb_df(1,I) - pbprime_df(I)
-                        qb_df(3,I) = theta * (qb_df(3,I) - uavg) + uavg
-                        qb_df(4,I) = theta * (qb_df(4,I) - vavg) + vavg
-                        if (has_w) qb_df(5,I) = theta * (qb_df(5,I) - wavg) + wavg
-                    end do
-                end do
-            end if
-
-        end do
-        !$acc end parallel loop
-
-    end subroutine btp_poslimiter
 
     !------------------------------------------------------------------!
     ! Classify each element per layer:

@@ -146,10 +146,7 @@ contains
     end subroutine evaluate_consistency_face
 
     ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere)
-    ! and looped/sectioned over ivar — no has_w branching, matching the
-    ! convention in rhs_layer_shear_stress. qb_df's barotropic momentum
-    ! components are contiguous at qb_df(3:2+nc,I) (u,v,[w]); confirmed
-    ! against extract_velocity/extract_qprime_df_face's identical indexing.
+    ! and looped/sectioned over ivar.
     subroutine velocity_df(G, inp, q_df, qb_df)
 
         implicit none
@@ -203,7 +200,7 @@ contains
     ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere);
     ! has_w branching replaced by array-section slicing (q_df(2:nc+1,...),
     ! qb_df(3:2+nc,...)) since I/k are always fixed scalars at each point of
-    ! use, matching the convention in rhs_layer_shear_stress/velocity_df.
+    ! use.
     subroutine extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
       implicit none
@@ -255,7 +252,7 @@ contains
       ! self-adapts to the problem's depth without any namelist tuning.
       use_pbprime_scaling = (inp%h_cutoff1 < 1.0e-2)
 
-      ! BTP threshold: sum of per-layer floors (same convention as btp_poslimiter).
+      ! BTP threshold: sum of per-layer floors.
       btp_threshold = 0.0
       do k = 1, nlayers_l
           btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
@@ -263,8 +260,6 @@ contains
 
       ! Part 1: element-parallel velocity blending.
       ! One gang per element; all inner loops are sequential within the gang.
-      ! Shared boundary nodes written by multiple gangs with different blended values —
-      ! same determinism as the sequential CPU version (last writer wins).
       !$acc parallel loop gang &
       !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df, &
       !$acc            init%pbprime_df, init%alpha_mlswe) &
@@ -309,8 +304,7 @@ contains
 
         ! Blending-band thresholds (see use_pbprime_scaling note above).
         ! pbprime_avg is already in the same dp-scaled units as q_df(1,...)
-        ! (confirmed via ti_2levels_bcl.F90's dp_norm_inv usage), so no
-        ! gravity/alpha_mlswe conversion is needed for the auto-scaled branch.
+        ! so no gravity/alpha_mlswe conversion is needed for the auto-scaled branch.
         !$acc loop seq
         do k = 1, nlayers_l
           if (use_pbprime_scaling) then
@@ -341,7 +335,7 @@ contains
           c_td(k) = a(k)
         end do
 
-        ! Forward sweep (Thomas algorithm).
+        ! Forward sweep.
         !$acc loop seq
         do k = 2, nlayers_l
             mult   = a(k) / bc(k-1)
@@ -380,10 +374,7 @@ contains
       !$acc end parallel loop
 
       ! Part 2: element-parallel barotropic consistency correction.
-      ! One gang per element; uses dry_flg(e,k) to skip fully-dry layers, matching
-      ! the original CPU semantics. Shared boundary nodes may be written by multiple
-      ! gangs with different corrections — same non-determinism as the sequential
-      ! CPU version (last writer wins).
+      ! One gang per element; uses dry_flg(e,k) to skip fully-dry layers
       !$acc parallel loop gang &
       !$acc    present(G%intma, uv_df, q_df, qb_df, bcl%dry_flg) &
       !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
@@ -420,10 +411,6 @@ contains
 
     end subroutine extract_velocity
 
-    ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere);
-    ! has_w branching replaced by array-section slicing since I/k are always
-    ! fixed scalars at each point of use, matching the convention in
-    ! rhs_layer_shear_stress/velocity_df/extract_velocity.
     subroutine extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df, q_df, qb_df)
 
       implicit none
@@ -451,14 +438,14 @@ contains
       ngly_l    = b%ngly
       nc        = inp%nvar_bcl - 1
 
-      ! BTP threshold: same convention as btp_poslimiter.
+      ! BTP threshold
       btp_threshold = 0.0
       do k = 1, nlayers_l
           btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
       end do
 
       ! Per-layer pressure threshold for the qprime positivity limiter.
-      ! Approximate as btp_threshold/nlayers (exact when all layers have equal buoyancy).
+      ! Approximate as btp_threshold/nlayers
       dp_threshold   = btp_threshold / real(nlayers_l)
       max_qprime_spd = 100.0
 
