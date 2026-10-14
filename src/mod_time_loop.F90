@@ -121,6 +121,13 @@ contains
         else
             iwrite_restart = 0
         end if
+#ifdef NO_NETCDF
+        ! Built without NetCDF: restart files cannot be written.
+        if (iwrite_restart > 0) then
+            if (irank == irank0) print *, 'WARNING: built with NO_NETCDF, restart files will not be written'
+            iwrite_restart = 0
+        end if
+#endif
 
         time = inp%time_initial
 

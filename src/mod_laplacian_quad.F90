@@ -10,7 +10,7 @@ module mod_laplacian_quad
 
    implicit none
 
-   public :: bcl_create_laplacian, btp_create_laplacian, compute_bcl_lap_z, &
+   public :: bcl_create_laplacian, btp_create_laplacian, &
              bcl_compute_nu_smag, btp_compute_nu_smag, diagnose_min_grid_scale
 
 contains
@@ -230,13 +230,10 @@ contains
       end do
       !$acc end parallel loop
 
-      ! MPI precommunicator reads graduv from host — download once before packing.
-      !$acc update host(graduv)
-
-      call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var, Uk, inp%nvar_btp-2)
+      call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var)
 
       call btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, graduv)
-      call create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, Uk, rhs_btp_visc, graduv)
+      call create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, rhs_btp_visc, graduv)
 
       call create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_btp_visc, inp%nvar_btp-2)
 
@@ -318,7 +315,7 @@ contains
       ! Pre-comm GPU pack reads the scaled dpp_graduvw/dpprime_visc from device,
       ! so the DG-correct {A_H×Δp} face averaging is consistent across MPI
       ! boundaries too.
-      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw_scaled, bcl%dpprime_visc_scaled, bcl%qprime_df)
+      call bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%dpp_graduvw_scaled, bcl%dpprime_visc_scaled)
       call bcl_compute_laplacian(G, inp, b, btp, bcl, tsp, rhs_lap)
       call bcl_create_rhs_laplacian_flux(G, inp, b, mf, btp, bcl, tsp, rhs_lap)
       ! CPU mpi_waitall inside post-comm, followed by GPU unpack + GPU face scatter.
@@ -327,7 +324,7 @@ contains
       ! GPU: apply mass-inverse scaling while rhs_lap is still on device.
       ! Viscosity is already baked into rhs_lap via the pre-scaled dpprime_visc/
       ! dpp_graduvw above.
-      !$acc kernels present(rhs_lap, mt%massinv) firstprivate(has_w)
+      !$acc kernels present(rhs_lap, mt%massinv)
       do k = 1, inp%nlayers
          rhs_lap(1,:,k) = mt%massinv(:)*rhs_lap(1,:,k)
          rhs_lap(2,:,k) = mt%massinv(:)*rhs_lap(2,:,k)
@@ -335,7 +332,6 @@ contains
       end do
       !$acc end kernels
 
-      !$acc update host(rhs_lap)
       !$acc end data
 
    end subroutine bcl_create_laplacian
@@ -794,7 +790,7 @@ contains
 
    end subroutine bcl_compute_laplacian_qp
 
-   subroutine create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, Uk, rhs, gradq)
+   subroutine create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, rhs, gradq)
       !=========================================================================
       !  Face flux contribution to the barotropic viscous RHS.
       !
@@ -829,7 +825,6 @@ contains
       type(btp_CS),    intent(inout) :: btp
       type(tensor_CS), intent(in)    :: tsp
 
-      real, intent(in)    :: Uk(inp%nvar_btp-2, G%npoin)
       real, intent(inout) :: rhs(inp%nvar_btp-2,G%npoin)
       real, intent(in)    :: gradq(inp%ngraduvw_var,G%npoin)
 
@@ -840,7 +835,6 @@ contains
       integer :: iface, i, il, jl, kl, ir, jr, kr
       integer :: iel, ier, ip, iquad, ivar, nw
       real :: flux_qu, flux_qv, flux_qw, hi, alpha, beta, iflux
-      real :: pconst, sigma, pb_avg, du_pen, dv_pen, dw_pen
       real    :: ql_s(9), qr_s(9), btp_ql_s(10), btp_qr_s(10)
       integer, dimension(b%ngl) :: I_l, I_r
       integer :: ngl_f, nface_f
@@ -854,14 +848,12 @@ contains
       nface_f = G%nface
       nw      = inp%ngraduvw_var
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
-      pconst  = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
       !$acc data present(G%face, G%face_type, G%intma,                       &
       !$acc               mf%imapl, mf%imapr, mf%normal_vector, mf%jac_face, &
       !$acc               b%psi,                                               &
       !$acc               btp%btp_dpp_graduvw_scaled, btp%pbprime_visc_scaled, &
       !$acc               btp%graduvb_face_ave,                                &
-      !$acc               tsp%wjac_df, Uk,                                     &
       !$acc               rhs, gradq)
 
       !$acc parallel loop gang                                                &
@@ -872,9 +864,8 @@ contains
       !$acc           flux_uv_visc_face,                                      &
       !$acc           qul, qur, qvl, qvr, qwl, qwr,                          &
       !$acc           qu_mean, qv_mean, qw_mean,                              &
-      !$acc           sigma, pb_avg, du_pen, dv_pen, dw_pen,                  &
       !$acc           flux_qu, flux_qv, flux_qw, hi, ivar, i, iquad)          &
-      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w, pconst)
+      !$acc   firstprivate(alpha, beta, iflux, ngl_f, nface_f, nw, has_w)
       do iface = 1, nface_f
 
          if (G%face_type(iface) == 2) cycle
@@ -1042,21 +1033,6 @@ contains
                     + (qv_mean(3) - iflux*qvl(3))*nz
             flux_qw = (qw_mean(1) - iflux*qwl(1))*nx + (qw_mean(2) - iflux*qwl(2))*ny &
                     + (qw_mean(3) - iflux*qwl(3))*nz
-
-            ! SIP interior penalty on interior faces only (ier > 0).
-            ! Jump [ū] = Uk_L - Uk_R; average p̄_b_avg = 0.5*(pbprime_L + pbprime_R).
-            if (ier > 0) then
-               sigma  = pconst * wq / min(tsp%wjac_df(I_l(iquad)), tsp%wjac_df(I_r(iquad)))
-               pb_avg = 0.5 * (btp%pbprime_visc_scaled(I_l(iquad)) + btp%pbprime_visc_scaled(I_r(iquad)))
-               du_pen = Uk(1, I_l(iquad)) - Uk(1, I_r(iquad))
-               dv_pen = Uk(2, I_l(iquad)) - Uk(2, I_r(iquad))
-               flux_qu = flux_qu - sigma * pb_avg * du_pen
-               flux_qv = flux_qv - sigma * pb_avg * dv_pen
-               if (has_w) then
-                  dw_pen  = Uk(3, I_l(iquad)) - Uk(3, I_r(iquad))
-                  flux_qw = flux_qw - sigma * pb_avg * dw_pen
-               end if
-            end if
 
             ! rhs scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
@@ -1311,296 +1287,5 @@ contains
       !$acc end data
 
    end subroutine bcl_create_rhs_laplacian_flux
-
-   ! ===========================================================================
-   !  compute_bcl_lap_z
-   !
-   !  LDG (Local Discontinuous Galerkin) Laplacian of the layer-interface
-   !  height z_k for internal interfaces k = 2..nlayers.
-   !
-   !  Three-phase CPU implementation:
-   !
-   !  Phase 1 — Gradient: element-local ∇z_k stored globally in grad_z.
-   !    grad_z(d, J, k) = Σ_ip dpsid_df(ip, J) × z_k(J_ip)   d=1,2[,3]
-   !
-   !  [Pre-communicate grad_z at MPI faces — TODO: add MPI exchange here
-   !   using the same pack/send/recv pattern as bcl_lap_create_precommunicator
-   !   so that MPI boundary faces also get the correct central-flux gradient.]
-   !
-   !  Phase 2 — Central-flux correction: for every interior face, replace
-   !    grad_z at the shared boundary DOF nodes with the element average
-   !    {∇z_k} = ½(∇z_k^L + ∇z_k^R), giving the correct LDG flux.
-   !    MPI faces (face_type == 2) are skipped — they await the pre-comm TODO.
-   !
-   !  Phase 3 — Volume integral: element-local divergence of the corrected
-   !    gradient gives the LDG Laplacian:
-   !    lap_z(J_ip0) = Σ_ip dpsid_df(ip, J_ip0) × grad_z(d, J_ip, k)
-   !
-   !  CPU-only (no OpenACC): call !$acc update device(bcl%lap_z_df) afterwards.
-   ! ===========================================================================
-   ! ===========================================================================
-   !  bcl_create_rhs_gradz_flux
-   !  Interior-face LDG central-flux correction for the lap_z_df accumulator.
-   !  Adds {grad_z}*n face term to lap_z_df at interior face DOFs (both sides).
-   ! ===========================================================================
-   subroutine bcl_create_rhs_gradz_flux(G, inp, b, mf, bcl, lap_z_df)
-
-      use mod_grid,      only: grid
-      use mod_basis,     only: basis
-      use mod_input,     only: input
-      use mod_face,      only: face_CS
-      use mod_variables, only: bcl_CS
-
-      implicit none
-
-      type(grid),      intent(in)    :: G
-      type(basis),     intent(in)    :: b
-      type(input),     intent(in)    :: inp
-      type(face_CS),   intent(in)    :: mf
-      type(bcl_CS),    intent(in)    :: bcl
-
-      real, intent(inout) :: lap_z_df(G%npoin, inp%nlayers+1)
-
-      integer :: iface, iel, ier, k, iquad, i, ip, il, jl, kl, ir, jr, kr
-      integer :: ip_face_L, ip_face_R
-      real    :: wq, nx, ny, nz, flux_gradz, hi
-      real    :: gzl_x, gzl_y, gzl_z, gzr_x, gzr_y, gzr_z
-      logical :: has_w
-
-      has_w = (inp%nvar_bcl == 4)
-
-      do iface = 1, G%nface
-         if (G%face_type(iface) == 2) cycle
-         iel = G%face(7, iface)
-         ier = G%face(8, iface)
-
-         do k = 2, inp%nlayers
-            do iquad = 1, b%ngl
-
-               il = mf%imapl(1,iquad,1,iface);  jl = mf%imapl(2,iquad,1,iface);  kl = mf%imapl(3,iquad,1,iface)
-               ip_face_L = G%intma(il, jl, kl, iel)
-
-               nx = mf%normal_vector(1, iquad, 1, iface)
-               ny = mf%normal_vector(2, iquad, 1, iface)
-               wq = mf%jac_face(iquad, 1, iface)
-
-               gzl_x = bcl%grad_z_df(1, ip_face_L, k)
-               gzl_y = bcl%grad_z_df(2, ip_face_L, k)
-               if (has_w) then
-                  gzl_z = bcl%grad_z_df(3, ip_face_L, k)
-                  nz    = mf%normal_vector(3, iquad, 1, iface)
-               end if
-
-               if (ier > 0) then
-                  ir = mf%imapr(1,iquad,1,iface);  jr = mf%imapr(2,iquad,1,iface);  kr = mf%imapr(3,iquad,1,iface)
-                  ip_face_R = G%intma(ir, jr, kr, ier)
-                  gzr_x = bcl%grad_z_df(1, ip_face_R, k)
-                  gzr_y = bcl%grad_z_df(2, ip_face_R, k)
-                  if (has_w) gzr_z = bcl%grad_z_df(3, ip_face_R, k)
-               else
-                  ! Neumann: mirror gradient so {grad_z}*n = gzl*n at boundary
-                  gzr_x = gzl_x
-                  gzr_y = gzl_y
-                  if (has_w) then
-                     gzr_z = gzl_z
-                     if (ier == -4) then
-                        ! Slip wall: zero normal gradient
-                        nz = mf%normal_vector(3, iquad, 1, iface)
-                        gzr_x = gzl_x - 2.0*(gzl_x*nx + gzl_y*ny + gzl_z*nz)*nx
-                        gzr_y = gzl_y - 2.0*(gzl_x*nx + gzl_y*ny + gzl_z*nz)*ny
-                        gzr_z = gzl_z - 2.0*(gzl_x*nx + gzl_y*ny + gzl_z*nz)*nz
-                     end if
-                  else
-                     if (ier == -4) then
-                        ! Slip wall: zero normal gradient
-                        gzr_x = gzl_x - 2.0*(gzl_x*nx + gzl_y*ny)*nx
-                        gzr_y = gzl_y - 2.0*(gzl_x*nx + gzl_y*ny)*ny
-                     end if
-                  end if
-               end if
-
-               flux_gradz = 0.5*(gzl_x + gzr_x)*nx + 0.5*(gzl_y + gzr_y)*ny
-               if (has_w) flux_gradz = flux_gradz + 0.5*(gzl_z + gzr_z)*nz
-
-               do i = 1, b%ngl
-                  hi = b%psi(i, iquad)
-                  il = mf%imapl(1,i,1,iface);  jl = mf%imapl(2,i,1,iface);  kl = mf%imapl(3,i,1,iface)
-                  ip = G%intma(il, jl, kl, iel)
-                  lap_z_df(ip, k) = lap_z_df(ip, k) + wq*hi*flux_gradz
-               end do
-
-               if (ier > 0) then
-                  do i = 1, b%ngl
-                     hi = b%psi(i, iquad)
-                     ir = mf%imapr(1,i,1,iface);  jr = mf%imapr(2,i,1,iface);  kr = mf%imapr(3,i,1,iface)
-                     ip = G%intma(ir, jr, kr, ier)
-                     lap_z_df(ip, k) = lap_z_df(ip, k) - wq*hi*flux_gradz
-                  end do
-               end if
-
-            end do   ! iquad
-         end do   ! k
-      end do   ! iface
-
-   end subroutine bcl_create_rhs_gradz_flux
-
-   ! ===========================================================================
-   !  compute_bcl_lap_z  —  full LDG Laplacian of interface height z_k
-   !
-   !  Mirrors the bcl_create_laplacian 4-call pattern:
-   !    Phase 1 (gradient)   → bcl%grad_z_df
-   !    pre-comm             → bcl_gradz_create_precommunicator
-   !    Phase 3 (weak vol.)  → lap_z_df (mass-weighted integral)
-   !    interior flux        → bcl_create_rhs_gradz_flux
-   !    post-comm            → bcl_create_rhs_gradz_postcommunicator_df
-   !    mass inverse         → lap_z_df = massinv * lap_z_df
-   !
-   !  CPU-only: caller must !$acc update host before and
-   !            !$acc update device(bcl%lap_z_df) after.
-   ! ===========================================================================
-   subroutine compute_bcl_lap_z(G, inp, b, mf, par, ref, mpic, init, btp, bcl, mt, tsp, qprime_df, lap_z_df)
-
-      use mod_grid,             only: grid
-      use mod_input,            only: input
-      use mod_basis,            only: basis
-      use mod_face,             only: face_CS
-      use mod_parallel,         only: parallel_CS
-      use mod_ref,              only: mref
-      use mod_mpi_communicator, only: mpi_communicator
-      use mod_initial,          only: initial
-      use mod_variables,        only: btp_CS, bcl_CS
-      use mod_metrics,          only: metrics
-      use mod_tensor,           only: tensor_CS
-      use mod_constants,        only: gravity
-
-      implicit none
-
-      type(grid),             intent(in)    :: G
-      type(input),            intent(in)    :: inp
-      type(basis),            intent(in)    :: b
-      type(face_CS),          intent(in)    :: mf
-      type(parallel_CS),      intent(in)    :: par
-      type(mref),             intent(inout) :: ref
-      type(mpi_communicator), intent(inout) :: mpic
-      type(initial),          intent(in)    :: init
-      type(btp_CS),           intent(in)    :: btp
-      type(bcl_CS),           intent(inout) :: bcl
-      type(metrics),          intent(in)    :: mt
-      type(tensor_CS),        intent(in)    :: tsp
-      real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
-      real, dimension(G%npoin, inp%nlayers+1),              intent(out) :: lap_z_df
-
-      integer :: ie, iq_local, ip, k, I
-      integer :: Iq, Iq0
-      integer :: npts_l, nelem_l, nlayers_l
-      real    :: z_loc(b%npts, inp%nlayers+1)
-      real    :: lap_loc(b%npts, inp%nlayers)
-      real    :: dhdx, dhdy, dhdz, wq, gzx, gzy, gzz
-      logical :: has_w
-
-      has_w     = (inp%nvar_bcl == 4)
-      npts_l    = b%npts
-      nelem_l   = G%nelem
-      nlayers_l = inp%nlayers
-
-      lap_z_df(:,:)        = 0.0
-      bcl%grad_z_df(:,:,:) = 0.0
-
-      ! -----------------------------------------------------------------------
-      ! Phase 1: element-local gradient of z_k -> bcl%grad_z_df.
-      ! Outer index ip = test function / evaluation point (nodal collocation).
-      ! Inner index iq_local = basis function summed over.
-      ! -----------------------------------------------------------------------
-      do ie = 1, nelem_l
-
-         do ip = 1, npts_l
-            Iq = tsp%index_df_elt(ip, ie)
-            z_loc(ip, nlayers_l+1) = init%zbot_df(Iq)
-            do k = nlayers_l, 1, -1
-               z_loc(ip, k) = z_loc(ip, k+1) + &
-                  (init%alpha_mlswe(k)/gravity) * sqrt(btp%ope2_ave_df(Iq)) * qprime_df(1, Iq, k)
-            end do
-         end do
-
-         do k = 2, nlayers_l
-            do ip = 1, npts_l
-               Iq = tsp%index_df_elt(ip, ie)
-               bcl%grad_z_df(1, Iq, k) = 0.0
-               bcl%grad_z_df(2, Iq, k) = 0.0
-               if (has_w) bcl%grad_z_df(3, Iq, k) = 0.0
-               do iq_local = 1, npts_l
-                  dhdx = tsp%dpsidx_df(iq_local, Iq)
-                  dhdy = tsp%dpsidy_df(iq_local, Iq)
-                  if (has_w) then
-                     dhdx = dhdx + tsp%dpsidz_df_x(iq_local, Iq)
-                     dhdy = dhdy + tsp%dpsidz_df_y(iq_local, Iq)
-                     dhdz = tsp%dpsidz_df(iq_local, Iq) + tsp%dpsidz_df_z(iq_local, Iq)
-                  end if
-                  bcl%grad_z_df(1, Iq, k) = bcl%grad_z_df(1, Iq, k) + dhdx * z_loc(iq_local, k)
-                  bcl%grad_z_df(2, Iq, k) = bcl%grad_z_df(2, Iq, k) + dhdy * z_loc(iq_local, k)
-                  if (has_w) bcl%grad_z_df(3, Iq, k) = bcl%grad_z_df(3, Iq, k) + dhdz * z_loc(iq_local, k)
-               end do
-            end do
-         end do
-
-      end do  ! ie (Phase 1)
-
-      ! Send grad_z_df at MPI boundary face DOFs while Phase 3 runs.
-      call bcl_gradz_create_precommunicator(G, inp, b, mf, par, ref, mpic, bcl%grad_z_df)
-
-      ! -----------------------------------------------------------------------
-      ! Phase 3: weak-form volume integral  -wjac * dpsi/dx * grad_z_df.
-      ! Mirrors bcl_compute_laplacian: outer loop = quadrature points (Iq),
-      ! inner loop = test functions (ip).
-      ! -----------------------------------------------------------------------
-      do ie = 1, nelem_l
-
-         do k = 2, nlayers_l
-            do ip = 1, npts_l
-               lap_loc(ip, k) = 0.0
-            end do
-         end do
-
-         do k = 2, nlayers_l
-            do iq_local = 1, npts_l
-               Iq  = tsp%index_df_elt(iq_local, ie)
-               wq  = tsp%wjac_df(Iq)
-               gzx = bcl%grad_z_df(1, Iq, k)
-               gzy = bcl%grad_z_df(2, Iq, k)
-               if (has_w) gzz = bcl%grad_z_df(3, Iq, k)
-               do ip = 1, npts_l
-                  dhdx = tsp%dpsidx_df(ip, Iq)
-                  dhdy = tsp%dpsidy_df(ip, Iq)
-                  lap_loc(ip, k) = lap_loc(ip, k) - wq*(dhdx*gzx + dhdy*gzy)
-                  if (has_w) then
-                     dhdz = tsp%dpsidz_df(ip, Iq) + tsp%dpsidz_df_z(ip, Iq)
-                     lap_loc(ip, k) = lap_loc(ip, k) - wq*dhdz*gzz
-                  end if
-               end do
-            end do
-         end do
-
-         Iq0 = tsp%index_df_elt(1, ie)
-         do k = 2, nlayers_l
-            do ip = 1, npts_l
-               I = tsp%index_df(ip, Iq0)
-               lap_z_df(I, k) = lap_loc(ip, k)
-            end do
-         end do
-
-      end do  ! ie (Phase 3)
-
-      ! Interior face flux correction: {grad_z}*n face term.
-      call bcl_create_rhs_gradz_flux(G, inp, b, mf, bcl, lap_z_df)
-
-      ! Wait for MPI recv; apply same correction at MPI boundary faces.
-      call bcl_create_rhs_gradz_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, lap_z_df)
-
-      ! Mass inverse: convert weak-form integral to pointwise Laplacian value.
-      do k = 2, nlayers_l
-         lap_z_df(:, k) = mt%massinv(:) * lap_z_df(:, k)
-      end do
-
-   end subroutine compute_bcl_lap_z
 
 end module mod_laplacian_quad

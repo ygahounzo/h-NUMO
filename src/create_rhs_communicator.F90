@@ -45,7 +45,7 @@ subroutine btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, q, qp
 
 end subroutine btp_create_precommunicator
 
-subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q, nvarb, Uk, nvel)
+subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q, nvarb)
 
    use mod_grid,             only: grid
    use mod_basis,            only: basis
@@ -69,17 +69,14 @@ subroutine btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, q
 
    !Global Arrays
    integer, intent(in) :: nvarb
-   integer, intent(in) :: nvel
    real, dimension(nvarb, G%npoin), intent(inout) :: q
-   real, dimension(nvel,  G%npoin), intent(in)    :: Uk
 
    ! nvarb = inp%ngraduvw_var (4 cartesian, 9 sphere_hex).
-   ! nvel  = inp%nvar_btp - 2 (2 cartesian, 3 sphere_hex).
    ! Packs the A_H-scaled fields (see btp_create_laplacian) so the DG-correct
    ! {A_H*Δp} face averaging is consistent across MPI boundaries too.
    call pack_and_send_df_btp_lap(G, b, mf, init, par, ref,                 &
-      q, btp%btp_dpp_graduvw_scaled, btp%pbprime_visc_scaled, Uk, &
-      nvarb, nvel, mpic%nreq, mpic%ireq, mpic%status)
+      q, btp%btp_dpp_graduvw_scaled, btp%pbprime_visc_scaled, &
+      nvarb, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine btp_lap_create_precommunicator
 
@@ -112,7 +109,7 @@ subroutine bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
 
 end subroutine bcl_create_precommunicator
 
-subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_graduv, dpprime_visc, qprime_df)
+subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_graduv, dpprime_visc)
 
    use mod_grid,             only: grid
    use mod_input,            only: input
@@ -135,76 +132,12 @@ subroutine bcl_lap_create_precommunicator(G, inp, b, mf, par, ref, mpic, dpp_gra
    !Global Arrays
    real, dimension(inp%ngraduvw_var, G%npoin, inp%nlayers), intent(in) :: dpp_graduv
    real, dimension(G%npoin, inp%nlayers),                   intent(in) :: dpprime_visc
-   real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers),    intent(in) :: qprime_df
 
    ! GPU pack + GPU-direct MPI non-blocking send/receive.
    call pack_and_send_df_bcl_lap(G, inp, b, mf, par, ref, ref%send_data_lap_bcl, ref%recv_data_lap_bcl, &
-      dpp_graduv, dpprime_visc, qprime_df, mpic%nreq, mpic%ireq, mpic%status)
+      dpp_graduv, dpprime_visc, mpic%nreq, mpic%ireq, mpic%status)
 
 end subroutine bcl_lap_create_precommunicator
-
-subroutine bcl_gradz_create_precommunicator(G, inp, b, mf, par, ref, mpic, grad_z_df)
-
-   use mod_grid,             only: grid
-   use mod_input,            only: input
-   use mod_basis,            only: basis
-   use mod_face,             only: face_CS
-   use mod_parallel,         only: parallel_CS
-   use mod_ref,              only: mref
-   use mod_mpi_communicator, only: mpi_communicator
-
-   implicit none
-
-   type(grid),             intent(in)    :: G
-   type(input),            intent(in)    :: inp
-   type(basis),            intent(in)    :: b
-   type(face_CS),          intent(in)    :: mf
-   type(parallel_CS),      intent(in)    :: par
-   type(mref),             intent(inout) :: ref
-   type(mpi_communicator), intent(inout) :: mpic
-
-   real, dimension(3, G%npoin, inp%nlayers), intent(in) :: grad_z_df
-
-   call pack_and_send_df_bcl_gradz(G, inp, b, mf, par, ref, ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl, &
-      grad_z_df, mpic%nreq, mpic%ireq, mpic%status)
-
-end subroutine bcl_gradz_create_precommunicator
-
-subroutine bcl_create_rhs_gradz_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, lap_z_df)
-
-   use mod_grid,             only: grid
-   use mod_input,            only: input
-   use mod_basis,            only: basis
-   use mod_face,             only: face_CS
-   use mod_parallel,         only: parallel_CS
-   use mod_variables,        only: btp_CS
-   use mod_ref,              only: mref
-   use mod_mpi_communicator, only: mpi_communicator
-   use mod_tensor,           only: tensor_CS
-
-   implicit none
-
-   type(grid),             intent(in)    :: G
-   type(input),            intent(in)    :: inp
-   type(basis),            intent(in)    :: b
-   type(face_CS),          intent(in)    :: mf
-   type(parallel_CS),      intent(in)    :: par
-   type(btp_CS),           intent(in)    :: btp
-   type(mref),             intent(inout) :: ref
-   type(mpi_communicator), intent(inout) :: mpic
-   type(tensor_CS),        intent(in)    :: tsp
-
-   real, dimension(G%npoin, inp%nlayers+1), intent(inout) :: lap_z_df
-
-   call mpi_waitall(mpic%nreq, mpic%ireq, mpic%status, mpic%ierr)
-
-   call unpack_data_dg_general_gradz_bcl(G, b, par, ref, ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl, &
-      ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl, inp%nlayers, ref%nboun_valid)
-
-   call create_nbhs_face_gradz_bcl(G, inp, b, mf, par, ref, tsp, lap_z_df, &
-      ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl, inp%nlayers)
-
-end subroutine bcl_create_rhs_gradz_postcommunicator_df
 
 subroutine btp_create_postcommunicator(G, inp, b, mf, par, btp, init, ref, mpic, rhs, nvarb)
 

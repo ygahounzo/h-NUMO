@@ -16,7 +16,7 @@ module mod_layer_terms
     use mod_tensor,    only: tensor_CS
     use mod_metrics,   only: metrics
     use mod_variables, only: btp_CS, bcl_CS
-    use mod_constants, only: gravity
+    use mod_constants, only: gravity, max_nlayers
     use mod_initial_mlswe,    only: find_dry_elements
 
     implicit none
@@ -226,15 +226,19 @@ contains
       ! see use_pbprime_scaling below.
       real, parameter :: blend_frac_lo = 0.01, blend_frac_hi = 0.10
 
-      real :: dp_avg(inp%nlayers)
-      real :: mdp_avg(inp%nvar_bcl-1, inp%nlayers)
-      real :: dp_max(inp%nlayers), dp_min(inp%nlayers)
-      real :: dp_cutoff1(inp%nlayers), dp_cutoff2(inp%nlayers), dp_range(inp%nlayers)
-      real :: a(inp%nlayers), bc(inp%nlayers), c_td(inp%nlayers)
-      real :: r(inp%nlayers, inp%nvar_bcl-1)
-      real :: vel_ave(inp%nvar_bcl-1, inp%nlayers)
-      real :: weight(inp%nlayers)
-      real :: bar(inp%nvar_bcl-1)
+      ! Per-thread arrays use compile-time sizes (max_nlayers layers, 3 velocity
+      ! components) so the compiler can keep them in local memory; only
+      ! 1:nlayers_l and 1:nc are used, so array sections below give explicit
+      ! ranges.
+      real :: dp_avg(max_nlayers)
+      real :: mdp_avg(3, max_nlayers)
+      real :: dp_max(max_nlayers), dp_min(max_nlayers)
+      real :: dp_cutoff1(max_nlayers), dp_cutoff2(max_nlayers), dp_range(max_nlayers)
+      real :: a(max_nlayers), bc(max_nlayers), c_td(max_nlayers)
+      real :: r(max_nlayers, 3)
+      real :: vel_ave(3, max_nlayers)
+      real :: weight(max_nlayers)
+      real :: bar(3)
       logical :: use_pbprime_scaling
 
       ! GPU: classify dry elements (all arrays already on device).
@@ -259,21 +263,21 @@ contains
       end do
 
       ! Part 1: element-parallel velocity blending.
-      ! One gang per element; all inner loops are sequential within the gang.
-      !$acc parallel loop gang &
+      ! One thread per element; all inner loops are sequential within the thread.
+      !$acc parallel loop gang vector &
       !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df, &
       !$acc            init%pbprime_df, init%alpha_mlswe) &
       !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, use_pbprime_scaling) &
       !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, dp_cutoff1, dp_cutoff2, dp_range, &
       !$acc            a, bc, c_td, r, vel_ave, weight, &
-      !$acc            wsum, wjac, mult, pbprime_avg)
+      !$acc            wsum, wjac, mult, pbprime_avg, I, k, m, n)
       do e = 1, nelem_l
 
         wsum = 0.0
         pbprime_avg = 0.0
         !$acc loop seq
         do k = 1, nlayers_l
-            dp_avg(k) = 0.0;  mdp_avg(:,k) = 0.0
+            dp_avg(k) = 0.0;  mdp_avg(1:nc,k) = 0.0
             dp_max(k) = -huge(1.0);  dp_min(k) = huge(1.0)
         end do
 
@@ -288,7 +292,7 @@ contains
                 !$acc loop seq
                 do k = 1, nlayers_l
                     dp_avg(k)    = dp_avg(k)    + wjac * q_df(1,I,k)
-                    mdp_avg(:,k) = mdp_avg(:,k) + wjac * q_df(2:nc+1,I,k)
+                    mdp_avg(1:nc,k) = mdp_avg(1:nc,k) + wjac * q_df(2:nc+1,I,k)
                     dp_max(k)    = max(dp_max(k), q_df(1,I,k))
                     dp_min(k)    = min(dp_min(k), q_df(1,I,k))
                 end do
@@ -298,7 +302,7 @@ contains
         !$acc loop seq
         do k = 1, nlayers_l
           dp_avg(k)    = dp_avg(k)    / wsum
-          mdp_avg(:,k) = mdp_avg(:,k) / wsum
+          mdp_avg(1:nc,k) = mdp_avg(1:nc,k) / wsum
         end do
         pbprime_avg = pbprime_avg / wsum
 
@@ -323,7 +327,7 @@ contains
           weight(k) = (dp_max(k) - dp_cutoff1(k)) / dp_range(k)
           weight(k) = max(min(weight(k), 1.0), 0.0)
           bc(k)   = 1.0
-          r(k, :) = weight(k) * mdp_avg(:,k) / (dp_avg(k) + eps)
+          r(k, 1:nc) = weight(k) * mdp_avg(1:nc,k) / (dp_avg(k) + eps)
         end do
         a(1)            = 0.0
         c_td(1)         = -(1.0 - weight(1))
@@ -340,13 +344,13 @@ contains
         do k = 2, nlayers_l
             mult   = a(k) / bc(k-1)
             bc(k)  = bc(k)  - mult * c_td(k-1)
-            r(k,:) = r(k,:) - mult * r(k-1,:)
+            r(k,1:nc) = r(k,1:nc) - mult * r(k-1,1:nc)
         end do
         ! Back substitution.
-        vel_ave(:,nlayers_l) = r(nlayers_l,:) / bc(nlayers_l)
+        vel_ave(1:nc,nlayers_l) = r(nlayers_l,1:nc) / bc(nlayers_l)
         !$acc loop seq
         do k = nlayers_l-1, 1, -1
-          vel_ave(:,k) = (r(k,:) - c_td(k) * vel_ave(:,k+1)) / bc(k)
+          vel_ave(1:nc,k) = (r(k,1:nc) - c_td(k) * vel_ave(1:nc,k+1)) / bc(k)
         end do
 
         ! Recompute weight using dp_min for the pointwise blending.
@@ -365,7 +369,7 @@ contains
             !$acc loop seq
             do k = 1, nlayers_l
               uv_df(:,I,k) = weight(k) * q_df(2:nc+1,I,k) / (q_df(1,I,k) + eps) &
-                            + (1.0 - weight(k)) * vel_ave(:,k)
+                            + (1.0 - weight(k)) * vel_ave(1:nc,k)
             end do
           end do
         end do
@@ -373,30 +377,29 @@ contains
       end do
       !$acc end parallel loop
 
-      ! Part 2: element-parallel barotropic consistency correction.
-      ! One gang per element; uses dry_flg(e,k) to skip fully-dry layers
-      !$acc parallel loop gang &
+      ! Part 2: barotropic consistency correction, one thread per node (each
+      ! node's correction depends only on that node). Uses dry_flg(e,k) to
+      ! skip fully-dry layers.
+      !$acc parallel loop gang vector collapse(3) &
       !$acc    present(G%intma, uv_df, q_df, qb_df, bcl%dry_flg) &
       !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
-      !$acc    private(bar)
+      !$acc    private(bar, I, k)
       do e = 1, nelem_l
-        !$acc loop seq
         do m = 1, ngly_l
-          !$acc loop seq
           do n = 1, nglx_l
             I = G%intma(n, m, 1, e)
-            bar = 0.0
+            bar(1:nc) = 0.0
             !$acc loop seq
             do k = 1, nlayers_l
               if (bcl%dry_flg(e, k) == 2) cycle
-              bar(:) = bar(:) + uv_df(:,I,k) * q_df(1,I,k)
+              bar(1:nc) = bar(1:nc) + uv_df(:,I,k) * q_df(1,I,k)
             end do
             if (qb_df(1,I) > btp_threshold) then
-              bar(:) = bar(:) / qb_df(1,I)
+              bar(1:nc) = bar(1:nc) / qb_df(1,I)
               !$acc loop seq
               do k = 1, nlayers_l
                 if (bcl%dry_flg(e, k) == 2) cycle
-                uv_df(:,I,k) = uv_df(:,I,k) - (bar(:) - qb_df(3:2+nc,I)/qb_df(1,I))
+                uv_df(:,I,k) = uv_df(:,I,k) - (bar(1:nc) - qb_df(3:2+nc,I)/qb_df(1,I))
               end do
             else
               !$acc loop seq

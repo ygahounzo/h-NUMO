@@ -30,10 +30,7 @@ contains
     subroutine create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
 
         use mod_create_rhs_mlswe, only: bcl_rhs
-        use mod_laplacian_quad,   only: bcl_create_laplacian, compute_bcl_lap_z
-        use mod_mpi_utilities,    only: irank, MPI_PRECISION
-        use mod_constants,        only: gravity
-        use mpi
+        use mod_laplacian_quad,   only: bcl_create_laplacian
 
         implicit none
 
@@ -54,8 +51,7 @@ contains
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
 
         integer :: k, I, iv, nlayers_l, npoin_l, nvarb_l
-        integer :: ierr_diag
-        real    :: visc_term, lap_z_loc_max, lap_z_glb_max
+        real    :: visc_term
 
         nlayers_l = inp%nlayers
         npoin_l   = G%npoin
@@ -64,16 +60,6 @@ contains
         !$acc kernels present(bcl%rhs_visc_bcl)
         bcl%rhs_visc_bcl = 0.0
         !$acc end kernels
-
-        ! ∇²z_k needed for APE (independent of nu_smag).
-        if (inp%c_APE > 0.0) then
-            !$acc update host(btp%ope2_ave_df, qprime_df)
-            call compute_bcl_lap_z(G, inp, b, mf, par, ref, mpic, init, btp, bcl, mt, tsp, qprime_df, bcl%lap_z_df)
-            ! lap_z_loc_max = maxval(abs(bcl%lap_z_df(:, 2:inp%nlayers)))
-            ! call MPI_Reduce(lap_z_loc_max, lap_z_glb_max, 1, MPI_PRECISION, MPI_MAX, 0, MPI_COMM_WORLD, ierr_diag)
-            ! if (irank == 0) write(*,'("lap_z global max =",es12.4)') lap_z_glb_max
-            !$acc update device(bcl%lap_z_df)
-        end if
 
         call bcl_rhs(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
         ! rhs stays on device; apply mass scaling and viscous term on GPU.
@@ -99,8 +85,6 @@ contains
             end do
         end do
         !$acc end parallel loop
-
-        !$acc update host(rhs)
 
     end subroutine create_rhs_bcl
 

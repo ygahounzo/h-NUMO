@@ -273,8 +273,15 @@ contains
       !  BCL layer integrals (H_b, sum_up2, etc.) are precomputed once per RK
       !  stage by btp_bcl_coeffs_qdf into btp%bcl_* arrays; only qb_df
       !  interpolation is done per substep.
-      !  Gang-parallel over do Iq = 1, npoin_q; scatter uses !$acc atomic because
-      !  multiple Iq within the same element share DG DOF nodes.
+      !
+      !  One gang per element, two phases, no atomics:
+      !    A) one vector lane per quad point: the physics at that point, stored
+      !       as weighted coefficients in btp%F_vol(:,:,Iq);
+      !    B) one vector lane per DOF node of the element: sum the element's
+      !       quad-point contributions in a fixed order and write the node once
+      !       (DG nodes belong to exactly one element).
+      !  Phase B reads what phase A wrote in the same gang, so it relies on the
+      !  implicit synchronization between the two vector loops.
       !===========================================================================
       use mod_grid,      only: grid
       use mod_basis,     only: basis
@@ -303,12 +310,15 @@ contains
       real :: pp_k, up_k, vp_k, wp_k
       real :: sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww, sum_wu, sum_wv
       real :: cfx, cfy, cfz
-      integer :: I, Iq, ip
-      integer :: npts_l, botfr_l
+      real :: r1, r2, r3, r4
+      integer :: I, Iq, ip, ie, ijq, Iq0
+      integer :: npts_l, npts_q_l, nelem_l, botfr_l
       real    :: cd_l, alpha_bot_l
       logical :: has_w
 
       npts_l      = b%npts
+      npts_q_l    = b%npts_quad
+      nelem_l     = G%nelem
       botfr_l     = inp%botfr
       cd_l        = real(inp%cd_mlswe)
       alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
@@ -319,32 +329,35 @@ contains
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy, tsp%dpsidz,                       &
       !$acc               tsp%dpsidz_x, tsp%dpsidz_y, tsp%dpsidz_z,                &
-      !$acc               tsp%indexq, tsp%wjac,                                     &
+      !$acc               tsp%indexq, tsp%indexq_e, tsp%wjac, btp%F_vol,           &
       !$acc               init%coriolis_3d_quad,                                     &
       !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave,                   &
       !$acc               btp%Qv_ave, btp%Qw_ave, btp%ope_ave,                     &
       !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
       !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
-      !$acc kernels
-      rhs_btp = 0.0
-      !$acc end kernels
-
       ! Abort with element/rank diagnostics rather than SIGFPE-ing on ub=udp/dp
       ! below if the barotropic depth has gone negative or NaN (e.g. interface
       ! outcropping near steep topography feeding through into qb_df).
       call check_btp_thickness(b, G, inp, qb_df, 'create_rhs_btp_volume_qdf_qp')
 
-      !$acc parallel loop gang                                                       &
-      !$acc   private(dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb,       &
+      !$acc parallel loop gang vector_length(64) private(Iq0)                       &
+      !$acc   firstprivate(npts_l, npts_q_l, nelem_l, botfr_l, cd_l, alpha_bot_l, has_w)
+      do ie = 1, nelem_l
+
+      ! ---- Phase A: physics at each quad point of element ie ------------------
+      !$acc loop vector                                                             &
+      !$acc   private(Iq, dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb,   &
       !$acc           ubot, vbot, wbot, spd, tb_u, tb_v, tb_w,                    &
       !$acc           cfx, cfy, cfz, sc_x, sc_y, sc_z, ope, ope2,                 &
       !$acc           pp_k, up_k, vp_k, wp_k,                                      &
       !$acc           sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww,  &
+      !$acc           sum_wu, sum_wv,                                              &
       !$acc           qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw,                   &
-      !$acc           hi, dhdx, dhdy, dhdz, I)                                     &
-      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l, has_w)
-      do Iq = 1, G%npoin_q
+      !$acc           hi, I, ip)
+      do ijq = 1, npts_q_l
+
+         Iq = tsp%indexq_e(ijq, ie)
 
          dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  wdp = 0.0
 
@@ -459,10 +472,38 @@ contains
             btp%uvb_ave(3,Iq)           = btp%uvb_ave(3,Iq)           + wb
          end if
 
-         ! Scatter: atomics handle cross-gang races on shared DOF nodes.
+         ! Weighted coefficients of psi (j=0) and dpsi/dx,dy,dz (j=1..3) for
+         ! each equation row at this quad point.
+         btp%F_vol(1,0,Iq) = 0.0
+         btp%F_vol(1,1,Iq) = wq*udp
+         btp%F_vol(1,2,Iq) = wq*vdp
+         btp%F_vol(1,3,Iq) = wq*wdp
+         btp%F_vol(2,0,Iq) = wq*sc_x
+         btp%F_vol(2,1,Iq) = wq*(Hq+qu)
+         btp%F_vol(2,2,Iq) = wq*quv
+         btp%F_vol(2,3,Iq) = wq*quz
+         btp%F_vol(3,0,Iq) = wq*sc_y
+         btp%F_vol(3,1,Iq) = wq*qvu
+         btp%F_vol(3,2,Iq) = wq*(Hq+qv)
+         btp%F_vol(3,3,Iq) = wq*qvz
+         btp%F_vol(4,0,Iq) = wq*sc_z
+         btp%F_vol(4,1,Iq) = wq*qwu
+         btp%F_vol(4,2,Iq) = wq*qwv
+         btp%F_vol(4,3,Iq) = wq*(Hq+qw)
+
+      end do
+
+      ! ---- Phase B: one lane per DOF node of element ie -----------------------
+      ! Sum over the element's quad points in a fixed order; no atomics needed
+      ! because each DG node belongs to this element only.
+      Iq0 = tsp%indexq_e(1, ie)
+      !$acc loop vector private(I, Iq, ijq, hi, dhdx, dhdy, dhdz, r1, r2, r3, r4)
+      do ip = 1, npts_l
+         I  = tsp%indexq(ip, Iq0)
+         r1 = 0.0;  r2 = 0.0;  r3 = 0.0;  r4 = 0.0
          !$acc loop seq
-         do ip = 1, npts_l
-            I    = tsp%indexq(ip, Iq)
+         do ijq = 1, npts_q_l
+            Iq   = tsp%indexq_e(ijq, ie)
             hi   = tsp%psih(ip, Iq)
             dhdx = tsp%dpsidx(ip, Iq)
             dhdy = tsp%dpsidy(ip, Iq)
@@ -472,17 +513,17 @@ contains
                dhdy = dhdy + tsp%dpsidz_y(ip, Iq)
                dhdz = tsp%dpsidz(ip, Iq) + tsp%dpsidz_z(ip, Iq)
             end if
-            !$acc atomic update
-            rhs_btp(1, I) = rhs_btp(1, I) + wq * (dhdx*udp + dhdy*vdp + dhdz*wdp)
-            !$acc atomic update
-            rhs_btp(2, I) = rhs_btp(2, I) + wq * (hi*sc_x + dhdx*(Hq+qu) + dhdy*quv + dhdz*quz)
-            !$acc atomic update
-            rhs_btp(3, I) = rhs_btp(3, I) + wq * (hi*sc_y + dhdx*qvu    + dhdy*(Hq+qv) + dhdz*qvz)
-            if (has_w) then
-               !$acc atomic update
-               rhs_btp(4, I) = rhs_btp(4, I) + wq * (hi*sc_z + dhdx*qwu + dhdy*qwv + dhdz*(Hq+qw))
-            end if
+            r1 = r1 + hi*btp%F_vol(1,0,Iq) + dhdx*btp%F_vol(1,1,Iq) + dhdy*btp%F_vol(1,2,Iq) + dhdz*btp%F_vol(1,3,Iq)
+            r2 = r2 + hi*btp%F_vol(2,0,Iq) + dhdx*btp%F_vol(2,1,Iq) + dhdy*btp%F_vol(2,2,Iq) + dhdz*btp%F_vol(2,3,Iq)
+            r3 = r3 + hi*btp%F_vol(3,0,Iq) + dhdx*btp%F_vol(3,1,Iq) + dhdy*btp%F_vol(3,2,Iq) + dhdz*btp%F_vol(3,3,Iq)
+            if (has_w) &
+               r4 = r4 + hi*btp%F_vol(4,0,Iq) + dhdx*btp%F_vol(4,1,Iq) + dhdy*btp%F_vol(4,2,Iq) + dhdz*btp%F_vol(4,3,Iq)
          end do
+         rhs_btp(1, I) = r1
+         rhs_btp(2, I) = r2
+         rhs_btp(3, I) = r3
+         if (has_w) rhs_btp(4, I) = r4
+      end do
 
       end do
       !$acc end parallel loop
@@ -494,14 +535,14 @@ contains
       !===========================================================================
       !  Face flux contribution to the barotropic RHS (Riemann solver).
       !
-      !  GPU parallelism: one gang per face.  The quadrature loop (iquad) and all
-      !  inner loops (basis nodes n, layers k) are sequential within the gang,
-      !  which avoids intra-gang atomics on nodes shared by adjacent iquad points.
+      !  GPU parallelism: one thread per (face, quadrature point); the inner
+      !  loops (basis nodes n, layers k) are sequential within the thread.
       !
       !  Race conditions:
-      !    rhs_btp(m,I): multiple faces share boundary nodes — !$acc atomic update.
+      !    rhs_btp(m,I): several faces and quadrature points share nodes —
+      !      !$acc atomic update.
       !    btp%*_face_ave(iquad,iface): each (iquad,iface) pair is touched by
-      !      exactly one gang×sequential-step — no atomics needed.
+      !      exactly one thread — no atomics needed.
       !===========================================================================
       use mod_basis,     only: basis
       use mod_grid,      only: grid
@@ -524,7 +565,7 @@ contains
       real, dimension(inp%nvar_btp,G%npoin),               intent(in)    :: qb
       real, dimension(inp%nvar_bcl,G%npoin,inp%nlayers),   intent(in)    :: qprime_df
 
-      integer :: iface, iquad, el, er, il, jl, kl, ir, jr, kr, I, n, k
+      integer :: iface, iquad, ifq, el, er, I, n, k
       real    :: wq, hi, nxl, nyl, nzl, un
       real    :: pbl, pbr, clam, one_eta, one_eta2, half_clam, quarter_clam
       real    :: pU_L, pU_R, half_clam_dqb2, pbpert_edge
@@ -540,8 +581,6 @@ contains
       real    :: pkl, pkr, ukl, ukr, vkl, vkr, wkl, wkr
       real    :: ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r
       real    :: wq_flux_pb, wq_flux_u, wq_flux_v, wq_flux_w
-      real,    dimension(b%ngl) :: hi_c
-      integer, dimension(b%ngl) :: I_l, I_r
       logical :: has_w
 
       ! Capture derived-type scalars before the parallel region so they are
@@ -564,9 +603,8 @@ contains
       !$acc               btp%one_plus_eta_edge_2_ave,                              &
       !$acc               btp%uvb_face_ave)
 
-      !$acc parallel loop gang                                                      &
-      !$acc   private(el, er, il, jl, kl, ir, jr, kr, I, n, k,                    &
-      !$acc           I_l, I_r, hi_c,                                              &
+      !$acc parallel loop gang vector                                               &
+      !$acc   private(iface, iquad, el, er, I, n, k,                              &
       !$acc           qbl, qbr, pbl, pbr,                                          &
       !$acc           nxl, nyl, nzl, wq, hi, un,                                   &
       !$acc           clam, one_eta, one_eta2, half_clam, quarter_clam,            &
@@ -582,51 +620,27 @@ contains
       !$acc           ope_ppl_k, ope_ppr_k, uv_cross_l, uv_cross_r,               &
       !$acc           wq_flux_pb, wq_flux_u, wq_flux_v, wq_flux_w)              &
       !$acc   firstprivate(has_w)
-      do iface = 1, nface_f
+      do ifq = 1, nface_f*nq_f
+
+         iface = (ifq - 1)/nq_f + 1
+         iquad = ifq - (iface - 1)*nq_f
 
          if (G%face_type(iface) == 2) cycle
 
          el = G%face(7, iface)
          er = G%face(8, iface)
 
-         ! Precompute node indices once per face; reused across all iquad iterations.
-         !$acc loop seq
-         do n = 1, ngl_f
-            il = mf%imapl(1,n,1,iface)
-            jl = mf%imapl(2,n,1,iface)
-            kl = mf%imapl(3,n,1,iface)
-            I_l(n) = G%intma(il, jl, kl, el)
-         end do
-
-         if (er > 0) then
-            !$acc loop seq
-            do n = 1, ngl_f
-               ir = mf%imapr(1,n,1,iface)
-               jr = mf%imapr(2,n,1,iface)
-               kr = mf%imapr(3,n,1,iface)
-               I_r(n) = G%intma(ir, jr, kr, er)
-            end do
-         end if
-
-         !$acc loop seq
-         do iquad = 1, nq_f
-
             nxl = mf%normal_vector_q(1, iquad, 1, iface)
             nyl = mf%normal_vector_q(2, iquad, 1, iface)
             nzl = mf%normal_vector_q(3, iquad, 1, iface)
-
-            !$acc loop seq
-            do n = 1, ngl_f
-               hi_c(n) = b%psiq(n, iquad)
-            end do
 
             ! Project barotropic LEFT state
             qbl(1) = 0.0;  qbl(2) = 0.0;  qbl(3) = 0.0;  qbl(4) = 0.0;  qbl(5) = 0.0
             pbl = 0.0
             !$acc loop seq
             do n = 1, ngl_f
-               hi = hi_c(n)
-               I  = I_l(n)
+               hi = b%psiq(n, iquad)
+               I  = G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
                qbl(1) = qbl(1) + hi * qb(1,I)
                qbl(2) = qbl(2) + hi * qb(2,I)
                qbl(3) = qbl(3) + hi * qb(3,I)
@@ -641,8 +655,8 @@ contains
                pbr = 0.0
                !$acc loop seq
                do n = 1, ngl_f
-                  hi = hi_c(n)
-                  I  = I_r(n)
+                  hi = b%psiq(n, iquad)
+                  I  = G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
                   qbr(1) = qbr(1) + hi * qb(1,I)
                   qbr(2) = qbr(2) + hi * qb(2,I)
                   qbr(3) = qbr(3) + hi * qb(3,I)
@@ -709,8 +723,8 @@ contains
                pkl = 0.0;  ukl = 0.0;  vkl = 0.0;  wkl = 0.0
                !$acc loop seq
                do n = 1, ngl_f
-                  hi  = hi_c(n)
-                  I   = I_l(n)
+                  hi  = b%psiq(n, iquad)
+                  I   = G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
                   pkl = pkl + hi * qprime_df(1, I, k)
                   ukl = ukl + hi * qprime_df(2, I, k)
                   vkl = vkl + hi * qprime_df(3, I, k)
@@ -721,8 +735,8 @@ contains
                   pkr = 0.0;  ukr = 0.0;  vkr = 0.0;  wkr = 0.0
                   !$acc loop seq
                   do n = 1, ngl_f
-                     hi  = hi_c(n)
-                     I   = I_r(n)
+                     hi  = b%psiq(n, iquad)
+                     I   = G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
                      pkr = pkr + hi * qprime_df(1, I, k)
                      ukr = ukr + hi * qprime_df(2, I, k)
                      vkr = vkr + hi * qprime_df(3, I, k)
@@ -868,8 +882,8 @@ contains
             ! RHS scatter — atomics: multiple faces share boundary nodes.
             !$acc loop seq
             do n = 1, ngl_f
-               hi = hi_c(n)
-               I  = I_l(n)
+               hi = b%psiq(n, iquad)
+               I  = G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
                !$acc atomic update
                rhs_btp(1,I) = rhs_btp(1,I) - hi * wq_flux_pb
                !$acc atomic update
@@ -885,8 +899,8 @@ contains
             if (er > 0) then
                !$acc loop seq
                do n = 1, ngl_f
-                  hi = hi_c(n)
-                  I  = I_r(n)
+                  hi = b%psiq(n, iquad)
+                  I  = G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
                   !$acc atomic update
                   rhs_btp(1,I) = rhs_btp(1,I) + hi * wq_flux_pb
                   !$acc atomic update
@@ -900,9 +914,8 @@ contains
                end do
             end if
 
-         end do  ! iquad
-
-      end do  ! iface
+      end do  ! ifq
+      !$acc end parallel loop
       !$acc end data
 
    end subroutine create_btp_fluxes_qdf

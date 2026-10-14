@@ -579,9 +579,8 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
    !local variables
 
    integer :: kk, ivar, iquad, i, ip, iface, el, il, jl, kl
-   integer :: ngl_f, nboun_f, nw, nvel
+   integer :: ngl_f, nboun_f, nw
    real :: wq, iflux, alpha, beta, nxl, nyl, nzl, hi, flux_qu, flux_qv, flux_qw
-   real :: pconst, sigma, pb_avg, du_pen, dv_pen, dw_pen
    logical :: has_w
 
    real, dimension(3) :: qu_mean, qv_mean, qw_mean
@@ -595,24 +594,20 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
    alpha   = 1.0 - beta
    iflux   = 0.0
    nw      = inp%ngraduvw_var
-   nvel    = inp%nvar_btp - 2
    has_w   = (nvarb == 3)
-   pconst  = real((ngl_f+1)*(ngl_f+2)) / 2.0 * real(inp%SIPG_constant)
 
    !$acc parallel loop gang                                                  &
    !$acc    private(iface, el, iquad, i, ip, ivar,                           &
    !$acc            nxl, nyl, nzl, wq, hi, flux_qu, flux_qv, flux_qw,        &
    !$acc            qu_mean, qv_mean, qw_mean, flux_uv_visc_face,            &
    !$acc            qul, qur, qvl, qvr, qwl, qwr, grad_uvb_pb_l, grad_uvb_pb_r, &
-   !$acc            sigma, pb_avg, du_pen, dv_pen, dw_pen,                   &
    !$acc            il, jl, kl)                                              &
    !$acc    present(G%face, G%intma, mf%imapl, mf%normal_vector,             &
    !$acc            mf%jac_face, b%psi,                                      &
    !$acc            par%nbh_send_recv,                                       &
    !$acc            ref%q_send_lap, ref%q_recv_lap,                          &
-   !$acc            tsp%wjac_df,                                             &
    !$acc            btp%graduvb_face_ave, rhs)                               &
-   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux, nw, nvel, has_w, pconst)
+   !$acc    firstprivate(ngl_f, nboun_f, alpha, beta, iflux, nw, has_w)
    do kk = 1, nboun_f
       iface = par%nbh_send_recv(kk)
       el    = G%face(7, iface)
@@ -668,23 +663,6 @@ subroutine create_nbhs_face_df_lap(G, inp, b, mf, par, btp, rhs, ref, tsp, nvarb
                  + (qv_mean(3) - iflux*qvl(3))*nzl
          flux_qw = (qw_mean(1) - iflux*qwl(1))*nxl + (qw_mean(2) - iflux*qwl(2))*nyl &
                  + (qw_mean(3) - iflux*qwl(3))*nzl
-
-         ! SIP penalty on MPI faces: local wjac_df only (remote Jacobian not communicated).
-         ! Buffer slots 2*nw+3..2*nw+2+nvel hold the packed BTP velocity Uk.
-         il     = mf%imapl(1, iquad, 1, iface)
-         jl     = mf%imapl(2, iquad, 1, iface)
-         kl     = mf%imapl(3, iquad, 1, iface)
-         ip     = G%intma(il, jl, kl, el)
-         sigma  = pconst * wq / tsp%wjac_df(ip)
-         pb_avg = 0.5 * (ref%q_send_lap(2*nw+2, iquad, kk) + ref%q_recv_lap(2*nw+2, iquad, kk))
-         du_pen = ref%q_send_lap(2*nw+3, iquad, kk) - ref%q_recv_lap(2*nw+3, iquad, kk)
-         dv_pen = ref%q_send_lap(2*nw+4, iquad, kk) - ref%q_recv_lap(2*nw+4, iquad, kk)
-         flux_qu = flux_qu - sigma * pb_avg * du_pen
-         flux_qv = flux_qv - sigma * pb_avg * dv_pen
-         if (has_w) then
-            dw_pen  = ref%q_send_lap(2*nw+5, iquad, kk) - ref%q_recv_lap(2*nw+5, iquad, kk)
-            flux_qw = flux_qw - sigma * pb_avg * dw_pen
-         end if
 
          !$acc loop seq
          do i = 1, ngl_f
@@ -2035,7 +2013,7 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
    real, intent(in)    :: q_recv(ref%nbcl_var_lap, b%ngl, par%num_send_recv_total)
 
    integer :: kk, k, iquad, i, ivar, iface, el, il, jl, kl, ip, index
-   integer :: ngl_f, nlayers_f, nboun_valid_f, nw, nvel_pen, nvarb
+   integer :: ngl_f, nlayers_f, nboun_valid_f, nw, nvarb
    real    :: wq, nxl, nyl, nzl, hi, flux_qu, flux_qv, flux_qw, alpha, beta, iflux
    logical :: has_w
    real, dimension(9,2) :: flux_uv_visc_face
@@ -2048,15 +2026,14 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
    alpha = 1.0 - beta
    iflux = 0.0
    nw       = inp%ngraduvw_var
-   nvel_pen = nvel   ! use the passed velocity-component count (nvar_bcl-1)
-   nvarb    = nw + 1 + nvel_pen   ! buffer vars per layer per quad node
+   nvarb    = nw + 1   ! buffer vars per layer per quad node
    has_w    = (nvel == 3)
 
    !$acc parallel loop gang &
    !$acc    present(ref%face_pack_list, G%face, G%intma, mf%imapl, mf%jac_face, &
    !$acc            mf%normal_vector, b%psi, btp%graduvb_face_ave, q_send, q_recv, &
-   !$acc            tsp%wjac_df, rhs) &
-   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, alpha, beta, iflux, nw, nvel_pen, nvarb, has_w) &
+   !$acc            rhs) &
+   !$acc    firstprivate(ngl_f, nlayers_f, nboun_valid_f, alpha, beta, iflux, nw, nvarb, has_w) &
    !$acc    private(flux_uv_visc_face, qu_mean, qv_mean, qw_mean, qul, qur, qvl, qvr, qwl, qwr)
    do kk = 1, nboun_valid_f
       iface = ref%face_pack_list(kk)
@@ -2133,96 +2110,6 @@ subroutine create_nbhs_face_df_lap_bcl(G, inp, b, mf, par, btp, ref, tsp, rhs, q
    !$acc end parallel loop
 
 end subroutine create_nbhs_face_df_lap_bcl
-
-! ---------------------------------------------------------------------------
-! create_nbhs_face_gradz_bcl
-!   MPI boundary face flux for ∇²z_k.  After the grad_z pre-communicator has
-!   exchanged grad_z_df at MPI boundary faces, this routine adds the central
-!   flux correction `½(grad_z_local + grad_z_recv)·n × ψ_i × wjac_face` to
-!   lap_z_df at the local element's MPI boundary face DOFs.
-!   Only the LOCAL element side is updated (the remote element is on another rank).
-! ---------------------------------------------------------------------------
-subroutine create_nbhs_face_gradz_bcl(G, inp, b, mf, par, ref, tsp, lap_z_df, &
-                                       q_send, q_recv, nlayers)
-
-   use mod_grid,      only: grid
-   use mod_basis,     only: basis
-   use mod_face,      only: face_CS
-   use mod_parallel,  only: parallel_CS
-   use mod_ref,       only: mref
-   use mod_input,     only: input
-   use mod_tensor,    only: tensor_CS
-
-   implicit none
-
-   type(grid),        intent(in)    :: G
-   type(input),       intent(in)    :: inp
-   type(basis),       intent(in)    :: b
-   type(face_CS),     intent(in)    :: mf
-   type(parallel_CS), intent(in)    :: par
-   type(mref),        intent(in)    :: ref
-   type(tensor_CS),   intent(in)    :: tsp
-   integer,           intent(in)    :: nlayers
-
-   real, intent(inout) :: lap_z_df(G%npoin, nlayers+1)
-   real, intent(in)    :: q_send(3*nlayers, b%ngl, G%nboun)
-   real, intent(in)    :: q_recv(3*nlayers, b%ngl, G%nboun)
-
-   integer :: kk, k, iquad, i, ip, iface, el, il, jl, kl
-   integer :: ngl_f, nlayers_f, nboun_valid_f, index
-   real    :: wq, nx, ny, nz, flux_gradz, hi
-   real    :: gzl_x, gzl_y, gzl_z, gzr_x, gzr_y, gzr_z
-   logical :: has_w
-
-   ngl_f         = b%ngl
-   nlayers_f     = nlayers
-   nboun_valid_f = ref%nboun_valid
-   has_w         = (inp%nvar_bcl == 4)
-
-   do kk = 1, nboun_valid_f
-      iface = ref%face_pack_list(kk)
-      el    = G%face(7, iface)
-
-      do k = 2, nlayers_f
-         index = (k-1)*3   ! offset into q_send/q_recv first dimension
-
-         do iquad = 1, ngl_f
-            ! Local (send) gradient at this face quadrature point
-            gzl_x = q_send(index+1, iquad, kk)
-            gzl_y = q_send(index+2, iquad, kk)
-            ! Neighbor (recv) gradient
-            gzr_x = q_recv(index+1, iquad, kk)
-            gzr_y = q_recv(index+2, iquad, kk)
-
-            nx = mf%normal_vector(1, iquad, 1, iface)
-            ny = mf%normal_vector(2, iquad, 1, iface)
-            wq = mf%jac_face(iquad, 1, iface)
-
-            ! Central flux: {grad_z}·n = ½(grad_z_local + grad_z_recv)·n
-            flux_gradz = 0.5*(gzl_x + gzr_x)*nx + 0.5*(gzl_y + gzr_y)*ny
-
-            if (has_w) then
-               gzl_z = q_send(index+3, iquad, kk)
-               gzr_z = q_recv(index+3, iquad, kk)
-               nz    = mf%normal_vector(3, iquad, 1, iface)
-               flux_gradz = flux_gradz + 0.5*(gzl_z + gzr_z)*nz
-            end if
-
-            ! Scatter to local element face DOFs (left element only for MPI face)
-            do i = 1, ngl_f
-               hi = b%psi(i, iquad)
-               il = mf%imapl(1, i, 1, iface)
-               jl = mf%imapl(2, i, 1, iface)
-               kl = mf%imapl(3, i, 1, iface)
-               ip = G%intma(il, jl, kl, el)
-               lap_z_df(ip, k) = lap_z_df(ip, k) + wq*hi*flux_gradz
-            end do
-
-         end do   ! iquad
-      end do   ! k
-   end do   ! kk
-
-end subroutine create_nbhs_face_gradz_bcl
 
 subroutine create_nbhs_face_quad_layer(G, b, par, q_face, q_send, q_recv, nvarb, nlayers, nq)
 

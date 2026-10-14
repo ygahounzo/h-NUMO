@@ -550,6 +550,8 @@ module mod_initial_mlswe
     subroutine check_layer_thickness(b, G, inp, q, label, stage)
         ! Scan q(1,:,:) element-by-element for negative or NaN dp.
         ! The first rank that finds a bad element prints the location and aborts.
+        ! A device-side count of bad nodes runs first; q is only downloaded and
+        ! scanned on the host when that count is non-zero.
         use mpi
 
         implicit none
@@ -563,9 +565,26 @@ module mod_initial_mlswe
         integer,          intent(in) :: stage  ! pass 0 when there is no stage concept
 
         integer :: k, e, n, m, I, irank, ierr, nn
+        integer :: nbad, npoin_l, nlayers_l
         real    :: dp, pmin, cx, cy, cz, radius, clat, clon
         real, parameter :: pi = acos(-1.0), rad2deg = 180.0/acos(-1.0)
         logical :: has_nan
+
+        npoin_l   = G%npoin
+        nlayers_l = inp%nlayers
+
+        ! .not.(dp >= 0) is true for both negative and NaN dp.
+        nbad = 0
+        !$acc parallel loop gang vector collapse(2) present(q) &
+        !$acc    firstprivate(npoin_l, nlayers_l) reduction(+:nbad)
+        do k = 1, nlayers_l
+            do I = 1, npoin_l
+                if (.not. (q(1,I,k) >= 0.0)) nbad = nbad + 1
+            end do
+        end do
+        !$acc end parallel loop
+
+        if (nbad == 0) return
 
         !$acc update host(q(1:1,:,:))
 
@@ -630,6 +649,8 @@ module mod_initial_mlswe
     subroutine check_btp_thickness(b, G, inp, qb, label)
         ! Scan qb(1,:) element-by-element for negative or NaN barotropic dp.
         ! The first rank that finds a bad element prints the location and aborts.
+        ! A device-side count of bad nodes runs first; qb is only downloaded and
+        ! scanned on the host when that count is non-zero.
         use mpi
 
         implicit none
@@ -642,9 +663,23 @@ module mod_initial_mlswe
         character(len=*), intent(in) :: label
 
         integer :: e, n, m, I, irank, ierr, nn
+        integer :: nbad, npoin_l
         real    :: dp, pmin, cx, cy, cz, radius, clat, clon
         real, parameter :: rad2deg = 180.0/acos(-1.0)
         logical :: has_nan
+
+        npoin_l = G%npoin
+
+        ! .not.(dp >= 0) is true for both negative and NaN dp.
+        nbad = 0
+        !$acc parallel loop gang vector present(qb) &
+        !$acc    firstprivate(npoin_l) reduction(+:nbad)
+        do I = 1, npoin_l
+            if (.not. (qb(1,I) >= 0.0)) nbad = nbad + 1
+        end do
+        !$acc end parallel loop
+
+        if (nbad == 0) return
 
         !$acc update host(qb(1:1,:))
 

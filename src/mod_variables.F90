@@ -62,6 +62,12 @@ module mod_variables
       real, dimension(:,:),     allocatable :: bcl_btp_flux  ! (nvar_bcl,npoin_q) bottom-layer (dp,u*dp,v*dp[,w*dp])
       real, dimension(:),       allocatable :: pbq           ! (npoin_q) background pressure
 
+      ! Weighted flux/source coefficients of the BTP volume integral at each quad
+      ! point, written and read within create_rhs_btp_volume_qdf_qp.
+      ! F_vol(r,j,Iq): equation row r (mass, u, v, w); j = 0 source (x psi),
+      ! 1..3 flux (x dpsi/dx, dpsi/dy, dpsi/dz).
+      real, dimension(:,:,:),   allocatable :: F_vol         ! (4,0:3,npoin_q)
+
    end type btp_CS
 
    !  Baroclinic control structure
@@ -82,14 +88,6 @@ module mod_variables
       ! State vectors
       real, dimension(:,:,:), allocatable :: q_df       ! (nvar_bcl,npoin,nlayers)
       real, dimension(:,:,:), allocatable :: qprime_df  ! (nvar_bcl,npoin,nlayers)
-
-      ! Element-local Laplacian of interface height z_k (Chen 2025 APE stabilization).
-      ! lap_z_df(I,k) = ∇²z_k at DOF node I, for k=2..nlayers (internal interfaces).
-      ! k=1 (free surface) and k=nlayers+1 (bottom) are zero by convention.
-      real, dimension(:,:), allocatable :: lap_z_df  ! (npoin, nlayers+1)
-      ! LDG gradient of z_k at each DOF node; populated by compute_bcl_lap_z Phase 1
-      ! and communicated at MPI faces before the divergence (Phase 3).
-      real, dimension(:,:,:), allocatable :: grad_z_df  ! (3, npoin, nlayers)
 
       ! RHS buffers (persistent device allocations)
       real, dimension(:,:,:), allocatable :: rhs_bcl      ! (nvar_bcl,npoin,nlayers)
@@ -147,7 +145,7 @@ contains
             btp%qb_df,  &
             btp%qb0_df,             btp%qb2_df,                         &
             btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
-            btp%pbq)
+            btp%pbq,                btp%F_vol)
       end if
 
       ! 1-D volume arrays
@@ -216,6 +214,7 @@ contains
          btp%bcl_flux(inp%nvar_bcl-1,inp%nvar_bcl-1,G%npoin_q),             &
          btp%bcl_btp_flux(inp%nvar_bcl,G%npoin_q),                          &
          btp%pbq(G%npoin_q),                                                &
+         btp%F_vol(4,0:3,G%npoin_q),                                        &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
 
@@ -232,7 +231,6 @@ contains
             bcl%q_df,                 bcl%qprime_df,                     &
             bcl%dpprime_visc,         bcl%dpprime_visc_q,                 &
             bcl%dpprime_visc_scaled,                                      &
-            bcl%lap_z_df,             bcl%grad_z_df,                      &
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
             bcl%uv_df,                bcl%qbp_df,                        &
@@ -251,8 +249,6 @@ contains
          bcl%dpprime_visc(G%npoin,inp%nlayers),                             &
          bcl%dpprime_visc_q(G%npoin_q,inp%nlayers),                          &
          bcl%dpprime_visc_scaled(G%npoin,inp%nlayers),                       &
-         bcl%lap_z_df(G%npoin,inp%nlayers+1),                               &
-         bcl%grad_z_df(3,G%npoin,inp%nlayers),                             &
          bcl%rhs_bcl(inp%nvar_bcl,G%npoin,inp%nlayers),                          &
          bcl%rhs_visc_bcl(inp%nvar_bcl-1,G%npoin,inp%nlayers),                  &
          bcl%q0_df(inp%nvar_bcl,G%npoin,inp%nlayers),                            &
@@ -263,7 +259,6 @@ contains
          bcl%nu_smag(G%npoin,inp%nlayers),                                        &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
-      bcl%lap_z_df = 0.0
       bcl%nu_smag  = 0.0
 
    end subroutine mod_allocate_mlswe

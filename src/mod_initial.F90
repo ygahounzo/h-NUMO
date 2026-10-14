@@ -150,7 +150,7 @@ module mod_initial
                 call initial_conditions_sphere(init%q_df, init%pbprime_df, init%qb_df, &
                     init%alpha_mlswe, init%pbprime_df_face, init%zbot_df, init%kvector, &
                     nlayers, b, G, inp, mf)
-                ! Build reference interface heights for APE stabilization.
+                ! Build reference interface heights.
                 ! z_interface_initial(:,k) = bottom of layer k-1 = top of layer k.
                 init%z_interface_initial(:, nlayers+1) = init%zbot_df(:)
                 do k = nlayers, 1, -1

@@ -104,7 +104,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     endif
     ! After ti_barotropic_ssprk_mlswe: qb_df device copy is current.
 
-    ! GPU: build baroclinic RHS; rhs_bcl downloaded to host inside but device copy valid.
+    ! GPU: build baroclinic RHS; rhs_bcl stays on device.
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, bcl%q1_df)
 
     ! GPU SSPRK combination: q_df = a1*q0 + a2*q1 + dt*rhs.

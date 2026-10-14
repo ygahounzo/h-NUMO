@@ -13,6 +13,7 @@
 module mod_input
 
    use mod_types, only : r8
+   use mod_constants, only : max_nlayers
  
    use mod_utilities, only : get_unit, lowercase, uppercase
  
@@ -65,7 +66,6 @@ module mod_input
       real(kind=r8) :: beta
       real(kind=r8) :: dry_cutoff
       real(kind=r8) :: h_cutoff1, h_cutoff2
-      real(kind=r8) :: c_APE
 
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -94,17 +94,6 @@ module mod_input
       character(len=24)  :: xstretch_type
       character(len=24)  :: ystretch_type
       character(len=24)  :: zstretch_type
-      character(len=24)  :: platform
-      character(len=24)  :: platform2
-      character(len=6)   :: vectorization
-      character(len=150) :: numaocca_dir
-
-      character(len=512) :: OpenCLCompilerFlags
-      character(len=512) :: CudaCompilerFlags
-      character(len=512) :: OpenMPCompilerFlags
-      character(len=512) :: SerialCompilerFlags
-      character(len=512) :: PthreadsCompilerFlags
-      character(len=512) :: COICompilerFlags
 
       !-----------------------------------------------------------------------
       ! Default Namelist Values
@@ -119,7 +108,6 @@ module mod_input
       real(kind=r8) :: sponge_lateralx_coe_west
       real(kind=r8) :: sponge_lateraly_coe
 
-      real(kind=r8) :: SIPG_constant
 
       integer, dimension(2) :: x_boundary
       integer, dimension(2) :: y_boundary
@@ -156,16 +144,6 @@ module mod_input
       integer :: nel_root_h
       integer :: filter_tracers_flg  ! activates filter for tracer equations (inactive by default)
 
-      integer :: platformID,  deviceID
-      integer :: platformID2, deviceID2
-      integer :: Nelems
-      integer :: Nslices
-      integer :: NslicesV
-      integer :: cpus_per_node
-      integer :: gpus_per_node
-      integer :: threads_per_process
-      integer :: platformWeight
-      integer :: platformWeight2
 
       integer :: imass
 
@@ -193,8 +171,6 @@ module mod_input
 
       logical :: ladapt_timestep
 
-      logical :: lgpu
-      logical :: luse_hybrid_cpu_gpu
 
       logical :: is_mlswe
       logical :: dg_integ_exact
@@ -291,7 +267,6 @@ module mod_input
       real(kind=r8) :: beta = 0.0
       real(kind=r8) :: dry_cutoff = 1.0e-10
       real(kind=r8) :: h_cutoff1 = 0.0, h_cutoff2 = 0.0
-      real(kind=r8) :: c_APE = 0.0
    
       !-----------------------------------------------------------------------
       ! Namelist Variables
@@ -317,19 +292,7 @@ module mod_input
       character(len=24) :: xstretch_type
       character(len=24) :: ystretch_type
       character(len=24) :: zstretch_type
-      character(len=24) :: platform = 'OpenCL'
-      character(len=24) :: platform2 = 'OpenMP'
-      character(len=6)  :: vectorization = 'float4'
-      character(len=150):: numaocca_dir = './numaocca/'
    
-      character(len=512) :: OpenCLCompilerFlags = ' -cl-denorms-are-zero -cl-fast-relaxed-math -cl-finite-math-only -cl-mad-enable -cl-no-signed-zeros'
-      character(len=512) :: CudaCompilerFlags = '--compiler-options -O2 --use_fast_math'
-      character(len=512) :: OpenMPCompilerFlags = '-D__extern_always_inline=inline -O2'
-      character(len=512) :: SerialCompilerFlags = '-D__extern_always_inline=inline -O2'
-      character(len=512) :: PthreadsCompilerFlags = '-D__extern_always_inline=inline -O2'
-      character(len=512) :: COICompilerFlags = '-D__extern_always_inline=inline -O2'
-      !Vectorization OpenMP flags ===>>>  "-mavx"
-      !Endevor OpenMP flags       ===>>>  "-xCOMMON-AVX512 -qopt-report=5 -qopt-report-file=stdout"
    
    
       !real :: dt_btp
@@ -347,7 +310,6 @@ module mod_input
       real(kind=r8)         :: sponge_lateralx_coe_west = -1
       real(kind=r8)         :: sponge_lateraly_coe = -1
    
-      real(kind=r8)         :: SIPG_constant = 0
    
       integer, dimension(2)  :: x_boundary = 4
       integer, dimension(2)  :: y_boundary = 4
@@ -387,18 +349,6 @@ module mod_input
       integer               :: nel_root_h = 0
       integer               :: filter_tracers_flg = 0 !This flag activates the filter computation for the tracers equations (INactive by default)
       
-      integer               :: platformID = 0
-      integer               :: deviceID = 0
-      integer               :: platformID2 = 1
-      integer               :: deviceID2 = 0
-      integer               :: Nelems = 1
-      integer               :: Nslices = 1
-      integer               :: NslicesV = -1
-      integer               :: cpus_per_node = 1
-      integer               :: gpus_per_node = 1
-      integer               :: threads_per_process = 0
-      integer               :: platformWeight = 1
-      integer               :: platformWeight2 = 1
    
       integer               :: imass = 1
 
@@ -428,8 +378,6 @@ module mod_input
       logical :: ladapt_timestep = .false.
    
       !Input parameters to write a spherical shell (1 level) to a netcdf file:
-      logical :: lgpu = .false.
-      logical :: luse_hybrid_cpu_gpu = .false.
       
       logical :: is_mlswe = .true.  
       logical :: dg_integ_exact = .true. 
@@ -490,9 +438,6 @@ module mod_input
          ladapt_timestep,lprint_diagnostics,iprint_diagnostics, &
          bcast_type, &
          space_method, &
-         lgpu, numaocca_dir, Nelems, Nslices, NslicesV, vectorization, &
-         platform, platformID, deviceID, platformWeight, platform2, platformID2, deviceID2, platformWeight2, &
-         cpus_per_node, gpus_per_node, threads_per_process, luse_hybrid_cpu_gpu, &
                               !!--Shallow
          ibathymetry, bathymetry_file, &
          gravity_in, limit_threshold, &
@@ -503,9 +448,9 @@ module mod_input
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, c_APE, &
+         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, &
          bcl_time_method, rk_bcl_FS, &
-         SIPG_constant, C_smag, lwrite_vorticity
+         C_smag, lwrite_vorticity
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -661,7 +606,6 @@ module mod_input
       inp%dry_cutoff                     = dry_cutoff
       inp%h_cutoff1                      = h_cutoff1
       inp%h_cutoff2                      = h_cutoff2
-      inp%c_APE                          = c_APE
       inp%xdims                          = xdims
       inp%ydims                          = ydims
       inp%ztop                           = ztop
@@ -678,6 +622,11 @@ module mod_input
       inp%nopz                           = nopz
       inp%nelz                           = nelz
       inp%nlayers                        = nlayers
+      if (nlayers > max_nlayers) then
+         print *, 'Error in mod_input: nlayers = ', nlayers, ' exceeds max_nlayers = ', max_nlayers, &
+                  ' (raise max_nlayers in mod_constants.F90 and rebuild)'
+         stop
+      end if
       inp%nproc_z                        = nproc_z
       inp%zlevel_out                     = zlevel_out
       inp%geometry_type                  = geometry_type
@@ -699,16 +648,6 @@ module mod_input
       inp%xstretch_type                  = xstretch_type
       inp%ystretch_type                  = ystretch_type
       inp%zstretch_type                  = zstretch_type
-      inp%platform                       = platform
-      inp%platform2                      = platform2
-      inp%vectorization                  = vectorization
-      inp%numaocca_dir                   = numaocca_dir
-      inp%OpenCLCompilerFlags            = OpenCLCompilerFlags
-      inp%CudaCompilerFlags              = CudaCompilerFlags
-      inp%OpenMPCompilerFlags            = OpenMPCompilerFlags
-      inp%SerialCompilerFlags            = SerialCompilerFlags
-      inp%PthreadsCompilerFlags          = PthreadsCompilerFlags
-      inp%COICompilerFlags               = COICompilerFlags
       inp%bc_tscale                      = bc_tscale
       inp%bc_xscale                      = bc_xscale
       inp%bc_yscale                      = bc_yscale
@@ -718,7 +657,6 @@ module mod_input
       inp%sponge_lateralx_coe_east       = sponge_lateralx_coe_east
       inp%sponge_lateralx_coe_west       = sponge_lateralx_coe_west
       inp%sponge_lateraly_coe            = sponge_lateraly_coe
-      inp%SIPG_constant                  = SIPG_constant
       inp%x_boundary                     = x_boundary
       inp%y_boundary                     = y_boundary
       inp%z_boundary                     = z_boundary
@@ -755,18 +693,6 @@ module mod_input
       inp%amr_mark_set2nc                = amr_mark_set2nc
       inp%nel_root_h                     = nel_root_h
       inp%filter_tracers_flg             = filter_tracers_flg
-      inp%platformID                     = platformID
-      inp%deviceID                       = deviceID
-      inp%platformID2                    = platformID2
-      inp%deviceID2                      = deviceID2
-      inp%Nelems                         = Nelems
-      inp%Nslices                        = Nslices
-      inp%NslicesV                       = NslicesV
-      inp%cpus_per_node                  = cpus_per_node
-      inp%gpus_per_node                  = gpus_per_node
-      inp%threads_per_process            = threads_per_process
-      inp%platformWeight                 = platformWeight
-      inp%platformWeight2                = platformWeight2
       inp%imass                          = imass
       inp%time_scale                     = time_scale
       inp%bcast_type                     = bcast_type
@@ -788,8 +714,6 @@ module mod_input
       inp%luse_min_element_length        = luse_min_element_length
       inp%lrotating_flow                 = lrotating_flow
       inp%ladapt_timestep                = ladapt_timestep
-      inp%lgpu                           = lgpu
-      inp%luse_hybrid_cpu_gpu            = luse_hybrid_cpu_gpu
       inp%is_mlswe                       = is_mlswe
       inp%dg_integ_exact                 = dg_integ_exact
       inp%dump_data                      = dump_data

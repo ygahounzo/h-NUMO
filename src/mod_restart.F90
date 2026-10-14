@@ -23,6 +23,40 @@ module mod_restart
 !> missing). Called periodically (every inp%write_restart_time) and
 !> once, unconditionally, at the end of the run.
 !---------------------------------------------------------------------!
+#ifdef NO_NETCDF
+! Built without NetCDF: restart writing is unavailable. time_loop disables the
+! periodic/final restart writes in this configuration, so this is only reached
+! if a new caller is added.
+subroutine write_restart_nc(G, inp, gg, par, init, q_df, qb, irestart_nc, time, itime)
+
+    use mod_grid,          only: grid
+    use mod_input,         only: input
+    use mod_global_grid,   only: grid_global
+    use mod_parallel,      only: parallel_CS
+    use mod_initial,       only: initial
+    use mpi
+
+    implicit none
+
+    type(grid),        intent(in) :: G
+    type(input),       intent(in) :: inp
+    type(grid_global), intent(in) :: gg
+    type(parallel_CS), intent(in) :: par
+    type(initial),     intent(in) :: init
+
+    real, intent(in)    :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
+    real, intent(in)    :: qb(inp%nvar_btp, G%npoin)
+    integer, intent(in) :: irestart_nc
+    real, intent(in)    :: time
+    integer, intent(in) :: itime
+
+    integer :: ierr
+
+    print *, 'Fatal error write_restart_nc: built with NO_NETCDF, cannot write NetCDF restart files'
+    call mpi_abort(mpi_comm_world, 1, ierr)
+
+end subroutine write_restart_nc
+#else
 subroutine write_restart_nc(G, inp, gg, par, init, q_df, qb, irestart_nc, time, itime)
 
     use mod_grid,          only: grid
@@ -256,6 +290,7 @@ subroutine write_restart_nc(G, inp, gg, par, init, q_df, qb, irestart_nc, time, 
     end subroutine check
 
 end subroutine write_restart_nc
+#endif
 
 subroutine restart_mlswe(G, inp, b, init, q_df, qb_df, qp_df_out, fname)
 
@@ -438,6 +473,26 @@ end subroutine load_data_mlswe
 !> same gathered layout load_data_mlswe produces (w is not needed to
 !> restart the run and is not read back, matching the txt path).
 !---------------------------------------------------------------------!
+#ifdef NO_NETCDF
+subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
+
+    use mpi
+
+    implicit none
+
+    character(len=*), intent(in) :: name_data_file
+    integer, intent(in) :: npoin_g, nlayers
+
+    real, dimension(3, npoin_g),          intent(out) :: qb_df_g
+    real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
+
+    integer :: ierr
+
+    print *, 'Fatal error load_data_mlswe_nc: built with NO_NETCDF, cannot read ', trim(name_data_file)
+    call mpi_abort(mpi_comm_world, 1, ierr)
+
+end subroutine load_data_mlswe_nc
+#else
 subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
 
     use netcdf
@@ -482,6 +537,7 @@ subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
     end subroutine check
 
 end subroutine load_data_mlswe_nc
+#endif
 
 !---------------------------------------------------------------------!
 !> @brief This subroutine creates communicators for ngroups of

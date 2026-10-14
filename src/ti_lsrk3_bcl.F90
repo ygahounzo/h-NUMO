@@ -91,7 +91,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
                                       qb_df, bcl%qprime_df, dt_btp_in)
     endif
 
-    ! GPU: build baroclinic RHS; rhs_bcl downloaded to host inside but device copy valid.
+    ! GPU: build baroclinic RHS; rhs_bcl stays on device.
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
     ! GPU LSRK3 update: q = q0 + dt * rhs.

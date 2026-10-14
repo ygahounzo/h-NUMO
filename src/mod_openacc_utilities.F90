@@ -155,6 +155,7 @@ contains
       !$acc enter data create(btp%pbprime_visc_scaled, btp%btp_dpp_graduvw_scaled)
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)
       !$acc enter data create(btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
+      !$acc enter data create(btp%F_vol)
 
       ! mod_variables (bcl_CS)
       !$acc enter data copyin(bcl)
@@ -165,8 +166,6 @@ contains
       !$acc                   bcl%dpp_uvp)
       !$acc enter data create(bcl%dpprime_visc_scaled, bcl%dpp_graduvw_scaled)
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
-      !$acc enter data create(bcl%lap_z_df)
-      !$acc enter data create(bcl%grad_z_df)
       !$acc enter data create(bcl%nu_smag)
       ! dry_flg is written first by find_dry_elements (not host-initialized) --
       ! create, not copyin, matching nu_smag/rhs_bcl above.
@@ -189,8 +188,6 @@ contains
       !$acc enter data create(ref%q_send_bcl, ref%q_recv_bcl)
       !$acc enter data create(ref%send_data_lap_bcl, ref%recv_data_lap_bcl)
       !$acc enter data create(ref%q_send_lap_bcl, ref%q_recv_lap_bcl)
-      !$acc enter data create(ref%send_data_gradz_bcl, ref%recv_data_gradz_bcl)
-      !$acc enter data create(ref%q_send_gradz_bcl, ref%q_recv_gradz_bcl)
 
       ! mod_parallel
       !$acc enter data copyin(par)

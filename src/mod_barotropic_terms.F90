@@ -162,10 +162,10 @@ module mod_barotropic_terms
         npts_l    = b%npts
         has_w     = (inp%nvar_bcl == 4) ! w (vertical velocity) is only carried on sphere_hex
 
-        ! Fused single kernel: gang over nodes, seq over layers and neighbours.
+        ! Fused single kernel: one thread per node, seq over layers and neighbours.
         ! Eliminates the graduv temporary and the sequential k-loop with its
         ! 3*nlayers kernel launches.  btp sums accumulated privately per node.
-        !$acc parallel loop gang &
+        !$acc parallel loop gang vector &
         !$acc    present(bcl%dpprime_visc, bcl%dpp_graduvw, bcl%dpp_uvp, &
         !$acc            btp%btp_dpp_graduvw, &
         !$acc            btp%pbprime_visc, qprime_df, &
@@ -247,7 +247,8 @@ module mod_barotropic_terms
 
         ! Precompute BCL layer integrals at quad points.
         ! qprime_df is fixed during BTP subcycling, so this runs once per RK stage.
-        !$acc parallel loop gang                                                   &
+        ! One thread per quadrature point.
+        !$acc parallel loop gang vector                                            &
         !$acc    private(pp_k, up_k, vp_k, wp_k, pprime_k, pprime_k1,            &
         !$acc            H_b, H_bclq, flux, pbq, hi, I)                          &
         !$acc    firstprivate(npoin_q_l, nlayers_l, npts_l, has_w)                 &
