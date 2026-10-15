@@ -156,7 +156,7 @@ contains
       !$acc enter data create(btp%pbprime_visc_scaled, btp%btp_dpp_graduvw_scaled)
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)
       !$acc enter data create(btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
-      !$acc enter data create(btp%F_vol)
+      !$acc enter data create(btp%F_vol, btp%qb_T, btp%flux_face_q)
 
       ! mod_variables (bcl_CS)
       !$acc enter data copyin(bcl)

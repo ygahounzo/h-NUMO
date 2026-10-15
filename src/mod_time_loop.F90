@@ -77,6 +77,8 @@ contains
 
         real(kind=r8) :: time1, time2, tick
         real :: t1, t2
+        real    :: cons_err, cons_err_g, sdp_c
+        integer :: ip_c, k_c
         real, dimension(3, G%npoin, inp%nlayers) :: q_df_read
         real, dimension(3, G%npoin)              :: qb_df_read
 
@@ -257,6 +259,24 @@ contains
             call cpu_time(time2)
 
             rhs_time = rhs_time + time2 - time1
+
+            ! Diagnostic: thickness consistency between layers and barotropic mode,
+            ! max_I |sum_k dp(I,k) - pb(I)| / pb(I)
+            if (inp%nlayers > 1) then
+               cons_err = 0.0
+               !$acc parallel loop reduction(max:cons_err) present(bcl%q_df, btp%qb_df) private(sdp_c)
+               do ip_c = 1, G%npoin
+                  sdp_c = 0.0
+                  !$acc loop seq
+                  do k_c = 1, inp%nlayers
+                     sdp_c = sdp_c + bcl%q_df(1,ip_c,k_c)
+                  end do
+                  cons_err = max(cons_err, abs(sdp_c - btp%qb_df(1,ip_c)) / btp%qb_df(1,ip_c))
+               end do
+               call mpi_allreduce(cons_err, cons_err_g, 1, MPI_PRECISION, MPI_MAX, mpi_comm_world, ierr)
+               if (irank == irank0 .and. (itime == 1 .or. mod(itime, 10) == 0)) &
+                  write(*,'(a,i8,es14.6)') ' dp-pb consistency: ', itime, cons_err_g
+            end if
 
             if (mod(itime, irestart) == 0 .and. inp%dump_data) then
                 inorm = inorm + 1

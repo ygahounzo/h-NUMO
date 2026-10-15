@@ -433,7 +433,7 @@ contains
       integer :: k, I, e, n, m, nelem_l, nlayers_l, nglx_l, ngly_l, nc
       real    :: ope, btp_threshold, max_qprime_spd, dp_threshold
       real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
-      real    :: vel_btp(inp%nvar_bcl-1)
+      real    :: vb1, vb2, vb3
 
       nelem_l   = G%nelem
       nlayers_l = inp%nlayers
@@ -460,19 +460,19 @@ contains
 
       call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
-      ! Element-parallel: one gang per element; uses dry_flg(e,k) to skip fully-dry
+      ! One thread per (element, node); uses dry_flg(e,k) to skip fully-dry
       ! layers (left at the qprime_df=0.0 init above), and guards the qb_df(1,I)
       ! divisions the same way extract_velocity's Part 2 barotropic correction does.
-      ! Shared boundary nodes may be written by multiple gangs — same
-      ! non-determinism as extract_velocity.
-      !$acc parallel loop gang &
+      ! Each DG node I belongs to a single element, so no two threads write
+      ! the same qprime_df(:,I,:).  The barotropic velocity is held in scalars
+      ! (vb3 only used when nc == 3): a runtime-sized private array would be
+      ! shared by the threads of a gang.
+      !$acc parallel loop gang vector collapse(3) &
       !$acc    present(G%intma, qprime_df, q_df, qb_df, uv_df, init%pbprime_df, bcl%dry_flg) &
       !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
-      !$acc    private(ope, vel_btp)
+      !$acc    private(I, k, ope, vb1, vb2, vb3)
       do e = 1, nelem_l
-        !$acc loop seq
         do m = 1, ngly_l
-          !$acc loop seq
           do n = 1, nglx_l
             I = G%intma(n, m, 1, e)
 
@@ -484,10 +484,11 @@ contains
             end do
             ope = ope / init%pbprime_df(I)
 
+            vb1 = 0.0;  vb2 = 0.0;  vb3 = 0.0
             if (qb_df(1,I) > btp_threshold) then
-              vel_btp(:) = qb_df(3:2+nc,I) / qb_df(1,I)
-            else
-              vel_btp(:) = 0.0
+              vb1 = qb_df(3,I) / qb_df(1,I)
+              vb2 = qb_df(4,I) / qb_df(1,I)
+              if (nc == 3) vb3 = qb_df(5,I) / qb_df(1,I)
             end if
 
             !$acc loop seq
@@ -498,9 +499,13 @@ contains
                 ! by 1/ope. Zero the velocity deviation to prevent quadratic flux blow-up
                 ! in btp_bcl_coeffs_qdf (flux += pp_k * up_k^2 with inflated pp_k).
                 if (qb_df(1,I) > btp_threshold) then
-                    qprime_df(2:nc+1,I,k) = uv_df(:,I,k) - vel_btp(:)
+                    qprime_df(2,I,k) = uv_df(1,I,k) - vb1
+                    qprime_df(3,I,k) = uv_df(2,I,k) - vb2
+                    if (nc == 3) qprime_df(4,I,k) = uv_df(3,I,k) - vb3
                 else
-                    qprime_df(2:nc+1,I,k) = 0.0
+                    qprime_df(2,I,k) = 0.0
+                    qprime_df(3,I,k) = 0.0
+                    if (nc == 3) qprime_df(4,I,k) = 0.0
                 end if
             end do
           end do

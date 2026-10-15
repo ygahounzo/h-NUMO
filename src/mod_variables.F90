@@ -69,6 +69,16 @@ module mod_variables
       ! first so that neighbouring GPU threads access neighbouring addresses.
       real, dimension(:,:,:),   allocatable :: F_vol         ! (npoin_q,4,3)
 
+      ! qb_df summed along xi for each element, node row m and quad column iqx
+      ! (index iqx + (m-1)*nqx + (ie-1)*nqx*ngly): first pass of the
+      ! tensor-product interpolation in create_rhs_btp_volume_qdf_qp_gpu.
+      real, dimension(:,:),     allocatable :: qb_T          ! (nelem*ngly*nqx,nvar_btp)
+
+      ! Weighted Riemann fluxes (mass, u, v, w) at each face quad point,
+      ! index iquad + (iface-1)*nq: written by the flux kernel and scattered
+      ! to rhs_btp by a second kernel in create_btp_fluxes_qdf_gpu.
+      real, dimension(:,:),     allocatable :: flux_face_q   ! (nq*nface,4)
+
    end type btp_CS
 
    !  Baroclinic control structure
@@ -146,7 +156,8 @@ contains
             btp%qb_df,  &
             btp%qb0_df,             btp%qb2_df,                         &
             btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
-            btp%pbq,                btp%F_vol)
+            btp%pbq,                btp%F_vol,     btp%qb_T,         &
+            btp%flux_face_q)
       end if
 
       ! 1-D volume arrays
@@ -216,6 +227,8 @@ contains
          btp%bcl_btp_flux(inp%nvar_bcl,G%npoin_q),                          &
          btp%pbq(G%npoin_q),                                                &
          btp%F_vol(G%npoin_q,4,3),                                        &
+         btp%qb_T(G%nelem*b%ngly*b%nqx,inp%nvar_btp),                       &
+         btp%flux_face_q(b%nq*G%nface,4),                                   &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
 
