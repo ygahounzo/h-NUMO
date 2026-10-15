@@ -283,8 +283,10 @@ contains
       !  interpolation is done per substep.
       !
       !  Two kernels, no atomics:
-      !    A) one thread per quad point: the physics at that point, stored as
-      !       weighted coefficients in btp%F_vol(Iq,:,:);
+      !    A) one thread per quad point: the physics at that point, combined
+      !       with the metric terms and stored as weighted coefficients of the
+      !       reference-element basis (psi, dpsi/dxi, dpsi/deta) in
+      !       btp%F_vol(Iq,:,:);
       !    B) one thread per DOF node: sum the node's element quad-point
       !       contributions in a fixed order and write the node once (DG nodes
       !       belong to exactly one element).
@@ -293,10 +295,11 @@ contains
       !  registers. F_vol has the quad-point index first so that neighbouring
       !  threads in kernel A store to neighbouring addresses.
       !
-      !  Basis values and gradients are rebuilt from the 1D tables (psiqx/psiqy,
-      !  dpsiqx/dpsiqy) and the quad-point metric terms (mt%ksiq_*, etaq_*,
-      !  zetaq_*), exactly as compute_tensor_product builds tsp%psih/dpsid*,
-      !  instead of reading those large (npts, npoin_q) arrays.
+      !  The physical gradient is dpsi/dx = dpsi/dxi*ksi_x + dpsi/deta*eta_x
+      !  + psi*zeta_x (likewise y, z), as in compute_tensor_product. Kernel A
+      !  folds the metric terms into the fluxes once per quad point, so kernel B
+      !  only needs the 1D basis tables (psiqx/psiqy, dpsiqx/dpsiqy) instead of
+      !  the metric terms or the large (npts, npoin_q) tsp%psih/dpsid* arrays.
       !===========================================================================
       use mod_grid,      only: grid
       use mod_basis,     only: basis
@@ -322,13 +325,14 @@ contains
       real, dimension(inp%nvar_btp-1,G%npoin), intent(out) :: rhs_btp
 
       real :: sc_x, sc_y, sc_z, Hq, qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw, H_b
-      real :: wq, hi, dhdx, dhdy, dhdz, tb_u, tb_v, tb_w, ope, ope2
+      real :: wq, hi, tb_u, tb_v, tb_w, ope, ope2
       real :: dp, dpp, udp, vdp, wdp, ub, vb, wb, ubot, vbot, wbot, spd, pbq
       real :: pp_k, up_k, vp_k, wp_k
       real :: sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww, sum_wu, sum_wv
       real :: cfx, cfy, cfz
       real :: r1, r2, r3, r4
       real :: h_e, h_n
+      real :: kx, ky, kz, ex, ey, ez, zx, zy, zz
       integer :: I, Iq, ip, ie, ijq, Iq0, n, m, iqx, iqy
       integer :: npts_l, npts_q_l, nelem_l, botfr_l, nglx_l, nqx_l
       real    :: cd_l, alpha_bot_l
@@ -376,6 +380,7 @@ contains
       !$acc           sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww,  &
       !$acc           sum_wu, sum_wv,                                              &
       !$acc           qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw,                   &
+      !$acc           kx, ky, kz, ex, ey, ez, zx, zy, zz,                         &
       !$acc           hi, I, ip, n, m, iqx, iqy)
       do ie = 1, nelem_l
          do ijq = 1, npts_q_l
@@ -503,24 +508,33 @@ contains
                btp%uvb_ave(3,Iq)           = btp%uvb_ave(3,Iq)           + wb
             end if
 
-            ! Weighted coefficients of psi (j=0) and dpsi/dx,dy,dz (j=1..3) for
-            ! each equation row at this quad point.
-            btp%F_vol(Iq,1,0) = 0.0
-            btp%F_vol(Iq,1,1) = wq*udp
-            btp%F_vol(Iq,1,2) = wq*vdp
-            btp%F_vol(Iq,1,3) = wq*wdp
-            btp%F_vol(Iq,2,0) = wq*sc_x
-            btp%F_vol(Iq,2,1) = wq*(Hq+qu)
-            btp%F_vol(Iq,2,2) = wq*quv
-            btp%F_vol(Iq,2,3) = wq*quz
-            btp%F_vol(Iq,3,0) = wq*sc_y
-            btp%F_vol(Iq,3,1) = wq*qvu
-            btp%F_vol(Iq,3,2) = wq*(Hq+qv)
-            btp%F_vol(Iq,3,3) = wq*qvz
-            btp%F_vol(Iq,4,0) = wq*sc_z
-            btp%F_vol(Iq,4,1) = wq*qwu
-            btp%F_vol(Iq,4,2) = wq*qwv
-            btp%F_vol(Iq,4,3) = wq*(Hq+qw)
+            ! Metric terms at this quad point (zeta_* and the z components are
+            ! only used on sphere_hex; zero otherwise).
+            kx = mt%ksiq_x(iqx, iqy, 1, ie);  ky = mt%ksiq_y(iqx, iqy, 1, ie)
+            ex = mt%etaq_x(iqx, iqy, 1, ie);  ey = mt%etaq_y(iqx, iqy, 1, ie)
+            kz = 0.0;  ez = 0.0;  zx = 0.0;  zy = 0.0;  zz = 0.0
+            if (has_w) then
+               kz = mt%ksiq_z(iqx, iqy, 1, ie);  ez = mt%etaq_z(iqx, iqy, 1, ie)
+               zx = mt%zetaq_x(iqx, iqy, 1, ie)
+               zy = mt%zetaq_y(iqx, iqy, 1, ie)
+               zz = mt%zetaq_z(iqx, iqy, 1, ie)
+            end if
+
+            ! Weighted coefficients of psi (j=1), dpsi/dxi (j=2) and dpsi/deta
+            ! (j=3) for each equation row at this quad point. With source S and
+            ! flux F = (Fx, Fy, Fz): j=1 is S + zeta.F, j=2 is ksi.F, j=3 is eta.F.
+            btp%F_vol(Iq,1,1) = wq*(zx*udp + zy*vdp + zz*wdp)
+            btp%F_vol(Iq,1,2) = wq*(kx*udp + ky*vdp + kz*wdp)
+            btp%F_vol(Iq,1,3) = wq*(ex*udp + ey*vdp + ez*wdp)
+            btp%F_vol(Iq,2,1) = wq*(sc_x + zx*(Hq+qu) + zy*quv + zz*quz)
+            btp%F_vol(Iq,2,2) = wq*(kx*(Hq+qu) + ky*quv + kz*quz)
+            btp%F_vol(Iq,2,3) = wq*(ex*(Hq+qu) + ey*quv + ez*quz)
+            btp%F_vol(Iq,3,1) = wq*(sc_y + zx*qvu + zy*(Hq+qv) + zz*qvz)
+            btp%F_vol(Iq,3,2) = wq*(kx*qvu + ky*(Hq+qv) + kz*qvz)
+            btp%F_vol(Iq,3,3) = wq*(ex*qvu + ey*(Hq+qv) + ez*qvz)
+            btp%F_vol(Iq,4,1) = wq*(sc_z + zx*qwu + zy*qwv + zz*(Hq+qw))
+            btp%F_vol(Iq,4,2) = wq*(kx*qwu + ky*qwv + kz*(Hq+qw))
+            btp%F_vol(Iq,4,3) = wq*(ex*qwu + ey*qwv + ez*(Hq+qw))
 
          end do
       end do
@@ -531,8 +545,7 @@ contains
       ! needed because each DG node belongs to exactly one element.
       !$acc parallel loop gang vector collapse(2)                                   &
       !$acc   firstprivate(npts_l, npts_q_l, nelem_l, nglx_l, nqx_l, has_w)          &
-      !$acc   private(I, Iq, Iq0, ijq, n, m, iqx, iqy, hi, h_e, h_n, dhdx, dhdy, dhdz, &
-      !$acc           r1, r2, r3, r4)
+      !$acc   private(I, Iq, Iq0, ijq, n, m, iqx, iqy, hi, h_e, h_n, r1, r2, r3, r4)
       do ie = 1, nelem_l
          do ip = 1, npts_l
             Iq0 = tsp%indexq_e(1, ie)
@@ -548,20 +561,11 @@ contains
                hi   = b%psiqx(n, iqx)  * b%psiqy(m, iqy)
                h_e  = b%dpsiqx(n, iqx) * b%psiqy(m, iqy)     ! xi  derivative
                h_n  = b%psiqx(n, iqx)  * b%dpsiqy(m, iqy)    ! eta derivative
-               dhdx = h_e*mt%ksiq_x(iqx, iqy, 1, ie) + h_n*mt%etaq_x(iqx, iqy, 1, ie)
-               dhdy = h_e*mt%ksiq_y(iqx, iqy, 1, ie) + h_n*mt%etaq_y(iqx, iqy, 1, ie)
-               dhdz = 0.0
-               if (has_w) then
-                  dhdx = dhdx + hi*mt%zetaq_x(iqx, iqy, 1, ie)
-                  dhdy = dhdy + hi*mt%zetaq_y(iqx, iqy, 1, ie)
-                  dhdz = h_e*mt%ksiq_z(iqx, iqy, 1, ie) + h_n*mt%etaq_z(iqx, iqy, 1, ie) &
-                       + hi*mt%zetaq_z(iqx, iqy, 1, ie)
-               end if
-               r1 = r1 + hi*btp%F_vol(Iq,1,0) + dhdx*btp%F_vol(Iq,1,1) + dhdy*btp%F_vol(Iq,1,2) + dhdz*btp%F_vol(Iq,1,3)
-               r2 = r2 + hi*btp%F_vol(Iq,2,0) + dhdx*btp%F_vol(Iq,2,1) + dhdy*btp%F_vol(Iq,2,2) + dhdz*btp%F_vol(Iq,2,3)
-               r3 = r3 + hi*btp%F_vol(Iq,3,0) + dhdx*btp%F_vol(Iq,3,1) + dhdy*btp%F_vol(Iq,3,2) + dhdz*btp%F_vol(Iq,3,3)
+               r1 = r1 + hi*btp%F_vol(Iq,1,1) + h_e*btp%F_vol(Iq,1,2) + h_n*btp%F_vol(Iq,1,3)
+               r2 = r2 + hi*btp%F_vol(Iq,2,1) + h_e*btp%F_vol(Iq,2,2) + h_n*btp%F_vol(Iq,2,3)
+               r3 = r3 + hi*btp%F_vol(Iq,3,1) + h_e*btp%F_vol(Iq,3,2) + h_n*btp%F_vol(Iq,3,3)
                if (has_w) &
-                  r4 = r4 + hi*btp%F_vol(Iq,4,0) + dhdx*btp%F_vol(Iq,4,1) + dhdy*btp%F_vol(Iq,4,2) + dhdz*btp%F_vol(Iq,4,3)
+                  r4 = r4 + hi*btp%F_vol(Iq,4,1) + h_e*btp%F_vol(Iq,4,2) + h_n*btp%F_vol(Iq,4,3)
             end do
             rhs_btp(1, I) = r1
             rhs_btp(2, I) = r2

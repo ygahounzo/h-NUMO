@@ -64,10 +64,10 @@ module mod_variables
 
       ! Weighted flux/source coefficients of the BTP volume integral at each quad
       ! point, written and read within create_rhs_btp_volume_qdf_qp_gpu.
-      ! F_vol(Iq,r,j): equation row r (mass, u, v, w); j = 0 source (x psi),
-      ! 1..3 flux (x dpsi/dx, dpsi/dy, dpsi/dz). Quad-point index first so that
-      ! neighbouring GPU threads access neighbouring addresses.
-      real, dimension(:,:,:),   allocatable :: F_vol         ! (npoin_q,4,0:3)
+      ! F_vol(Iq,r,j): equation row r (mass, u, v, w); coefficient of j = 1 psi,
+      ! 2 dpsi/dxi, 3 dpsi/deta (metric terms already applied). Quad-point index
+      ! first so that neighbouring GPU threads access neighbouring addresses.
+      real, dimension(:,:,:),   allocatable :: F_vol         ! (npoin_q,4,3)
 
    end type btp_CS
 
@@ -215,7 +215,7 @@ contains
          btp%bcl_flux(inp%nvar_bcl-1,inp%nvar_bcl-1,G%npoin_q),             &
          btp%bcl_btp_flux(inp%nvar_bcl,G%npoin_q),                          &
          btp%pbq(G%npoin_q),                                                &
-         btp%F_vol(G%npoin_q,4,0:3),                                        &
+         btp%F_vol(G%npoin_q,4,3),                                        &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
 
