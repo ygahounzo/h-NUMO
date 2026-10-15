@@ -87,6 +87,7 @@ contains
       !$acc enter data copyin(b%dpsix, b%dpsiy, b%dpsiz,                       &
       !$acc                   b%dpsix_tr, b%dpsiy_tr, b%dpsiz_tr)
       !$acc enter data copyin(b%dpsiqx, b%dpsiqy, b%dpsiqz, b%psiq)
+      !$acc enter data copyin(b%psiqx, b%psiqy)
       !$acc enter data copyin(b%psi)
       !$acc enter data copyin(b%wglx, b%wgly)
 
