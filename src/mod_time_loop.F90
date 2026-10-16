@@ -145,11 +145,7 @@ contains
                 elseif(trim(inp%out_type) == 'vtk') then
                     do l = 1, inp%nlayers
                         ifnp = l
-                        write(fnp1,'(i3)') ifnp
-                        iloop = 2 - int(log10(real(ifnp)))
-                        do j = 1, iloop
-                            fnp1(j:j) = '0'
-                        end do
+                        write(fnp1,'(i3.3)') ifnp
                         write(fnp2,'(a1,a3,a5)') "l", fnp1, "_0000"
                         call write_output_mlswe(G, inp, b, init, gg, par, tsp, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
                     end do
@@ -165,12 +161,7 @@ contains
 
             ifnp = inp%irestart_file_number
 
-            write(fnp4,'(i4)') ifnp
-
-            iloop = 3 - int(log10(real(ifnp)))
-            do j = 1, iloop
-                fnp4(j:j) = '0'
-            end do
+            write(fnp4,'(i4.4)') ifnp
 
             ! Prefer a RESTART/restart_mlswe_####.nc file if one exists for this
             ! restart index, regardless of out_type; otherwise fall back to the
@@ -284,22 +275,14 @@ contains
                 !$acc update host(bcl%q_df, btp%qb_df)
 
                 ifnp = inorm
-                write(fnp1,'(i4)') ifnp
-                iloop = 3 - int(log10(real(ifnp)))
-                do j = 1, iloop
-                    fnp1(j:j) = '0'
-                end do
+                write(fnp1,'(i4.4)') ifnp
 
                 if(trim(inp%out_type) == 'txt') then
                     call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)
                 elseif(trim(inp%out_type) == 'vtk') then
                     do l = 1, inp%nlayers
                         ifnp = l
-                        write(fnp4,'(i3)') ifnp
-                        iloop = 2 - int(log10(real(ifnp)))
-                        do j = 1, iloop
-                            fnp4(j:j) = '0'
-                        end do
+                        write(fnp4,'(i3.3)') ifnp
                         write(fnp2,'(a1,a3,a1,a4)') "l", fnp4, "_", fnp1
                         call write_output_mlswe(G, inp, b, init, gg, par, tsp, bcl%q_df, qout_mlswe(:,:,l), btp%qb_df, fnp2, time, l)
                     end do

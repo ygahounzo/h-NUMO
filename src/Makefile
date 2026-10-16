@@ -5,7 +5,7 @@ include $(CONFIG_USER)
 
 DIRS += 
 .PHONY: $(DIRS)
-.NOTPARALLEL:
+#.NOTPARALLEL:
 
 SOURCEF += amain.F90
 SOURCEF += mod_variables.F90

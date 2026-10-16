@@ -66,16 +66,7 @@ subroutine diagnostics(G, inp, gg, par, init, q, q_df, qb, itime, idone)
     if (irank == irank0 .and. idone == 0) then
 
         tempchar = 'mlswe'
-        write(num,'(i4)') itime
-
-        if(itime == 0) then
-            num = '0000'
-        else
-            iloop=3 - int(log10(real(itime)))
-            do j=1,iloop
-                num(j:j) = '0'
-            end do
-        end if
+        write(num,'(i4.4)') itime
         open(unit=10, file = tempchar//num)
 
         write(10,'(i4)') inp%nlayers

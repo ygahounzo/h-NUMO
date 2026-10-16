@@ -163,11 +163,7 @@ subroutine write_restart_nc(G, inp, gg, par, init, q_df, qb, irestart_nc, time, 
 
         call execute_command_line('mkdir -p ' // restart_dir)
 
-        write(num,'(i4)') irestart_nc
-        iloop = 3 - int(log10(real(irestart_nc)))
-        do j = 1, iloop
-            num(j:j) = '0'
-        end do
+        write(num,'(i4.4)') irestart_nc
 
         restart_fname = 'restart_mlswe_' // num // '.nc'
         fn = trim(restart_dir) // '/' // trim(restart_fname)

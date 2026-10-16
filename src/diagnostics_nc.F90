@@ -128,16 +128,7 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
         ! Generate the name of the file to which the data will be written,
         ! and open the file.
         tempchar = 'mlswe'
-        write(num,'(i4)') itime
-
-        if(itime == 0) then
-            num = '0000'
-        else
-            iloop = 3 - int(log10(real(itime)))
-            do j = 1, iloop
-                num(j:j) = '0'
-            end do
-        end if
+        write(num,'(i4.4)') itime
 
         fn = tempchar//num//'.nc'
         ! Create NetCDF file

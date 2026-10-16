@@ -14,11 +14,7 @@ subroutine write_parallel(par)
 
     do iproc = 1, par%nproc
 
-        write(fnp1,'(i5)') iproc
-        iloop=4 - int(log10(real(iproc)))
-        do j=1,iloop
-            fnp1(j:j)='0'
-        end do
+        write(fnp1,'(i5.5)') iproc
 
         fnp= 'parallel'// '_' // trim(fnp1) // '.out'
         open(1,file=fnp,form="unformatted")
@@ -51,11 +47,7 @@ subroutine read_parallel(par)
 
     call MPI_COMM_RANK(MPI_COMM_WORLD,irank,ierr)
     iproc = irank + 1
-    write(fnp1,'(i5)') iproc
-    iloop=4 - int(log10(real(iproc)))
-    do j=1,iloop
-        fnp1(j:j)='0'
-    end do
+    write(fnp1,'(i5.5)') iproc
 
     fnp= 'parallel'// '_' // trim(fnp1) // '.out'
 
@@ -89,11 +81,7 @@ subroutine read_grid(G)
 
     call MPI_COMM_RANK(MPI_COMM_WORLD,irank,ierr)
     iproc = irank + 1
-    write(fnp1,'(i5)') iproc
-    iloop=4 - int(log10(real(iproc)))
-    do j=1,iloop
-        fnp1(j:j)='0'
-    end do
+    write(fnp1,'(i5.5)') iproc
 
     fnp= 'grid'// '_' // trim(fnp1) // '.gri'
 
