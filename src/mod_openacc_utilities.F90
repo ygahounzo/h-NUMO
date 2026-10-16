@@ -94,6 +94,10 @@ contains
       ! mod_grid
       !$acc enter data copyin(G)
       !$acc enter data copyin(G%intma, G%face, G%intma_table, G%face_type)
+      ! DG quad-point index (allocated for DG grids only)
+      if (allocated(G%intma_dg_quad)) then
+         !$acc enter data copyin(G%intma_dg_quad)
+      end if
 
       ! mod_tensor
       !$acc enter data copyin(tsp)
@@ -134,6 +138,7 @@ contains
       !$acc enter data copyin(mf)
       !$acc enter data copyin(mf%imapl, mf%imapr, mf%normal_vector,           &
       !$acc                   mf%normal_vector_q, mf%jac_faceq, mf%jac_face)
+      !$acc enter data copyin(mf%face_I)
 
       ! mod_variables (btp_CS)
       !$acc enter data copyin(btp)

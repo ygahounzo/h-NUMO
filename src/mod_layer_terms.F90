@@ -201,6 +201,8 @@ contains
     ! has_w branching replaced by array-section slicing (q_df(2:nc+1,...),
     ! qb_df(3:2+nc,...)) since I/k are always fixed scalars at each point of
     ! use.
+#ifdef _OPENACC
+    ! GPU version of extract_velocity; the original CPU version is below (#else).
     subroutine extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
       implicit none
@@ -420,7 +422,221 @@ contains
       !$acc end parallel loop
 
     end subroutine extract_velocity
+#else
+    subroutine extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
 
+      implicit none
+
+      type(grid),    intent(in)  :: G
+      type(input),   intent(in)  :: inp
+      type(basis),   intent(in)  :: b
+      type(metrics), intent(in)  :: mt
+      type(tensor_CS), intent(in) :: tsp
+      type(initial), intent(in)    :: init
+      type(bcl_CS),  intent(inout) :: bcl
+
+      real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers), intent(out) :: uv_df
+      real, dimension(inp%nvar_bcl,   G%npoin, inp%nlayers), intent(in)  :: q_df
+      real, dimension(inp%nvar_btp,   G%npoin),              intent(in)  :: qb_df
+
+      real    :: wjac, wsum, mult, btp_threshold, pbprime_avg
+      integer :: I, k, e, n, m, nc
+      integer :: nlayers_l, nelem_l, nglx_l, ngly_l
+      real, parameter :: eps = 1.0e-20
+      ! Default blending band = a fixed fraction of this element's own
+      ! reference depth (init%pbprime_df), not an absolute meters value --
+      ! see use_pbprime_scaling below.
+      real, parameter :: blend_frac_lo = 0.01, blend_frac_hi = 0.10
+
+      ! Layer arrays sized by nlayers (3 velocity components); only 1:nc is
+      ! used, so array sections below give explicit ranges.
+      real :: dp_avg(inp%nlayers)
+      real :: mdp_avg(3, inp%nlayers)
+      real :: dp_max(inp%nlayers), dp_min(inp%nlayers)
+      real :: dp_cutoff1(inp%nlayers), dp_cutoff2(inp%nlayers), dp_range(inp%nlayers)
+      real :: a(inp%nlayers), bc(inp%nlayers), c_td(inp%nlayers)
+      real :: r(inp%nlayers, 3)
+      real :: vel_ave(3, inp%nlayers)
+      real :: weight(inp%nlayers)
+      real :: bar(3)
+      logical :: use_pbprime_scaling
+
+      ! GPU: classify dry elements (all arrays already on device).
+      call find_dry_elements(G, inp, b, tsp, bcl%q_df, init%alpha_mlswe, bcl%dry_flg)
+
+      nlayers_l = inp%nlayers
+      nelem_l   = G%nelem
+      nglx_l    = b%nglx
+      ngly_l    = b%ngly
+      nc        = inp%nvar_bcl - 1
+      ! h_cutoff1/h_cutoff2 (absolute meters) remain available as an explicit
+      ! override for anyone who wants to hand-tune the blending band; when
+      ! unset (default 0.0), the band scales itself off this element's own
+      ! reference depth instead of a hardcoded ocean-scale constant, so it
+      ! self-adapts to the problem's depth without any namelist tuning.
+      use_pbprime_scaling = (inp%h_cutoff1 < 1.0e-2)
+
+      ! BTP threshold: sum of per-layer floors.
+      btp_threshold = 0.0
+      do k = 1, nlayers_l
+          btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
+      end do
+
+      ! Part 1: element-parallel velocity blending.
+      ! One thread per element; all inner loops are sequential within the thread.
+      !$acc parallel loop gang vector &
+      !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df, &
+      !$acc            init%pbprime_df, init%alpha_mlswe) &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, use_pbprime_scaling) &
+      !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, dp_cutoff1, dp_cutoff2, dp_range, &
+      !$acc            a, bc, c_td, r, vel_ave, weight, &
+      !$acc            wsum, wjac, mult, pbprime_avg, I, k, m, n)
+      do e = 1, nelem_l
+
+        wsum = 0.0
+        pbprime_avg = 0.0
+        !$acc loop seq
+        do k = 1, nlayers_l
+            dp_avg(k) = 0.0;  mdp_avg(1:nc,k) = 0.0
+            dp_max(k) = -huge(1.0);  dp_min(k) = huge(1.0)
+        end do
+
+        !$acc loop seq
+        do m = 1, ngly_l
+            !$acc loop seq
+            do n = 1, nglx_l
+                I    = G%intma(n, m, 1, e)
+                wjac = b%wglx(n) * b%wgly(m) * mt%jac(n, m, 1, e)
+                wsum = wsum + wjac
+                pbprime_avg = pbprime_avg + wjac * init%pbprime_df(I)
+                !$acc loop seq
+                do k = 1, nlayers_l
+                    dp_avg(k)    = dp_avg(k)    + wjac * q_df(1,I,k)
+                    mdp_avg(1:nc,k) = mdp_avg(1:nc,k) + wjac * q_df(2:nc+1,I,k)
+                    dp_max(k)    = max(dp_max(k), q_df(1,I,k))
+                    dp_min(k)    = min(dp_min(k), q_df(1,I,k))
+                end do
+            end do
+        end do
+
+        !$acc loop seq
+        do k = 1, nlayers_l
+          dp_avg(k)    = dp_avg(k)    / wsum
+          mdp_avg(1:nc,k) = mdp_avg(1:nc,k) / wsum
+        end do
+        pbprime_avg = pbprime_avg / wsum
+
+        ! Blending-band thresholds (see use_pbprime_scaling note above).
+        ! pbprime_avg is already in the same dp-scaled units as q_df(1,...)
+        ! so no gravity/alpha_mlswe conversion is needed for the auto-scaled branch.
+        !$acc loop seq
+        do k = 1, nlayers_l
+          if (use_pbprime_scaling) then
+              dp_cutoff1(k) = blend_frac_lo * pbprime_avg / real(nlayers_l)
+              dp_cutoff2(k) = blend_frac_hi * pbprime_avg / real(nlayers_l)
+          else
+              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
+              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
+          end if
+          dp_range(k) = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
+        end do
+
+        ! Build tridiagonal system for mass-weighted cell-average velocity.
+        !$acc loop seq
+        do k = 1, nlayers_l
+          weight(k) = (dp_max(k) - dp_cutoff1(k)) / dp_range(k)
+          weight(k) = max(min(weight(k), 1.0), 0.0)
+          bc(k)   = 1.0
+          r(k, 1:nc) = weight(k) * mdp_avg(1:nc,k) / (dp_avg(k) + eps)
+        end do
+        a(1)            = 0.0
+        c_td(1)         = -(1.0 - weight(1))
+        a(nlayers_l)    = -(1.0 - weight(nlayers_l))
+        c_td(nlayers_l) = 0.0
+        !$acc loop seq
+        do k = 2, nlayers_l - 1
+          a(k)    = -0.5 * (1.0 - weight(k))
+          c_td(k) = a(k)
+        end do
+
+        ! Forward sweep.
+        !$acc loop seq
+        do k = 2, nlayers_l
+            mult   = a(k) / bc(k-1)
+            bc(k)  = bc(k)  - mult * c_td(k-1)
+            r(k,1:nc) = r(k,1:nc) - mult * r(k-1,1:nc)
+        end do
+        ! Back substitution.
+        vel_ave(1:nc,nlayers_l) = r(nlayers_l,1:nc) / bc(nlayers_l)
+        !$acc loop seq
+        do k = nlayers_l-1, 1, -1
+          vel_ave(1:nc,k) = (r(k,1:nc) - c_td(k) * vel_ave(1:nc,k+1)) / bc(k)
+        end do
+
+        ! Recompute weight using dp_min for the pointwise blending.
+        !$acc loop seq
+        do k = 1, nlayers_l
+          weight(k) = (dp_min(k) - dp_cutoff1(k)) / dp_range(k)
+          weight(k) = max(min(weight(k), 1.0), 0.0)
+        end do
+
+        ! Write blended velocities at all element nodes.
+        !$acc loop seq
+        do m = 1, ngly_l
+          !$acc loop seq
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
+            !$acc loop seq
+            do k = 1, nlayers_l
+              uv_df(:,I,k) = weight(k) * q_df(2:nc+1,I,k) / (q_df(1,I,k) + eps) &
+                            + (1.0 - weight(k)) * vel_ave(1:nc,k)
+            end do
+          end do
+        end do
+
+      end do
+      !$acc end parallel loop
+
+      ! Part 2: barotropic consistency correction, one thread per node (each
+      ! node's correction depends only on that node). Uses dry_flg(e,k) to
+      ! skip fully-dry layers.
+      !$acc parallel loop gang vector collapse(3) &
+      !$acc    present(G%intma, uv_df, q_df, qb_df, bcl%dry_flg) &
+      !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
+      !$acc    private(bar, I, k)
+      do e = 1, nelem_l
+        do m = 1, ngly_l
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
+            bar(1:nc) = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+              if (bcl%dry_flg(e, k) == 2) cycle
+              bar(1:nc) = bar(1:nc) + uv_df(:,I,k) * q_df(1,I,k)
+            end do
+            if (qb_df(1,I) > btp_threshold) then
+              bar(1:nc) = bar(1:nc) / qb_df(1,I)
+              !$acc loop seq
+              do k = 1, nlayers_l
+                if (bcl%dry_flg(e, k) == 2) cycle
+                uv_df(:,I,k) = uv_df(:,I,k) - (bar(1:nc) - qb_df(3:2+nc,I)/qb_df(1,I))
+              end do
+            else
+              !$acc loop seq
+              do k = 1, nlayers_l
+                uv_df(:,I,k) = 0.0
+              end do
+            end if
+          end do
+        end do
+      end do
+      !$acc end parallel loop
+
+    end subroutine extract_velocity
+#endif
+
+#ifdef _OPENACC
+    ! GPU version of extract_qprime_df_face; the original CPU version is below (#else).
     subroutine extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df, q_df, qb_df)
 
       implicit none
@@ -523,6 +739,105 @@ contains
       !$acc end data
 
     end subroutine extract_qprime_df_face
+#else
+    subroutine extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df, q_df, qb_df)
+
+      implicit none
+
+      type(grid),      intent(in) :: G
+      type(input),     intent(in) :: inp
+      type(basis),     intent(in) :: b
+      type(metrics),   intent(in) :: mt
+      type(tensor_CS), intent(in) :: tsp
+      type(initial),   intent(in)    :: init
+      type(bcl_CS),    intent(inout) :: bcl
+
+      real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: qprime_df
+      real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
+      real, dimension(inp%nvar_btp, G%npoin),              intent(in)  :: qb_df
+
+      integer :: k, I, e, n, m, nelem_l, nlayers_l, nglx_l, ngly_l, nc
+      real    :: ope, btp_threshold, max_qprime_spd, dp_threshold
+      real    :: uv_df(inp%nvar_bcl-1, G%npoin, inp%nlayers)
+      real    :: vel_btp(inp%nvar_bcl-1)
+
+      nelem_l   = G%nelem
+      nlayers_l = inp%nlayers
+      nglx_l    = b%nglx
+      ngly_l    = b%ngly
+      nc        = inp%nvar_bcl - 1
+
+      ! BTP threshold
+      btp_threshold = 0.0
+      do k = 1, nlayers_l
+          btp_threshold = btp_threshold + (gravity / init%alpha_mlswe(k)) * inp%dry_cutoff
+      end do
+
+      ! Per-layer pressure threshold for the qprime positivity limiter.
+      ! Approximate as btp_threshold/nlayers
+      dp_threshold   = btp_threshold / real(nlayers_l)
+      max_qprime_spd = 100.0
+
+      !$acc data create(uv_df)
+
+      !$acc kernels present(qprime_df)
+      qprime_df = 0.0
+      !$acc end kernels
+
+      call extract_velocity(G, inp, b, mt, tsp, init, bcl, uv_df, q_df, qb_df)
+
+      ! Element-parallel: one gang per element; uses dry_flg(e,k) to skip fully-dry
+      ! layers (left at the qprime_df=0.0 init above), and guards the qb_df(1,I)
+      ! divisions the same way extract_velocity's Part 2 barotropic correction does.
+      ! Shared boundary nodes may be written by multiple gangs — same
+      ! non-determinism as extract_velocity.
+      !$acc parallel loop gang &
+      !$acc    present(G%intma, qprime_df, q_df, qb_df, uv_df, init%pbprime_df, bcl%dry_flg) &
+      !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nc, btp_threshold) &
+      !$acc    private(ope, vel_btp)
+      do e = 1, nelem_l
+        !$acc loop seq
+        do m = 1, ngly_l
+          !$acc loop seq
+          do n = 1, nglx_l
+            I = G%intma(n, m, 1, e)
+
+            ope = 0.0
+            !$acc loop seq
+            do k = 1, nlayers_l
+                if (bcl%dry_flg(e, k) == 2) cycle
+                ope = ope + q_df(1,I,k)
+            end do
+            ope = ope / init%pbprime_df(I)
+
+            if (qb_df(1,I) > btp_threshold) then
+              vel_btp(:) = qb_df(3:2+nc,I) / qb_df(1,I)
+            else
+              vel_btp(:) = 0.0
+            end if
+
+            !$acc loop seq
+            do k = 1, nlayers_l
+                if (bcl%dry_flg(e, k) == 2) cycle
+                if (ope > 0.0) qprime_df(1,I,k) = q_df(1,I,k) / ope
+                ! When BTP column is at minimum, ope is tiny and qprime_df(1) inflates
+                ! by 1/ope. Zero the velocity deviation to prevent quadratic flux blow-up
+                ! in btp_bcl_coeffs_qdf (flux += pp_k * up_k^2 with inflated pp_k).
+                if (qb_df(1,I) > btp_threshold) then
+                    qprime_df(2:nc+1,I,k) = uv_df(:,I,k) - vel_btp(:)
+                else
+                    qprime_df(2:nc+1,I,k) = 0.0
+                end if
+            end do
+          end do
+        end do
+      end do
+      !$acc end parallel loop
+
+      !$acc end data
+
+    end subroutine extract_qprime_df_face
+#endif
 
     subroutine layer_mom_boundary_df(G, inp, b, mf, init, q)
 

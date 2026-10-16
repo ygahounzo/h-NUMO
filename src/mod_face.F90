@@ -22,10 +22,15 @@ module mod_face
         integer, dimension(:,:,:,:),  allocatable :: imapl, imapr, imapl_q, imapr_q
         integer, dimension(:), allocatable :: ip_bound, face_send, face_bound
         integer, dimension(:), allocatable :: face_nc
+        ! Global node index of face node n on the left (side 1) and right
+        ! (side 2) element: G%intma(imapl/imapr(:,n,1,iface), el/er); 0 where
+        ! the side has no element. Built by mod_face_build_node_index.
+        integer, dimension(:,:,:), allocatable :: face_I     ! (ngl,2,nface)
         integer nboun_max, num_bound, nface_nc
     end type face_CS
 
-    public :: mod_face_create, mod_face_create_boundary, face_CS, mod_face_create_nc_list
+    public :: mod_face_create, mod_face_create_boundary, face_CS, mod_face_create_nc_list, &
+              mod_face_build_node_index
 
     private
     !-------------------------------------------------------------
@@ -75,6 +80,38 @@ contains
         endif
 
     end subroutine mod_face_create
+
+    !-----------------------------------------------------------------------
+    subroutine mod_face_build_node_index(G, b, mf)
+
+        ! Face node -> global node index table mf%face_I, so face kernels do
+        ! one index load per gather instead of the imapl -> intma chain.
+        ! Call once the mesh, faces and boundary flags are final.
+
+        implicit none
+
+        type(grid),    intent(in)    :: G
+        type(basis),   intent(in)    :: b
+        type(face_CS), intent(inout) :: mf
+
+        integer :: iface, n, el, er
+
+        if (allocated(mf%face_I)) deallocate(mf%face_I)
+        allocate(mf%face_I(b%ngl, 2, G%nface))
+        mf%face_I = 0
+
+        do iface = 1, G%nface
+            el = G%face(7, iface)
+            er = G%face(8, iface)
+            do n = 1, b%ngl
+                if (el > 0) mf%face_I(n,1,iface) = &
+                    G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
+                if (er > 0) mf%face_I(n,2,iface) = &
+                    G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
+            end do
+        end do
+
+    end subroutine mod_face_build_node_index
 
     !-----------------------------------------------------------------------
     subroutine mod_face_create_boundary(G, mf, nboun)

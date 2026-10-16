@@ -20,7 +20,7 @@ program numo3d
   use mod_basis,           only: basis
   use mod_global_grid,     only: grid_global
   use mod_parallel,        only: parallel_CS
-  use mod_face,            only: face_CS
+  use mod_face,            only: face_CS, mod_face_build_node_index
   use mod_variables,       only: btp_CS, bcl_CS
   use mod_initial,         only: initial
   use mod_tensor,          only: tensor_CS
@@ -72,6 +72,12 @@ program numo3d
   call diagnose_min_grid_scale(G, b, tsp, inp)
 
   rhs_time = 0
+
+#ifdef _OPENACC
+  ! Face node -> global node index table for the GPU face kernels
+  ! (mesh, faces and boundaries final)
+  call mod_face_build_node_index(G, b, mf)
+#endif
 
   !   Perform Time-Integration
   time1 = wtime()

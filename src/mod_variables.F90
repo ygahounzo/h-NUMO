@@ -69,10 +69,12 @@ module mod_variables
       ! first so that neighbouring GPU threads access neighbouring addresses.
       real, dimension(:,:,:),   allocatable :: F_vol         ! (npoin_q,4,3)
 
-      ! qb_df summed along xi for each element, node row m and quad column iqx
-      ! (index iqx + (m-1)*nqx + (ie-1)*nqx*ngly): first pass of the
-      ! tensor-product interpolation in create_rhs_btp_volume_qdf_qp_gpu.
-      real, dimension(:,:),     allocatable :: qb_T          ! (nelem*ngly*nqx,nvar_btp)
+      ! Per (element, node row m, quad column iqx) work array of
+      ! create_rhs_btp_volume_qdf_qp_gpu (index iqx + (m-1)*nqx + (ie-1)*nqx*ngly):
+      ! columns 1:nvar_btp hold qb_df summed along xi (first pass of the
+      ! interpolation, kernels A0/A); after kernel A, columns 1:8 hold the eta
+      ! sums of the test-function pass (kernels B1/B2).
+      real, dimension(:,:),     allocatable :: qb_T          ! (nelem*ngly*nqx,max(nvar_btp,8))
 
       ! Weighted Riemann fluxes (mass, u, v, w) at each face quad point,
       ! index iquad + (iface-1)*nq: written by the flux kernel and scattered
@@ -179,8 +181,7 @@ contains
             btp%qb_df,  &
             btp%qb0_df,             btp%qb2_df,                         &
             btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
-            btp%pbq,                btp%F_vol,     btp%qb_T,         &
-            btp%flux_face_q)
+            btp%pbq)
       end if
 
       ! 1-D volume arrays
@@ -249,9 +250,6 @@ contains
          btp%bcl_flux(inp%nvar_bcl-1,inp%nvar_bcl-1,G%npoin_q),             &
          btp%bcl_btp_flux(inp%nvar_bcl,G%npoin_q),                          &
          btp%pbq(G%npoin_q),                                                &
-         btp%F_vol(G%npoin_q,4,3),                                        &
-         btp%qb_T(G%nelem*b%ngly*b%nqx,inp%nvar_btp),                       &
-         btp%flux_face_q(b%nq*G%nface,4),                                   &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
 
@@ -271,14 +269,7 @@ contains
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
             bcl%uv_df,                bcl%qbp_df,                        &
-            bcl%dry_flg,              bcl%nu_smag,                       &
-            bcl%F_bcl,                                                    &
-            bcl%ev_dp, bcl%ev_max, bcl%ev_min, bcl%ev_bc, bcl%ev_ctd,      &
-            bcl%ev_mdp, bcl%ev_r,                                          &
-            bcl%sf_z, bcl%sf_mdl, bcl%sf_mdr, bcl%sf_H,                    &
-            bcl%sf_fdp, bcl%sf_fu, bcl%sf_fv, bcl%sf_fw,                   &
-            bcl%sf_pep, bcl%sf_pem, bcl%sf_zep, bcl%sf_zem,                &
-            bcl%sf_hl, bcl%sf_hr)
+            bcl%dry_flg,              bcl%nu_smag)
       end if
 
       allocate(                                                               &
@@ -301,6 +292,26 @@ contains
          bcl%qbp_df(inp%nvar_btp,G%npoin),                                       &
          bcl%dry_flg(G%nelem,inp%nlayers),                                        &
          bcl%nu_smag(G%npoin,inp%nlayers),                                        &
+         stat=stat)
+      if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
+
+#ifdef _OPENACC
+      ! GPU-only work arrays of the restructured kernels (not used by the CPU
+      ! code paths, so not allocated in CPU builds).
+      if (allocated(btp%F_vol)) then
+         deallocate(btp%F_vol, btp%qb_T, btp%flux_face_q,                   &
+            bcl%F_bcl,                                                    &
+            bcl%ev_dp, bcl%ev_max, bcl%ev_min, bcl%ev_bc, bcl%ev_ctd,      &
+            bcl%ev_mdp, bcl%ev_r,                                          &
+            bcl%sf_z, bcl%sf_mdl, bcl%sf_mdr, bcl%sf_H,                    &
+            bcl%sf_fdp, bcl%sf_fu, bcl%sf_fv, bcl%sf_fw,                   &
+            bcl%sf_pep, bcl%sf_pem, bcl%sf_zep, bcl%sf_zem,                &
+            bcl%sf_hl, bcl%sf_hr)
+      end if
+      allocate(                                                               &
+         btp%F_vol(G%npoin_q,4,3),                                        &
+         btp%qb_T(G%nelem*b%ngly*b%nqx,max(inp%nvar_btp,8)),                &
+         btp%flux_face_q(b%nq*G%nface,4),                                   &
          bcl%F_bcl(G%npoin_q,4,3,inp%nlayers),                                   &
          bcl%ev_dp(G%nelem,inp%nlayers),   bcl%ev_max(G%nelem,inp%nlayers),      &
          bcl%ev_min(G%nelem,inp%nlayers),  bcl%ev_bc(G%nelem,inp%nlayers),       &
@@ -315,7 +326,8 @@ contains
          bcl%sf_fdp(b%nq*G%nface,3,inp%nlayers), bcl%sf_fu(b%nq*G%nface,3,inp%nlayers),  &
          bcl%sf_fv(b%nq*G%nface,3,inp%nlayers),  bcl%sf_fw(b%nq*G%nface,3,inp%nlayers),  &
          stat=stat)
-      if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
+      if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (GPU work arrays)"
+#endif
       bcl%nu_smag  = 0.0
 
    end subroutine mod_allocate_mlswe

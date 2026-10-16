@@ -282,7 +282,7 @@ contains
       !  stage by btp_bcl_coeffs_qdf into btp%bcl_* arrays; only qb_df
       !  interpolation is done per substep.
       !
-      !  Three kernels, no atomics:
+      !  Four kernels, no atomics:
       !    A0) one thread per (element, node row m, quad column iqx): qb_df summed
       !        along xi into btp%qb_T, the first pass of the tensor-product
       !        interpolation to quad points;
@@ -291,9 +291,13 @@ contains
       !       with the metric terms and stored as weighted coefficients of the
       !       reference-element basis (psi, dpsi/dxi, dpsi/deta) in
       !       btp%F_vol(Iq,:,:);
-      !    B) one thread per DOF node: sum the node's element quad-point
-      !       contributions in a fixed order and write the node once (DG nodes
-      !       belong to exactly one element).
+      !    B1) one thread per (element, node row m, quad column iqx): the eta
+      !        pass of the test-function sum, into btp%qb_T (free once kernel A
+      !        has run): for each row r, A_r = sum_iqy psiy*F(r,1) + dpsiy*F(r,3)
+      !        and B_r = sum_iqy psiy*F(r,2);
+      !    B2) one thread per DOF node: the xi pass,
+      !        rhs(r) = sum_iqx psix*A_r + dpsix*B_r, written once per node (DG
+      !        nodes belong to exactly one element).
       !  Separate kernels (rather than two vector loops in one gang) avoid the
       !  block barrier between the phases and let kernel B run with far fewer
       !  registers. F_vol has the quad-point index first so that neighbouring
@@ -338,7 +342,8 @@ contains
       real :: h_e, h_n
       real :: kx, ky, kz, ex, ey, ez, zx, zy, zz
       integer :: I, Iq, ip, ie, ijq, Iq0, n, m, iqx, iqy
-      integer :: npts_l, npts_q_l, nelem_l, botfr_l, nglx_l, nqx_l, ngly_l, k, k0
+      integer :: npts_l, npts_q_l, nelem_l, botfr_l, nglx_l, nqx_l, ngly_l, nqy_l, k, k0
+      real    :: a1, a2, a3, a4, b1, b2, b3, b4, py, dpy, px, dpx
       real    :: cd_l, alpha_bot_l
       logical :: has_w
 
@@ -348,12 +353,13 @@ contains
       nglx_l      = b%nglx
       nqx_l       = b%nqx
       ngly_l      = b%ngly
+      nqy_l       = b%nqy
       botfr_l     = inp%botfr
       cd_l        = real(inp%cd_mlswe)
       alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
       has_w       = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
-      !$acc data present(init, tsp, btp,                                             &
+      !$acc data present(init, tsp, btp, G%intma, G%intma_dg_quad,                  &
       !$acc               rhs_btp, qb_df,                                            &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy, tsp%dpsidz,                       &
@@ -385,11 +391,10 @@ contains
       do ie = 1, nelem_l
          do m = 1, ngly_l
             do iqx = 1, nqx_l
-               Iq0 = tsp%indexq_e(1, ie)
                dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  wdp = 0.0
                !$acc loop seq
                do n = 1, nglx_l
-                  I   = tsp%indexq(n + (m - 1)*nglx_l, Iq0)
+                  I   = G%intma(n, m, 1, ie)
                   hi  = b%psiqx(n, iqx)
                   dp  = dp  + hi * qb_df(1, I)
                   dpp = dpp + hi * qb_df(2, I)
@@ -409,9 +414,9 @@ contains
       !$acc end parallel loop
 
       ! ---- Kernel A: physics at each quad point (one thread per point) --------
-      !$acc parallel loop gang vector collapse(2)                                   &
-      !$acc   firstprivate(npts_q_l, nelem_l, botfr_l, cd_l, alpha_bot_l, has_w,   &
-      !$acc                ngly_l, nqx_l)                                           &
+      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc   firstprivate(nelem_l, botfr_l, cd_l, alpha_bot_l, has_w,             &
+      !$acc                ngly_l, nqx_l, nqy_l)                                    &
       !$acc   private(Iq, Iq0, dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb, &
       !$acc           ubot, vbot, wbot, spd, tb_u, tb_v, tb_w,                    &
       !$acc           cfx, cfy, cfz, sc_x, sc_y, sc_z, ope, ope2,                 &
@@ -420,15 +425,14 @@ contains
       !$acc           sum_wu, sum_wv,                                              &
       !$acc           qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw,                   &
       !$acc           kx, ky, kz, ex, ey, ez, zx, zy, zz,                         &
-      !$acc           hi, k, k0, m, iqx, iqy)
+      !$acc           hi, k, k0, m)
       do ie = 1, nelem_l
-         do ijq = 1, npts_q_l
+         do iqy = 1, nqy_l
+         do iqx = 1, nqx_l
 
-            Iq  = tsp%indexq_e(ijq, ie)
-            ! (iqx, iqy): position of this quad point in the element (indexq_e
-            ! runs iqx fastest), matching compute_tensor_product.
-            iqx = mod(ijq - 1, nqx_l) + 1
-            iqy = (ijq - 1)/nqx_l + 1
+            ! (iqx, iqy): position of this quad point in the element; indexq_e
+            ! runs iqx fastest, matching compute_tensor_product.
+            Iq  = G%intma_dg_quad(iqx, iqy, 1, ie)
 
             dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  wdp = 0.0
 
@@ -574,40 +578,75 @@ contains
             btp%F_vol(Iq,4,3) = wq*(ex*qwu + ey*qwv + ez*(Hq+qw))
 
          end do
+         end do
       end do
       !$acc end parallel loop
 
-      ! ---- Kernel B: one thread per DOF node -----------------------------------
-      ! Sum over the node's element quad points in a fixed order; no atomics
-      ! needed because each DG node belongs to exactly one element.
-      !$acc parallel loop gang vector collapse(2)                                   &
-      !$acc   firstprivate(npts_l, npts_q_l, nelem_l, nglx_l, nqx_l, has_w)          &
-      !$acc   private(I, Iq, Iq0, ijq, n, m, iqx, iqy, hi, h_e, h_n, r1, r2, r3, r4)
+      ! ---- Kernel B1: eta pass of the test-function sum ------------------------
+      ! For each element, node row m and quad column iqx (same index k as A0):
+      !   qb_T(k,2r-1) = sum_iqy psiqy(m,iqy)*F_vol(Iq,r,1) + dpsiqy(m,iqy)*F_vol(Iq,r,3)
+      !   qb_T(k,2r)   = sum_iqy psiqy(m,iqy)*F_vol(Iq,r,2)
+      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc   firstprivate(nelem_l, ngly_l, nqx_l, nqy_l, has_w)                     &
+      !$acc   private(Iq, ijq, k, iqy, py, dpy, a1, a2, a3, a4, b1, b2, b3, b4)
       do ie = 1, nelem_l
-         do ip = 1, npts_l
-            Iq0 = tsp%indexq_e(1, ie)
-            n  = mod(ip - 1, nglx_l) + 1
-            m  = (ip - 1)/nglx_l + 1
-            I  = tsp%indexq(ip, Iq0)
+         do m = 1, ngly_l
+            do iqx = 1, nqx_l
+               a1 = 0.0;  a2 = 0.0;  a3 = 0.0;  a4 = 0.0
+               b1 = 0.0;  b2 = 0.0;  b3 = 0.0;  b4 = 0.0
+               !$acc loop seq
+               do iqy = 1, nqy_l
+                  ijq = iqx + (iqy - 1)*nqx_l
+                  Iq  = tsp%indexq_e(ijq, ie)
+                  py  = b%psiqy(m, iqy)
+                  dpy = b%dpsiqy(m, iqy)
+                  a1 = a1 + py*btp%F_vol(Iq,1,1) + dpy*btp%F_vol(Iq,1,3)
+                  b1 = b1 + py*btp%F_vol(Iq,1,2)
+                  a2 = a2 + py*btp%F_vol(Iq,2,1) + dpy*btp%F_vol(Iq,2,3)
+                  b2 = b2 + py*btp%F_vol(Iq,2,2)
+                  a3 = a3 + py*btp%F_vol(Iq,3,1) + dpy*btp%F_vol(Iq,3,3)
+                  b3 = b3 + py*btp%F_vol(Iq,3,2)
+                  if (has_w) then
+                     a4 = a4 + py*btp%F_vol(Iq,4,1) + dpy*btp%F_vol(Iq,4,3)
+                     b4 = b4 + py*btp%F_vol(Iq,4,2)
+                  end if
+               end do
+               k = iqx + (m - 1)*nqx_l + (ie - 1)*nqx_l*ngly_l
+               btp%qb_T(k,1) = a1;  btp%qb_T(k,2) = b1
+               btp%qb_T(k,3) = a2;  btp%qb_T(k,4) = b2
+               btp%qb_T(k,5) = a3;  btp%qb_T(k,6) = b3
+               btp%qb_T(k,7) = a4;  btp%qb_T(k,8) = b4
+            end do
+         end do
+      end do
+      !$acc end parallel loop
+
+      ! ---- Kernel B2: xi pass, one thread per DOF node -------------------------
+      ! No atomics: each DG node belongs to exactly one element.
+      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc   firstprivate(nelem_l, nglx_l, nqx_l, ngly_l, has_w)                    &
+      !$acc   private(I, k, k0, iqx, px, dpx, r1, r2, r3, r4)
+      do ie = 1, nelem_l
+         do m = 1, ngly_l
+         do n = 1, nglx_l
+            I  = G%intma(n, m, 1, ie)
+            k0 = (m - 1)*nqx_l + (ie - 1)*nqx_l*ngly_l
             r1 = 0.0;  r2 = 0.0;  r3 = 0.0;  r4 = 0.0
             !$acc loop seq
-            do ijq = 1, npts_q_l
-               Iq   = tsp%indexq_e(ijq, ie)
-               iqx  = mod(ijq - 1, nqx_l) + 1
-               iqy  = (ijq - 1)/nqx_l + 1
-               hi   = b%psiqx(n, iqx)  * b%psiqy(m, iqy)
-               h_e  = b%dpsiqx(n, iqx) * b%psiqy(m, iqy)     ! xi  derivative
-               h_n  = b%psiqx(n, iqx)  * b%dpsiqy(m, iqy)    ! eta derivative
-               r1 = r1 + hi*btp%F_vol(Iq,1,1) + h_e*btp%F_vol(Iq,1,2) + h_n*btp%F_vol(Iq,1,3)
-               r2 = r2 + hi*btp%F_vol(Iq,2,1) + h_e*btp%F_vol(Iq,2,2) + h_n*btp%F_vol(Iq,2,3)
-               r3 = r3 + hi*btp%F_vol(Iq,3,1) + h_e*btp%F_vol(Iq,3,2) + h_n*btp%F_vol(Iq,3,3)
-               if (has_w) &
-                  r4 = r4 + hi*btp%F_vol(Iq,4,1) + h_e*btp%F_vol(Iq,4,2) + h_n*btp%F_vol(Iq,4,3)
+            do iqx = 1, nqx_l
+               k   = iqx + k0
+               px  = b%psiqx(n, iqx)
+               dpx = b%dpsiqx(n, iqx)
+               r1 = r1 + px*btp%qb_T(k,1) + dpx*btp%qb_T(k,2)
+               r2 = r2 + px*btp%qb_T(k,3) + dpx*btp%qb_T(k,4)
+               r3 = r3 + px*btp%qb_T(k,5) + dpx*btp%qb_T(k,6)
+               if (has_w) r4 = r4 + px*btp%qb_T(k,7) + dpx*btp%qb_T(k,8)
             end do
             rhs_btp(1, I) = r1
             rhs_btp(2, I) = r2
             rhs_btp(3, I) = r3
             if (has_w) rhs_btp(4, I) = r4
+         end do
          end do
       end do
       !$acc end parallel loop
@@ -920,7 +959,7 @@ contains
       !$acc               btp%btp_mass_flux_face_ave,                               &
       !$acc               btp%Qu_face_ave, btp%Qv_face_ave, btp%Qw_face_ave,       &
       !$acc               btp%one_plus_eta_edge_2_ave,                              &
-      !$acc               btp%uvb_face_ave, btp%flux_face_q)
+      !$acc               btp%uvb_face_ave, btp%flux_face_q, mf%face_I)
 
       !$acc parallel loop gang vector                                               &
       !$acc   private(iface, iquad, el, er, I, n, k,                              &
@@ -960,7 +999,7 @@ contains
             !$acc loop seq
             do n = 1, ngl_f
                hi = b%psiq(n, iquad)
-               I  = G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
+               I  = mf%face_I(n,1,iface)
                qbl1 = qbl1 + hi * qb(1,I)
                qbl2 = qbl2 + hi * qb(2,I)
                qbl3 = qbl3 + hi * qb(3,I)
@@ -976,7 +1015,7 @@ contains
                !$acc loop seq
                do n = 1, ngl_f
                   hi = b%psiq(n, iquad)
-                  I  = G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
+                  I  = mf%face_I(n,2,iface)
                   qbr1 = qbr1 + hi * qb(1,I)
                   qbr2 = qbr2 + hi * qb(2,I)
                   qbr3 = qbr3 + hi * qb(3,I)
@@ -1044,7 +1083,7 @@ contains
                !$acc loop seq
                do n = 1, ngl_f
                   hi  = b%psiq(n, iquad)
-                  I   = G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
+                  I   = mf%face_I(n,1,iface)
                   pkl = pkl + hi * qprime_df(1, I, k)
                   ukl = ukl + hi * qprime_df(2, I, k)
                   vkl = vkl + hi * qprime_df(3, I, k)
@@ -1056,7 +1095,7 @@ contains
                   !$acc loop seq
                   do n = 1, ngl_f
                      hi  = b%psiq(n, iquad)
-                     I   = G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
+                     I   = mf%face_I(n,2,iface)
                      pkr = pkr + hi * qprime_df(1, I, k)
                      ukr = ukr + hi * qprime_df(2, I, k)
                      vkr = vkr + hi * qprime_df(3, I, k)
@@ -1233,7 +1272,7 @@ contains
             if (has_w) s_w = s_w + hi * btp%flux_face_q(ifq,4)
          end do
 
-         I = G%intma(mf%imapl(1,n,1,iface), mf%imapl(2,n,1,iface), mf%imapl(3,n,1,iface), el)
+         I = mf%face_I(n,1,iface)
          !$acc atomic update
          rhs_btp(1,I) = rhs_btp(1,I) - s_pb
          !$acc atomic update
@@ -1246,7 +1285,7 @@ contains
          end if
 
          if (er > 0) then
-            I = G%intma(mf%imapr(1,n,1,iface), mf%imapr(2,n,1,iface), mf%imapr(3,n,1,iface), er)
+            I = mf%face_I(n,2,iface)
             !$acc atomic update
             rhs_btp(1,I) = rhs_btp(1,I) + s_pb
             !$acc atomic update

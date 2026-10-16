@@ -171,8 +171,8 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       ! every layer (real per-layer densities would leave a small residual
       ! imbalance, since the interior interfaces below are flat).
       alpha_mlswe(1) = 1.0/1000.0
-      if (nlayers >= 2) alpha_mlswe(2) = 1.0/1000.0
-      if (nlayers >= 3) alpha_mlswe(3) = 1.0/1000.0
+      if (nlayers >= 2) alpha_mlswe(2) = 1.0/1005.0
+      if (nlayers >= 3) alpha_mlswe(3) = 1.0/1010.0
 
       do I1 = 1, npoin
          x = G%coord(1,I1)
