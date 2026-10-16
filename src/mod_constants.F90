@@ -30,9 +30,6 @@ module mod_constants
     real(kind=r8)            :: gravity   = 9.80616_r8
     real(kind=r8), parameter :: Ck        = 0.15_r8       !Smagorinsky constant
 
-    ! Upper bound on inp%nlayers. Sizes per-thread layer arrays in GPU kernels,
-    ! which need compile-time sizes to be placed in fast local memory.
-    integer, parameter :: max_nlayers = 32
   
     ! Derived constants
     real(kind=r8) :: earth_radius, pi

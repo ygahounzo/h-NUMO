@@ -111,6 +111,29 @@ module mod_variables
       real, dimension(:,:),     allocatable :: qbp_df   ! (nvar_btp,npoin)
       integer, dimension(:,:),  allocatable :: dry_flg  ! (nelem,nlayers): 0=wet,1=mixed,2=dry
       real,    dimension(:,:),  allocatable :: nu_smag  ! (npoin,nlayers): Smagorinsky eddy viscosity
+      ! Weighted flux/source coefficients of the sphere BCL volume integral,
+      ! written and read within create_rhs_dynamics_volume_bcl_sphere (GPU).
+      ! F_bcl(Iq,r,j,k): equation row r (mass, u, v, w) of layer k; j = 1 psi,
+      ! 2 dpsi/dxi, 3 dpsi/deta (metric terms already applied).
+      real,    dimension(:,:,:,:), allocatable :: F_bcl ! (npoin_q,4,3,nlayers)
+
+      ! Per-element layer work arrays of extract_velocity (GPU-thread index,
+      ! the element, first): element-mean dp / momentum, element max / min dp
+      ! (ev_min is overwritten by the pointwise blending weight), tridiagonal
+      ! diagonal / upper diagonal, rhs overwritten by the solution.
+      real, dimension(:,:),   allocatable :: ev_dp, ev_max, ev_min, ev_bc, ev_ctd ! (nelem,nlayers)
+      real, dimension(:,:,:), allocatable :: ev_mdp, ev_r                         ! (nelem,3,nlayers)
+
+      ! Per-(face, quad point) layer work arrays of Apply_bcl_fluxes_sphere
+      ! (thread index ifq = iquad + (iface-1)*nq first):
+      !   sf_z (ifq,side,k+1) face interface height; sf_pep/sf_pem, sf_zep/sf_zem
+      !   (ifq,k+1) edge pressure / height, plus and minus side; sf_hl/sf_hr
+      !   (ifq,k) clamped left/right thickness; sf_mdl/sf_mdr (ifq,c,k) left/
+      !   right momentum*dp; sf_H (ifq,side,k) pressure term; sf_fdp, sf_fu,
+      !   sf_fv, sf_fw (ifq,dir,k) upwind mass / momentum fluxes.
+      real, dimension(:,:,:), allocatable :: sf_z, sf_mdl, sf_mdr, sf_H
+      real, dimension(:,:,:), allocatable :: sf_fdp, sf_fu, sf_fv, sf_fw
+      real, dimension(:,:),   allocatable :: sf_pep, sf_pem, sf_zep, sf_zem, sf_hl, sf_hr
 
    end type bcl_CS
 
@@ -248,7 +271,14 @@ contains
             bcl%rhs_bcl,              bcl%rhs_visc_bcl,                  &
             bcl%q0_df,                bcl%q1_df,                         &
             bcl%uv_df,                bcl%qbp_df,                        &
-            bcl%dry_flg,              bcl%nu_smag)
+            bcl%dry_flg,              bcl%nu_smag,                       &
+            bcl%F_bcl,                                                    &
+            bcl%ev_dp, bcl%ev_max, bcl%ev_min, bcl%ev_bc, bcl%ev_ctd,      &
+            bcl%ev_mdp, bcl%ev_r,                                          &
+            bcl%sf_z, bcl%sf_mdl, bcl%sf_mdr, bcl%sf_H,                    &
+            bcl%sf_fdp, bcl%sf_fu, bcl%sf_fv, bcl%sf_fw,                   &
+            bcl%sf_pep, bcl%sf_pem, bcl%sf_zep, bcl%sf_zem,                &
+            bcl%sf_hl, bcl%sf_hr)
       end if
 
       allocate(                                                               &
@@ -271,6 +301,19 @@ contains
          bcl%qbp_df(inp%nvar_btp,G%npoin),                                       &
          bcl%dry_flg(G%nelem,inp%nlayers),                                        &
          bcl%nu_smag(G%npoin,inp%nlayers),                                        &
+         bcl%F_bcl(G%npoin_q,4,3,inp%nlayers),                                   &
+         bcl%ev_dp(G%nelem,inp%nlayers),   bcl%ev_max(G%nelem,inp%nlayers),      &
+         bcl%ev_min(G%nelem,inp%nlayers),  bcl%ev_bc(G%nelem,inp%nlayers),       &
+         bcl%ev_ctd(G%nelem,inp%nlayers),                                        &
+         bcl%ev_mdp(G%nelem,3,inp%nlayers), bcl%ev_r(G%nelem,3,inp%nlayers),     &
+         bcl%sf_z(b%nq*G%nface,2,inp%nlayers+1),                                 &
+         bcl%sf_pep(b%nq*G%nface,inp%nlayers+1), bcl%sf_pem(b%nq*G%nface,inp%nlayers+1), &
+         bcl%sf_zep(b%nq*G%nface,inp%nlayers+1), bcl%sf_zem(b%nq*G%nface,inp%nlayers+1), &
+         bcl%sf_hl(b%nq*G%nface,inp%nlayers),   bcl%sf_hr(b%nq*G%nface,inp%nlayers),     &
+         bcl%sf_mdl(b%nq*G%nface,3,inp%nlayers), bcl%sf_mdr(b%nq*G%nface,3,inp%nlayers), &
+         bcl%sf_H(b%nq*G%nface,2,inp%nlayers),                                   &
+         bcl%sf_fdp(b%nq*G%nface,3,inp%nlayers), bcl%sf_fu(b%nq*G%nface,3,inp%nlayers),  &
+         bcl%sf_fv(b%nq*G%nface,3,inp%nlayers),  bcl%sf_fw(b%nq*G%nface,3,inp%nlayers),  &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
       bcl%nu_smag  = 0.0

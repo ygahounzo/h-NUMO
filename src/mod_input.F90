@@ -13,7 +13,6 @@
 module mod_input
 
    use mod_types, only : r8
-   use mod_constants, only : max_nlayers
  
    use mod_utilities, only : get_unit, lowercase, uppercase
  
@@ -622,11 +621,6 @@ module mod_input
       inp%nopz                           = nopz
       inp%nelz                           = nelz
       inp%nlayers                        = nlayers
-      if (nlayers > max_nlayers) then
-         print *, 'Error in mod_input: nlayers = ', nlayers, ' exceeds max_nlayers = ', max_nlayers, &
-                  ' (raise max_nlayers in mod_constants.F90 and rebuild)'
-         stop
-      end if
       inp%nproc_z                        = nproc_z
       inp%zlevel_out                     = zlevel_out
       inp%geometry_type                  = geometry_type

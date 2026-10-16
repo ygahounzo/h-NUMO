@@ -168,6 +168,13 @@ contains
       !$acc enter data create(bcl%dpprime_visc_scaled, bcl%dpp_graduvw_scaled)
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
       !$acc enter data create(bcl%nu_smag)
+      !$acc enter data create(bcl%F_bcl)
+      !$acc enter data create(bcl%ev_dp, bcl%ev_max, bcl%ev_min, bcl%ev_bc,     &
+      !$acc                   bcl%ev_ctd, bcl%ev_mdp, bcl%ev_r)
+      !$acc enter data create(bcl%sf_z, bcl%sf_pep, bcl%sf_pem, bcl%sf_zep,    &
+      !$acc                   bcl%sf_zem, bcl%sf_hl, bcl%sf_hr, bcl%sf_mdl,     &
+      !$acc                   bcl%sf_mdr, bcl%sf_H, bcl%sf_fdp, bcl%sf_fu,       &
+      !$acc                   bcl%sf_fv, bcl%sf_fw)
       ! dry_flg is written first by find_dry_elements (not host-initialized) --
       ! create, not copyin, matching nu_smag/rhs_bcl above.
       !$acc enter data create(bcl%dry_flg)

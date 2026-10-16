@@ -16,7 +16,7 @@ module mod_layer_terms
     use mod_tensor,    only: tensor_CS
     use mod_metrics,   only: metrics
     use mod_variables, only: btp_CS, bcl_CS
-    use mod_constants, only: gravity, max_nlayers
+    use mod_constants, only: gravity
     use mod_initial_mlswe,    only: find_dry_elements
 
     implicit none
@@ -226,18 +226,10 @@ contains
       ! see use_pbprime_scaling below.
       real, parameter :: blend_frac_lo = 0.01, blend_frac_hi = 0.10
 
-      ! Per-thread arrays use compile-time sizes (max_nlayers layers, 3 velocity
-      ! components) so the compiler can keep them in local memory; only
-      ! 1:nlayers_l and 1:nc are used, so array sections below give explicit
-      ! ranges.
-      real :: dp_avg(max_nlayers)
-      real :: mdp_avg(3, max_nlayers)
-      real :: dp_max(max_nlayers), dp_min(max_nlayers)
-      real :: dp_cutoff1(max_nlayers), dp_cutoff2(max_nlayers), dp_range(max_nlayers)
-      real :: a(max_nlayers), bc(max_nlayers), c_td(max_nlayers)
-      real :: r(max_nlayers, 3)
-      real :: vel_ave(3, max_nlayers)
-      real :: weight(max_nlayers)
+      ! Per-element layer work arrays for Part 1 live in bcl%ev_* (see
+      ! mod_variables), element index first; no per-thread layer arrays.
+      real :: wk, ak, cut1, cut2, rng
+      integer :: ic
       real :: bar(3)
       logical :: use_pbprime_scaling
 
@@ -266,19 +258,24 @@ contains
       ! One thread per element; all inner loops are sequential within the thread.
       !$acc parallel loop gang vector &
       !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df, &
-      !$acc            init%pbprime_df, init%alpha_mlswe) &
+      !$acc            init%pbprime_df, init%alpha_mlswe,           &
+      !$acc            bcl%ev_dp, bcl%ev_mdp, bcl%ev_max, bcl%ev_min, &
+      !$acc            bcl%ev_bc, bcl%ev_ctd, bcl%ev_r) &
       !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, use_pbprime_scaling) &
-      !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, dp_cutoff1, dp_cutoff2, dp_range, &
-      !$acc            a, bc, c_td, r, vel_ave, weight, &
-      !$acc            wsum, wjac, mult, pbprime_avg, I, k, m, n)
+      !$acc    private(wsum, wjac, mult, pbprime_avg, I, k, m, n, ic, &
+      !$acc            wk, ak, cut1, cut2, rng)
       do e = 1, nelem_l
 
         wsum = 0.0
         pbprime_avg = 0.0
         !$acc loop seq
         do k = 1, nlayers_l
-            dp_avg(k) = 0.0;  mdp_avg(1:nc,k) = 0.0
-            dp_max(k) = -huge(1.0);  dp_min(k) = huge(1.0)
+            bcl%ev_dp(e,k) = 0.0
+            !$acc loop seq
+            do ic = 1, nc
+                bcl%ev_mdp(e,ic,k) = 0.0
+            end do
+            bcl%ev_max(e,k) = -huge(1.0);  bcl%ev_min(e,k) = huge(1.0)
         end do
 
         !$acc loop seq
@@ -291,76 +288,81 @@ contains
                 pbprime_avg = pbprime_avg + wjac * init%pbprime_df(I)
                 !$acc loop seq
                 do k = 1, nlayers_l
-                    dp_avg(k)    = dp_avg(k)    + wjac * q_df(1,I,k)
-                    mdp_avg(1:nc,k) = mdp_avg(1:nc,k) + wjac * q_df(2:nc+1,I,k)
-                    dp_max(k)    = max(dp_max(k), q_df(1,I,k))
-                    dp_min(k)    = min(dp_min(k), q_df(1,I,k))
+                    bcl%ev_dp(e,k) = bcl%ev_dp(e,k) + wjac * q_df(1,I,k)
+                    !$acc loop seq
+                    do ic = 1, nc
+                        bcl%ev_mdp(e,ic,k) = bcl%ev_mdp(e,ic,k) + wjac * q_df(ic+1,I,k)
+                    end do
+                    bcl%ev_max(e,k) = max(bcl%ev_max(e,k), q_df(1,I,k))
+                    bcl%ev_min(e,k) = min(bcl%ev_min(e,k), q_df(1,I,k))
                 end do
             end do
         end do
-
-        !$acc loop seq
-        do k = 1, nlayers_l
-          dp_avg(k)    = dp_avg(k)    / wsum
-          mdp_avg(1:nc,k) = mdp_avg(1:nc,k) / wsum
-        end do
         pbprime_avg = pbprime_avg / wsum
 
-        ! Blending-band thresholds (see use_pbprime_scaling note above).
-        ! pbprime_avg is already in the same dp-scaled units as q_df(1,...)
-        ! so no gravity/alpha_mlswe conversion is needed for the auto-scaled branch.
+        ! Tridiagonal system for the mass-weighted cell-average velocity,
+        ! eliminated as it is built (forward sweep). Row k: a(k), bc=1, c(k),
+        ! rhs r(k) = weight(k) * mdp_avg(k) / dp_avg(k), with
+        ! weight(k) from dp_max and the blending band (see use_pbprime_scaling
+        ! note above; pbprime_avg is already in dp-scaled units).
         !$acc loop seq
         do k = 1, nlayers_l
+          bcl%ev_dp(e,k) = bcl%ev_dp(e,k) / wsum
           if (use_pbprime_scaling) then
-              dp_cutoff1(k) = blend_frac_lo * pbprime_avg / real(nlayers_l)
-              dp_cutoff2(k) = blend_frac_hi * pbprime_avg / real(nlayers_l)
+              cut1 = blend_frac_lo * pbprime_avg / real(nlayers_l)
+              cut2 = blend_frac_hi * pbprime_avg / real(nlayers_l)
           else
-              dp_cutoff1(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
-              dp_cutoff2(k) = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
+              cut1 = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
+              cut2 = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
           end if
-          dp_range(k) = max(dp_cutoff2(k) - dp_cutoff1(k), eps)
+          rng = max(cut2 - cut1, eps)
+          wk  = (bcl%ev_max(e,k) - cut1) / rng
+          wk  = max(min(wk, 1.0), 0.0)
+          ! ev_min is only needed below as the pointwise blending weight.
+          bcl%ev_min(e,k) = max(min((bcl%ev_min(e,k) - cut1) / rng, 1.0), 0.0)
+
+          ! Off-diagonals (end rows use the full 1-weight, interior rows half).
+          if (k == nlayers_l) then
+              ak = -(1.0 - wk)
+              bcl%ev_ctd(e,k) = 0.0
+          else if (k == 1) then
+              ak = 0.0
+              bcl%ev_ctd(e,k) = -(1.0 - wk)
+          else
+              ak = -0.5 * (1.0 - wk)
+              bcl%ev_ctd(e,k) = ak
+          end if
+
+          bcl%ev_bc(e,k) = 1.0
+          !$acc loop seq
+          do ic = 1, nc
+              bcl%ev_r(e,ic,k) = wk * (bcl%ev_mdp(e,ic,k) / wsum) / (bcl%ev_dp(e,k) + eps)
+          end do
+
+          if (k > 1) then
+              mult      = ak / bcl%ev_bc(e,k-1)
+              bcl%ev_bc(e,k) = bcl%ev_bc(e,k) - mult * bcl%ev_ctd(e,k-1)
+              !$acc loop seq
+              do ic = 1, nc
+                  bcl%ev_r(e,ic,k) = bcl%ev_r(e,ic,k) - mult * bcl%ev_r(e,ic,k-1)
+              end do
+          end if
         end do
 
-        ! Build tridiagonal system for mass-weighted cell-average velocity.
+        ! Back substitution; ev_r becomes vel_ave.
         !$acc loop seq
-        do k = 1, nlayers_l
-          weight(k) = (dp_max(k) - dp_cutoff1(k)) / dp_range(k)
-          weight(k) = max(min(weight(k), 1.0), 0.0)
-          bc(k)   = 1.0
-          r(k, 1:nc) = weight(k) * mdp_avg(1:nc,k) / (dp_avg(k) + eps)
+        do ic = 1, nc
+            bcl%ev_r(e,ic,nlayers_l) = bcl%ev_r(e,ic,nlayers_l) / bcl%ev_bc(e,nlayers_l)
         end do
-        a(1)            = 0.0
-        c_td(1)         = -(1.0 - weight(1))
-        a(nlayers_l)    = -(1.0 - weight(nlayers_l))
-        c_td(nlayers_l) = 0.0
-        !$acc loop seq
-        do k = 2, nlayers_l - 1
-          a(k)    = -0.5 * (1.0 - weight(k))
-          c_td(k) = a(k)
-        end do
-
-        ! Forward sweep.
-        !$acc loop seq
-        do k = 2, nlayers_l
-            mult   = a(k) / bc(k-1)
-            bc(k)  = bc(k)  - mult * c_td(k-1)
-            r(k,1:nc) = r(k,1:nc) - mult * r(k-1,1:nc)
-        end do
-        ! Back substitution.
-        vel_ave(1:nc,nlayers_l) = r(nlayers_l,1:nc) / bc(nlayers_l)
         !$acc loop seq
         do k = nlayers_l-1, 1, -1
-          vel_ave(1:nc,k) = (r(k,1:nc) - c_td(k) * vel_ave(1:nc,k+1)) / bc(k)
+          !$acc loop seq
+          do ic = 1, nc
+              bcl%ev_r(e,ic,k) = (bcl%ev_r(e,ic,k) - bcl%ev_ctd(e,k) * bcl%ev_r(e,ic,k+1)) / bcl%ev_bc(e,k)
+          end do
         end do
 
-        ! Recompute weight using dp_min for the pointwise blending.
-        !$acc loop seq
-        do k = 1, nlayers_l
-          weight(k) = (dp_min(k) - dp_cutoff1(k)) / dp_range(k)
-          weight(k) = max(min(weight(k), 1.0), 0.0)
-        end do
-
-        ! Write blended velocities at all element nodes.
+        ! Write blended velocities at all element nodes (weight from dp_min).
         !$acc loop seq
         do m = 1, ngly_l
           !$acc loop seq
@@ -368,14 +370,19 @@ contains
             I = G%intma(n, m, 1, e)
             !$acc loop seq
             do k = 1, nlayers_l
-              uv_df(:,I,k) = weight(k) * q_df(2:nc+1,I,k) / (q_df(1,I,k) + eps) &
-                            + (1.0 - weight(k)) * vel_ave(1:nc,k)
+              wk = bcl%ev_min(e,k)
+              !$acc loop seq
+              do ic = 1, nc
+                uv_df(ic,I,k) = wk * q_df(ic+1,I,k) / (q_df(1,I,k) + eps) &
+                              + (1.0 - wk) * bcl%ev_r(e,ic,k)
+              end do
             end do
           end do
         end do
 
       end do
       !$acc end parallel loop
+
 
       ! Part 2: barotropic consistency correction, one thread per node (each
       ! node's correction depends only on that node). Uses dry_flg(e,k) to
