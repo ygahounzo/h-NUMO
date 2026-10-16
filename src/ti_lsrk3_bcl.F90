@@ -95,6 +95,21 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
     ! GPU LSRK3 update: q = q0 + dt * rhs.
+#ifdef _OPENACC
+    ! One thread per (layer, node): a k-outer "kernels" region would put
+    ! one gang per layer (nlayers blocks for the whole update).
+    !$acc parallel loop gang vector collapse(2) present(q_df, bcl%q0_df, bcl%rhs_bcl) &
+    !$acc    firstprivate(dtt, has_w)
+    do k = 1, inp%nlayers
+      do I = 1, G%npoin
+        q_df(1,I,k) = bcl%q0_df(1,I,k) + dtt * bcl%rhs_bcl(1,I,k)
+        q_df(2,I,k) = bcl%q0_df(2,I,k) + dtt * bcl%rhs_bcl(2,I,k)
+        q_df(3,I,k) = bcl%q0_df(3,I,k) + dtt * bcl%rhs_bcl(3,I,k)
+        if (has_w) q_df(4,I,k) = bcl%q0_df(4,I,k) + dtt * bcl%rhs_bcl(4,I,k)
+      end do
+    end do
+    !$acc end parallel loop
+#else
     !$acc kernels present(q_df, bcl%q0_df, bcl%rhs_bcl)
     do k = 1, inp%nlayers
       q_df(1,:,k) = bcl%q0_df(1,:,k) + dtt * bcl%rhs_bcl(1,:,k)
@@ -103,6 +118,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       if (has_w) q_df(4,:,k) = bcl%q0_df(4,:,k) + dtt * bcl%rhs_bcl(4,:,k)
     end do
     !$acc end kernels
+#endif
 
     ! Semi-implicit Coriolis rotation — Coriolis is
     ! never added explicitly in the RHS. Applies
@@ -165,6 +181,17 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 
     ! Reconstruct momentum from corrected velocity.
+#ifdef _OPENACC
+    !$acc parallel loop gang vector collapse(2) present(q_df, bcl%uv_df) firstprivate(has_w)
+    do k = 1, inp%nlayers
+      do I = 1, G%npoin
+        q_df(2,I,k) = bcl%uv_df(1,I,k) * q_df(1,I,k)
+        q_df(3,I,k) = bcl%uv_df(2,I,k) * q_df(1,I,k)
+        if (has_w) q_df(4,I,k) = bcl%uv_df(3,I,k) * q_df(1,I,k)
+      end do
+    end do
+    !$acc end parallel loop
+#else
     !$acc kernels present(q_df, bcl%uv_df)
     do k = 1, inp%nlayers
       q_df(2,:,k) = bcl%uv_df(1,:,k) * q_df(1,:,k)
@@ -172,6 +199,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       if (has_w) q_df(4,:,k) = bcl%uv_df(3,:,k) * q_df(1,:,k)
     end do
     !$acc end kernels
+#endif
 
     ! Positivity limiter.
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)

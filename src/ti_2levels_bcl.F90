@@ -52,6 +52,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    real, dimension(G%npoin, inp%nlayers)    :: rhs_dp
    real, dimension(G%npoin)                 :: dp_norm_inv
    integer :: k, I
+   real    :: dsum
    logical :: has_w
    real :: rl, rm, rn, omg, Px, Py, Pz, d_inv
    real :: tempu_s, tempv_s
@@ -165,6 +166,27 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
 
    call check_layer_thickness(b, G, inp, q_df, 'ti_2levels_bcl', 0)
 
+#ifdef _OPENACC
+   ! One thread per node (sequential over layers): a k-outer "kernels"
+   ! region would put one gang per layer.
+   !$acc parallel loop gang vector                                          &
+   !$acc    present(dp_norm_inv, init%pbprime_df, q_df, bcl%qprime_df, qprime_df_n) &
+   !$acc    private(k, dsum)
+   do I = 1, G%npoin
+      dsum = 0.0
+      !$acc loop seq
+      do k = 1, inp%nlayers
+         dsum = dsum + q_df(1,I,k)
+      end do
+      dp_norm_inv(I) = init%pbprime_df(I) / dsum
+      !$acc loop seq
+      do k = 1, inp%nlayers
+         ! Average of dp' for the pressure gradient in the momentum RHS.
+         bcl%qprime_df(1,I,k) = 0.5*(q_df(1,I,k) * dp_norm_inv(I) + qprime_df_n(1,I,k))
+      end do
+   end do
+   !$acc end parallel loop
+#else
    !$acc kernels present(dp_norm_inv, init%pbprime_df, q_df, bcl%qprime_df, qprime_df_n)
    dp_norm_inv = init%pbprime_df / sum(q_df(1,:,:), dim=2)
 
@@ -175,6 +197,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    ! Average of dp' for the pressure gradient in the momentum RHS.
    bcl%qprime_df(1,:,:) = 0.5*(bcl%qprime_df(1,:,:) + qprime_df_n(1,:,:))
    !$acc end kernels
+#endif
 
    ! Layer momentum equation.
    ! Reuses create_rhs_bcl. Row 1

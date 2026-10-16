@@ -57,8 +57,15 @@ contains
 
       nvarb_f = inp%nvar_btp
 
+      ! All device work of the barotropic sub-steps is queued on async queue 1
+      ! (here and in create_rhs_btp / btp_mom_boundary_df and the routines
+      ! they call), so the host does not wait after every kernel. Host-side
+      ! synchronisation happens only where the host needs device results:
+      ! before the MPI sends (pack_and_send_df_btp), in check_btp_thickness,
+      ! before the (synchronous) viscosity path, and at the end of this routine.
+
       ! Zero-initialise all accumulation buffers on device.
-      !$acc kernels present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
+      !$acc kernels async(1) present(btp%one_plus_eta_edge_2_ave, btp%uvb_ave, btp%uvb_ave_df,      &
       !$acc                  btp%ope_ave, btp%btp_mass_flux_ave, btp%H_ave,                &
       !$acc                  btp%Qu_ave, btp%Qv_ave, btp%Qw_ave, btp%ope2_ave_df,          &
       !$acc                  btp%uvb_face_ave, btp%ope_face_ave, btp%ope2_face_ave,        &
@@ -84,7 +91,7 @@ contains
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
-         !$acc kernels present(btp%qb0_df, qb_df)
+         !$acc kernels async(1) present(btp%qb0_df, qb_df)
          btp%qb0_df = qb_df
          !$acc end kernels
 
@@ -98,11 +105,13 @@ contains
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)
 
-            if (inp%method_visc > 0) &
+            if (inp%method_visc > 0) then
+               !$acc wait(1)
                call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
                                          btp%rhs_btp_visc, qb_df)
+            end if
 
-            !$acc parallel loop present(btp%qb0_df, btp%qb2_df, btp%rhs_btp_visc,        &
+            !$acc parallel loop async(1) present(btp%qb0_df, btp%qb2_df, btp%rhs_btp_visc,        &
             !$acc                        btp%ope2_ave_df, btp%uvb_ave_df, btp%rhs_btp,   &
             !$acc                        init%pbprime_df, mt%massinv, qb_df)             &
             !$acc    private(iv, visc_term, inv_qb1) firstprivate(a0, a1, a2, dtt, nvarb_f)
@@ -131,7 +140,7 @@ contains
             call btp_mom_boundary_df(G, b, mf, init, inp, qb_df)
 
             if (inp%kstages == 5 .and. ik == 2) then
-               !$acc kernels present(btp%qb2_df, qb_df)
+               !$acc kernels async(1) present(btp%qb2_df, qb_df)
                btp%qb2_df = qb_df
                !$acc end kernels
             end if
@@ -141,14 +150,14 @@ contains
       end do
 
       ! tau_wind is constant over sub-steps; skip the accumulation loop.
-      !$acc kernels present(btp%tau_wind_ave, init%tau_wind)
+      !$acc kernels async(1) present(btp%tau_wind_ave, init%tau_wind)
       btp%tau_wind_ave = init%tau_wind
       !$acc end kernels
 
       ! Normalise accumulators on GPU — no host round-trip needed.
       N_inv = 1.0 / real(inp%kstages * init%N_btp)
 
-      !$acc kernels present(btp%uvb_ave_df, btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,    &
+      !$acc kernels async(1) present(btp%uvb_ave_df, btp%ope2_ave_df, btp%ope2_ave, btp%ope_ave,    &
       !$acc                  btp%H_ave, btp%Qu_ave, btp%Qv_ave, btp%Qw_ave,                &
       !$acc                  btp%btp_mass_flux_ave, btp%tau_bot_ave,                        &
       !$acc                  btp%ope_face_ave, btp%ope2_face_ave, btp%H_face_ave,           &
@@ -179,6 +188,9 @@ contains
       btp%graduvb_ave              = N_inv * btp%graduvb_ave
       btp%graduvb_face_ave         = N_inv * btp%graduvb_face_ave
       !$acc end kernels
+
+      ! The baroclinic code reads the averages next (synchronously).
+      !$acc wait(1)
 
    end subroutine ti_barotropic_ssprk_mlswe
 

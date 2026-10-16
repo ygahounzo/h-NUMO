@@ -671,6 +671,8 @@ module mod_initial_mlswe
         npoin_l = G%npoin
 
         ! .not.(dp >= 0) is true for both negative and NaN dp.
+        ! Callers may have queued work on async queue 1 (barotropic sub-step).
+        !$acc wait(1)
         nbad = 0
         !$acc parallel loop gang vector present(qb) &
         !$acc    firstprivate(npoin_l) reduction(+:nbad)

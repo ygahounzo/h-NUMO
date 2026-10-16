@@ -43,7 +43,7 @@ module mod_barotropic_terms
         ! Sphere tangency constraint: remove radial momentum component at all nodes
         ! so momentum stays tangent to the sphere surface (kvector = r_hat).
         if (has_w) then
-            !$acc parallel loop present(init%kvector, qb) private(nx, ny, nz, unl)
+            !$acc parallel loop async(1) present(init%kvector, qb) private(nx, ny, nz, unl)
             do I = 1, G%npoin
                 nx  = init%kvector(1,I)
                 ny  = init%kvector(2,I)
@@ -56,7 +56,7 @@ module mod_barotropic_terms
             !$acc end parallel loop
         end if
 
-        !$acc parallel loop present(G%face, G%intma, mf%imapl, mf%normal_vector, qb) &
+        !$acc parallel loop async(1) present(G%face, G%intma, mf%imapl, mf%normal_vector, qb) &
         !$acc    private(il, jl, kl, el, er, I, nx, ny, nz, unl) firstprivate(has_w)
         do iface = 1, G%nface
 
@@ -109,7 +109,7 @@ module mod_barotropic_terms
         ! Solid body rotation: restore momentum direction from the fixed initial
         ! (t=0) analytic wind field, held constant for the whole run.
         if (has_w .and. trim(inp%test_case) == 'solid_body') then
-            !$acc parallel loop present(qb, init%qb_df)
+            !$acc parallel loop async(1) present(qb, init%qb_df)
             do I = 1, G%npoin
                 qb(3,I) = (init%qb_df(3,I)/init%qb_df(1,I)) * qb(1,I)
                 qb(4,I) = (init%qb_df(4,I)/init%qb_df(1,I)) * qb(1,I)

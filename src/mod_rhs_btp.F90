@@ -385,7 +385,7 @@ contains
       ! qb_T(k,v) = sum_n psiqx(n,iqx) * qb_df(v, node(n,m)) for each element,
       ! node row m and quad column iqx; k runs iqx fastest so that neighbouring
       ! threads store to neighbouring addresses.
-      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc parallel loop async(1) gang vector collapse(3)                                   &
       !$acc   firstprivate(nelem_l, nglx_l, ngly_l, nqx_l, has_w)                    &
       !$acc   private(Iq0, I, n, k, hi, dp, dpp, udp, vdp, wdp)
       do ie = 1, nelem_l
@@ -414,7 +414,7 @@ contains
       !$acc end parallel loop
 
       ! ---- Kernel A: physics at each quad point (one thread per point) --------
-      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc parallel loop async(1) gang vector collapse(3)                                   &
       !$acc   firstprivate(nelem_l, botfr_l, cd_l, alpha_bot_l, has_w,             &
       !$acc                ngly_l, nqx_l, nqy_l)                                    &
       !$acc   private(Iq, Iq0, dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb, &
@@ -586,7 +586,7 @@ contains
       ! For each element, node row m and quad column iqx (same index k as A0):
       !   qb_T(k,2r-1) = sum_iqy psiqy(m,iqy)*F_vol(Iq,r,1) + dpsiqy(m,iqy)*F_vol(Iq,r,3)
       !   qb_T(k,2r)   = sum_iqy psiqy(m,iqy)*F_vol(Iq,r,2)
-      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc parallel loop async(1) gang vector collapse(3)                                   &
       !$acc   firstprivate(nelem_l, ngly_l, nqx_l, nqy_l, has_w)                     &
       !$acc   private(Iq, ijq, k, iqy, py, dpy, a1, a2, a3, a4, b1, b2, b3, b4)
       do ie = 1, nelem_l
@@ -623,7 +623,7 @@ contains
 
       ! ---- Kernel B2: xi pass, one thread per DOF node -------------------------
       ! No atomics: each DG node belongs to exactly one element.
-      !$acc parallel loop gang vector collapse(3)                                   &
+      !$acc parallel loop async(1) gang vector collapse(3)                                   &
       !$acc   firstprivate(nelem_l, nglx_l, nqx_l, ngly_l, has_w)                    &
       !$acc   private(I, k, k0, iqx, px, dpx, r1, r2, r3, r4)
       do ie = 1, nelem_l
@@ -944,10 +944,12 @@ contains
       ! Capture derived-type scalars before the parallel region so they are
       ! available as firstprivate values inside the GPU kernel.
       integer :: ngl_f, nq_f, nlayers_f, nface_f
+      real    :: dry_cutoff_f
       ngl_f     = b%ngl
       nq_f      = b%nq
       nlayers_f = inp%nlayers
       nface_f   = G%nface
+      dry_cutoff_f = inp%dry_cutoff   ! scalar copy: inp itself is not on the device
       has_w     = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
       !$acc data present(btp, rhs_btp, qb, qprime_df,                              &
@@ -961,7 +963,7 @@ contains
       !$acc               btp%one_plus_eta_edge_2_ave,                              &
       !$acc               btp%uvb_face_ave, btp%flux_face_q, mf%face_I)
 
-      !$acc parallel loop gang vector                                               &
+      !$acc parallel loop async(1) gang vector                                               &
       !$acc   private(iface, iquad, el, er, I, n, k,                              &
       !$acc           qbl1, qbl2, qbl3, qbl4, qbl5, qbr1, qbr2, qbr3, qbr4, qbr5,  &
       !$acc           pbl, pbr,                                                    &
@@ -1127,12 +1129,12 @@ contains
                ! Qw_face_ave -- exactly the consistency targets the volume/
                ! face routines' deficit-redistribution logic spreads onto
                ! the wet layers.
-               if (pkl < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
-                  pkl = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+               if (pkl < (gravity/init%alpha_mlswe(k)) * dry_cutoff_f) then
+                  pkl = (gravity/init%alpha_mlswe(k)) * dry_cutoff_f
                   ukl = 0.0;  vkl = 0.0;  wkl = 0.0
                end if
-               if (pkr < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
-                  pkr = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+               if (pkr < (gravity/init%alpha_mlswe(k)) * dry_cutoff_f) then
+                  pkr = (gravity/init%alpha_mlswe(k)) * dry_cutoff_f
                   ukr = 0.0;  vkr = 0.0;  wkr = 0.0
                end if
 
@@ -1248,7 +1250,7 @@ contains
 
       ! RHS scatter: one thread per (face, face node).  The left and right
       ! nodes get the same sum with opposite signs.
-      !$acc parallel loop gang vector                                               &
+      !$acc parallel loop async(1) gang vector                                               &
       !$acc   private(iface, n, el, er, I, iquad, ifq, hi, s_pb, s_u, s_v, s_w)    &
       !$acc   firstprivate(has_w)
       do ifn = 1, nface_f*ngl_f

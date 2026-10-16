@@ -77,7 +77,7 @@ subroutine unpack_data_dg_general_df(G, b, par, q_send, q_recv, send_data, recv_
 
    ! The send/recv buffers are packed in compact order (kk=1..nboun_valid).
    ! nboun_valid is pre-computed in ref and passed by the caller — no pre-scan needed.
-   !$acc parallel loop gang vector collapse(3) &
+   !$acc parallel loop async(1) gang vector collapse(3) &
    !$acc    present(q_send, q_recv, send_data, recv_data) &
    !$acc    firstprivate(ngl_f, nvarb_f, nboun_valid)
    do kk = 1, nboun_valid
@@ -1213,7 +1213,7 @@ subroutine pack_and_send_df_btp(G, inp, b, mf, init, par, ref, send_data_dg, rec
    nvarb_bcl_f  = inp%nvar_bcl
    nboun_valid  = ref%nboun_valid
 
-   !$acc parallel loop gang private(iface, el) &
+   !$acc parallel loop async(1) gang private(iface, el) &
    !$acc    present(G%face, G%intma, mf%imapl, init%pbprime_df, q, qprime_df, &
    !$acc            send_data_dg, ref%face_pack_list) &
    !$acc    firstprivate(nvarb, ngl_f, nbtp_var_f, nlayers_f, nvarb_bcl_f, nboun_valid)
@@ -1247,6 +1247,12 @@ subroutine pack_and_send_df_btp(G, inp, b, mf, init, par, ref, send_data_dg, rec
    iend   = 0
    jj     = 1
    status = 0
+
+   ! The pack kernel runs on async queue 1: it must be complete before MPI
+   ! reads send_data_dg (and before recv_data_dg can be overwritten).
+   if (par%num_nbh > 0) then
+      !$acc wait(1)
+   end if
 
    !$acc host_data use_device(send_data_dg, recv_data_dg)
    do inbh = 1, par%num_nbh

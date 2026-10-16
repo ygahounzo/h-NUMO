@@ -35,6 +35,7 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
    real :: flux_edge_x, flux_edge_y, flux_edge_z
    real, dimension(3) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr, Qw_ql, Qw_qr
    integer :: nq_f, ngl_f, nlayers_f, nvarb_f, bcl_stride_f, pb_idx_f
+   real    :: dry_cutoff_f
    logical :: has_w
 
    nq_f       = b%nq
@@ -43,13 +44,14 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
    nboun_valid = ref%nboun_valid
    nvarb_f      = inp%nvar_btp
    bcl_stride_f = inp%nvar_bcl
+   dry_cutoff_f = inp%dry_cutoff   ! scalar copy: inp itself is not on the device
    pb_idx_f     = inp%nvar_btp + 1  ! pbprime is packed right after the momentum block
    has_w        = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
 
    ! One gang per valid MPI face; iquad is vectorised within each face.
    ! rhs scatter uses atomic: different iquad lanes and different faces can
    ! write to the same volume node through imapl.
-   !$acc parallel loop gang private(iface, el, flux) &
+   !$acc parallel loop async(1) gang private(iface, el, flux) &
    !$acc    present(G%face, G%intma, mf%normal_vector_q, mf%jac_faceq, mf%imapl, &
    !$acc            b%psiq, init%alpha_mlswe, ref%q_send, ref%q_recv, rhs, &
    !$acc            btp%btp_mass_flux_face_ave, btp%H_face_ave, &
@@ -144,12 +146,12 @@ subroutine create_nbhs_face_df(G, inp, b, mf, par, btp, init, ref, rhs)
             ! into btp%H_face_ave/Qu_face_ave/Qv_face_ave/Qw_face_ave --
             ! exactly the consistency targets the volume/face routines'
             ! deficit-redistribution logic spreads onto the wet layers.
-            if (ppl < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
-               ppl = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+            if (ppl < (gravity/init%alpha_mlswe(k)) * dry_cutoff_f) then
+               ppl = (gravity/init%alpha_mlswe(k)) * dry_cutoff_f
                upl = 0.0;  vpl = 0.0;  wpl = 0.0
             end if
-            if (ppr < (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff) then
-               ppr = (gravity/init%alpha_mlswe(k)) * inp%dry_cutoff
+            if (ppr < (gravity/init%alpha_mlswe(k)) * dry_cutoff_f) then
+               ppr = (gravity/init%alpha_mlswe(k)) * dry_cutoff_f
                upr = 0.0;  vpr = 0.0;  wpr = 0.0
             end if
 

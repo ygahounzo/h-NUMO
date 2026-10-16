@@ -262,21 +262,21 @@ contains
 
             ! Diagnostic: thickness consistency between layers and barotropic mode,
             ! max_I |sum_k dp(I,k) - pb(I)| / pb(I)
-            if (inp%nlayers > 1) then
-               cons_err = 0.0
-               !$acc parallel loop reduction(max:cons_err) present(bcl%q_df, btp%qb_df) private(sdp_c)
-               do ip_c = 1, G%npoin
-                  sdp_c = 0.0
-                  !$acc loop seq
-                  do k_c = 1, inp%nlayers
-                     sdp_c = sdp_c + bcl%q_df(1,ip_c,k_c)
-                  end do
-                  cons_err = max(cons_err, abs(sdp_c - btp%qb_df(1,ip_c)) / btp%qb_df(1,ip_c))
-               end do
-               call mpi_allreduce(cons_err, cons_err_g, 1, MPI_PRECISION, MPI_MAX, mpi_comm_world, ierr)
-               if (irank == irank0 .and. (itime == 1 .or. mod(itime, 10) == 0)) &
-                  write(*,'(a,i8,es14.6)') ' dp-pb consistency: ', itime, cons_err_g
-            end if
+            ! if (inp%nlayers > 1) then
+            !    cons_err = 0.0
+            !    !$acc parallel loop reduction(max:cons_err) present(bcl%q_df, btp%qb_df) private(sdp_c)
+            !    do ip_c = 1, G%npoin
+            !       sdp_c = 0.0
+            !       !$acc loop seq
+            !       do k_c = 1, inp%nlayers
+            !          sdp_c = sdp_c + bcl%q_df(1,ip_c,k_c)
+            !       end do
+            !       cons_err = max(cons_err, abs(sdp_c - btp%qb_df(1,ip_c)) / btp%qb_df(1,ip_c))
+            !    end do
+            !    call mpi_allreduce(cons_err, cons_err_g, 1, MPI_PRECISION, MPI_MAX, mpi_comm_world, ierr)
+            !    if (irank == irank0 .and. (itime == 1 .or. mod(itime, 10) == 0)) &
+            !       write(*,'(a,i8,es14.6)') ' dp-pb consistency: ', itime, cons_err_g
+            ! end if
 
             if (mod(itime, irestart) == 0 .and. inp%dump_data) then
                 inorm = inorm + 1
@@ -327,6 +327,7 @@ contains
 
         idone = 1
 
+        !$acc update host(bcl%q_df, btp%qb_df)
         if (.not. inp%dump_data) then
             call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)
         end if
