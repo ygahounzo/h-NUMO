@@ -120,13 +120,16 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     !$acc end kernels
 #endif
 
-    ! Semi-implicit Coriolis rotation — Coriolis is
-    ! never added explicitly in the RHS. Applies
+    ! Semi-implicit Coriolis rotation (flat always; sphere only when
+    ! implicit_coriolis_sph, else Coriolis is explicit in the volume RHS). Applies
     ! (I + ω K_r)^{-1} acting on the LSRK3-updated momentum, where the
     ! "P-vector" blends the updated momentum with the stage-0 cross-product
     ! term (bcl%q0_df, fixed for the whole stage loop, present on device).
     beta_ik = lsrk3_beta(ik)
-    if (has_w) then
+    if (has_w .and. .not. inp%implicit_coriolis_sph) then
+      ! Sphere with explicit Coriolis: already in the volume RHS
+      ! (create_rhs_dynamics_volume_bcl_sphere) -- no rotation.
+    elseif (has_w) then
       ! 3D spherical rotation.
       !$acc parallel loop gang collapse(2) &
       !$acc    present(init%kvector, init%fdt2_bcl, q_df, bcl%q0_df) &

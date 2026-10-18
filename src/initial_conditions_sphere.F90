@@ -199,6 +199,67 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
 
       z_interface(:,nlayers+1) = zbot_df(:)
 
+   case ('geoFlow_ml') ! Multilayer Williamson Test 2 that is an EXACT steady
+                       ! state of the non-Boussinesq layer equations for any
+                       ! layer densities. All layers carry the same zonal wind
+                       ! u0*cos(lat); every interface is parallel to the free
+                       ! surface (layers 1..nlayers-1 have uniform thickness), so
+                       ! the pressure-gradient force per unit mass in layer k,
+                       !   g*[ sum_j<k (rho_j/rho_k)(grad z_j - grad z_j+1) + grad z_k ],
+                       ! reduces to g*grad z_1 in every layer -- the single-layer
+                       ! Test 2 balance. The flat-bottomed bottom layer absorbs the
+                       ! free-surface variation. Unlike 'geoFlow' (flat interior
+                       ! interfaces, after Chen 2025 Sec 5.1, exact only under a
+                       ! Boussinesq approximation), the reduced gravities here are
+                       ! nonzero and the steady state is exact, so it can be used
+                       ! for convergence studies against the initial condition.
+
+      twopi = 2.0*pi
+      h0    = 2.9981e3
+      p     = 24.0*3600.0
+      w_rot = twopi*earth_radius/(12.0*p)
+
+      zbot_df(:) = -h0
+
+      ! Densities 1000, 1005, 1010, ... kg/m^3 (Chen 2025 Sec 5.1 for 3 layers).
+      do k = 1, nlayers
+         alpha_mlswe(k) = 1.0/(1000.0 + 5.0*real(k-1))
+      end do
+
+      ! Upper layers share 400 m in total. The free surface spans about
+      ! [-1904, 0] m, so the bottom layer stays at least ~690 m thick.
+      if (nlayers > 1) then
+         hc = 400.0/real(nlayers-1)
+      else
+         hc = 0.0
+      end if
+
+      do I1 = 1, npoin
+         x = G%coord(1,I1)
+         y = G%coord(2,I1)
+         z = G%coord(3,I1)
+         olon = atan2(y, x+atol)
+         olat = asin(z/earth_radius)
+
+         if (olon < 0.0)    olon = olon + twopi
+         if (olon > twopi)  olon = olon - twopi
+
+         z_interface(I1,1) = -((earth_radius*omega*w_rot + 0.5*w_rot**2) * &
+              (-cos(olon)*cos(olat)*sin(alpha) + sin(olat)*cos(alpha))**2) / gravity
+         do k = 2, nlayers
+            z_interface(I1,k) = z_interface(I1,1) - real(k-1)*hc
+         end do
+
+         u = +w_rot*(cos(olat)*cos(alpha) + sin(olat)*cos(olon)*sin(alpha))
+         v = -w_rot*sin(olon)*sin(alpha)
+
+         u_df(I1,:) = -u*sin(olon) - v*sin(olat)*cos(olon)
+         v_df(I1,:) = +u*cos(olon) - v*sin(olat)*sin(olon)
+         w_df(I1,:) = +v*cos(olat)
+      end do
+
+      z_interface(:,nlayers+1) = zbot_df(:)
+
    case ('gravity_wave') ! Chen (2025, QJRMS, 10.1002/qj.4994) Sec 5.2: internal
                          ! gravity-wave propagation test. Two layers, densities
                          ! 1000/1020 kg/m^3 (paper's first configuration; 1040

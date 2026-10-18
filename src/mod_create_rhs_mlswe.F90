@@ -610,6 +610,7 @@ contains
         real    :: uu_k(3), vv_k(3), ww_k(3), S_uu(3), S_vv(3), S_ww(3)
         real    :: Gc(3), Gsum(3), Gzb(3), gz_k(3), gz_k1(3)
         real    :: Pstress_l, Pbstress_l
+        real    :: cfx, cfy, cfz, cor_fac_l
 
         npoin_q_l = G%npoin_q
         npts_l    = b%npts
@@ -622,6 +623,9 @@ contains
         nqy_l     = b%nqy
         Pstress_l  = (gravity/init%alpha_mlswe(1))           * 50.0
         Pbstress_l = (gravity/init%alpha_mlswe(inp%nlayers)) * 10.0
+        ! Explicit Coriolis here unless the semi-implicit nodal rotation in the
+        ! ti_*_bcl integrators handles it (implicit_coriolis_sph) -- never both.
+        cor_fac_l  = merge(0.0, 1.0, inp%implicit_coriolis_sph)
 
         bcl%sum_layer_mass_flux = 0.0
 
@@ -630,7 +634,7 @@ contains
         !$acc              tsp%dpsidz_x, tsp%dpsidz_y, tsp%dpsidz_z,                    &
         !$acc              qprime_df, rhs,                                                &
         !$acc              init%alpha_mlswe, init%zbot_df, init%pbprime_df,              &
-        !$acc              init%grad_zbot_quad, init%tau_wind,                            &
+        !$acc              init%grad_zbot_quad, init%tau_wind, init%coriolis_3d_quad,    &
         !$acc              btp%ope_ave, btp%uvb_ave, btp%ope2_ave, btp%ope2_ave_df,     &
         !$acc              btp%H_ave, btp%btp_mass_flux_ave,                             &
         !$acc              btp%Qu_ave, btp%Qv_ave, btp%Qw_ave, btp%tau_bot_ave,         &
@@ -664,8 +668,9 @@ contains
         !$acc           uu_dp_deficitq, vv_dp_deficitq, ww_dp_deficitq,                 &
         !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, weightq,       &
         !$acc           weight, weight_dp, Hq, pbq, temp1, tau_wind_u, tau_wind_v,     &
-        !$acc           tempbot, source_x, source_y, source_z)                          &
-        !$acc   firstprivate(Pstress_l, Pbstress_l, npts_l, nlayers_l, nglx_l, nqx_l, nqy_l)
+        !$acc           tempbot, source_x, source_y, source_z, cfx, cfy, cfz)           &
+        !$acc   firstprivate(Pstress_l, Pbstress_l, npts_l, nlayers_l, nglx_l, nqx_l, nqy_l, &
+        !$acc                cor_fac_l)
         do ie = 1, nelem_l
         do iqy = 1, nqy_l
         do iqx = 1, nqx_l
@@ -687,6 +692,9 @@ contains
             qb(4) = btp%uvb_ave(3,Iq)
             s_ope2 = sqrt(btp%ope2_ave(Iq))
             wq     = tsp%wjac(Iq)
+            cfx    = cor_fac_l*init%coriolis_3d_quad(1,Iq)
+            cfy    = cor_fac_l*init%coriolis_3d_quad(2,Iq)
+            cfz    = cor_fac_l*init%coriolis_3d_quad(3,Iq)
 
             ! Bottom: gradient of zbot_df and pbprime at the quad point.
             Gzb(1) = 0.0;  Gzb(2) = 0.0;  Gzb(3) = 0.0;  pbq = 0.0
@@ -895,11 +903,15 @@ contains
 
                 tempbot = (min(Pbstress_l, pbq-pp_k1) - min(Pbstress_l, pbq-pp_k)) / Pbstress_l
 
-                source_x = gravity*(p_k*gz_k(1) - p_k1*gz_k1(1)) &
+                ! -(f x u*dp), f = f*r_hat; zero when implicit_coriolis_sph.
+                source_x = -(cfy*wdp_k - cfz*vdp_k) &
+                           + gravity*(p_k*gz_k(1) - p_k1*gz_k1(1)) &
                            + gravity*(tau_wind_u - tempbot*btp%tau_bot_ave(1,Iq))
-                source_y = gravity*(p_k*gz_k(2) - p_k1*gz_k1(2)) &
+                source_y = -(cfz*udp_k - cfx*wdp_k) &
+                           + gravity*(p_k*gz_k(2) - p_k1*gz_k1(2)) &
                            + gravity*(tau_wind_v - tempbot*btp%tau_bot_ave(2,Iq))
-                source_z = gravity*(p_k*gz_k(3) - p_k1*gz_k1(3)) &
+                source_z = -(cfx*vdp_k - cfy*udp_k) &
+                           + gravity*(p_k*gz_k(3) - p_k1*gz_k1(3)) &
                            - gravity*tempbot*btp%tau_bot_ave(3,Iq)
 
                 ! Weighted coefficients of psi (j=1), dpsi/dxi (j=2), dpsi/deta (j=3):
@@ -977,12 +989,16 @@ contains
         !$acc           u_udp, v_vdp, w_wdp,                                             &
         !$acc           uu_dp_deficitq, vv_dp_deficitq, ww_dp_deficitq,                 &
         !$acc           u, v, w, wq, hi, dhdx, dhdy, dhdz,              &
-        !$acc           pbq, Hq, source_x, source_y, source_z,                          &
+        !$acc           pbq, Hq, source_x, source_y, source_z, cfx, cfy, cfz,           &
         !$acc           temp1, tau_wind_u, tau_wind_v, tempbot,                          &
         !$acc           weight, acceleration, weight_dp, weightq,                        &
         !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry)  &
-        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l)
+        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l, cor_fac_l)
         do Iq = 1, npoin_q_l
+
+            cfx = cor_fac_l*init%coriolis_3d_quad(1,Iq)
+            cfy = cor_fac_l*init%coriolis_3d_quad(2,Iq)
+            cfz = cor_fac_l*init%coriolis_3d_quad(3,Iq)
 
             p_tmp(1)       = 0.0
             pprime_temp(1:nlayers_l+1) = 0.0
@@ -1167,14 +1183,16 @@ contains
                 tempbot = (min(Pbstress_l, pbq-pprime_temp(k+1)) - &
                            min(Pbstress_l, pbq-pprime_temp(k))) / Pbstress_l
 
-                ! 3D source: pressure gradient + wind/drag. Coriolis is never
-                ! added here — handled by the semi-implicit rotation in each
-                ! ti_*_bcl integrator instead.
-                source_x = gravity*(p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1)) &
+                ! 3D source: Coriolis -(f x u*dp) (zero when implicit_coriolis_sph,
+                ! where the ti_*_bcl rotation handles it) + pressure gradient + wind/drag.
+                source_x = -(cfy*wdp(k) - cfz*vdp(k)) &
+                           + gravity*(p_tmp(k)*gradz(1,k) - p_tmp(k+1)*gradz(1,k+1)) &
                            + gravity*(tau_wind_u - tempbot*btp%tau_bot_ave(1,Iq))
-                source_y = gravity*(p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1)) &
+                source_y = -(cfz*udp(k) - cfx*wdp(k)) &
+                           + gravity*(p_tmp(k)*gradz(2,k) - p_tmp(k+1)*gradz(2,k+1)) &
                            + gravity*(tau_wind_v - tempbot*btp%tau_bot_ave(2,Iq))
-                source_z = gravity*(p_tmp(k)*gradz(3,k) - p_tmp(k+1)*gradz(3,k+1)) &
+                source_z = -(cfx*vdp(k) - cfy*udp(k)) &
+                           + gravity*(p_tmp(k)*gradz(3,k) - p_tmp(k+1)*gradz(3,k+1)) &
                            - gravity*tempbot*btp%tau_bot_ave(3,Iq)
 
                 ! ad_mlswe inter-layer vertical viscosity is no longer added

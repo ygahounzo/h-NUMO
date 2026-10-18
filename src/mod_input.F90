@@ -188,6 +188,7 @@ module mod_input
 
       character(len=20) :: bcl_time_method
       logical :: rk_bcl_FS
+      logical :: implicit_coriolis_sph
       real    :: C_smag
       logical :: lwrite_vorticity
 
@@ -413,6 +414,7 @@ module mod_input
 
       character(len=20) :: bcl_time_method = '2levels'
       logical :: rk_bcl_FS = .false.
+      logical :: implicit_coriolis_sph = .false.
       real    :: C_smag = 0.0
       logical :: lwrite_vorticity = .true.
 
@@ -448,7 +450,7 @@ module mod_input
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, &
-         bcl_time_method, rk_bcl_FS, &
+         bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, &
          C_smag, lwrite_vorticity
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
@@ -737,6 +739,7 @@ module mod_input
       inp%llinear_pert                   = llinear_pert
       inp%bcl_time_method                = bcl_time_method
       inp%rk_bcl_FS                      = rk_bcl_FS
+      inp%implicit_coriolis_sph          = implicit_coriolis_sph
       inp%C_smag                         = C_smag
       inp%lwrite_vorticity               = lwrite_vorticity
 

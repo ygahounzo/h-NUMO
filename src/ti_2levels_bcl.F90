@@ -100,7 +100,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
          end do
       end do
       !$acc end parallel loop
-   else
+   elseif (inp%implicit_coriolis_sph) then
       ! Spherical 3D rotation, (I + omega*K_r)^-1 where K_r is the
       ! cross-product matrix for the local radial unit vector init%kvector.
       !$acc parallel loop gang collapse(2) &
@@ -229,7 +229,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
          end do
       end do
       !$acc end parallel loop
-   else
+   elseif (inp%implicit_coriolis_sph) then
       !$acc parallel loop gang collapse(2) &
       !$acc    present(init%kvector, init%fdt2_bcl, q_df_temp, q_df) &
       !$acc    private(rl, rm, rn, omg, Px, Py, Pz, d_inv)
@@ -249,6 +249,12 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
          end do
       end do
       !$acc end parallel loop
+   else
+      ! Sphere with explicit Coriolis (already in the volume RHS): no
+      ! rotation, just take the explicit update.
+      !$acc kernels present(q_df, q_df_temp)
+      q_df(2:4,:,:) = q_df_temp(2:4,:,:)
+      !$acc end kernels
    end if
 
    call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
