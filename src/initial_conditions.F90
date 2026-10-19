@@ -261,6 +261,9 @@ subroutine initial_conditions(inp, G, b, mf, init)
       
    end select 
 
+   ! Optional input override of the layer densities (rho_layers in input_nml).
+   if (inp%rho_layers(1) > 0.0) init%alpha_mlswe(1:inp%nlayers) = 1.0/inp%rho_layers(1:inp%nlayers)
+
    ! Layer interface at the equilibrium state
    do k = 2, inp%nlayers+1
       z_interface_equil(k) = z_interface_equil(k-1) - layer_dz_eq(k-1)

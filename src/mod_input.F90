@@ -189,6 +189,7 @@ module mod_input
       character(len=20) :: bcl_time_method
       logical :: rk_bcl_FS
       logical :: implicit_coriolis_sph
+      real, allocatable :: rho_layers(:)  ! optional per-layer densities [kg m-3]; <= 0 = test-case defaults
       real    :: C_smag
       logical :: lwrite_vorticity
 
@@ -415,6 +416,7 @@ module mod_input
       character(len=20) :: bcl_time_method = '2levels'
       logical :: rk_bcl_FS = .false.
       logical :: implicit_coriolis_sph = .false.
+      real, allocatable :: rho_layers(:)
       real    :: C_smag = 0.0
       logical :: lwrite_vorticity = .true.
 
@@ -450,7 +452,7 @@ module mod_input
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
          dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, &
-         bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, &
+         bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, rho_layers, &
          C_smag, lwrite_vorticity
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
@@ -487,18 +489,29 @@ module mod_input
  
       amr_indicator_variables(1) = 1
    
-      !Read input namelist
+      !Read gridnl namelist first: it holds nlayers, which sizes rho_layers
+      !in input_nml. (Groups are located by name, so file order is irrelevant.)
       funit = get_unit()
       print*,"File:",namelist_input, funit
       open(funit,file=namelist_input)
-      read(funit,input_nml)
-      close(funit)
-   
-      !Read gridnl namelist
-      funit = get_unit()
-      open(funit,file=namelist_input)
       read(funit,gridnl)
       close(funit)
+
+      !Optional per-layer densities: -1 = not given (keep test-case values)
+      allocate(rho_layers(nlayers))
+      rho_layers = -1.0
+
+      !Read input namelist
+      funit = get_unit()
+      open(funit,file=namelist_input)
+      read(funit,input_nml)
+      close(funit)
+
+      if (any(rho_layers > 0.0) .and. any(rho_layers <= 0.0)) then
+         print *, 'ERROR: rho_layers must give a positive density for every layer (nlayers =', nlayers, ')'
+         print *, '       rho_layers =', rho_layers
+         stop
+      end if
    
       ti_method_btp = lowercase(ti_method_btp) !added by YaoG
       filter_weight_type = lowercase(filter_weight_type)
@@ -740,6 +753,7 @@ module mod_input
       inp%bcl_time_method                = bcl_time_method
       inp%rk_bcl_FS                      = rk_bcl_FS
       inp%implicit_coriolis_sph          = implicit_coriolis_sph
+      inp%rho_layers                     = rho_layers
       inp%C_smag                         = C_smag
       inp%lwrite_vorticity               = lwrite_vorticity
 

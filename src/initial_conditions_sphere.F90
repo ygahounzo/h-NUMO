@@ -280,7 +280,7 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       z_interface(:,1) = 0.0        ! flat top surface (at rest)
 
       alpha_mlswe(1) = 1.0/1000.0
-      alpha_mlswe(2) = 1.0/1020.0   ! paper's other tested value: 1.0/1040.0
+      alpha_mlswe(2) = 1.0/1020.0   ! paper's other tested value: 1.0/1040.0 (set via rho_layers)
 
       do I1 = 1, npoin
          x = G%coord(1,I1)
@@ -419,6 +419,9 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
       stop
 
    end select
+
+   ! Optional input override of the layer densities (rho_layers in input_nml).
+   if (inp%rho_layers(1) > 0.0) alpha_mlswe(1:nlayers) = 1.0/inp%rho_layers(1:nlayers)
 
    ! Clamp interfaces to bathymetry; then enforce monotonicity (no negative layer thickness).
    do I1 = 1, npoin

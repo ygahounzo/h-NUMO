@@ -93,6 +93,11 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a,es14.6,t55,a)') 'VISC_MLSWE = ',      inp%visc_mlswe,     '! [m2 s-1] explicit LDG viscosity coefficient'
    write(fu,'(a,es14.6,t55,a)') 'C_SMAG = ',          inp%C_smag,         '! [-] Smagorinsky constant (0=off)'
    write(fu,'(a,l1,t55,a)')     'IMPLICIT_CORIOLIS_SPH = ', inp%implicit_coriolis_sph, '! sphere Coriolis: T=semi-implicit nodal rotation, F=explicit in volume RHS'
+   if (inp%rho_layers(1) > 0.0) then
+      write(fu,'(a,*(f0.6,1x))') 'RHO_LAYERS = ', inp%rho_layers
+   else
+      write(fu,'(a,t55,a)') 'RHO_LAYERS = default', '! [kg m-3] per-layer densities; default = test-case values'
+   end if
    write(fu,'(a)')
 
    ! -----------------------------------------------------------------------

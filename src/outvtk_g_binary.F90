@@ -15,7 +15,7 @@
 !> 20 May 2024
 !---------------------------------------------------------------------!
 
-subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_vort, pot_vort, fname, time)
+subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_vort, pot_vort, area, fname, time)
 
     use mod_mpi_utilities, only: irank, irank0, MPI_PRECISION
     use mod_parallel,      only: parallel_CS
@@ -37,6 +37,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_
 
     real, intent(in) :: q(init%nvar, G%npoin), qb(inp%nvar_btp, G%npoin)
     real, intent(in) :: rel_vort(G%npoin), abs_vort(G%npoin), pot_vort(G%npoin)
+    real, intent(in) :: area(G%npoin)  ! quadrature weight x Jacobian per DG node [m^2]
     real, intent(in) :: time
     character, intent(in) :: fname*100
     logical :: has_w
@@ -60,7 +61,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_
 
     real,    dimension(:,:,:), allocatable :: q_l
     real,    dimension(:,:),   allocatable :: q_g, coord_dg_gathered, qb_g
-    real,    dimension(:),     allocatable :: rel_vort_g, abs_vort_g, pot_vort_g
+    real,    dimension(:),     allocatable :: rel_vort_g, abs_vort_g, pot_vort_g, area_g
     real,    dimension(:),     allocatable :: km
     real,    dimension(:),     allocatable :: x_uns, y_uns, z_uns
     integer, dimension(:),     allocatable :: eltype, conn
@@ -140,7 +141,8 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_
             eltype(ncells), conn(ncells*(b%CELL_CHILDREN+1)),                  &
             var_uns_grid(gg%npoin_g), var_uns_grid_ref(gg%npoin_g),             &
             qb_g(inp%nvar_btp, gg%npoin_g),                                    &
-            rel_vort_g(gg%npoin_g), abs_vort_g(gg%npoin_g), pot_vort_g(gg%npoin_g), stat=AllocateStatus)
+            rel_vort_g(gg%npoin_g), abs_vort_g(gg%npoin_g), pot_vort_g(gg%npoin_g), &
+            area_g(gg%npoin_g), stat=AllocateStatus)
         if (AllocateStatus /= 0) stop "** Not Enough Memory - OUTVTK_G_BINARY **"
     end if
 
@@ -151,6 +153,7 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_
     call gather_data(G, inp, gg, par, rel_vort_g, rel_vort, 1)
     call gather_data(G, inp, gg, par, abs_vort_g, abs_vort, 1)
     call gather_data(G, inp, gg, par, pot_vort_g, pot_vort, 1)
+    call gather_data(G, inp, gg, par, area_g, area, 1)
 
     if (irank == irank0) then
 
@@ -255,10 +258,15 @@ subroutine outvtk_g_binary_mlswe(G, inp, b, init, gg, par, q, qb, rel_vort, abs_
             call vtk_var_scal_R8(gg%npoin_g, 'PotVorticity', pot_vort_g)
         end if
 
+        ! Area represented by each DG node (GLL weights x Jacobian, the
+        ! diagonal mass-matrix entry) for area-weighted norms/integrals;
+        ! sums to the domain area.
+        call vtk_var_scal_R8(gg%npoin_g, 'area', area_g)
+
         call vtk_end()
 
         deallocate(q_g, qb_g)
-        deallocate(rel_vort_g, abs_vort_g, pot_vort_g)
+        deallocate(rel_vort_g, abs_vort_g, pot_vort_g, area_g)
         deallocate(var_uns_grid, var_uns_grid_ref)
         deallocate(conn_g_pts)
 

@@ -81,7 +81,8 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, tsp, q_df, qout, qb, fnp
     end if
 
     fnp = trim(inp%fname_root) // '_' // trim(fnp1) // '.vtk'
-    call outvtk_g_binary_mlswe(G, inp, b, init, gg, par, qout, qb, rel_vort, abs_vort, pot_vort, fnp, time)
+    call outvtk_g_binary_mlswe(G, inp, b, init, gg, par, qout, qb, rel_vort, abs_vort, pot_vort, &
+                               tsp%wjac_df, fnp, time)
 
     deallocate(q_aux, mslwe_elevation, rel_vort, abs_vort, pot_vort)
 
