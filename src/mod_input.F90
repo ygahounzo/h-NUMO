@@ -38,6 +38,9 @@ module mod_input
       integer       :: irestart_file_number
       character(len=8)   :: filter_basis_type
       character(len=4)   :: filter_weight_type
+      character(len=7)   :: filter_ref
+      logical       :: filter_sensor
+      real(kind=r8) :: filter_s0, filter_kappa
       character(len=150) :: fname_root
       character(len=5)   :: out_type
       character(len=100) :: fname_initial
@@ -64,6 +67,7 @@ module mod_input
       real(kind=r8) :: f0
       real(kind=r8) :: beta
       real(kind=r8) :: dry_cutoff
+      real(kind=r8) :: bcl_diss_fac
       real(kind=r8) :: h_cutoff1, h_cutoff2
 
       !-----------------------------------------------------------------------
@@ -175,6 +179,8 @@ module mod_input
       logical :: dg_integ_exact
       logical :: dump_data
       logical :: lcheck_conserved
+      integer :: ienergy_runtime
+      logical :: ltrace_stages
 
       real :: time_scale_in
       real :: dam_depth_in
@@ -240,10 +246,13 @@ module mod_input
 
       real(kind=r8) :: time_dynamic_amr=0.0
       real(kind=r8) :: interval_end=0.0
-      real(kind=r8) :: filter_mux, filter_muy, filter_muz
-      integer       :: kstages, kstages_bcl = 3, ifilter
+      real(kind=r8) :: filter_mux = 0.05, filter_muy = 0.05, filter_muz = 0.0
+      integer       :: kstages, kstages_bcl = 3, ifilter = 0
       integer       :: irestart_file_number = 0
-      character     :: filter_basis_type*8, filter_weight_type*4
+      character     :: filter_basis_type*8 = 'modal', filter_weight_type*4 = 'erf'
+      character     :: filter_ref*7 = 'none'
+      logical       :: filter_sensor = .false.                 ! filter only elements flagged by the modal sensor
+      real(kind=r8) :: filter_s0 = -5.5, filter_kappa = 0.5   ! sensor threshold (log10) and ramp half-width
       character     :: fname_root*150, out_type*5, fname_initial*100
       character     :: restart_path*100
       logical       :: write_mesh=.false.
@@ -266,6 +275,7 @@ module mod_input
       real(kind=r8) :: max_shear_dz = 0.0
       real(kind=r8) :: f0 = 0.0
       real(kind=r8) :: beta = 0.0
+      real(kind=r8) :: bcl_diss_fac = 0.0
       real(kind=r8) :: dry_cutoff = 1.0e-10
       real(kind=r8) :: h_cutoff1 = 0.0, h_cutoff2 = 0.0
    
@@ -383,7 +393,9 @@ module mod_input
       logical :: is_mlswe = .true.  
       logical :: dg_integ_exact = .true. 
       logical :: dump_data = .true. 
+      logical :: ltrace_stages = .false.
       logical :: lcheck_conserved = .false. 
+      integer :: ienergy_runtime = 0   ! energy_runtime.csv every N BCL steps (0 = at output times)
 
    
       !-----------------------------------------------------------------------
@@ -433,7 +445,7 @@ module mod_input
          kstages, &
          kstages_bcl, &
          filter_mux, filter_muy, filter_muz, ifilter, &
-         filter_weight_type, filter_basis_type, fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
+         filter_weight_type, filter_basis_type, filter_ref, filter_sensor, filter_s0, filter_kappa, fname_root, out_type, lout_ascii, lout_asciimaya, format_vtk, nvtk_files, vtk_cell_type, &
          write_mesh, &
          fname_initial, &
          restart_path, & 
@@ -450,8 +462,8 @@ module mod_input
          imass, &
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
-         dg_integ_exact, dump_data, lcheck_conserved, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, h_cutoff1, h_cutoff2, &
+         dg_integ_exact, dump_data, lcheck_conserved, ienergy_runtime, ltrace_stages, adjust_bcl_mom_flux, &
+         f0, beta, dry_cutoff, bcl_diss_fac, h_cutoff1, h_cutoff2, &
          bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, rho_layers, &
          C_smag, lwrite_vorticity
  
@@ -516,6 +528,20 @@ module mod_input
       ti_method_btp = lowercase(ti_method_btp) !added by YaoG
       filter_weight_type = lowercase(filter_weight_type)
       filter_basis_type = lowercase(filter_basis_type)
+      filter_ref = lowercase(filter_ref)
+      if (ifilter < 0) error stop "ifilter must be >= 0 (0 = off, N = filter every N baroclinic steps)"
+      if (ifilter > 0) then
+         if (.not. (filter_mux >= 0.0 .and. filter_mux <= 1.0 .and. &
+                    filter_muy >= 0.0 .and. filter_muy <= 1.0)) &
+            error stop "filter_mux and filter_muy must be in [0, 1]"
+         if (filter_weight_type /= 'erf' .and. filter_weight_type /= 'exp' .and. filter_weight_type /= 'quad') &
+            error stop "filter_weight_type must be 'erf', 'exp' or 'quad'"
+         if (filter_basis_type /= 'legendre' .and. filter_basis_type /= 'modal') &
+            error stop "filter_basis_type must be 'legendre' or 'modal'"
+         if (filter_ref /= 'none' .and. filter_ref /= 'initial') &
+            error stop "filter_ref must be 'none' or 'initial'"
+         if (filter_sensor .and. .not. (filter_kappa > 0.0)) error stop "filter_kappa must be > 0"
+      end if
       out_type = lowercase(out_type)
       format_vtk = uppercase(format_vtk)
       vtk_cell_type = uppercase(vtk_cell_type)
@@ -594,6 +620,10 @@ module mod_input
       inp%irestart_file_number           = irestart_file_number
       inp%filter_basis_type              = filter_basis_type
       inp%filter_weight_type             = filter_weight_type
+      inp%filter_ref                     = filter_ref
+      inp%filter_sensor                  = filter_sensor
+      inp%filter_s0                      = filter_s0
+      inp%filter_kappa                   = filter_kappa
       inp%fname_root                     = fname_root
       inp%out_type                       = out_type
       inp%fname_initial                  = fname_initial
@@ -617,6 +647,9 @@ module mod_input
       inp%max_shear_dz                   = max_shear_dz
       inp%f0                             = f0
       inp%beta                           = beta
+      if (.not. (bcl_diss_fac >= 0.0 .and. bcl_diss_fac <= huge(bcl_diss_fac))) &
+         error stop "bcl_diss_fac must be finite and nonnegative"
+      inp%bcl_diss_fac                   = bcl_diss_fac
       inp%dry_cutoff                     = dry_cutoff
       inp%h_cutoff1                      = h_cutoff1
       inp%h_cutoff2                      = h_cutoff2
@@ -726,7 +759,9 @@ module mod_input
       inp%is_mlswe                       = is_mlswe
       inp%dg_integ_exact                 = dg_integ_exact
       inp%dump_data                      = dump_data
+      inp%ltrace_stages                  = ltrace_stages
       inp%lcheck_conserved               = lcheck_conserved
+      inp%ienergy_runtime                = ienergy_runtime
       inp%time_scale_in                  = time_scale_in
       inp%dam_depth_in                   = dam_depth_in
       inp%dam_xlimit_in                  = dam_xlimit_in

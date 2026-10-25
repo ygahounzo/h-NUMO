@@ -28,6 +28,8 @@ module mod_basis
         real, dimension(:,:), allocatable :: psiq, psiqx, psiqy, psiqz, &
             dpsiq, dpsiqx, dpsiqy, dpsiqz, dpsiqx_tr
         real, dimension(:),   allocatable :: xnq, xnqx, xnqy, xnqz, wnq, wnqx, wnqy, wnqz
+        ! 1D nodal filter matrices (and transposes for MXM); identity unless ifilter > 0
+        real, dimension(:,:), allocatable :: f, fx, fy, fz, f_tr, fx_tr, fy_tr, fz_tr
         integer :: nopx, nopy, nopz
     end type basis
 
@@ -56,6 +58,8 @@ module mod_basis
 
         !local
         integer :: AllocateStatus, i, j
+        character(len=8) :: fbasis
+        character(len=4) :: fweight
  
         b%nopx = inp%nopx
         b%nopy = inp%nopy
@@ -156,7 +160,33 @@ module mod_basis
         b%dpsix_tr=transpose(b%dpsix)
         b%dpsiy_tr=transpose(b%dpsiy)
         b%dpsiz_tr=transpose(b%dpsiz)
-        
+
+        ! Filter matrices (ported from the dev branch). Built only when the
+        ! filter is enabled; otherwise identity. A direction with a single
+        ! point (nglz = 1 for the layer model) keeps the identity.
+        allocate(b%f(b%ngl,b%ngl), b%fx(b%nglx,b%nglx), b%fy(b%ngly,b%ngly), b%fz(b%nglz,b%nglz), &
+                 b%f_tr(b%ngl,b%ngl), b%fx_tr(b%nglx,b%nglx), b%fy_tr(b%ngly,b%ngly), b%fz_tr(b%nglz,b%nglz))
+        b%f = 0.0;  b%fx = 0.0;  b%fy = 0.0;  b%fz = 0.0
+        do i = 1, b%ngl;  b%f(i,i)  = 1.0;  end do
+        do i = 1, b%nglx; b%fx(i,i) = 1.0;  end do
+        do i = 1, b%ngly; b%fy(i,i) = 1.0;  end do
+        do i = 1, b%nglz; b%fz(i,i) = 1.0;  end do
+
+        if (inp%ifilter > 0) then
+            fweight = inp%filter_weight_type
+            fbasis  = inp%filter_basis_type
+            if (b%ngl  > 1) call filter_init(b%f, b%wgl, b%xgl, b%ngl, b%ngl-1, real(inp%filter_mux), fweight, fbasis)
+            if (b%nglx > 1) call filter_init(b%fx, b%wglx, b%xglx, b%nglx, b%nglx-1, real(inp%filter_mux), fweight, fbasis)
+            if (b%ngly > 1) call filter_init(b%fy, b%wgly, b%xgly, b%ngly, b%ngly-1, real(inp%filter_muy), fweight, fbasis)
+            if (b%nglz > 1) call filter_init(b%fz, b%wglz, b%xglz, b%nglz, b%nglz-1, real(inp%filter_muz), fweight, fbasis)
+        end if
+
+        !Store Filter Transpose for MXM
+        b%f_tr  = transpose(b%f)
+        b%fx_tr = transpose(b%fx)
+        b%fy_tr = transpose(b%fy)
+        b%fz_tr = transpose(b%fz)
+
     end subroutine mod_basis_create
   
 end module mod_basis

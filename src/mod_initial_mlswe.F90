@@ -7,10 +7,11 @@
 !----------------------------------------------------------------------!
 module mod_initial_mlswe
 
+    use mod_input,   only: input
+
     use mod_basis,   only: basis
     use mod_grid,    only: grid
     use mod_metrics, only: metrics
-    use mod_input,   only: input
     use mod_face,    only: face_CS
     use mod_tensor,  only: tensor_CS
 
@@ -19,12 +20,19 @@ module mod_initial_mlswe
         interpolate_pbprime_init, wind_stress_coriolis, &
         map_deriv, ssprk_coefficients, poslimiter, find_dry_elements, &
         check_layer_thickness, check_btp_thickness, &
-        bcl_itime
+        bcl_itime, trace_stage, trace_reset, trace_bcl_stage
 
     private
 
     ! Current BCL time-step index; set by the time loop before each BCL call
     ! so that check_btp_thickness can report "BTP failure at step N".
+    integer, save :: trace_bcl_stage = 0
+    integer, save :: trace_unit = 0, trace_sequence = 0
+    logical, save :: trace_open = .false., trace_dumped = .false.
+    character(len=2048), save :: trace_ring(128)
+    integer, save :: trace_ring_count = 0
+    real, allocatable, save :: trace_before(:,:,:)
+    integer, save :: trace_before_step = -1, trace_before_stage = -1
     integer, save :: bcl_itime = 0
 
 
@@ -388,9 +396,10 @@ module mod_initial_mlswe
         real, dimension(inp%nlayers),                       intent(in)    :: alpha
 
         real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
-        real    :: dp_e
+        real    :: d1, d2, d3, d4
         real    :: threshold_k(inp%nlayers)
-        integer :: I, k, n, m, e, nelem_l, nlayers_l, nglx_l, ngly_l
+        integer :: I, k, kc, n, m, e, ipass, nelem_l, nlayers_l, nglx_l, ngly_l, nglz_l, nqx_l, nqy_l
+        integer :: nvar_l, npoin_l
         real    :: dry_cutoff_l
         logical :: has_w, has_nan_e
 
@@ -398,90 +407,183 @@ module mod_initial_mlswe
         nlayers_l    = inp%nlayers
         nglx_l       = b%nglx
         ngly_l       = b%ngly
+        nglz_l       = b%nglz
+        nqx_l        = b%nqx
+        nqy_l        = b%nqy
+        nvar_l       = inp%nvar_bcl
+        npoin_l      = G%npoin
         dry_cutoff_l = inp%dry_cutoff
         has_w        = (inp%nvar_bcl == 4) ! w (vertical momentum) is only carried on sphere_hex
 
-        ! Precomputed per-layer, not per-loop-iteration, so the k/e loop headers
-        ! below stay tightly nested (required for collapse(2)).
         do k = 1, nlayers_l
             threshold_k(k) = (gravity / alpha(k)) * dry_cutoff_l
         end do
 
-        ! DG elements own their nodes exclusively — no cross-element races on q.
-        !$acc parallel loop gang collapse(2) &
+        ! Zhang-Shu limiting of each layer toward its element mean, with the
+        ! minimum taken over the nodes and the volume and face quadrature points
+        ! (where the RHS evaluates the thickness). mt%jac carries the GLL weights,
+        ! so the means below are the exact element means.
+        !
+        ! Pass 1 keeps the column: the change made to layer k (thickness and
+        ! momentum) is subtracted from a neighbouring layer kc (the one below; the
+        ! one above for the bottom layer), so sum_k q(:,I,k), and with it the
+        ! barotropic pb and momentum, is unchanged at every node. The change has
+        ! zero element mean, so every layer keeps its element mass and momentum.
+        ! Pass 2 is the independent per-layer limiter, a fallback for the rare
+        ! case where the compensation pushes a neighbour below its threshold.
+        !
+        ! DG elements own their nodes exclusively -- no cross-element races on q.
+        !$acc parallel loop gang &
         !$acc    copyin(threshold_k) &
-        !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q, alpha) &
-        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, dry_cutoff_l, has_w) &
-        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, I, dp_e, has_nan_e)
-        do k = 1, nlayers_l
-            do e = 1, nelem_l
-                threshold = threshold_k(k)
-
-                pmin      = 1.0e20
-                pavg      = 0.0
-                uavg      = 0.0
-                vavg      = 0.0
-                wavg      = 0.0
-                wsum      = 0.0
-                has_nan_e = .false.
+        !$acc    present(G%intma, b%psiqx, b%psiqy, mt%jac, q) &
+        !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nglz_l, nqx_l, nqy_l, nvar_l, npoin_l, has_w) &
+        !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, &
+        !$acc            d1, d2, d3, d4, I, k, kc, n, m, ipass, has_nan_e)
+        do e = 1, nelem_l
+            !$acc loop seq
+            do ipass = 1, 2
                 !$acc loop seq
-                do m = 1, ngly_l
-                    !$acc loop seq
-                    do n = 1, nglx_l
-                        I    = G%intma(n,m,1,e)
-                        wjac = b%wglx(n) * b%wgly(m) * mt%jac(n,m,1,e)
-                        ! IEEE: NaN < x is always false, so track NaN separately.
-                        if (q(1,I,k) /= q(1,I,k)) then
-                            has_nan_e = .true.
-                        else
-                            if (q(1,I,k) < pmin) pmin = q(1,I,k)
-                        end if
-                        wsum = wsum + wjac
-                        pavg = pavg + wjac * q(1,I,k)
-                        uavg = uavg + wjac * q(2,I,k)
-                        vavg = vavg + wjac * q(3,I,k)
-                        if (has_w) wavg = wavg + wjac * q(4,I,k)
-                    end do
-                end do
-                pavg = pavg / wsum
-                uavg = uavg / wsum
-                vavg = vavg / wsum
-                if (has_w) wavg = wavg / wsum
+                do k = 1, nlayers_l
+                    threshold = threshold_k(k)
+                    kc = k + 1
+                    if (k == nlayers_l) kc = k - 1
 
-                if (pavg <= threshold .or. pavg /= pavg .or. has_nan_e) then
-                    ! Entire element dry (or NaN) — clamp to minimum, zero momentum.
+                    pavg      = 0.0
+                    uavg      = 0.0
+                    vavg      = 0.0
+                    wavg      = 0.0
+                    wsum      = 0.0
+                    has_nan_e = .false.
                     !$acc loop seq
                     do m = 1, ngly_l
                         !$acc loop seq
                         do n = 1, nglx_l
-                            I = G%intma(n,m,1,e)
-                            q(1,I,k) = threshold
-                            q(2,I,k) = 0.0
-                            q(3,I,k) = 0.0
-                            if (has_w) q(4,I,k) = 0.0
+                            I    = G%intma(n,m,1,e)
+                            wjac = mt%jac(n,m,1,e)
+                            ! IEEE: NaN /= NaN, so track NaN separately.
+                            if (q(1,I,k) /= q(1,I,k)) has_nan_e = .true.
+                            wsum = wsum + wjac
+                            pavg = pavg + wjac * q(1,I,k)
+                            uavg = uavg + wjac * q(2,I,k)
+                            vavg = vavg + wjac * q(3,I,k)
+                            if (has_w) wavg = wavg + wjac * q(4,I,k)
                         end do
                     end do
-                else if (pmin < threshold) then
-                    ! Zhang-Shu: scale toward element average so min(h) = threshold.
-                    denom = pavg - pmin
-                    theta = merge(min(1.0, (pavg - threshold) / denom), 0.0, denom /= 0.0)
-                    !$acc loop seq
-                    do m = 1, ngly_l
+                    pavg = pavg / wsum
+                    uavg = uavg / wsum
+                    vavg = vavg / wsum
+                    if (has_w) wavg = wavg / wsum
+
+                    pmin = layer_min_e(q, nvar_l, npoin_l, nlayers_l, k, G%intma, nglx_l, ngly_l, nglz_l, &
+                                       nelem_l, e, b%psiqx, b%psiqy, nqx_l, nqy_l)
+
+                    if (pavg <= threshold .or. pavg /= pavg .or. has_nan_e) then
+                        ! Entire element dry (or NaN) -- clamp to minimum, zero momentum.
                         !$acc loop seq
-                        do n = 1, nglx_l
-                            I = G%intma(n,m,1,e)
-                            q(1,I,k) = theta * (q(1,I,k) - pavg) + pavg
-                            q(2,I,k) = theta * (q(2,I,k) - uavg) + uavg
-                            q(3,I,k) = theta * (q(3,I,k) - vavg) + vavg
-                            if (has_w) q(4,I,k) = theta * (q(4,I,k) - wavg) + wavg
-                        end do !n
-                    end do !m
-                end if
-            end do !e
-        end do !k
+                        do m = 1, ngly_l
+                            !$acc loop seq
+                            do n = 1, nglx_l
+                                I = G%intma(n,m,1,e)
+                                if (ipass == 1 .and. nlayers_l > 1 .and. .not. has_nan_e) then
+                                    q(1,I,kc) = q(1,I,kc) + (q(1,I,k) - threshold)
+                                    q(2,I,kc) = q(2,I,kc) + q(2,I,k)
+                                    q(3,I,kc) = q(3,I,kc) + q(3,I,k)
+                                    if (has_w) q(4,I,kc) = q(4,I,kc) + q(4,I,k)
+                                end if
+                                q(1,I,k) = threshold
+                                q(2,I,k) = 0.0
+                                q(3,I,k) = 0.0
+                                if (has_w) q(4,I,k) = 0.0
+                            end do
+                        end do
+                    else if (pmin < threshold * (1.0 - 1.0e-10)) then
+                        ! Zhang-Shu: scale toward element average so min(h) = threshold.
+                        denom = pavg - pmin
+                        theta = merge(min(1.0, (pavg - threshold) / denom), 0.0, denom /= 0.0)
+                        !$acc loop seq
+                        do m = 1, ngly_l
+                            !$acc loop seq
+                            do n = 1, nglx_l
+                                I  = G%intma(n,m,1,e)
+                                d1 = (theta - 1.0) * (q(1,I,k) - pavg)
+                                d2 = (theta - 1.0) * (q(2,I,k) - uavg)
+                                d3 = (theta - 1.0) * (q(3,I,k) - vavg)
+                                d4 = 0.0
+                                if (has_w) d4 = (theta - 1.0) * (q(4,I,k) - wavg)
+                                q(1,I,k) = q(1,I,k) + d1
+                                q(2,I,k) = q(2,I,k) + d2
+                                q(3,I,k) = q(3,I,k) + d3
+                                if (has_w) q(4,I,k) = q(4,I,k) + d4
+                                if (ipass == 1 .and. nlayers_l > 1) then
+                                    q(1,I,kc) = q(1,I,kc) - d1
+                                    q(2,I,kc) = q(2,I,kc) - d2
+                                    q(3,I,kc) = q(3,I,kc) - d3
+                                    if (has_w) q(4,I,kc) = q(4,I,kc) - d4
+                                end if
+                            end do !n
+                        end do !m
+                    end if
+                end do !k
+            end do !ipass
+        end do !e
         !$acc end parallel loop
 
     end subroutine poslimiter
+
+    ! Minimum of layer k's thickness q(1,:,k) over element e: the GLL nodes, the
+    ! nqx x nqy volume quadrature points, and the quadrature points on the four
+    ! element edges (interpolated from the edge nodes; GLL includes the endpoints).
+    function layer_min_e(q, nvar, npoin, nlay, k, intma, nglx, ngly, nglz, nelem, e, &
+                         psiqx, psiqy, nqx, nqy) result(pmin)
+
+        !$acc routine seq
+
+        implicit none
+
+        integer, intent(in) :: nvar, npoin, nlay, k, nglx, ngly, nglz, nelem, e, nqx, nqy
+        real,    intent(in) :: q(nvar,npoin,nlay)
+        integer, intent(in) :: intma(nglx,ngly,nglz,nelem)
+        real,    intent(in) :: psiqx(nglx,nqx), psiqy(ngly,nqy)
+        real :: pmin
+
+        integer :: n, m, iq, jq
+        real    :: s, sx
+
+        pmin = 1.0e20
+        do m = 1, ngly
+            do n = 1, nglx
+                pmin = min(pmin, q(1,intma(n,m,1,e),k))
+            end do
+        end do
+        do jq = 1, nqy
+            do iq = 1, nqx
+                s = 0.0
+                do m = 1, ngly
+                    do n = 1, nglx
+                        s = s + psiqx(n,iq) * psiqy(m,jq) * q(1,intma(n,m,1,e),k)
+                    end do
+                end do
+                pmin = min(pmin, s)
+            end do
+        end do
+        ! do jq = 1, nqy
+        !     s = 0.0; sx = 0.0
+        !     do m = 1, ngly
+        !         s  = s  + psiqy(m,jq) * q(1,intma(1,m,1,e),k)
+        !         sx = sx + psiqy(m,jq) * q(1,intma(nglx,m,1,e),k)
+        !     end do
+        !     pmin = min(pmin, s, sx)
+        ! end do
+        ! do iq = 1, nqx
+        !     s = 0.0; sx = 0.0
+        !     do n = 1, nglx
+        !         s  = s  + psiqx(n,iq) * q(1,intma(n,1,1,e),k)
+        !         sx = sx + psiqx(n,iq) * q(1,intma(n,ngly,1,e),k)
+        !     end do
+        !     pmin = min(pmin, s, sx)
+        ! end do
+
+    end function layer_min_e
 
     !------------------------------------------------------------------!
     ! Classify each element per layer:
@@ -737,5 +839,314 @@ module mod_initial_mlswe
             q = n / d
         end if
     end function safe_div
+
+    ! Debug-only: copy per-element reductions, not the full state, after GPU scans.
+    ! Layer quantities are geometric thickness [m]; BTP quantities are pressure [Pa].
+    subroutine trace_reset()
+        if (trace_open) close(trace_unit)
+        trace_open = .false.
+        trace_dumped = .false.
+        trace_ring_count = 0
+        trace_sequence = 0
+        trace_before_step = -1
+        trace_before_stage = -1
+        if (allocated(trace_before)) deallocate(trace_before)
+    end subroutine trace_reset
+
+    subroutine trace_stage(b, G, inp, tsp, alpha, q, qb, phase, btp_only, substep, stage)
+        use mpi
+        use mod_constants, only: gravity
+        implicit none
+        type(basis), intent(in) :: b
+        type(grid), intent(in) :: G
+        type(input), intent(in) :: inp
+        type(tensor_CS), intent(in) :: tsp
+        real, intent(in) :: alpha(inp%nlayers)
+        real, intent(in) :: q(inp%nvar_bcl,G%npoin,inp%nlayers), qb(inp%nvar_btp,G%npoin)
+        character(len=*), intent(in) :: phase
+        logical, intent(in) :: btp_only
+        integer, intent(in) :: substep, stage
+        ! Metrics: node min, volume min, face min, mean, integral, pressure
+        ! residual, momentum residual, nonfinite count, node index, volume
+        ! quadrature index, face sample index. Each element has its own output.
+        real, allocatable :: stats(:,:,:)
+        real :: h, v, w, vq, vs, weight, mass, area, residual, mom, denom, floor_k
+        real :: xyz(3), radius, longitude, latitude, value, delta_mass
+        real :: pi, hi
+        integer :: e,k,j,n,m,ip,iqx,iqy,iq,side,I,loc,ne,nx,ny,nqx,nqy,nl,nv,nvb
+        integer :: rank,ierr,metric,emin,changed,trigger_e,trigger_k,iu,c,slot
+        integer :: nonfinite
+        logical :: event, paired
+        character(len=256) :: filename
+        character(len=2048) :: line
+        character(len=32), parameter :: names(8) = [character(len=32) :: &
+            'node_min','volume_min','face_min','element_mean_min','integral', &
+            'pressure_residual_max','momentum_residual_max','nonfinite_samples']
+        if (.not. inp%ltrace_stages) return
+        if (b%nglz /= 1 .or. b%nglx /= b%ngly) &
+            error stop 'ltrace_stages requires equal-order horizontal quadrilateral elements'
+        call mpi_comm_rank(MPI_COMM_WORLD,rank,ierr)
+        if (.not. trace_open) then
+            write(filename,'("stage_trace_rank",i6.6,".csv")') rank
+            open(newunit=trace_unit,file=trim(filename),status='replace',action='write')
+            write(trace_unit,'(a)') 'sequence,step,bcl_stage,btp_substep,btp_stage,phase,rank,layer,' // &
+                'metric,value,local_element,sample,longitude_deg,latitude_deg'
+            trace_open = .true.
+        end if
+        ne=G%nelem; nx=b%nglx; ny=b%ngly; nqx=b%nqx; nqy=b%nqy
+        if (ne == 0) return
+        nl=merge(1,inp%nlayers,btp_only); nv=inp%nvar_bcl; nvb=inp%nvar_btp
+        allocate(stats(11,ne,nl))
+        pi=acos(-1.0)
+        !$acc wait(1)
+        !$acc parallel loop gang collapse(2) copyout(stats) &
+        !$acc present(q,qb,G%intma,b%psiqx,b%psiqy,b%wglx,b%wgly,tsp%wjac_df,alpha) &
+        !$acc firstprivate(ne,nx,ny,nqx,nqy,nl,nv,nvb,btp_only) &
+        !$acc private(I,h,v,w,vq,vs,weight,mass,area,residual,mom,denom,nonfinite,loc,ip,side,iq,iqx,iqy,j,n,m)
+        do k=1,nl
+            do e=1,ne
+                stats(:,e,k)=0.0
+                stats(1:4,e,k)=huge(1.0)
+                mass=0.0; area=0.0; nonfinite=0
+                !$acc loop seq
+                do m=1,ny
+                    !$acc loop seq
+                    do n=1,nx
+                        I=G%intma(n,m,1,e)
+                        if (btp_only) then
+                            h=qb(1,I)
+                        else
+                            h=q(1,I,k)*alpha(k)/gravity
+                        end if
+                        if (.not.(abs(h)<=huge(h))) then
+                            nonfinite=nonfinite+1
+                        else if (h<stats(1,e,k)) then
+                            stats(1,e,k)=h;stats(9,e,k)=real(n+(m-1)*nx)
+                        end if
+                        weight=tsp%wjac_df(I)
+                        mass=mass+weight*h;area=area+weight
+                        if (btp_only) then
+                            !$acc loop seq
+                            do j=2,nvb
+                                if (.not.(abs(qb(j,I))<=huge(h))) nonfinite=nonfinite+1
+                            end do
+                        else
+                            v=0.0
+                            !$acc loop seq
+                            do j=1,nl
+                                v=v+q(1,I,j)
+                            end do
+                            denom=max(abs(qb(1,I)),tiny(1.0))
+                            residual=abs(v-qb(1,I))/denom
+                            stats(6,e,k)=max(stats(6,e,k),residual)
+                            !$acc loop seq
+                            do j=2,nv
+                                v=0.0;w=0.0
+                                !$acc loop seq
+                                do ip=1,nl
+                                    v=v+q(j,I,ip);w=w+abs(q(j,I,ip))
+                                end do
+                                mom=abs(v-qb(j+1,I))/max(abs(qb(j+1,I)),w,tiny(1.0))
+                                stats(7,e,k)=max(stats(7,e,k),mom)
+                                if (.not.(abs(v)<=huge(v))) nonfinite=nonfinite+1
+                            end do
+                            if (.not.(abs(residual)<=huge(residual))) nonfinite=nonfinite+1
+                        end if
+                    end do
+                end do
+                stats(4,e,k)=mass/area;stats(5,e,k)=mass
+                !$acc loop seq
+                do iqy=1,nqy
+                    !$acc loop seq
+                    do iqx=1,nqx
+                        vq=0.0
+                        !$acc loop seq
+                        do m=1,ny
+                            !$acc loop seq
+                            do n=1,nx
+                                I=G%intma(n,m,1,e)
+                                if (btp_only) then
+                                    h=qb(1,I)
+                                else
+                                    h=q(1,I,k)*alpha(k)/gravity
+                                end if
+                                vq=vq+b%psiqx(n,iqx)*b%psiqy(m,iqy)*h
+                            end do
+                        end do
+                        if (.not.(abs(vq)<=huge(vq))) then
+                            nonfinite=nonfinite+1
+                        else if(vq<stats(2,e,k)) then
+                            stats(2,e,k)=vq;stats(10,e,k)=real(iqx+(iqy-1)*nqx)
+                        end if
+                    end do
+                end do
+                ! Four edges, using the same 1-D interpolation tables as the volume rule.
+                !$acc loop seq
+                do side=1,4
+                    !$acc loop seq
+                    do iq=1,merge(nqy,nqx,side<=2)
+                        vs=0.0
+                        !$acc loop seq
+                        do ip=1,merge(ny,nx,side<=2)
+                            if(side<=2) then
+                                n=merge(1,nx,side==1);m=ip;weight=b%psiqy(ip,iq)
+                            else
+                                n=ip;m=merge(1,ny,side==3);weight=b%psiqx(ip,iq)
+                            end if
+                            I=G%intma(n,m,1,e)
+                            if(btp_only) then
+                                h=qb(1,I)
+                            else
+                                h=q(1,I,k)*alpha(k)/gravity
+                            end if
+                            vs=vs+weight*h
+                        end do
+                        if (.not.(abs(vs)<=huge(vs))) then
+                            nonfinite=nonfinite+1
+                        else if(vs<stats(3,e,k)) then
+                            stats(3,e,k)=vs;stats(11,e,k)=real(iq+(side-1)*max(nqx,nqy))
+                        end if
+                    end do
+                end do
+                stats(8,e,k)=real(nonfinite)
+            end do
+        end do
+        !$acc end parallel loop
+        event=.false.;trigger_e=0;trigger_k=0
+        paired=.false.
+        if(.not.btp_only) paired=allocated(trace_before) .and. &
+            trace_before_step==bcl_itime .and. trace_before_stage==trace_bcl_stage
+        do k=1,nl
+            floor_k=inp%dry_cutoff
+            if(btp_only) floor_k=0.0
+            do metric=1,8
+                if(metric<=4) then
+                    emin=max(1,minloc(stats(metric,:,k),dim=1));value=stats(metric,emin,k)
+                else if(metric==5.or.metric==8) then
+                    emin=maxloc(stats(metric,:,k),dim=1);value=sum(stats(metric,:,k))
+                else
+                    emin=max(1,maxloc(stats(metric,:,k),dim=1));value=stats(metric,emin,k)
+                end if
+                emin=max(1,min(ne,emin))
+                loc=0;xyz=0.0
+                if(metric==1) then
+                    loc=nint(stats(9,emin,k));n=mod(max(loc,1)-1,nx)+1;m=(max(loc,1)-1)/nx+1
+                    xyz=G%coord(:,G%intma(n,m,1,emin))
+                else if(metric==2) then
+                    loc=nint(stats(10,emin,k));iqx=mod(max(loc,1)-1,nqx)+1;iqy=(max(loc,1)-1)/nqx+1
+                    do m=1,ny
+                        do n=1,nx
+                            xyz=xyz+b%psiqx(n,iqx)*b%psiqy(m,iqy)*G%coord(:,G%intma(n,m,1,emin))
+                        end do
+                    end do
+                else if(metric==3) then
+                    loc=nint(stats(11,emin,k));side=(max(loc,1)-1)/max(nqx,nqy)+1
+                    iq=mod(max(loc,1)-1,max(nqx,nqy))+1
+                    do ip=1,merge(ny,nx,side<=2)
+                        if(side<=2) then
+                            n=merge(1,nx,side==1);m=ip;hi=b%psiqy(ip,iq)
+                        else
+                            n=ip;m=merge(1,ny,side==3);hi=b%psiqx(ip,iq)
+                        end if
+                        xyz=xyz+hi*G%coord(:,G%intma(n,m,1,emin))
+                    end do
+                else
+                    do m=1,ny
+                        do n=1,nx
+                            xyz=xyz+G%coord(:,G%intma(n,m,1,emin))/real(nx*ny)
+                        end do
+                    end do
+                end if
+                radius=sqrt(sum(xyz**2));longitude=0.0;latitude=0.0
+                if(radius>0.0) then
+                    longitude=modulo(atan2(xyz(2),xyz(1))*180.0/pi,360.0)
+                    latitude=asin(max(-1.0,min(1.0,xyz(3)/radius)))*180.0/pi
+                end if
+                ! BTP has no meaningful layer residuals; suppress those rows.
+                if(btp_only.and.(metric==6.or.metric==7)) cycle
+                write(line,'(5(i0,","),a,",",2(i0,","),a,",",es24.16e3,",",2(i0,","),es16.8,",",es16.8)') &
+                    trace_sequence,bcl_itime,trace_bcl_stage,substep,stage,trim(phase),rank, &
+                    merge(0,k,btp_only),trim(names(metric)),value,emin,loc,longitude,latitude
+                call trace_line(line)
+                if((metric<=3.and.value<=floor_k).or.(metric==8.and.value>0.0)) then
+                    event=.true.;trigger_e=emin;trigger_k=k
+                end if
+                if(metric==6.and.index(phase,'after_velocity')>0.and.value>1.e-6) then
+                    event=.true.;trigger_e=emin;trigger_k=k
+                end if
+            end do
+            if(paired.and.index(phase,'after_limit')>0) then
+                delta_mass=sum(stats(5,:,k))-sum(trace_before(1,:,k))
+                changed=count(abs(stats(5,:,k)-trace_before(1,:,k)) > &
+                    100.0*epsilon(1.0)*max(abs(trace_before(1,:,k)),tiny(1.0)))
+                write(line,'(5(i0,","),a,",",2(i0,","),a,",",es24.16e3,",0,0,0,0")') &
+                    trace_sequence,bcl_itime,trace_bcl_stage,substep,stage,trim(phase),rank,k,'limiter_mass_change',delta_mass
+                call trace_line(line)
+                write(line,'(5(i0,","),a,",",2(i0,","),a,",",es24.16e3,",0,0,0,0")') &
+                    trace_sequence,bcl_itime,trace_bcl_stage,substep,stage,trim(phase),rank,k, &
+                    'limiter_mean_changed_elements',real(changed)
+                call trace_line(line)
+                changed=count(trace_before(2,:,k)<=inp%dry_cutoff)
+                write(line,'(5(i0,","),a,",",2(i0,","),a,",",es24.16e3,",0,0,0,0")') &
+                    trace_sequence,bcl_itime,trace_bcl_stage,substep,stage,trim(phase),rank,k, &
+                    'limiter_candidate_elements',real(changed)
+                call trace_line(line)
+                ! Candidate count is determined from pre-limiter nodal minima.
+
+            end if
+        end do
+        if(.not.btp_only.and.index(phase,'before_limit')>0) then
+            if(.not.allocated(trace_before)) allocate(trace_before(2,ne,inp%nlayers))
+            trace_before(1,:,:)=stats(5,:,:)
+            trace_before(2,:,:)=stats(1,:,:)
+            trace_before_step=bcl_itime;trace_before_stage=trace_bcl_stage
+        end if
+        flush(trace_unit)
+        if(event.and..not.trace_dumped) then
+            write(filename,'("stage_trace_context_rank",i6.6,".csv")') rank
+            open(newunit=iu,file=trim(filename),status='replace',action='write')
+            do c=max(1,trace_ring_count-127),trace_ring_count
+                slot=mod(c-1,128)+1;write(iu,'(a)') trim(trace_ring(slot))
+            end do
+            close(iu)
+            ! Full state download only once, on this rank's first event.
+            !$acc update host(q,qb)
+            write(filename,'("stage_trace_event_rank",i6.6,".txt")') rank
+            open(newunit=iu,file=trim(filename),status='replace',action='write')
+            write(iu,*) 'step, BCL stage, BTP substep/stage, phase, BTP-only:', &
+                bcl_itime,trace_bcl_stage,substep,stage,trim(phase),btp_only
+            write(iu,*) 'local trigger element/layer:',trigger_e,trigger_k
+            write(iu,*) 'BTP event q fields are frozen qprime, not layer prognostic state'
+            do e=1,ne
+                ! Include the trigger and face-neighbor elements.
+                if(e/=trigger_e) then
+                    changed=0
+                    do j=1,G%nface
+                        if ((G%face(7,j)==trigger_e.and.G%face(8,j)==e).or. &
+                            (G%face(8,j)==trigger_e.and.G%face(7,j)==e)) changed=1
+                    end do
+                    if(changed==0) cycle
+                end if
+                do m=1,ny
+                    do n=1,nx
+                        I=G%intma(n,m,1,e)
+                        write(iu,*) 'element,node,xyz,qb:',e,I,G%coord(:,I),qb(:,I)
+                        do k=1,inp%nlayers
+                            write(iu,*) 'layer,q:',k,q(:,I,k)
+                        end do
+                    end do
+                end do
+            end do
+            close(iu);trace_dumped=.true.
+        end if
+        trace_sequence=trace_sequence+1
+    end subroutine trace_stage
+
+    subroutine trace_line(line)
+        character(len=*), intent(in) :: line
+        write(trace_unit,'(a)') trim(line)
+        trace_ring_count=trace_ring_count+1
+        trace_ring(mod(trace_ring_count-1,128)+1)=line
+    end subroutine trace_line
 
 end module mod_initial_mlswe

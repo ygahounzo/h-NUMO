@@ -19,6 +19,7 @@ contains
    subroutine ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, &
       qb_df, qprime_df, dt_btp_in)
 
+      use mod_initial_mlswe, only: trace_stage
       use mod_grid,              only: grid
       use mod_input,             only: input
       use mod_initial,           only: initial
@@ -102,6 +103,9 @@ contains
             a2  = init%ssprk_a(ik,3)
             dtt = dt_btp_in * init%ssprk_beta(ik)
 
+            call trace_stage(b, G, inp, tsp, init%alpha_mlswe, qprime_df, qb_df, &
+                'btp_before_rhs', .true., mstep, ik)
+
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)
 
@@ -138,6 +142,8 @@ contains
             !$acc end parallel loop
 
             call btp_mom_boundary_df(G, b, mf, init, inp, qb_df)
+            call trace_stage(b, G, inp, tsp, init%alpha_mlswe, qprime_df, qb_df, &
+                'btp_after_update', .true., mstep, ik)
 
             if (inp%kstages == 5 .and. ik == 2) then
                !$acc kernels async(1) present(btp%qb2_df, qb_df)

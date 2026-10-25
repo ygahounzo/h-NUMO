@@ -24,7 +24,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
+  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness, trace_stage, trace_bcl_stage
   use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
 
   implicit none
@@ -67,6 +67,8 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   !$acc end kernels
 
   do ik = 1, 3
+
+    trace_bcl_stage = ik
 
     dtt = inp%dt * lsrk3_beta(ik)
 
@@ -119,6 +121,9 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     end do
     !$acc end kernels
 #endif
+
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_lsrk3_bcl_after_update', .false., 0, ik)
 
     ! Semi-implicit Coriolis rotation (flat always; sphere only when
     ! implicit_coriolis_sph, else Coriolis is explicit in the volume RHS). Applies
@@ -178,7 +183,12 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     ! Floor thickness before extract_velocity: if q_df(1) went negative from the
     ! RK update, the division by thickness inside extract_velocity would produce
     ! astronomical velocities, corrupting momentum and triggering a NaN cascade.
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_lsrk3_bcl_before_limit1', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_lsrk3_bcl_after_limit1', .false., 0, ik)
+
 
     ! Extract baroclinic velocity.
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
@@ -205,7 +215,14 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
 #endif
 
     ! Positivity limiter.
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_lsrk3_bcl_after_velocity', .false., 0, ik)
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_lsrk3_bcl_before_limit2', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_lsrk3_bcl_after_limit2', .false., 0, ik)
+
 
     call check_layer_thickness(b, G, inp, q_df, 'ti_lsrk3_bcl', ik)
 

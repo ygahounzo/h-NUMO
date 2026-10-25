@@ -292,12 +292,24 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
          r = earth_radius*acos( sin(olati)*sin(olat) + &
              cos(olati)*cos(olat)*cos(olon-oloni) )
 
-         ! phi2 = bottom-layer thickness: 1000 m background + cosine-bell hump.
-         if (r < rc) then
-            z_interface(I1,2) = 1000.0 + 0.5*hc*(1.0 + cos(pi*r/rc)) - 2000.0
+         ! phi2 = bottom-layer thickness, Chen (2025) Sec. 5.2 formula as printed:
+         ! phi2 = 1000 + 100 cos(18 rho) for rho = sqrt(lon^2 + lat^2) <= pi/18
+         ! (lon-lat distance in radians), else 1000. Peak 1100 m at the centre,
+         ! 900 m at rho = pi/18, then a 100 m step to the 1000 m background.
+         olon = modulo(olon - oloni + pi, 2.0*pi) - pi
+         r = sqrt(olon**2 + (olat - olati)**2)
+         if (r <= pi/18.0) then
+            z_interface(I1,2) = 1000.0 + hc*cos(18.0*r) - 2000.0
          else
             z_interface(I1,2) = 1000.0 - 2000.0
          end if
+         ! Previous smooth cosine-bell hump (1100 m at the centre to 1000 m at
+         ! r = rc, great-circle distance r):
+         ! if (r < rc) then
+         !    z_interface(I1,2) = 1000.0 + 0.5*hc*(1.0 + cos(pi*r/rc)) - 2000.0
+         ! else
+         !    z_interface(I1,2) = 1000.0 - 2000.0
+         ! end if
       end do
       ! u_df, v_df, w_df stay 0 (flow at rest); Coriolis is set to 0 for this
       ! test case in wind_stress_coriolis (mod_initial_mlswe.F90).
@@ -422,6 +434,13 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
 
    ! Optional input override of the layer densities (rho_layers in input_nml).
    if (inp%rho_layers(1) > 0.0) alpha_mlswe(1:nlayers) = 1.0/inp%rho_layers(1:nlayers)
+
+   if (inp%bcl_diss_fac > 0.0) then
+      if (any(.not. (alpha_mlswe > 0.0 .and. alpha_mlswe <= huge(1.0)))) &
+         error stop "bcl_diss_fac requires finite positive layer specific volumes"
+      if (any(alpha_mlswe(2:nlayers) > alpha_mlswe(1:nlayers-1))) &
+         error stop "bcl_diss_fac requires density nondecreasing from top to bottom"
+   end if
 
    ! Clamp interfaces to bathymetry; then enforce monotonicity (no negative layer thickness).
    do I1 = 1, npoin

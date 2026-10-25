@@ -24,6 +24,7 @@ module mod_time_loop
     use mpi
     use mod_openacc_utilities, only: openacc_initialize, openacc_enter_data
     use mod_initial_mlswe,    only: bcl_itime
+    use mod_bcl_filter,       only: bcl_filter_init, bcl_filter_apply, bcl_filter_report
 
     implicit none
 
@@ -36,6 +37,7 @@ contains
 
     subroutine time_loop(G, inp, b, gg, par, mf, btp, bcl, init, ref, mpic, tsp, mt)
 
+        use mod_initial_mlswe, only: trace_reset
         use mod_restart,          only: restart_mlswe, write_restart_nc
         use mod_rk_mlswe,         only: ti_barotropic_ssprk_mlswe
         use mod_layer_terms,      only: extract_qprime_df_face
@@ -60,6 +62,7 @@ contains
         real, dimension(:,:,:), allocatable :: qout_mlswe
         integer :: AllocateStatus
 
+        real :: filter_energy_before(2), filter_energy_after(2)
         real :: mass_conserv_l, mass_conserv_g
         real :: mass_conserv0_g(inp%nlayers)
         integer :: m, itime
@@ -156,8 +159,12 @@ contains
 
         else
 
-            itime = inp%irestart_file_number
-            inorm = inp%irestart_file_number
+            ! Continue the step, output and restart-file counters from
+            ! time_initial, so that step-based cadences (outputs, filter,
+            ! energy) stay aligned and earlier files are not overwritten.
+            itime = nint(inp%time_initial / inp%dt)
+            inorm = nint(inp%time_initial / inp%time_restart)
+            if (inp%write_restart_time > 0.0) irestart_nc = nint(inp%time_initial / inp%write_restart_time)
 
             ifnp = inp%irestart_file_number
 
@@ -201,6 +208,15 @@ contains
 
         end if
 
+        if (inp%lcheck_conserved) then
+            call write_energy_runtime(G, inp, tsp, init, bcl%q_df, time, itime, .true.)
+            if (inp%ifilter > 0) then
+                call compute_runtime_energy(G, inp, tsp, init, bcl%q_df, filter_energy_after)
+                if (irank == irank0) &
+                    call write_filter_energy(time, itime, filter_energy_after, filter_energy_after, .true.)
+            end if
+        end if
+
         if (inp%lprint_diagnostics) then
             call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df, time, itime, inp%dt, idone, &
                                          mass_conserv0_g, ntime, fnp11, unit0)
@@ -211,8 +227,13 @@ contains
             print *, "Begin Time Integration: "
         end if
 
+        call trace_reset()
+
         call openacc_initialize(par)
         call openacc_enter_data(G, b, mf, btp, bcl, init, tsp, mt, par, ref)
+
+        ! Optional modal filter (ifilter > 0); reference = current state.
+        call bcl_filter_init(G, b, inp, mt, bcl%q_df, btp%qb_df)
 
         ! Time Loop
 
@@ -247,6 +268,24 @@ contains
               call ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
             endif
 
+            ! Optional modal filter of the layer and barotropic states.
+            if (inp%ifilter > 0) then
+              if (mod(itime, inp%ifilter) == 0) then
+                if (inp%lcheck_conserved) then
+                  !$acc update host(bcl%q_df)
+                  call compute_runtime_energy(G, inp, tsp, init, bcl%q_df, filter_energy_before)
+                end if
+                call bcl_filter_apply(G, b, inp, init%pbprime_df, bcl%q_df, btp%qb_df)
+                if (mod(itime, irestart) == 0) call bcl_filter_report(G, inp, itime)
+                if (inp%lcheck_conserved) then
+                  !$acc update host(bcl%q_df)
+                  call compute_runtime_energy(G, inp, tsp, init, bcl%q_df, filter_energy_after)
+                  if (irank == irank0) &
+                    call write_filter_energy(time, itime, filter_energy_before, filter_energy_after, .false.)
+                end if
+              end if
+            end if
+
             call cpu_time(time2)
 
             rhs_time = rhs_time + time2 - time1
@@ -268,6 +307,14 @@ contains
             !    if (irank == irank0 .and. (itime == 1 .or. mod(itime, 10) == 0)) &
             !       write(*,'(a,i8,es14.6)') ' dp-pb consistency: ', itime, cons_err_g
             ! end if
+
+            ! Energy history is independent of whether spatial output is enabled;
+            ! ienergy_runtime > 0 writes it every ienergy_runtime BCL steps instead.
+            if (inp%lcheck_conserved .and. ((inp%ienergy_runtime > 0 .and. mod(itime, inp%ienergy_runtime) == 0) .or. &
+                                            (inp%ienergy_runtime <= 0 .and. mod(itime, irestart) == 0))) then
+                !$acc update host(bcl%q_df)
+                call write_energy_runtime(G, inp, tsp, init, bcl%q_df, time, itime, .false.)
+            end if
 
             if (mod(itime, irestart) == 0 .and. inp%dump_data) then
                 inorm = inorm + 1
@@ -311,6 +358,9 @@ contains
         idone = 1
 
         !$acc update host(bcl%q_df, btp%qb_df)
+        if (inp%lcheck_conserved) then
+            call write_energy_runtime(G, inp, tsp, init, bcl%q_df, time, itime, .false.)
+        end if
         if (.not. inp%dump_data) then
             call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)
         end if
@@ -324,6 +374,8 @@ contains
             irestart_nc = irestart_nc + 1
             call write_restart_nc(G, inp, gg, par, init, bcl%q_df, btp%qb_df, irestart_nc, time, itime)
         end if
+
+        call trace_reset()
 
     end subroutine time_loop
 

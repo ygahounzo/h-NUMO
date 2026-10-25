@@ -335,7 +335,7 @@ subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, init,
    if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
       call create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
    else
-      call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
+      call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
    end if
 
 end subroutine bcl_create_postcommunicator_continuity

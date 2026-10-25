@@ -81,6 +81,9 @@ module mod_variables
       ! to rhs_btp by a second kernel in create_btp_fluxes_qdf_gpu.
       real, dimension(:,:),     allocatable :: flux_face_q   ! (nq*nface,4)
 
+      ! Internal-wave penalty workspace; contiguous (state,layer) face slices.
+      real, dimension(:,:,:), allocatable :: bd_left, bd_right, bd_penalty
+
    end type btp_CS
 
    !  Baroclinic control structure
@@ -329,6 +332,16 @@ contains
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (GPU work arrays)"
 #endif
       bcl%nu_smag  = 0.0
+
+      if (allocated(btp%bd_left)) deallocate(btp%bd_left, btp%bd_right, btp%bd_penalty)
+      if (inp%bcl_diss_fac > 0.0) then
+         allocate(btp%bd_left(4,inp%nlayers,b%nq*G%nface), &
+                  btp%bd_right(4,inp%nlayers,b%nq*G%nface), &
+                  btp%bd_penalty(4,inp%nlayers,b%nq*G%nface))
+      else
+         ! Tiny placeholders keep device descriptors valid when disabled.
+         allocate(btp%bd_left(4,1,1), btp%bd_right(4,1,1), btp%bd_penalty(4,1,1))
+      end if
 
    end subroutine mod_allocate_mlswe
 

@@ -33,6 +33,7 @@ module mod_tensor
       real,    dimension(:,:), allocatable :: dpsidz_df_z ! (npts, npoin): hi*zetaq_z (DOF)
       integer, dimension(:,:), allocatable :: index_df   ! (npts, npoin)
       real,    dimension(:),   allocatable :: wjac_df    ! (npoin)
+      real,    dimension(:),   allocatable :: delta_sq_df ! (npoin): element area / npts (Smagorinsky Delta^2)
       integer, dimension(:,:), allocatable :: index_df_elt ! (npts, nelem)
 
    end type tensor_CS
@@ -60,7 +61,7 @@ contains
 
       integer :: e, jquad, iquad, Iq, ip, m, n, I, ipq
       integer :: npts, npts_quad
-      real    :: h_e, h_n, hi
+      real    :: h_e, h_n, hi, area_e
       real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
 
       ! npts = number of DOF basis functions per element (nglx*ngly)
@@ -81,6 +82,7 @@ contains
 
       ! Allocate DOF arrays
       allocate(tsp%wjac_df(G%npoin))
+      allocate(tsp%delta_sq_df(G%npoin))
       allocate(tsp%psih_df(npts, G%npoin))
       allocate(tsp%dpsidx_df(npts, G%npoin))
       allocate(tsp%dpsidy_df(npts, G%npoin))
@@ -105,6 +107,7 @@ contains
 
       ! Initialise DOF arrays
       tsp%wjac_df     = 0.0
+      tsp%delta_sq_df = 0.0
       tsp%psih_df     = 0.0
       tsp%dpsidx_df   = 0.0
       tsp%dpsidy_df   = 0.0
@@ -212,6 +215,13 @@ contains
          enddo
 
       end do ! e, jquad, iquad
+
+      ! Smagorinsky Delta^2: element area per DOF, constant over each element
+      ! (wjac_df carries the GLL weights, so it cannot be used node by node).
+      do e = 1, G%nelem
+         area_e = sum(tsp%wjac_df(tsp%index_df_elt(:,e)))
+         tsp%delta_sq_df(tsp%index_df_elt(:,e)) = area_e / real(npts)
+      end do
 
    end subroutine compute_tensor_product
 

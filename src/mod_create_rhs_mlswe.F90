@@ -20,6 +20,8 @@ module mod_create_rhs_mlswe
     use mod_ref,              only: mref
     use mod_mpi_communicator, only: mpi_communicator
 
+    use mod_bcl_dissipation, only: internal_wave_penalty
+
     implicit none
 
     public :: rhs_layer_shear_stress, layer_mass_rhs, &
@@ -1233,7 +1235,7 @@ contains
         type(input),   intent(in)    :: inp
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
-        type(btp_CS),  intent(in)    :: btp
+        type(btp_CS),  intent(inout)    :: btp
         type(bcl_CS),  intent(inout) :: bcl
         type(initial), intent(in)    :: init
 
@@ -1261,12 +1263,18 @@ contains
         real :: dp_lr(2,inp%nlayers)
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
+        integer :: bd_ifq
+        real :: bd_factor, bd_dry
+
+        bd_factor = inp%bcl_diss_fac
+        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
 
-        !$acc data present(G%face, G%face_type, G%intma,                                              &
+        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
+        !$acc              G%face, G%face_type, G%intma,                                              &
         !$acc              mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq,                     &
         !$acc              b%psiq,                                                                     &
         !$acc              init%alpha_mlswe, init%zbot_face,                                          &
@@ -1276,7 +1284,7 @@ contains
         !$acc              qprime_df, rhs)
 
         !$acc parallel loop gang                                                                       &
-        !$acc   private(alpha_over_g, g_over_alpha,                                                   &
+        !$acc   private(bd_ifq, alpha_over_g, g_over_alpha,                                                   &
         !$acc           ql, qr, qbl, qbr,                                                             &
         !$acc           p_face, z_face,                                                               &
         !$acc           p_edge_plus, p_edge_minus, p2l, p2r,                                          &
@@ -1392,7 +1400,29 @@ contains
                     vdp_flux(2,k,iquad) = vv * (vr*dpr)
                 end if
 
+                bd_ifq = (iface-1)*nq_f+iquad
+                if (bd_factor > 0.0) then
+                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
+                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
+                    btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
+                    btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
+                end if
             end do
+
+            ! Internal-wave penalty; column reconciliation follows below.
+            if (bd_factor > 0.0) then
+                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
+                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
+                !$acc loop seq
+                do k = 1, nlayers_f
+                    dp_flux(1,k,iquad) = dp_flux(1,k,iquad) + nxl*btp%bd_penalty(1,k,bd_ifq)
+                    udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + nxl*btp%bd_penalty(2,k,bd_ifq)
+                    vdp_flux(1,k,iquad) = vdp_flux(1,k,iquad) + nxl*btp%bd_penalty(3,k,bd_ifq)
+                    dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + nyl*btp%bd_penalty(1,k,bd_ifq)
+                    udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + nyl*btp%bd_penalty(2,k,bd_ifq)
+                    vdp_flux(2,k,iquad) = vdp_flux(2,k,iquad) + nyl*btp%bd_penalty(3,k,bd_ifq)
+                end do
+            end if
 
             uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:,iquad))
             uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:,iquad))
@@ -1605,7 +1635,7 @@ contains
         type(input),   intent(in)    :: inp
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
-        type(btp_CS),  intent(in)    :: btp
+        type(btp_CS),  intent(inout)    :: btp
         type(bcl_CS),  intent(inout) :: bcl
         type(initial), intent(in)    :: init
 
@@ -1633,13 +1663,19 @@ contains
         real :: wq, hi, flux_xl, flux_xr, flux_yl, flux_yr, flux_zl, flux_zr, hl, hr
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
+        integer :: bd_ifq
+        real :: bd_factor, bd_dry
+
+        bd_factor = inp%bcl_diss_fac
+        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
         nfq       = nface_f*nq_f
 
-        !$acc data present(G%face, G%face_type,                                                       &
+        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
+        !$acc              G%face, G%face_type,                                                       &
         !$acc              mf%face_I, mf%normal_vector_q, mf%jac_faceq,                              &
         !$acc              b%psiq,                                                                     &
         !$acc              init%alpha_mlswe, init%zbot_face,                                          &
@@ -1654,8 +1690,8 @@ contains
 
         ! One thread per (face, quadrature point). Each point is independent:
         ! its contributions are scattered with atomics at the end of the body.
-        !$acc parallel loop gang vector                                                                &
-        !$acc   private(qbl, qbr, ql, qr, pfl, pfr, pfl1, pfr1, iv, s_fdp, s_fu, s_fv, s_fw,                                       &
+        !$acc parallel loop gang vector firstprivate(bd_factor, bd_dry)                                 &
+        !$acc   private(bd_ifq, qbl, qbr, ql, qr, pfl, pfr, pfl1, pfr1, iv, s_fdp, s_fu, s_fv, s_fw,                                       &
         !$acc           s_adl, s_adr, s_aul, s_aur, s_avl, s_avr, s_awl, s_awr,                      &
         !$acc           uu_dp_flux_deficit, vv_dp_flux_deficit, ww_dp_flux_deficit, dp_deficit,      &
         !$acc           iface, el, er, k, iquad, ktemp, I, il, jl, ir, jr, kl, kr, n,                &
@@ -1828,7 +1864,36 @@ contains
                     bcl%sf_fw(ifq,3,k) = ww * bcl%sf_mdr(ifq,3,k)
                 end if
 
+                bd_ifq = (iface-1)*nq_f+iquad
+                if (bd_factor > 0.0) then
+                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
+                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
+                    btp%bd_left(2,k,bd_ifq) = bcl%sf_mdl(ifq,1,k); btp%bd_right(2,k,bd_ifq) = bcl%sf_mdr(ifq,1,k)
+                    btp%bd_left(3,k,bd_ifq) = bcl%sf_mdl(ifq,2,k); btp%bd_right(3,k,bd_ifq) = bcl%sf_mdr(ifq,2,k)
+                    btp%bd_left(4,k,bd_ifq) = bcl%sf_mdl(ifq,3,k); btp%bd_right(4,k,bd_ifq) = bcl%sf_mdr(ifq,3,k)
+                end if
             end do
+
+            ! Internal-wave penalty; column reconciliation follows below.
+            if (bd_factor > 0.0) then
+                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
+                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
+                !$acc loop seq
+                do k = 1, nlayers_f
+                    bcl%sf_fdp(ifq,1,k) = bcl%sf_fdp(ifq,1,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
+                    bcl%sf_fu(ifq,1,k) = bcl%sf_fu(ifq,1,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
+                    bcl%sf_fv(ifq,1,k) = bcl%sf_fv(ifq,1,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
+                    bcl%sf_fw(ifq,1,k) = bcl%sf_fw(ifq,1,k) + nxl*btp%bd_penalty(4,k,bd_ifq)
+                    bcl%sf_fdp(ifq,2,k) = bcl%sf_fdp(ifq,2,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
+                    bcl%sf_fu(ifq,2,k) = bcl%sf_fu(ifq,2,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
+                    bcl%sf_fv(ifq,2,k) = bcl%sf_fv(ifq,2,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
+                    bcl%sf_fw(ifq,2,k) = bcl%sf_fw(ifq,2,k) + nyl*btp%bd_penalty(4,k,bd_ifq)
+                    bcl%sf_fdp(ifq,3,k) = bcl%sf_fdp(ifq,3,k) + nzl*btp%bd_penalty(1,k,bd_ifq)
+                    bcl%sf_fu(ifq,3,k) = bcl%sf_fu(ifq,3,k) + nzl*btp%bd_penalty(2,k,bd_ifq)
+                    bcl%sf_fv(ifq,3,k) = bcl%sf_fv(ifq,3,k) + nzl*btp%bd_penalty(3,k,bd_ifq)
+                    bcl%sf_fw(ifq,3,k) = bcl%sf_fw(ifq,3,k) + nzl*btp%bd_penalty(4,k,bd_ifq)
+                end do
+            end if
 
             ! Column sums over the layers (ascending k, as the former sum()s).
             s_fdp(1:3) = 0.0;  s_fu(1:3) = 0.0;  s_fv(1:3) = 0.0;  s_fw(1:3) = 0.0
@@ -2089,7 +2154,7 @@ contains
         type(input),   intent(in)    :: inp
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
-        type(btp_CS),  intent(in)    :: btp
+        type(btp_CS),  intent(inout)    :: btp
         type(bcl_CS),  intent(inout) :: bcl
         type(initial), intent(in)    :: init
 
@@ -2123,12 +2188,18 @@ contains
         real :: dp_lr(2,inp%nlayers)
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
+        integer :: bd_ifq
+        real :: bd_factor, bd_dry
+
+        bd_factor = inp%bcl_diss_fac
+        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
 
-        !$acc data present(G%face, G%face_type, G%intma,                                              &
+        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
+        !$acc              G%face, G%face_type, G%intma,                                              &
         !$acc              mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq,                     &
         !$acc              b%psiq,                                                                     &
         !$acc              init%alpha_mlswe, init%zbot_face,                                          &
@@ -2141,7 +2212,7 @@ contains
         ! One thread per (face, quadrature point). Each point is independent:
         ! its contributions are scattered with atomics at the end of the body.
         !$acc parallel loop gang vector                                                                &
-        !$acc   private(alpha_over_g, g_over_alpha,                                                   &
+        !$acc   private(bd_ifq, alpha_over_g, g_over_alpha,                                                   &
         !$acc           ql, qr, qbl, qbr,                                                             &
         !$acc           p_face, z_face,                                                               &
         !$acc           p_edge_plus, p_edge_minus, p2l, p2r,                                          &
@@ -2324,7 +2395,36 @@ contains
                     wdp_flux(3,k) = ww * wdpr(k)
                 end if
 
+                bd_ifq = (iface-1)*nq_f+iquad
+                if (bd_factor > 0.0) then
+                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
+                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
+                    btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
+                    btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
+                    btp%bd_left(4,k,bd_ifq) = wdpl(k); btp%bd_right(4,k,bd_ifq) = wdpr(k)
+                end if
             end do
+
+            ! Internal-wave penalty; column reconciliation follows below.
+            if (bd_factor > 0.0) then
+                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
+                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
+                !$acc loop seq
+                do k = 1, nlayers_f
+                    dp_flux(1,k) = dp_flux(1,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
+                    udp_flux(1,k) = udp_flux(1,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
+                    vdp_flux(1,k) = vdp_flux(1,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
+                    wdp_flux(1,k) = wdp_flux(1,k) + nxl*btp%bd_penalty(4,k,bd_ifq)
+                    dp_flux(2,k) = dp_flux(2,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
+                    udp_flux(2,k) = udp_flux(2,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
+                    vdp_flux(2,k) = vdp_flux(2,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
+                    wdp_flux(2,k) = wdp_flux(2,k) + nyl*btp%bd_penalty(4,k,bd_ifq)
+                    dp_flux(3,k) = dp_flux(3,k) + nzl*btp%bd_penalty(1,k,bd_ifq)
+                    udp_flux(3,k) = udp_flux(3,k) + nzl*btp%bd_penalty(2,k,bd_ifq)
+                    vdp_flux(3,k) = vdp_flux(3,k) + nzl*btp%bd_penalty(3,k,bd_ifq)
+                    wdp_flux(3,k) = wdp_flux(3,k) + nzl*btp%bd_penalty(4,k,bd_ifq)
+                end do
+            end if
 
             uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,1:nlayers_f))
             uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,1:nlayers_f))
@@ -2643,7 +2743,7 @@ contains
         type(input),   intent(in)    :: inp
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
-        type(btp_CS),  intent(in)    :: btp
+        type(btp_CS),  intent(inout)    :: btp
         type(bcl_CS),  intent(inout) :: bcl
         type(initial), intent(in)    :: init
 
@@ -2660,6 +2760,11 @@ contains
         real :: flux_u, flux_v
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
+        integer :: bd_ifq
+        real :: bd_factor, bd_dry
+
+        bd_factor = inp%bcl_diss_fac
+        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
@@ -2667,17 +2772,18 @@ contains
 
         bcl%sum_layer_mass_flux_face = 0.0
 
-        !$acc data present(G%face, G%face_type, G%intma,                          &
+        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
+        !$acc              G%face, G%face_type, G%intma,                          &
         !$acc               mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq, &
-        !$acc               b%psiq, btp%ope_face_ave, btp%uvb_face_ave,           &
+        !$acc               b%psiq, init%alpha_mlswe, btp%ope_face_ave, btp%uvb_face_ave,           &
         !$acc               btp%btp_mass_flux_face_ave, qprime_df, dp_advec)
 
         !$acc parallel loop gang                                                  &
-        !$acc   private(flux_edge_u, flux_edge_v, flux_dp, dp_lr, ql, qr, qbl, qbr, &
+        !$acc   private(bd_ifq, flux_edge_u, flux_edge_v, flux_dp, dp_lr, ql, qr, qbl, qbr, &
         !$acc           el, er, k, iquad, il, jl, ir, jr, I, kl, kr, n,            &
         !$acc           wq, nxl, nyl, hi, dpl, dpr, uu, vv, flux, un,              &
         !$acc           ul, ur, vl, vr, weight, dp_deficit, flux_u, flux_v)        &
-        !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nface_f)
+        !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nface_f)
         do iface = 1, nface_f
 
             if (G%face_type(iface) == 2) cycle
@@ -2765,7 +2871,23 @@ contains
 
                 flux_dp(iquad,k) = nxl*flux_edge_u(iquad,k) + nyl*flux_edge_v(iquad,k)
 
+                bd_ifq = (iface-1)*nq_f+iquad
+                if (bd_factor > 0.0) then
+                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
+                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
+                end if
             end do
+
+            ! Internal-wave penalty; column reconciliation follows below.
+            if (bd_factor > 0.0) then
+                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
+                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
+                !$acc loop seq
+                do k = 1, nlayers_f
+                    flux_edge_u(iquad,k) = flux_edge_u(iquad,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
+                    flux_edge_v(iquad,k) = flux_edge_v(iquad,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
+                end do
+            end if
 
             dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_edge_u(iquad,:))
             dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(flux_edge_v(iquad,:))
@@ -2953,7 +3075,7 @@ contains
         type(input),   intent(in)    :: inp
         type(basis),   intent(in)    :: b
         type(face_CS), intent(in)    :: mf
-        type(btp_CS),  intent(in)    :: btp
+        type(btp_CS),  intent(inout)    :: btp
         type(bcl_CS),  intent(inout) :: bcl
         type(initial), intent(in)    :: init
 
@@ -2974,25 +3096,31 @@ contains
         integer :: ngl_f, nq_f, nlayers_f, nface_f
         real    :: dry_cutoff_l
 
+        integer :: bd_ifq
+        real :: bd_factor, bd_dry
+
+        bd_factor = inp%bcl_diss_fac
+        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
         dry_cutoff_l = inp%dry_cutoff
 
-        !$acc data present(G%face, G%face_type, G%intma,                          &
+        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
+        !$acc              G%face, G%face_type, G%intma,                          &
         !$acc               mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq, &
         !$acc               b%psiq, init%alpha_mlswe, btp%ope_face_ave,           &
         !$acc               btp%uvb_face_ave, btp%btp_mass_flux_face_ave,         &
         !$acc               qprime_df, dp_advec)
 
         !$acc parallel loop gang                                                  &
-        !$acc   private(dp_flux, dp_lr, ql, qr, qbl, qbr, g_over_alpha,           &
+        !$acc   private(bd_ifq, dp_flux, dp_lr, ql, qr, qbl, qbr, g_over_alpha,           &
         !$acc           el, er, k, iquad, il, jl, ir, jr, I, kl, kr, n,           &
         !$acc           wq, nxl, nyl, nzl, hi, dpl, dpr, uu, vv, ww, un,          &
         !$acc           ul, ur, vl, vr, wl, wr, dp_deficit, weight,               &
         !$acc           is_dry_l, is_dry_r)                                       &
-        !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nface_f, dry_cutoff_l)
+        !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nface_f, dry_cutoff_l)
         do iface = 1, nface_f
 
             if (G%face_type(iface) == 2) cycle
@@ -3106,7 +3234,24 @@ contains
                     dp_flux(3,k,iquad) = ww * dpr
                 end if
 
+                bd_ifq = (iface-1)*nq_f+iquad
+                if (bd_factor > 0.0) then
+                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
+                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
+                end if
             end do
+
+            ! Internal-wave penalty; column reconciliation follows below.
+            if (bd_factor > 0.0) then
+                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
+                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
+                !$acc loop seq
+                do k = 1, nlayers_f
+                    dp_flux(1,k,iquad) = dp_flux(1,k,iquad) + nxl*btp%bd_penalty(1,k,bd_ifq)
+                    dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + nyl*btp%bd_penalty(1,k,bd_ifq)
+                    dp_flux(3,k,iquad) = dp_flux(3,k,iquad) + nzl*btp%bd_penalty(1,k,bd_ifq)
+                end do
+            end if
 
             dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,:,iquad))
             dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,:,iquad))

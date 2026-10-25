@@ -301,28 +301,34 @@ subroutine restart_mlswe(G, inp, b, init, q_df, qb_df, qp_df_out, fname)
 
     character(len=*), intent(in) :: fname
 
-    real, dimension(4, G%npoin),              intent(out) :: qb_df
-    real, dimension(3, G%npoin, inp%nlayers), intent(out) :: q_df
-    real, dimension(5, G%npoin, inp%nlayers), intent(out) :: qp_df_out
+    real, dimension(inp%nvar_btp, G%npoin),              intent(out) :: qb_df
+    real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: q_df
+    real, dimension(5, G%npoin, inp%nlayers),            intent(out) :: qp_df_out
 
-    real, dimension(G%npoin, inp%nlayers+1) :: mslwe_elevation
-    real, dimension(3, G%npoin)             :: qb_df_read
-    real, dimension(3, G%npoin, inp%nlayers) :: q_df_read
+    ! Fields as stored in the restart file: pb, pbub, pbvb[, pbwb] and
+    ! h, u, v[, w] (w and pbwb only on the sphere, nvar_bcl = 4).
+    real, dimension(G%npoin, inp%nlayers+1)              :: mslwe_elevation
+    real, dimension(inp%nvar_btp-1, G%npoin)             :: qb_df_read
+    real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers)  :: q_df_read
 
-    integer :: k
+    integer :: k, iv
+    logical :: has_w
+
+    has_w = (inp%nvar_bcl == 4)
 
     call read_mlswe(G, inp, b, q_df_read, qb_df_read, fname)
 
     ! Barotropic variables at the dofs (nodal points)
     qb_df(1,:)   = qb_df_read(1,:)
-    qb_df(3:4,:) = qb_df_read(2:3,:)
+    qb_df(3:inp%nvar_btp,:) = qb_df_read(2:inp%nvar_btp-1,:)
     qb_df(2,:)   = qb_df(1,:) - init%pbprime_df(:)
 
     ! Baroclinic variables
     do k = 1, inp%nlayers
         q_df(1,:,k) = (gravity / init%alpha_mlswe(k)) * q_df_read(1,:,k)
-        q_df(2,:,k) = q_df_read(2,:,k) * q_df(1,:,k)
-        q_df(3,:,k) = q_df_read(3,:,k) * q_df(1,:,k)
+        do iv = 2, inp%nvar_bcl
+            q_df(iv,:,k) = q_df_read(iv,:,k) * q_df(1,:,k)
+        end do
     end do
 
     ! Prepare output variables
@@ -338,11 +344,15 @@ subroutine restart_mlswe(G, inp, b, init, q_df, qb_df, qp_df_out, fname)
         mslwe_elevation(:,k) = mslwe_elevation(:,k+1) + qp_df_out(1,:,k)
     end do
 
-    qp_df_out(4,:,1) = qb_df(3,:)
-    qp_df_out(4,:,2) = qb_df(3,:)
-
-    qp_df_out(5,:,1) = mslwe_elevation(:,1)
-    qp_df_out(5,:,2) = mslwe_elevation(:,2)
+    ! Output field 4 is w on the sphere (as in write_output_mlswe), else pbub.
+    do k = 1, inp%nlayers
+        if (has_w) then
+            qp_df_out(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+        else
+            qp_df_out(4,:,k) = qb_df(3,:)
+        end if
+        qp_df_out(5,:,k) = mslwe_elevation(:,k)
+    end do
 
 end subroutine restart_mlswe
 
@@ -356,7 +366,7 @@ subroutine read_mlswe(G, inp, b, q_df, qb_df, fname)
     type(input), intent(in) :: inp
     type(basis), intent(in) :: b
 
-    real :: q_df(3, G%npoin, inp%nlayers), qb_df(3, G%npoin)
+    real :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers), qb_df(inp%nvar_btp-1, G%npoin)
     character fname*100, fname_proc*200, proc_num*10
     character grid_file*100
 
@@ -374,6 +384,10 @@ subroutine read_mlswe(G, inp, b, q_df, qb_df, fname)
 
     integer, dimension(:), allocatable :: npoin_l_grp, nelem_l_grp
     integer :: npoin_l_max_grp, nelem_l_max_grp, pos
+    integer :: nq, nb
+
+    nq = inp%nvar_bcl       ! h, u, v[, w]
+    nb = inp%nvar_btp - 1   ! pb, pbub, pbvb[, pbwb]
 
     ngroups = 1
 
@@ -399,24 +413,24 @@ subroutine read_mlswe(G, inp, b, q_df, qb_df, fname)
         nelem_l_max_grp = maxval(nelem_l_grp)
 
         ncells_grp = nelem_grp * b%nsubcells
-        allocate(q_grp(3, npoin_grp, inp%nlayers))
-        allocate(qb_grp(3, npoin_grp))
+        allocate(q_grp(nq, npoin_grp, inp%nlayers))
+        allocate(qb_grp(nb, npoin_grp))
 
         pos = index(fname, '.nc')
 
         if (pos > 0 .and. pos + 2 == len_trim(fname)) then
-            call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, inp%nlayers)
+            call load_data_mlswe_nc(fname, qb_grp, q_grp, npoin_grp, inp%nlayers, nq, nb)
         else
-            call load_data_mlswe(fname, qb_grp, q_grp, npoin_grp, inp%nlayers)
+            call load_data_mlswe(fname, qb_grp, q_grp, npoin_grp, inp%nlayers, nq, nb)
         end if
 
     end if
 
-    call scatter_data_to(qb_grp, qb_df, 3, G%npoin, npoin_grp, npoin_l_grp, &
+    call scatter_data_to(qb_grp, qb_df, nb, G%npoin, npoin_grp, npoin_l_grp, &
         npoin_l_max_grp, nproc_grp, out_group)
 
     do k = 1, inp%nlayers
-        call scatter_data_to(q_grp(:,:,k), q_df(:,:,k), 3, G%npoin, npoin_grp, &
+        call scatter_data_to(q_grp(:,:,k), q_df(:,:,k), nq, G%npoin, npoin_grp, &
             npoin_l_grp, npoin_l_max_grp, nproc_grp, out_group)
     end do
 
@@ -427,19 +441,24 @@ subroutine read_mlswe(G, inp, b, q_df, qb_df, fname)
 
 end subroutine read_mlswe
 
-subroutine load_data_mlswe(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
+subroutine load_data_mlswe(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers, nq, nb)
 
     character(len=*), intent(in) :: name_data_file
-    integer, intent(in) :: npoin_g, nlayers
+    integer, intent(in) :: npoin_g, nlayers, nq, nb
 
-    real, dimension(3, npoin_g),          intent(out) :: qb_df_g
-    real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
+    ! The legacy text format holds only pb, pbub, pbvb and h, u, v; any w
+    ! components (sphere) are set to zero.
+    real, dimension(nb, npoin_g),          intent(out) :: qb_df_g
+    real, dimension(nq, npoin_g, nlayers), intent(out) :: q_df_g
 
     real, dimension(2, npoin_g)       :: coord_g
     real, dimension(npoin_g, nlayers+1) :: z_g
 
     integer :: count, nk, npoin_gg, i, j
     real :: dt, dt_btp
+
+    qb_df_g = 0.0
+    q_df_g  = 0.0
 
     open(unit=10, file=name_data_file, status='old', action='read')
 
@@ -470,17 +489,17 @@ end subroutine load_data_mlswe
 !> restart the run and is not read back, matching the txt path).
 !---------------------------------------------------------------------!
 #ifdef NO_NETCDF
-subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
+subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers, nq, nb)
 
     use mpi
 
     implicit none
 
     character(len=*), intent(in) :: name_data_file
-    integer, intent(in) :: npoin_g, nlayers
+    integer, intent(in) :: npoin_g, nlayers, nq, nb
 
-    real, dimension(3, npoin_g),          intent(out) :: qb_df_g
-    real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
+    real, dimension(nb, npoin_g),          intent(out) :: qb_df_g
+    real, dimension(nq, npoin_g, nlayers), intent(out) :: q_df_g
 
     integer :: ierr
 
@@ -489,17 +508,18 @@ subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
 
 end subroutine load_data_mlswe_nc
 #else
-subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
+subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers, nq, nb)
 
     use netcdf
 
     implicit none
 
     character(len=*), intent(in) :: name_data_file
-    integer, intent(in) :: npoin_g, nlayers
+    integer, intent(in) :: npoin_g, nlayers, nq, nb
 
-    real, dimension(3, npoin_g),          intent(out) :: qb_df_g
-    real, dimension(3, npoin_g, nlayers), intent(out) :: q_df_g
+    ! nb = 4 / nq = 4 on the sphere: pbwb and w are read as well.
+    real, dimension(nb, npoin_g),          intent(out) :: qb_df_g
+    real, dimension(nq, npoin_g, nlayers), intent(out) :: q_df_g
 
     integer :: ncid, varid
 
@@ -511,6 +531,10 @@ subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
     call check(nf90_get_var(ncid, varid, qb_df_g(2,:)))
     call check(nf90_inq_varid(ncid, 'pbvb', varid))
     call check(nf90_get_var(ncid, varid, qb_df_g(3,:)))
+    if (nb >= 4) then
+        call check(nf90_inq_varid(ncid, 'pbwb', varid))
+        call check(nf90_get_var(ncid, varid, qb_df_g(4,:)))
+    end if
 
     call check(nf90_inq_varid(ncid, 'h', varid))
     call check(nf90_get_var(ncid, varid, q_df_g(1,:,:)))
@@ -518,6 +542,10 @@ subroutine load_data_mlswe_nc(name_data_file, qb_df_g, q_df_g, npoin_g, nlayers)
     call check(nf90_get_var(ncid, varid, q_df_g(2,:,:)))
     call check(nf90_inq_varid(ncid, 'v', varid))
     call check(nf90_get_var(ncid, varid, q_df_g(3,:,:)))
+    if (nq >= 4) then
+        call check(nf90_inq_varid(ncid, 'w', varid))
+        call check(nf90_get_var(ncid, varid, q_df_g(4,:,:)))
+    end if
 
     call check(nf90_close(ncid))
 

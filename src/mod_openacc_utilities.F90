@@ -103,7 +103,7 @@ contains
       !$acc enter data copyin(tsp)
       !$acc enter data copyin(tsp%wjac, tsp%psih, tsp%dpsidx, tsp%dpsidy,     &
       !$acc                   tsp%indexq,  tsp%indexq_e,                       &
-      !$acc                   tsp%wjac_df, tsp%psih_df, tsp%dpsidx_df,         &
+      !$acc                   tsp%wjac_df, tsp%delta_sq_df, tsp%psih_df, tsp%dpsidx_df, &
       !$acc                   tsp%dpsidy_df, tsp%index_df, tsp%index_df_elt)
       ! Sphere vertical-momentum gradient terms (dpsidz*): populated on host
       ! at init in mod_tensor.F90 before any kernel runs, same as dpsidx/dpsidy.
@@ -142,6 +142,7 @@ contains
 
       ! mod_variables (btp_CS)
       !$acc enter data copyin(btp)
+      !$acc enter data create(btp%bd_left, btp%bd_right, btp%bd_penalty)
       !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
       !$acc enter data create(btp%nu_smag)
       !$acc enter data create(btp%qb0_df, btp%qb2_df)

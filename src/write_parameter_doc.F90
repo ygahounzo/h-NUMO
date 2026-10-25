@@ -103,6 +103,16 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    ! -----------------------------------------------------------------------
    write(fu,'(a)') '! === Layer Thickness Limits ==='
    write(fu,'(a)')
+   write(fu,'(a,es14.6,t55,a)') 'BCL_DISS_FAC = ', inp%bcl_diss_fac, '! internal-wave LLF penalty (0=off, 1=full)'
+   write(fu,'(a,i0,t55,a)')     'IFILTER = ', inp%ifilter, '! modal filter every N baroclinic steps (0=off)'
+   write(fu,'(a,es14.6,t55,a)') 'FILTER_MUX = ', inp%filter_mux, '! filter strength in x (blend with identity, 1=full)'
+   write(fu,'(a,es14.6,t55,a)') 'FILTER_MUY = ', inp%filter_muy, '! filter strength in y'
+   write(fu,'(a,a,a,t55,a)')    'FILTER_WEIGHT_TYPE = "', trim(inp%filter_weight_type), '"', '! erf (Boyd-Vandeven), exp or quad'
+   write(fu,'(a,a,a,t55,a)')    'FILTER_BASIS_TYPE = "', trim(inp%filter_basis_type), '"', '! legendre or modal'
+   write(fu,'(a,a,a,t55,a)')    'FILTER_REF = "', trim(inp%filter_ref), '"', '! none = full state (NUMA), initial = departure from t=0'
+   write(fu,'(a,l1,t55,a)')     'FILTER_SENSOR = ', inp%filter_sensor, '! filter only elements flagged by the modal sensor'
+   write(fu,'(a,es14.6,t55,a)') 'FILTER_S0 = ', inp%filter_s0, '! sensor threshold, log10(E_top/E_all)'
+   write(fu,'(a,es14.6,t55,a)') 'FILTER_KAPPA = ', inp%filter_kappa, '! sensor ramp half-width'
    write(fu,'(a,es14.6,t55,a)') 'DRY_CUTOFF = ',      inp%dry_cutoff,     '! [m] minimum layer thickness (wetting/drying)'
    write(fu,'(a,es14.6,t55,a)') 'H_CUTOFF1 = ',       inp%h_cutoff1,      '! [m] lower health-check thickness threshold'
    write(fu,'(a,es14.6,t55,a)') 'H_CUTOFF2 = ',       inp%h_cutoff2,      '! [m] upper health-check thickness threshold'
@@ -120,7 +130,9 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a,l1,t55,a)') 'LWRITE_VORTICITY = ',   inp%lwrite_vorticity,       '! write AbsVorticity/PotVorticity to output files'
    write(fu,'(a,l1,t55,a)') 'LPRINT_DIAGNOSTICS = ', inp%lprint_diagnostics,     '! enable run-time diagnostics'
    write(fu,'(a,i0,t55,a)') 'IPRINT_DIAGNOSTICS = ', inp%iprint_diagnostics,     '! print diagnostics every N time steps'
+   write(fu,'(a,l1,t55,a)') 'LTRACE_STAGES = ', inp%ltrace_stages, '! stage positivity/coupling trace (expensive)'
    write(fu,'(a,l1,t55,a)') 'LCHECK_CONSERVED = ',   inp%lcheck_conserved,       '! check mass/energy conservation'
+   write(fu,'(a,i0,t55,a)') 'IENERGY_RUNTIME = ',    inp%ienergy_runtime,        '! energy_runtime.csv every N BCL steps (0 = output times)'
    write(fu,'(a)')
 
    ! -----------------------------------------------------------------------

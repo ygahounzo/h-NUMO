@@ -31,7 +31,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
+  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness, trace_stage, trace_bcl_stage
   use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
 
   implicit none
@@ -72,6 +72,8 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   !$acc end kernels
 
   do ik = 1, inp%kstages_bcl
+
+    trace_bcl_stage = ik
 
     ! Read SSPRK coefficients on CPU; they become firstprivate scalars in kernels.
     dtt = inp%dt * init%ssprk_beta_bcl(ik)
@@ -133,6 +135,9 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     !$acc end kernels
 #endif
 
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_rk3_bcl_after_update', .false., 0, ik)
+
     ! Semi-implicit Coriolis rotation (GPU): flat always; sphere only when
     ! implicit_coriolis_sph, else Coriolis is explicit in the volume RHS. Same
     ! formulas as ti_lsrk3_bcl.F90, using this stage's fractional dt
@@ -192,7 +197,12 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
     ! Floor thickness before extract_velocity to prevent division by ~1e-20.
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_rk3_bcl_before_limit1', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_rk3_bcl_after_limit1', .false., 0, ik)
+
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
@@ -219,7 +229,14 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 #endif
 
     ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_rk3_bcl_after_velocity', .false., 0, ik)
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_rk3_bcl_before_limit2', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
+    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
+        'ti_rk3_bcl_after_limit2', .false., 0, ik)
+
 
     call check_layer_thickness(b, G, inp, q_df, 'ti_rk3_bcl', ik)
 
