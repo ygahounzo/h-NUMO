@@ -30,6 +30,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_splitting,         only: create_rhs_bcl
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
+  use mod_ape,               only: ape_stage
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
   use mod_initial_mlswe,    only: poslimiter, check_layer_thickness, trace_stage, trace_bcl_stage
   use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
@@ -86,6 +87,8 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
     ! GPU: compute bcl/btp coefficient arrays (dpp_graduv, dpprime_visc, etc.).
     call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+    ! Chen APE force (c_APE > 0) from the stage state, shared by the BTP subcycle and the BCL rhs.
+    call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, bcl%q1_df)
 
     if (ik == 1 .and. inp%rk_bcl_FS) then
       ! FS: BTP at stage 1 only, full N_btp.

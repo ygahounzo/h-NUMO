@@ -22,6 +22,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    use mod_splitting,        only: create_rhs_bcl
    use mod_rk_mlswe,         only: ti_barotropic_ssprk_mlswe
    use mod_barotropic_terms, only: btp_bcl_coeffs_qdf
+   use mod_ape,              only: ape_stage
    use mod_layer_terms,      only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
    use mod_create_rhs_mlswe, only: layer_mass_rhs, bcl_apply_implicit_vertical_viscosity
    use mod_initial_mlswe,    only: check_layer_thickness, poslimiter
@@ -77,6 +78,8 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    !$acc end kernels
 
    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+   ! Chen APE force (c_APE > 0): predictor from q^n, corrector from the predicted state.
+   call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, q_df)
 
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df, inp%dt_btp)
    call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
@@ -154,6 +157,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    !$acc end kernels
 
    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+   call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, q_df_pred)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df, inp%dt_btp)
 
    ! Layer continuity equation

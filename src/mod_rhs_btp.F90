@@ -318,6 +318,7 @@ contains
       use mod_tensor,    only: tensor_CS
       use mod_metrics,   only: metrics
       use mod_initial_mlswe, only: check_btp_thickness
+      use mod_ape,       only: ape_on, ape_force_btp
 
       implicit none
 
@@ -345,7 +346,7 @@ contains
       integer :: npts_l, npts_q_l, nelem_l, botfr_l, nglx_l, nqx_l, ngly_l, nqy_l, k, k0
       real    :: a1, a2, a3, a4, b1, b2, b3, b4, py, dpy, px, dpx
       real    :: cd_l, alpha_bot_l
-      logical :: has_w
+      logical :: has_w, ape_l
 
       npts_l      = b%npts
       npts_q_l    = b%npts_quad
@@ -358,8 +359,9 @@ contains
       cd_l        = real(inp%cd_mlswe)
       alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
       has_w       = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      ape_l       = ape_on        ! Chen APE: column sum of the layer forces (mod_ape)
 
-      !$acc data present(init, tsp, btp, G%intma, G%intma_dg_quad,                  &
+      !$acc data present(init, tsp, btp, G%intma, G%intma_dg_quad, ape_force_btp,   &
       !$acc               rhs_btp, qb_df,                                            &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy, tsp%dpsidz,                       &
@@ -415,7 +417,7 @@ contains
 
       ! ---- Kernel A: physics at each quad point (one thread per point) --------
       !$acc parallel loop async(1) gang vector collapse(3)                                   &
-      !$acc   firstprivate(nelem_l, botfr_l, cd_l, alpha_bot_l, has_w,             &
+      !$acc   firstprivate(nelem_l, botfr_l, cd_l, alpha_bot_l, has_w, ape_l,      &
       !$acc                ngly_l, nqx_l, nqy_l)                                    &
       !$acc   private(Iq, Iq0, dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb, &
       !$acc           ubot, vbot, wbot, spd, tb_u, tb_v, tb_w,                    &
@@ -561,6 +563,12 @@ contains
                zz = mt%zetaq_z(iqx, iqy, 1, ie)
             end if
 
+            if (ape_l) then
+               sc_x = sc_x + ape_force_btp(1, Iq)
+               sc_y = sc_y + ape_force_btp(2, Iq)
+               sc_z = sc_z + ape_force_btp(3, Iq)
+            end if
+
             ! Weighted coefficients of psi (j=1), dpsi/dxi (j=2) and dpsi/deta
             ! (j=3) for each equation row at this quad point. With source S and
             ! flux F = (Fx, Fy, Fz): j=1 is S + zeta.F, j=2 is ksi.F, j=3 is eta.F.
@@ -676,6 +684,7 @@ contains
       use mod_input,     only: input
       use mod_tensor,    only: tensor_CS
       use mod_initial_mlswe, only: check_btp_thickness
+      use mod_ape,       only: ape_on, ape_force_btp
 
       implicit none
 
@@ -698,15 +707,16 @@ contains
       integer :: I, Iq, ip
       integer :: npts_l, botfr_l
       real    :: cd_l, alpha_bot_l
-      logical :: has_w
+      logical :: has_w, ape_l
 
       npts_l      = b%npts
       botfr_l     = inp%botfr
       cd_l        = real(inp%cd_mlswe)
       alpha_bot_l = real(init%alpha_mlswe(inp%nlayers))
       has_w       = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      ape_l       = ape_on        ! Chen APE: column sum of the layer forces (mod_ape)
 
-      !$acc data present(init, tsp, btp,                                             &
+      !$acc data present(init, tsp, btp, ape_force_btp,                              &
       !$acc               rhs_btp, qb_df,                                            &
       !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
       !$acc               tsp%dpsidx, tsp%dpsidy, tsp%dpsidz,                       &
@@ -735,7 +745,7 @@ contains
       !$acc           sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww,  &
       !$acc           qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw,                   &
       !$acc           hi, dhdx, dhdy, dhdz, I)                                     &
-      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l, has_w)
+      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l, has_w, ape_l)
       do Iq = 1, G%npoin_q
 
          dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  wdp = 0.0
@@ -849,6 +859,12 @@ contains
             btp%tau_bot_ave(3,Iq)       = btp%tau_bot_ave(3,Iq)       + tb_w
             btp%btp_mass_flux_ave(3,Iq) = btp%btp_mass_flux_ave(3,Iq) + wdp
             btp%uvb_ave(3,Iq)           = btp%uvb_ave(3,Iq)           + wb
+         end if
+
+         if (ape_l) then
+            sc_x = sc_x + ape_force_btp(1, Iq)
+            sc_y = sc_y + ape_force_btp(2, Iq)
+            sc_z = sc_z + ape_force_btp(3, Iq)
          end if
 
          ! Scatter: atomics handle cross-gang races on shared DOF nodes.

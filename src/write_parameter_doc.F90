@@ -104,6 +104,7 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a)') '! === Layer Thickness Limits ==='
    write(fu,'(a)')
    write(fu,'(a,es14.6,t55,a)') 'BCL_DISS_FAC = ', inp%bcl_diss_fac, '! internal-wave LLF penalty (0=off, 1=full)'
+   write(fu,'(a,es14.6,t55,a)') 'C_APE = ', inp%c_APE, '! [m^2] Chen APE coefficient, interior interfaces (0=off)'
    write(fu,'(a,i0,t55,a)')     'IFILTER = ', inp%ifilter, '! modal filter every N baroclinic steps (0=off)'
    write(fu,'(a,es14.6,t55,a)') 'FILTER_MUX = ', inp%filter_mux, '! filter strength in x (blend with identity, 1=full)'
    write(fu,'(a,es14.6,t55,a)') 'FILTER_MUY = ', inp%filter_muy, '! filter strength in y'

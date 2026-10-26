@@ -21,6 +21,7 @@ module mod_create_rhs_mlswe
     use mod_mpi_communicator, only: mpi_communicator
 
     use mod_bcl_dissipation, only: internal_wave_penalty
+    use mod_ape,             only: ape_on, ape_force
 
     implicit none
 
@@ -613,6 +614,7 @@ contains
         real    :: Gc(3), Gsum(3), Gzb(3), gz_k(3), gz_k1(3)
         real    :: Pstress_l, Pbstress_l
         real    :: cfx, cfy, cfz, cor_fac_l
+        logical :: ape_l
 
         npoin_q_l = G%npoin_q
         npts_l    = b%npts
@@ -628,6 +630,8 @@ contains
         ! Explicit Coriolis here unless the semi-implicit nodal rotation in the
         ! ti_*_bcl integrators handles it (implicit_coriolis_sph) -- never both.
         cor_fac_l  = merge(0.0, 1.0, inp%implicit_coriolis_sph)
+        ! Chen APE force per layer at the quad points (mod_ape, c_APE > 0).
+        ape_l      = ape_on
 
         bcl%sum_layer_mass_flux = 0.0
 
@@ -643,7 +647,7 @@ contains
         !$acc              tsp%indexq_e, b%psiqx, b%psiqy, b%dpsiqx, b%dpsiqy,           &
         !$acc              mt%ksiq_x, mt%ksiq_y, mt%ksiq_z, mt%etaq_x, mt%etaq_y,       &
         !$acc              mt%etaq_z, mt%zetaq_x, mt%zetaq_y, mt%zetaq_z, bcl%F_bcl,    &
-        !$acc              G%intma, G%intma_dg_quad)
+        !$acc              G%intma, G%intma_dg_quad, ape_force)
 
 #ifdef _OPENACC
         ! ---- Kernel A: physics at each quad point (one thread per point) ------
@@ -672,7 +676,7 @@ contains
         !$acc           weight, weight_dp, Hq, pbq, temp1, tau_wind_u, tau_wind_v,     &
         !$acc           tempbot, source_x, source_y, source_z, cfx, cfy, cfz)           &
         !$acc   firstprivate(Pstress_l, Pbstress_l, npts_l, nlayers_l, nglx_l, nqx_l, nqy_l, &
-        !$acc                cor_fac_l)
+        !$acc                cor_fac_l, ape_l)
         do ie = 1, nelem_l
         do iqy = 1, nqy_l
         do iqx = 1, nqx_l
@@ -915,6 +919,11 @@ contains
                 source_z = -(cfx*vdp_k - cfy*udp_k) &
                            + gravity*(p_k*gz_k(3) - p_k1*gz_k1(3)) &
                            - gravity*tempbot*btp%tau_bot_ave(3,Iq)
+                if (ape_l) then
+                    source_x = source_x + ape_force(1,Iq,k)
+                    source_y = source_y + ape_force(2,Iq,k)
+                    source_z = source_z + ape_force(3,Iq,k)
+                end if
 
                 ! Weighted coefficients of psi (j=1), dpsi/dxi (j=2), dpsi/deta (j=3):
                 ! with source S and flux F, j=1 is S + zeta.F, j=2 ksi.F, j=3 eta.F.
@@ -995,7 +1004,7 @@ contains
         !$acc           temp1, tau_wind_u, tau_wind_v, tempbot,                          &
         !$acc           weight, acceleration, weight_dp, weightq,                        &
         !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry)  &
-        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l, cor_fac_l)
+        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l, cor_fac_l, ape_l)
         do Iq = 1, npoin_q_l
 
             cfx = cor_fac_l*init%coriolis_3d_quad(1,Iq)
@@ -1196,6 +1205,11 @@ contains
                 source_z = -(cfx*vdp(k) - cfy*udp(k)) &
                            + gravity*(p_tmp(k)*gradz(3,k) - p_tmp(k+1)*gradz(3,k+1)) &
                            - gravity*tempbot*btp%tau_bot_ave(3,Iq)
+                if (ape_l) then
+                    source_x = source_x + ape_force(1,Iq,k)
+                    source_y = source_y + ape_force(2,Iq,k)
+                    source_z = source_z + ape_force(3,Iq,k)
+                end if
 
                 ! ad_mlswe inter-layer vertical viscosity is no longer added
                 ! here — applied once per full timestep by

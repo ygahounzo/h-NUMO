@@ -44,7 +44,7 @@ end subroutine compute_conserved
 
 ! Runtime physical energies, matching energy.py.  Work on the prognostic
 ! state so diagnostics do not depend on the selected visualization format.
-subroutine write_energy_runtime(G, inp, tsp, init, q_df, time, itime, reset)
+subroutine write_energy_runtime(G, inp, tsp, init, q_df, ape, time, itime, reset)
     use mpi
     use mod_mpi_utilities, only: MPI_PRECISION
     use mod_grid, only: grid
@@ -58,30 +58,48 @@ subroutine write_energy_runtime(G, inp, tsp, init, q_df, time, itime, reset)
     type(tensor_CS), intent(in) :: tsp
     type(initial), intent(in) :: init
     real, intent(in) :: q_df(inp%nvar_bcl,G%npoin,inp%nlayers), time
+    ! Chen APE energy (mod_ape%ape_energy, global); used only when c_APE > 0,
+    ! adding the columns ape_J, total_aug_J (= total_J + ape_J), relative_change_aug.
+    real, intent(in) :: ape
     integer, intent(in) :: itime
     logical, intent(in) :: reset
-    real :: energy_global(2), total, relative
-    real, save :: initial_total = 0.0
+    real :: energy_global(2), total, relative, relative_aug
+    real, save :: initial_total = 0.0, initial_aug = 0.0
     integer, save :: last_step = -1
     integer :: rank, ierr, iu
+    logical :: with_ape
 
     if (reset) last_step = -1
     if (itime == last_step) return ! final diagnostics may repeat the last output step
     call mpi_comm_rank(MPI_COMM_WORLD, rank, ierr)
+    with_ape = (inp%c_APE > 0.0 .and. inp%nlayers > 1)
 
     call compute_runtime_energy(G, inp, tsp, init, q_df, energy_global)
     if (rank == 0) then
         total = sum(energy_global)
         if (reset) then
             initial_total = total
+            initial_aug = total + ape
             open(newunit=iu, file='energy_runtime.csv', status='replace', action='write')
-            write(iu,'(a)') 'step,time_days,kinetic_J,potential_J,total_J,relative_change_total'
+            if (with_ape) then
+                write(iu,'(a)') 'step,time_days,kinetic_J,potential_J,total_J,relative_change_total,' // &
+                    'ape_J,total_aug_J,relative_change_aug'
+            else
+                write(iu,'(a)') 'step,time_days,kinetic_J,potential_J,total_J,relative_change_total'
+            end if
         else
             open(newunit=iu, file='energy_runtime.csv', status='old', position='append', action='write')
         end if
         relative = 0.0
         if (initial_total /= 0.0) relative = (total-initial_total)/initial_total
-        write(iu,'(i0,5(",",es24.16e3))') itime, time/86400.0, energy_global, total, relative
+        if (with_ape) then
+            relative_aug = 0.0
+            if (initial_aug /= 0.0) relative_aug = (total+ape-initial_aug)/initial_aug
+            write(iu,'(i0,8(",",es24.16e3))') itime, time/86400.0, energy_global, total, relative, &
+                ape, total+ape, relative_aug
+        else
+            write(iu,'(i0,5(",",es24.16e3))') itime, time/86400.0, energy_global, total, relative
+        end if
         close(iu)
     end if
     last_step = itime

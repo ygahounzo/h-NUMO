@@ -25,6 +25,7 @@ module mod_time_loop
     use mod_openacc_utilities, only: openacc_initialize, openacc_enter_data
     use mod_initial_mlswe,    only: bcl_itime
     use mod_bcl_filter,       only: bcl_filter_init, bcl_filter_apply, bcl_filter_report
+    use mod_ape,              only: ape_init, ape_energy
 
     implicit none
 
@@ -62,7 +63,7 @@ contains
         real, dimension(:,:,:), allocatable :: qout_mlswe
         integer :: AllocateStatus
 
-        real :: filter_energy_before(2), filter_energy_after(2)
+        real :: filter_energy_before(2), filter_energy_after(2), ape_e
         real :: mass_conserv_l, mass_conserv_g
         real :: mass_conserv0_g(inp%nlayers)
         integer :: m, itime
@@ -208,15 +209,6 @@ contains
 
         end if
 
-        if (inp%lcheck_conserved) then
-            call write_energy_runtime(G, inp, tsp, init, bcl%q_df, time, itime, .true.)
-            if (inp%ifilter > 0) then
-                call compute_runtime_energy(G, inp, tsp, init, bcl%q_df, filter_energy_after)
-                if (irank == irank0) &
-                    call write_filter_energy(time, itime, filter_energy_after, filter_energy_after, .true.)
-            end if
-        end if
-
         if (inp%lprint_diagnostics) then
             call print_diagnostics_mlswe(G, inp, b, tsp, init, qout_mlswe, btp%qb_df, time, itime, inp%dt, idone, &
                                          mass_conserv0_g, ntime, fnp11, unit0)
@@ -234,6 +226,18 @@ contains
 
         ! Optional modal filter (ifilter > 0); reference = current state.
         call bcl_filter_init(G, b, inp, mt, bcl%q_df, btp%qb_df)
+        ! Optional Chen APE term (c_APE > 0); runs on the device, so after enter data.
+        call ape_init(G, b, inp, ref, init%alpha_mlswe)
+
+        if (inp%lcheck_conserved) then
+            ape_e = ape_energy(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, bcl%q_df)
+            call write_energy_runtime(G, inp, tsp, init, bcl%q_df, ape_e, time, itime, .true.)
+            if (inp%ifilter > 0) then
+                call compute_runtime_energy(G, inp, tsp, init, bcl%q_df, filter_energy_after)
+                if (irank == irank0) &
+                    call write_filter_energy(time, itime, filter_energy_after, filter_energy_after, .true.)
+            end if
+        end if
 
         ! Time Loop
 
@@ -313,7 +317,8 @@ contains
             if (inp%lcheck_conserved .and. ((inp%ienergy_runtime > 0 .and. mod(itime, inp%ienergy_runtime) == 0) .or. &
                                             (inp%ienergy_runtime <= 0 .and. mod(itime, irestart) == 0))) then
                 !$acc update host(bcl%q_df)
-                call write_energy_runtime(G, inp, tsp, init, bcl%q_df, time, itime, .false.)
+                ape_e = ape_energy(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, bcl%q_df)
+                call write_energy_runtime(G, inp, tsp, init, bcl%q_df, ape_e, time, itime, .false.)
             end if
 
             if (mod(itime, irestart) == 0 .and. inp%dump_data) then
@@ -359,7 +364,8 @@ contains
 
         !$acc update host(bcl%q_df, btp%qb_df)
         if (inp%lcheck_conserved) then
-            call write_energy_runtime(G, inp, tsp, init, bcl%q_df, time, itime, .false.)
+            ape_e = ape_energy(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, bcl%q_df)
+            call write_energy_runtime(G, inp, tsp, init, bcl%q_df, ape_e, time, itime, .false.)
         end if
         if (.not. inp%dump_data) then
             call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)

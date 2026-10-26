@@ -30,6 +30,7 @@ SOURCEF += mod_bc.F90
 SOURCEF += mod_constants.F90
 SOURCEF += mod_bcl_dissipation.F90
 SOURCEF += mod_bcl_filter.F90
+SOURCEF += mod_ape.F90
 SOURCEF += mod_face.F90
 SOURCEF += mod_global_grid.F90
 SOURCEF += mod_grid.F90
