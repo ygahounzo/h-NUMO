@@ -217,6 +217,8 @@ subroutine initialize_grid(G, inp, b, gg, par, mf, init)
   type(face_CS),     intent(inout) :: mf
   type(initial),     intent(inout) :: init
 
+  logical :: sector_mesh_exists, ico_mesh_exists
+
   ! Read NUMO3D.in
   call mod_input_create(inp)
   if (irank == irank0) then
@@ -247,8 +249,31 @@ subroutine initialize_grid(G, inp, b, gg, par, mf, init)
         ! nelx plays the same role here as it does for sphere_hex
         ! (elements per base panel edge) -- an arbitrary integer, not
         ! restricted to a power of 2 like refinement_levels_h is.
-        call create_grid_sphere_ico_inp('EXTERNAL_MESH.inp', inp%nelx)
-        print *, "Icosahedral base mesh (EXTERNAL_MESH.inp) Created"
+        if (inp%lico_mesh_external) then
+           inquire(file='EXTERNAL_MESH.inp',exist=ico_mesh_exists)
+           if(.not.ico_mesh_exists) error stop "lico_mesh_external: EXTERNAL_MESH.inp missing"
+           print *, "Using supplied icosahedral EXTERNAL_MESH.inp"
+        else
+           call create_grid_sphere_ico_inp('EXTERNAL_MESH.inp', inp%nelx)
+           print *, "Icosahedral base mesh (EXTERNAL_MESH.inp) Created"
+        end if
+     end if
+     call task_sync()
+  end if
+
+  ! sphere_sector: lon-lat basin bounded by walls (xdims = longitudes,
+  ! ydims = latitudes, degrees), written and read the same way.
+  if (trim(inp%geometry_type) == 'sphere_sector') then
+     if (irank == irank0) then
+        if (inp%lsector_mesh_external) then
+           inquire(file='EXTERNAL_MESH.inp',exist=sector_mesh_exists)
+           if(.not.sector_mesh_exists) error stop "lsector_mesh_external: EXTERNAL_MESH.inp missing"
+           print *, "Using supplied sphere-sector EXTERNAL_MESH.inp"
+        else
+           call create_grid_sphere_sector_inp('EXTERNAL_MESH.inp', inp%nelx, inp%nely, &
+                inp%xdims, inp%ydims, inp%x_boundary, inp%y_boundary)
+           print *, "Lon-lat sector base mesh (EXTERNAL_MESH.inp) Created"
+        end if
      end if
      call task_sync()
   end if

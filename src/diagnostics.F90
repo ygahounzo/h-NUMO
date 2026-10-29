@@ -33,10 +33,22 @@ subroutine diagnostics(G, inp, gg, par, init, q, q_df, qb, itime, idone)
 
     do k = 1, inp%nlayers
         q(1,:,k) = (init%alpha_mlswe(k)/gravity)*q_df(1,:,k)
+        where (q_df(1,:,k) /= 0.0)
         q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+        elsewhere
+            q(2,:,k) = 0.0
+        end where
+        where (q_df(1,:,k) /= 0.0)
         q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+        elsewhere
+            q(3,:,k) = 0.0
+        end where
         if (has_w) then
+            where (q_df(1,:,k) /= 0.0)
             q(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+            elsewhere
+                q(4,:,k) = 0.0
+            end where
         else
             q(4,:,k) = q_df(1,:,k)
         end if

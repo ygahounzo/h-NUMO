@@ -7,7 +7,7 @@
 !----------------------------------------------------------------------!
 module mod_initial_mlswe
 
-    use mod_input,   only: input
+    use mod_input,   only: input, is_sphere_geometry
 
     use mod_basis,   only: basis
     use mod_grid,    only: grid
@@ -214,7 +214,7 @@ module mod_initial_mlswe
         ym = 0.5*Ly
 
         ! f at DOF nodes: sphere uses 2*Omega*sin(lat) = 2*Omega*kvector(3)
-        if (inp%geometry_type == 'sphere_hex' .or. inp%geometry_type == 'sphere_ico') then
+        if (is_sphere_geometry(inp%geometry_type)) then
             if (trim(inp%test_case) == 'gravity_wave') then
                 ! Non-rotating test: f = 0 everywhere.
                 do concurrent (I = 1:G%npoin)
@@ -396,8 +396,11 @@ module mod_initial_mlswe
         real, dimension(inp%nlayers),                       intent(in)    :: alpha
 
         real    :: pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom
-        real    :: d1, d2, d3, d4
+        real    :: d1, d2, d3, d4, hn
         real    :: threshold_k(inp%nlayers)
+        ! Relative reduction of theta: keeps the limited minimum a few ulps above
+        ! the threshold despite rounding, and theta < 1 whenever pmin < threshold.
+        real, parameter :: theta_safety = 8.0 * epsilon(1.0)
         integer :: I, k, kc, n, m, e, ipass, nelem_l, nlayers_l, nglx_l, ngly_l, nglz_l, nqx_l, nqy_l
         integer :: nvar_l, npoin_l
         real    :: dry_cutoff_l
@@ -438,7 +441,7 @@ module mod_initial_mlswe
         !$acc    present(G%intma, b%psiqx, b%psiqy, mt%jac, q) &
         !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nglz_l, nqx_l, nqy_l, nvar_l, npoin_l, has_w) &
         !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, &
-        !$acc            d1, d2, d3, d4, I, k, kc, n, m, ipass, has_nan_e)
+        !$acc            d1, d2, d3, d4, hn, I, k, kc, n, m, ipass, has_nan_e)
         do e = 1, nelem_l
             !$acc loop seq
             do ipass = 1, 2
@@ -497,23 +500,35 @@ module mod_initial_mlswe
                             end do
                         end do
                     else if (pmin < threshold * (1.0 - 1.0e-10)) then
-                        ! Zhang-Shu: scale toward element average so min(h) = threshold.
+                        ! Zhang-Shu: scale toward element average so min(h) >= threshold.
+                        ! Evaluated as avg + theta*(q - avg): the form q + (theta-1)*(q - avg)
+                        ! cancels when theta ~ 1 and left nodes a rounding error below zero
+                        ! (dry_cutoff = 0), and a negative below eps*pavg made theta round to
+                        ! exactly 1, so the node was never repaired. The d's are the actual
+                        ! changes, so the column compensation below stays exact.
                         denom = pavg - pmin
                         theta = merge(min(1.0, (pavg - threshold) / denom), 0.0, denom /= 0.0)
+                        theta = min(theta * (1.0 - theta_safety), 1.0 - theta_safety)
                         !$acc loop seq
                         do m = 1, ngly_l
                             !$acc loop seq
                             do n = 1, nglx_l
                                 I  = G%intma(n,m,1,e)
-                                d1 = (theta - 1.0) * (q(1,I,k) - pavg)
-                                d2 = (theta - 1.0) * (q(2,I,k) - uavg)
-                                d3 = (theta - 1.0) * (q(3,I,k) - vavg)
+                                hn = pavg + theta * (q(1,I,k) - pavg)
+                                d1 = hn - q(1,I,k)
+                                q(1,I,k) = hn
+                                hn = uavg + theta * (q(2,I,k) - uavg)
+                                d2 = hn - q(2,I,k)
+                                q(2,I,k) = hn
+                                hn = vavg + theta * (q(3,I,k) - vavg)
+                                d3 = hn - q(3,I,k)
+                                q(3,I,k) = hn
                                 d4 = 0.0
-                                if (has_w) d4 = (theta - 1.0) * (q(4,I,k) - wavg)
-                                q(1,I,k) = q(1,I,k) + d1
-                                q(2,I,k) = q(2,I,k) + d2
-                                q(3,I,k) = q(3,I,k) + d3
-                                if (has_w) q(4,I,k) = q(4,I,k) + d4
+                                if (has_w) then
+                                    hn = wavg + theta * (q(4,I,k) - wavg)
+                                    d4 = hn - q(4,I,k)
+                                    q(4,I,k) = hn
+                                end if
                                 if (ipass == 1 .and. nlayers_l > 1) then
                                     q(1,I,kc) = q(1,I,kc) - d1
                                     q(2,I,kc) = q(2,I,kc) - d2

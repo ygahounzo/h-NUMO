@@ -124,7 +124,7 @@ module mod_variables
 
       ! Per-element layer work arrays of extract_velocity (GPU-thread index,
       ! the element, first): element-mean dp / momentum, element max / min dp
-      ! (ev_min is overwritten by the pointwise blending weight), tridiagonal
+      ! (ev_min is no longer used; the pointwise weight is per node), tridiagonal
       ! diagonal / upper diagonal, rhs overwritten by the solution.
       real, dimension(:,:),   allocatable :: ev_dp, ev_max, ev_min, ev_bc, ev_ctd ! (nelem,nlayers)
       real, dimension(:,:,:), allocatable :: ev_mdp, ev_r                         ! (nelem,3,nlayers)

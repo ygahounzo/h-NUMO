@@ -51,10 +51,22 @@ subroutine write_output_mlswe(G, inp, b, init, gg, par, tsp, q_df, qout, qb, fnp
     ! diagnostics.F90's q_df -> q conversion. Written back into qout so it stays
     ! valid for the caller's later print_diagnostics_mlswe call.
     qout(1,:) = (init%alpha_mlswe(layer)/gravity) * q_df(1,:,layer)
+    where (q_df(1,:,layer) /= 0.0)
     qout(2,:) = q_df(2,:,layer) / q_df(1,:,layer)
+    elsewhere
+        qout(2,:) = 0.0
+    end where
+    where (q_df(1,:,layer) /= 0.0)
     qout(3,:) = q_df(3,:,layer) / q_df(1,:,layer)
+    elsewhere
+        qout(3,:) = 0.0
+    end where
     if (has_w) then
+        where (q_df(1,:,layer) /= 0.0)
         qout(4,:) = q_df(4,:,layer) / q_df(1,:,layer)
+        elsewhere
+            qout(4,:) = 0.0
+        end where
     else
         qout(4,:) = q_df(1,:,layer)
     end if

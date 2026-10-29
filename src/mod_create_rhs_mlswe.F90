@@ -10,7 +10,7 @@ module mod_create_rhs_mlswe
     use mod_constants,        only: gravity
     use mod_grid,             only: grid
     use mod_basis,            only: basis
-    use mod_input,            only: input
+    use mod_input,            only: input, is_sphere_geometry
     use mod_initial,          only: initial
     use mod_metrics,          only: metrics
     use mod_face,             only: face_CS
@@ -25,8 +25,7 @@ module mod_create_rhs_mlswe
 
     implicit none
 
-    public :: rhs_layer_shear_stress, layer_mass_rhs, &
-              bcl_rhs, bcl_apply_implicit_vertical_viscosity
+    public :: layer_mass_rhs, bcl_rhs, bcl_apply_implicit_vertical_viscosity
 
 contains
 
@@ -53,7 +52,7 @@ contains
         integer :: k
 
         call bcl_create_precommunicator(G, inp, b, mf, par, ref, mpic, qprime_df)
-        if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
+        if (is_sphere_geometry(inp%geometry_type)) then
             call create_layers_volume_mass_sphere(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
             call create_layer_mass_flux_sphere(G, inp, b, mf, btp, bcl, init, dp_advec, qprime_df)
         else
@@ -88,7 +87,7 @@ contains
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df, qprime_df
 
-        if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
+        if (is_sphere_geometry(inp%geometry_type)) then
             call bcl_rhs_sphere(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, rhs, qprime_df, q_df)
             return
         end if
@@ -139,175 +138,17 @@ contains
 
     end subroutine bcl_rhs_sphere
 
-    ! Inter-layer vertical viscosity via a per-quadrature-point tridiagonal
-    ! (Thomas algorithm) solve, identical formula to the do_ad_visc block
-    ! already used inside create_rhs_dynamics_volume_bcl_qp/_sphere -- kept
-    ! standalone so it can be applied once per full timestep by
-    ! bcl_apply_implicit_vertical_viscosity rather than once per RK stage.
-    ! Sized by nc = inp%nvar_bcl-1 (2 momentum components flat, 3 on sphere)
-    ! and looped over with ivar, matching the generic inp%nvar_bcl-loop
-    ! convention already used elsewhere (pack_and_send_df_bcl,
-    ! unpack_data_dg_general_bcl) -- no has_w branching, and flat runs never
-    ! touch a 3rd component at all. init%coriolis_quad(Iq) is the scalar
-    ! Coriolis magnitude, already computed identically for flat and sphere
-    ! geometry (mod_initial_mlswe.F90) -- equal to sqrt(cfx**2+cfy**2+cfz**2)
-    ! on sphere since coriolis_3d_quad = f*r_hat and |r_hat|=1, so no
-    ! separate sphere formula is needed here.
-    subroutine rhs_layer_shear_stress(G, inp, b, init, tsp, rhs_stress, q_df)
-
-        implicit none
-
-        type(grid),      intent(in) :: G
-        type(input),     intent(in) :: inp
-        type(basis),     intent(in) :: b
-        type(initial),   intent(in) :: init
-        type(tensor_CS), intent(in) :: tsp
-
-        real, intent(in)  :: q_df(inp%nvar_bcl, G%npoin, inp%nlayers)
-        real, intent(out) :: rhs_stress(inp%nvar_bcl-1, G%npoin, inp%nlayers)
-
-        real, dimension(inp%nvar_bcl-1, inp%nlayers+1) :: tau
-        real, dimension(inp%nlayers)                   :: a, bc, c, dp
-        real, dimension(inp%nvar_bcl-1, inp%nlayers)   :: mdp, r, uv
-        real, dimension(inp%nvar_bcl-1) :: tau_q
-        real    :: wq, hi, coeff, mult, coeff1
-        integer :: k, Iq, I, ip, ivar, nc
-        integer :: npoin_q_l, npts_l, nlayers_l, nc_l
-        real    :: ad_mlswe_l, max_shear_dz_l, dt_l
-
-        nc = inp%nvar_bcl - 1
-
-        npoin_q_l      = G%npoin_q
-        npts_l         = b%npts
-        nlayers_l      = inp%nlayers
-        nc_l           = nc
-        ad_mlswe_l     = inp%ad_mlswe
-        max_shear_dz_l = inp%max_shear_dz
-        dt_l           = inp%dt
-
-        !$acc data present(tsp%indexq, tsp%psih, tsp%wjac, q_df, rhs_stress, &
-        !$acc               init%coriolis_quad, init%alpha_mlswe)
-
-        !$acc kernels present(rhs_stress)
-        rhs_stress = 0.0
-        !$acc end kernels
-
-        !$acc parallel loop gang                                            &
-        !$acc   private(tau, a, bc, c, dp, mdp, r, uv, tau_q,               &
-        !$acc           wq, hi, coeff, mult, coeff1, k, I, ip, ivar)        &
-        !$acc   firstprivate(npoin_q_l, npts_l, nlayers_l, nc_l,            &
-        !$acc                ad_mlswe_l, max_shear_dz_l, dt_l)
-        do Iq = 1, npoin_q_l
-
-            dp = 0.0; mdp = 0.0
-            !$acc loop seq
-            do ip = 1, npts_l
-                I  = tsp%indexq(ip,Iq)
-                hi = tsp%psih(ip,Iq)
-                !$acc loop seq
-                do k = 1, nlayers_l
-                    dp(k) = dp(k) + hi * q_df(1,I,k)
-                end do
-                !$acc loop seq
-                do ivar = 1, nc_l
-                    !$acc loop seq
-                    do k = 1, nlayers_l
-                        mdp(ivar,k) = mdp(ivar,k) + hi * q_df(ivar+1,I,k)
-                    end do
-                end do
-            end do
-
-            coeff  = max(sqrt(0.5*init%coriolis_quad(Iq)*ad_mlswe_l)/init%alpha_mlswe(1), &
-                         ad_mlswe_l/(init%alpha_mlswe(1) * max_shear_dz_l))
-            coeff1 = gravity * dt_l * coeff
-
-            !$acc loop seq
-            do k = 1, nlayers_l
-                a(k)  = -coeff
-                bc(k) = dp(k) + 2.0*coeff1
-                c(k)  = -coeff1
-                !$acc loop seq
-                do ivar = 1, nc_l
-                    r(ivar,k) = mdp(ivar,k) / dp(k)
-                end do
-            end do
-
-            bc(1)         = dp(1) + coeff1
-            bc(nlayers_l) = dp(nlayers_l) + coeff1
-            a(1)          = 0.0
-            c(nlayers_l)  = 0.0
-
-            !$acc loop seq
-            do k = 2, nlayers_l
-                mult  = a(k) / bc(k-1)
-                bc(k) = bc(k) - mult*c(k-1)
-                !$acc loop seq
-                do ivar = 1, nc_l
-                    r(ivar,k) = r(ivar,k) - mult*r(ivar,k-1)
-                end do
-            end do
-
-            !$acc loop seq
-            do ivar = 1, nc_l
-                r(ivar,nlayers_l)  = r(ivar,nlayers_l) / bc(nlayers_l)
-                uv(ivar,nlayers_l) = r(ivar,nlayers_l)
-            end do
-
-            !$acc loop seq
-            do k = nlayers_l-1, 1, -1
-                !$acc loop seq
-                do ivar = 1, nc_l
-                    r(ivar,k)  = (r(ivar,k) - c(k)*r(ivar,k+1)) / bc(k)
-                    uv(ivar,k) = r(ivar,k)
-                end do
-            end do
-
-            ! Full zero (not just index 1) -- matches the live
-            ! create_rhs_dynamics_volume_bcl_qp/_sphere pattern; the original
-            ! index-1-only zeroing here left tau(:,nlayers+1) formally
-            ! undefined (only correct in practice because this project's
-            ! build uses -finit-real=zero).
-            tau = 0.0
-            !$acc loop seq
-            do k = 2, nlayers_l
-                !$acc loop seq
-                do ivar = 1, nc_l
-                    tau(ivar,k) = coeff*(uv(ivar,k-1) - uv(ivar,k))
-                end do
-            end do
-
-            wq = tsp%wjac(Iq)
-
-            !$acc loop seq
-            do k = 1, nlayers_l
-                !$acc loop seq
-                do ivar = 1, nc_l
-                    tau_q(ivar) = gravity*(tau(ivar,k) - tau(ivar,k+1))
-                end do
-                !$acc loop seq
-                do ip = 1, npts_l
-                    I  = tsp%indexq(ip,Iq)
-                    hi = tsp%psih(ip,Iq)
-                    !$acc loop seq
-                    do ivar = 1, nc_l
-                        !$acc atomic update
-                        rhs_stress(ivar,I,k) = rhs_stress(ivar,I,k) + wq*hi*tau_q(ivar)
-                    end do
-                end do
-            end do
-
-        end do
-        !$acc end parallel loop
-
-        !$acc end data
-
-    end subroutine rhs_layer_shear_stress
-
-    ! Applies the ad_mlswe inter-layer vertical viscosity term implicitly,
-    ! once per full timestep (Thetis Eq. 43 pattern), instead of embedding it
-    ! inside the per-RK-stage RHS (create_rhs_dynamics_volume_bcl_qp/_sphere
-    ! no longer compute it). No-op when inp%ad_mlswe<=0, so it is safe to
-    ! call unconditionally after every integrator's explicit stages finish.
+    ! Inter-layer vertical viscosity, applied once per full timestep after the
+    ! explicit stages (no-op when ad_mlswe <= 0). At every node the column
+    !     dp_k du_k/dt = c_{k-1/2} (u_{k-1} - u_k) - c_{k+1/2} (u_k - u_{k+1}),
+    !     c_{k+1/2} = g rho Kv / dz_{k+1/2},   Kv = ad_mlswe (m^2/s),
+    ! is solved by backward Euler (Thomas algorithm), per momentum component.
+    ! As in MOM6, dz is the harmonic mean of the two layer thicknesses, so a
+    ! vanishing layer is tied to its neighbour (coupling ~ Kv/h) while thick
+    ! layers barely feel it. The interface terms cancel in the column sum, so
+    ! the barotropic momentum is unchanged. The term is local, so nodal
+    ! collocation is exact with the diagonal (inexact-integration) mass matrix
+    ! and the GLL-quadrature approximation of it with dg_integ_exact.
     subroutine bcl_apply_implicit_vertical_viscosity(G, inp, b, mf, init, tsp, mt, bcl, q_df, qb_df)
 
         use mod_layer_terms,   only: layer_mom_boundary_df, extract_velocity
@@ -327,28 +168,86 @@ contains
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: q_df
         real, dimension(inp%nvar_btp, G%npoin),               intent(in)    :: qb_df
 
-        real, dimension(inp%nvar_bcl-1, G%npoin, inp%nlayers) :: rhs_stress
-        integer :: k, ivar
-        real    :: dt_l
+        real, dimension(inp%nlayers)                 :: dp, cif, lo, di, up
+        real, dimension(inp%nvar_bcl-1, inp%nlayers) :: r
+        real    :: hk, hk1, rho, mult, dt_kv_g
+        integer :: I, k, ivar, nc_l, nlayers_l, npoin_l
+        real, parameter :: h_neglect = 1.0e-6 ! m, keeps dz > 0 for empty layers
 
         if (inp%ad_mlswe <= 0.0) return
 
-        dt_l = inp%dt
+        nc_l      = inp%nvar_bcl - 1
+        nlayers_l = inp%nlayers
+        npoin_l   = G%npoin
+        dt_kv_g   = inp%dt * inp%ad_mlswe * gravity
 
-        ! rhs_stress is a local scratch RHS -- device-resident only for the
-        ! duration of this call, not shared with the unrelated bcl%rhs_visc_bcl
-        ! field (Laplacian-viscosity RHS, owned by create_rhs_bcl/mod_splitting.F90).
-        !$acc data create(rhs_stress)
+        !$acc parallel loop gang vector present(q_df, init%alpha_mlswe)      &
+        !$acc   private(dp, cif, lo, di, up, r, hk, hk1, rho, mult, k, ivar)  &
+        !$acc   firstprivate(nc_l, nlayers_l, npoin_l, dt_kv_g)
+        do I = 1, npoin_l
 
-        call rhs_layer_shear_stress(G, inp, b, init, tsp, rhs_stress, q_df)
-
-        !$acc kernels present(q_df, mt%massinv, rhs_stress)
-        do k = 1, inp%nlayers
-            do ivar = 1, inp%nvar_bcl-1
-                q_df(ivar+1,:,k) = q_df(ivar+1,:,k) + dt_l*mt%massinv(:)*rhs_stress(ivar,:,k)
+            !$acc loop seq
+            do k = 1, nlayers_l
+                dp(k) = q_df(1,I,k)
+                !$acc loop seq
+                do ivar = 1, nc_l
+                    r(ivar,k) = q_df(ivar+1,I,k)
+                end do
             end do
+
+            ! dt * c_{k+1/2} at the interface below layer k (Pa)
+            !$acc loop seq
+            do k = 1, nlayers_l-1
+                hk  = init%alpha_mlswe(k)   * dp(k)   / gravity
+                hk1 = init%alpha_mlswe(k+1) * dp(k+1) / gravity
+                rho = 2.0 / (init%alpha_mlswe(k) + init%alpha_mlswe(k+1))
+                cif(k) = dt_kv_g * rho / (2.0*hk*hk1/max(hk + hk1, h_neglect) + h_neglect)
+            end do
+
+            !$acc loop seq
+            do k = 1, nlayers_l
+                lo(k) = 0.0;  up(k) = 0.0;  di(k) = dp(k)
+                if (k > 1) then
+                    lo(k) = -cif(k-1);  di(k) = di(k) + cif(k-1)
+                end if
+                if (k < nlayers_l) then
+                    up(k) = -cif(k);    di(k) = di(k) + cif(k)
+                end if
+            end do
+
+            ! Thomas algorithm on (dp_k + dt c) u^{n+1} = dp_k u^n = q_df(2:,I,k)
+            !$acc loop seq
+            do k = 2, nlayers_l
+                mult  = lo(k) / di(k-1)
+                di(k) = di(k) - mult*up(k-1)
+                !$acc loop seq
+                do ivar = 1, nc_l
+                    r(ivar,k) = r(ivar,k) - mult*r(ivar,k-1)
+                end do
+            end do
+            !$acc loop seq
+            do ivar = 1, nc_l
+                r(ivar,nlayers_l) = r(ivar,nlayers_l) / di(nlayers_l)
+            end do
+            !$acc loop seq
+            do k = nlayers_l-1, 1, -1
+                !$acc loop seq
+                do ivar = 1, nc_l
+                    r(ivar,k) = (r(ivar,k) - up(k)*r(ivar,k+1)) / di(k)
+                end do
+            end do
+
+            ! r now holds u^{n+1}; store momentum dp_k u_k^{n+1}
+            !$acc loop seq
+            do k = 1, nlayers_l
+                !$acc loop seq
+                do ivar = 1, nc_l
+                    q_df(ivar+1,I,k) = dp(k) * r(ivar,k)
+                end do
+            end do
+
         end do
-        !$acc end kernels
+        !$acc end parallel loop
 
         call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
         call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
@@ -363,8 +262,6 @@ contains
         !$acc end kernels
 
         call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
-
-        !$acc end data
 
     end subroutine bcl_apply_implicit_vertical_viscosity
 

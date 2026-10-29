@@ -236,7 +236,7 @@ contains
       logical :: use_pbprime_scaling
 
       ! GPU: classify dry elements (all arrays already on device).
-      call find_dry_elements(G, inp, b, tsp, bcl%q_df, init%alpha_mlswe, bcl%dry_flg)
+      call find_dry_elements(G, inp, b, tsp, q_df, init%alpha_mlswe, bcl%dry_flg)
 
       nlayers_l = inp%nlayers
       nelem_l   = G%nelem
@@ -320,8 +320,6 @@ contains
           rng = max(cut2 - cut1, eps)
           wk  = (bcl%ev_max(e,k) - cut1) / rng
           wk  = max(min(wk, 1.0), 0.0)
-          ! ev_min is only needed below as the pointwise blending weight.
-          bcl%ev_min(e,k) = max(min((bcl%ev_min(e,k) - cut1) / rng, 1.0), 0.0)
 
           ! Off-diagonals (end rows use the full 1-weight, interior rows half).
           if (k == nlayers_l) then
@@ -364,7 +362,10 @@ contains
           end do
         end do
 
-        ! Write blended velocities at all element nodes (weight from dp_min).
+        ! Write blended velocities at all element nodes. The weight is the
+        ! node's own layer thickness in the blending band, so only vanishing
+        ! nodes take the element mean; weighting by the element's thinnest
+        ! node flattened every element on an outcrop to its mean velocity.
         !$acc loop seq
         do m = 1, ngly_l
           !$acc loop seq
@@ -372,7 +373,15 @@ contains
             I = G%intma(n, m, 1, e)
             !$acc loop seq
             do k = 1, nlayers_l
-              wk = bcl%ev_min(e,k)
+              if (use_pbprime_scaling) then
+                  cut1 = blend_frac_lo * pbprime_avg / real(nlayers_l)
+                  cut2 = blend_frac_hi * pbprime_avg / real(nlayers_l)
+              else
+                  cut1 = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff1
+                  cut2 = (gravity / init%alpha_mlswe(k)) * inp%h_cutoff2
+              end if
+              rng = max(cut2 - cut1, eps)
+              wk  = max(min((q_df(1,I,k) - cut1) / rng, 1.0), 0.0)
               !$acc loop seq
               do ic = 1, nc
                 uv_df(ic,I,k) = wk * q_df(ic+1,I,k) / (q_df(1,I,k) + eps) &
@@ -452,7 +461,7 @@ contains
       ! used, so array sections below give explicit ranges.
       real :: dp_avg(inp%nlayers)
       real :: mdp_avg(3, inp%nlayers)
-      real :: dp_max(inp%nlayers), dp_min(inp%nlayers)
+      real :: dp_max(inp%nlayers)
       real :: dp_cutoff1(inp%nlayers), dp_cutoff2(inp%nlayers), dp_range(inp%nlayers)
       real :: a(inp%nlayers), bc(inp%nlayers), c_td(inp%nlayers)
       real :: r(inp%nlayers, 3)
@@ -462,7 +471,7 @@ contains
       logical :: use_pbprime_scaling
 
       ! GPU: classify dry elements (all arrays already on device).
-      call find_dry_elements(G, inp, b, tsp, bcl%q_df, init%alpha_mlswe, bcl%dry_flg)
+      call find_dry_elements(G, inp, b, tsp, q_df, init%alpha_mlswe, bcl%dry_flg)
 
       nlayers_l = inp%nlayers
       nelem_l   = G%nelem
@@ -488,7 +497,7 @@ contains
       !$acc    present(G%intma, b%wglx, b%wgly, mt%jac, q_df, uv_df, &
       !$acc            init%pbprime_df, init%alpha_mlswe) &
       !$acc    firstprivate(nlayers_l, nglx_l, ngly_l, nc, use_pbprime_scaling) &
-      !$acc    private(dp_avg, mdp_avg, dp_max, dp_min, dp_cutoff1, dp_cutoff2, dp_range, &
+      !$acc    private(dp_avg, mdp_avg, dp_max, dp_cutoff1, dp_cutoff2, dp_range, &
       !$acc            a, bc, c_td, r, vel_ave, weight, &
       !$acc            wsum, wjac, mult, pbprime_avg, I, k, m, n)
       do e = 1, nelem_l
@@ -498,7 +507,7 @@ contains
         !$acc loop seq
         do k = 1, nlayers_l
             dp_avg(k) = 0.0;  mdp_avg(1:nc,k) = 0.0
-            dp_max(k) = -huge(1.0);  dp_min(k) = huge(1.0)
+            dp_max(k) = -huge(1.0)
         end do
 
         !$acc loop seq
@@ -514,7 +523,6 @@ contains
                     dp_avg(k)    = dp_avg(k)    + wjac * q_df(1,I,k)
                     mdp_avg(1:nc,k) = mdp_avg(1:nc,k) + wjac * q_df(2:nc+1,I,k)
                     dp_max(k)    = max(dp_max(k), q_df(1,I,k))
-                    dp_min(k)    = min(dp_min(k), q_df(1,I,k))
                 end do
             end do
         end do
@@ -573,14 +581,10 @@ contains
           vel_ave(1:nc,k) = (r(k,1:nc) - c_td(k) * vel_ave(1:nc,k+1)) / bc(k)
         end do
 
-        ! Recompute weight using dp_min for the pointwise blending.
-        !$acc loop seq
-        do k = 1, nlayers_l
-          weight(k) = (dp_min(k) - dp_cutoff1(k)) / dp_range(k)
-          weight(k) = max(min(weight(k), 1.0), 0.0)
-        end do
-
-        ! Write blended velocities at all element nodes.
+        ! Write blended velocities at all element nodes. The weight is the
+        ! node's own layer thickness in the blending band, so only vanishing
+        ! nodes take the element mean; weighting by the element's thinnest
+        ! node flattened every element on an outcrop to its mean velocity.
         !$acc loop seq
         do m = 1, ngly_l
           !$acc loop seq
@@ -588,6 +592,8 @@ contains
             I = G%intma(n, m, 1, e)
             !$acc loop seq
             do k = 1, nlayers_l
+              weight(k) = (q_df(1,I,k) - dp_cutoff1(k)) / dp_range(k)
+              weight(k) = max(min(weight(k), 1.0), 0.0)
               uv_df(:,I,k) = weight(k) * q_df(2:nc+1,I,k) / (q_df(1,I,k) + eps) &
                             + (1.0 - weight(k)) * vel_ave(1:nc,k)
             end do

@@ -145,11 +145,13 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    ! average of the t=n and predicted qprime, then update
    ! continuity and momentum separately.
 
+   ! Prime the predicted layer state against the matching predicted BTP
+   ! state BEFORE restoring the old BTP state for corrector reintegration.
+   call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df_pred, q_df_pred, qb_df)
+
    !$acc kernels present(qb_df, bcl%qbp_df)
    qb_df = bcl%qbp_df
    !$acc end kernels
-
-   call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, qprime_df_pred, q_df_pred, qb_df)
 
    ! Centre-in-time average of the baroclinic layer-thickness forcing.
    !$acc kernels present(bcl%qprime_df, qprime_df_pred)
@@ -168,6 +170,16 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    q_df(1,:,:) = q_df(1,:,:) + inp%dt*rhs_dp
    !$acc end kernels
 
+   ! Limit corrected thickness BEFORE it enters pressure reconstruction/checks.
+   ! q_df momentum still belongs to t=n; preserve it for the momentum and
+   ! Coriolis corrector by using a scratch state and copying back only dp.
+   !$acc kernels present(q_df_temp,q_df)
+   q_df_temp=q_df
+   !$acc end kernels
+   call poslimiter(b,G,inp,mt,q_df_temp,init%alpha_mlswe)
+   !$acc kernels present(q_df_temp,q_df)
+   q_df(1,:,:)=q_df_temp(1,:,:)
+   !$acc end kernels
    call check_layer_thickness(b, G, inp, q_df, 'ti_2levels_bcl', 0)
 
 #ifdef _OPENACC

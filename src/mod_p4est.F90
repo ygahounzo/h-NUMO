@@ -22,7 +22,7 @@
 
 module mod_p4est
 
-  use mod_input,       only: input
+  use mod_input,       only: input, is_sphere_geometry
   use mod_basis,       only: basis
   use mod_global_grid, only: grid_global
   use mod_grid,        only: grid
@@ -236,8 +236,7 @@ contains
     integer :: is_cgc=0
     integer :: irank_local
 
-    if (trim(inp%geometry_type) == 'sphere_hex' .or. &
-        trim(inp%geometry_type) == 'sphere_ico' .or. &
+    if (is_sphere_geometry(inp%geometry_type) .or. &
         trim(inp%geometry_type) == 'sphere_lonlat') then
       is_cube = 0
     end if
@@ -346,14 +345,14 @@ contains
 
     if (irank_local == irank0) print*, '------------------Leaving P4est_Mesh_Arrays-------------------'
 
-    G%is_sphere = (trim(inp%geometry_type) == 'sphere_hex' .or. &
-                   trim(inp%geometry_type) == 'sphere_ico' .or. &
+    G%is_sphere = (is_sphere_geometry(inp%geometry_type) .or. &
                    trim(inp%geometry_type) == 'sphere_lonlat')
 
     !adjust coordinates based on geometry type
     if (trim(inp%geometry_type) /= 'cartesian' .and. &
-        (inp%read_external_grid_flg==0 .or. trim(inp%geometry_type)=='sphere_ico')) then
-        ! Gnomonic projection: cube/icosahedron vertices → unit sphere → scale by earth_radius
+        (inp%read_external_grid_flg==0 .or. trim(inp%geometry_type)=='sphere_ico' .or. &
+         trim(inp%geometry_type)=='sphere_sector')) then
+        ! Gnomonic projection: cube/icosahedron/sector vertices → unit sphere → scale by earth_radius
         do i=1, G%npoin
             x = G%coord(1, i)
             y = G%coord(2, i)

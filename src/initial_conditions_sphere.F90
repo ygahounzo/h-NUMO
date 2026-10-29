@@ -4,7 +4,7 @@
 !-----------------------------------------------------------------!
 
 subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
-                                    pbprime_df_face, zbot_df, kvector, nlayers, &
+                                    pbprime_df_face, zbot_df, tau_wind_df, kvector, nlayers, &
                                     b, G, inp, mf)
 
    use mod_grid,          only: grid
@@ -28,6 +28,7 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
    real, dimension(nlayers),                        intent(out) :: alpha_mlswe
    real, dimension(2, b%ngl, G%nface),              intent(out) :: pbprime_df_face
    real, dimension(G%npoin),                        intent(out) :: zbot_df
+   real, dimension(2, G%npoin),                     intent(out) :: tau_wind_df ! surface stress (Pa), x/y components
    real, dimension(3, G%npoin),                     intent(in)  :: kvector
 
    integer :: npoin
@@ -53,6 +54,7 @@ subroutine initial_conditions_sphere(q_df, pbprime_df, qb_df, alpha_mlswe, &
    v_df            = 0.0
    w_df            = 0.0
    pbprime_df_face = 0.0
+   tau_wind_df     = 0.0
 
    ! Rotation angle of the initial flow (radians); 0 = no rotation.
    alpha = 0.0

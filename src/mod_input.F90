@@ -163,6 +163,8 @@ module mod_input
       logical :: lzstretch
       logical :: lgrid_only
       logical :: lread_external_grid
+      logical :: lsector_mesh_external
+      logical :: lico_mesh_external
       logical :: lread_bc
       logical :: lserial_grid_creation
       logical :: lparallel_grid_creation
@@ -213,7 +215,7 @@ module mod_input
    
    end type input
  
-   public :: mod_input_create, input
+   public :: mod_input_create, input, is_sphere_geometry
          
    private
  
@@ -377,6 +379,8 @@ module mod_input
       logical :: lystretch      = .false.
       logical :: lzstretch      = .false.
       logical :: lgrid_only     = .false.
+      logical :: lico_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_ico
+      logical :: lsector_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_sector
       logical :: lread_external_grid = .false.
       logical :: lread_bc       = .false.
       logical :: lserial_grid_creation = .true.
@@ -479,7 +483,7 @@ module mod_input
          sponge_type, sponge_top_coe, sponge_lateralx_coe,sponge_lateralx_coe_east, sponge_lateralx_coe_west, sponge_lateraly_coe, &
          lsommerfeld, &
          lgrid_only, &
-         lread_external_grid, &
+         lread_external_grid, lsector_mesh_external, lico_mesh_external, &
          is_non_conforming_flg, &
          p4est_log_level, &
          xlim_min, xlim_max, ylim_min, ylim_max, zlim_min, zlim_max, &
@@ -577,6 +581,9 @@ module mod_input
       ! through the read_external_grid_flg path, regardless of the
       ! user's lread_external_grid setting.
       if (trim(geometry_type) == 'sphere_ico') read_external_grid_flg = 1
+      ! sphere_sector likewise builds its lon-lat basin as an .inp file
+      ! (create_grid_sphere_sector_inp).
+      if (trim(geometry_type) == 'sphere_sector') read_external_grid_flg = 1
    
       if (x_boundary(1) == 3 .or. x_boundary(2) == 3 .or. x_periodic > 0) then
          x_periodic    = 1
@@ -677,7 +684,7 @@ module mod_input
       inp%nproc_z                        = nproc_z
       inp%zlevel_out                     = zlevel_out
       inp%geometry_type                  = geometry_type
-      if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
+      if (is_sphere_geometry(inp%geometry_type)) then
          inp%nvar_bcl                    = 4
          inp%nvar_btp                    = 5
          inp%ngrd_var                    = 3 ! 3 gradient directions for spherical coordinates
@@ -750,6 +757,12 @@ module mod_input
       inp%lystretch                      = lystretch
       inp%lzstretch                      = lzstretch
       inp%lgrid_only                     = lgrid_only
+      inp%lico_mesh_external             = lico_mesh_external
+      if(lico_mesh_external.and.trim(geometry_type)/="sphere_ico") &
+         error stop "lico_mesh_external requires sphere_ico"
+      inp%lsector_mesh_external          = lsector_mesh_external
+      if(lsector_mesh_external.and.trim(geometry_type)/="sphere_sector") &
+         error stop "lsector_mesh_external requires sphere_sector"
       inp%lread_external_grid            = lread_external_grid
       inp%lread_bc                       = lread_bc
       inp%lserial_grid_creation          = lserial_grid_creation
@@ -798,6 +811,21 @@ module mod_input
       inp%lwrite_vorticity               = lwrite_vorticity
 
    end subroutine mod_input_create
+
+   !-----------------------------------------------------------------------
+   !> True for the geometries solved on the sphere (3-component momentum,
+   !> f = 2 Omega sin(lat)): the cubed sphere, the icosahedral sphere and
+   !> the lon-lat basin sector.
+   !-----------------------------------------------------------------------
+   logical function is_sphere_geometry(geometry_type)
+
+      character(len=*), intent(in) :: geometry_type
+
+      is_sphere_geometry = (trim(geometry_type) == 'sphere_hex' .or. &
+                            trim(geometry_type) == 'sphere_ico' .or. &
+                            trim(geometry_type) == 'sphere_sector')
+
+   end function is_sphere_geometry
  
  end module mod_input
  

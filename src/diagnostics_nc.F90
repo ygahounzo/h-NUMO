@@ -1,4 +1,5 @@
-subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, idone)
+#ifndef NO_NETCDF
+subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, idone, time)
 
     use mod_grid,          only: grid
     use mod_input,         only: input
@@ -29,6 +30,10 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
 
     character*5 :: tempchar
     character*4 :: num
+    real, intent(in) :: time
+    integer :: z_varid, time_varid, conn_varid, cell_dimid, corner_dimid
+    integer :: ncells, ncells_local, nglm13, ie, ii, jj, kk, l
+    integer, allocatable :: conn_local(:,:), conn_g_pts(:,:)
     logical :: has_w
     integer :: i, j, k, iloop, ncid, dimids_2d(2)
     real :: q_gg(5, gg%npoin_g, inp%nlayers), ql(5, G%npoin), zbot_g(gg%npoin_g)
@@ -72,10 +77,15 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
 
     do k = 1, inp%nlayers
         q(1,:,k) = (init%alpha_mlswe(k)/gravity)*q_df(1,:,k)
-        q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
-        q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+        q(2:4,:,k) = 0.0
+        where (q_df(1,:,k) /= 0.0)
+            q(2,:,k) = q_df(2,:,k) / q_df(1,:,k)
+            q(3,:,k) = q_df(3,:,k) / q_df(1,:,k)
+        end where
         if (has_w) then
-            q(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+            where (q_df(1,:,k) /= 0.0)
+                q(4,:,k) = q_df(4,:,k) / q_df(1,:,k)
+            end where
         else
             q(4,:,k) = q_df(1,:,k)
         end if
@@ -120,6 +130,57 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
     call gather_data(G, inp, gg, par, coord_dg_gathered,   G%coord,        3)
     call gather_data(G, inp, gg, par, zbot_g,              init%zbot_df,   1)
 
+    nglm13       = max(b%nglx-1,1)*max(b%ngly-1,1)*max(b%nglz-1,1)
+    ncells       = gg%nelem_g*nglm13
+    ncells_local = G%nelem*nglm13
+
+    allocate(conn_local(b%CELL_CHILDREN, max(ncells_local,1)))
+
+    l = 0
+    do ie = 1, G%nelem
+        do i = 1, max(b%nglx-1,1)
+            do j = 1, max(b%ngly-1,1)
+                do k = 1, max(b%nglz-1,1)
+                    ii = min(i+1, b%nglx)
+                    jj = min(j+1, b%ngly)
+                    kk = min(k+1, b%nglz)
+                    l = l + 1
+
+                    if(b%nglx == 1) then
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma( i,jj, k,ie) - 1)
+                        conn_local(3,l) = (G%intma( i,jj,kk,ie) - 1)
+                        conn_local(4,l) = (G%intma( i, j,kk,ie) - 1)
+                    else if(b%ngly == 1) then
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma(ii, j, k,ie) - 1)
+                        conn_local(3,l) = (G%intma(ii, j,kk,ie) - 1)
+                        conn_local(4,l) = (G%intma( i, j,kk,ie) - 1)
+                    else if(b%nglz == 1) then
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma(ii, j, k,ie) - 1)
+                        conn_local(3,l) = (G%intma(ii,jj, k,ie) - 1)
+                        conn_local(4,l) = (G%intma( i,jj, k,ie) - 1)
+                    else
+                        conn_local(1,l) = (G%intma( i, j, k,ie) - 1)
+                        conn_local(2,l) = (G%intma(ii, j, k,ie) - 1)
+                        conn_local(3,l) = (G%intma(ii,jj, k,ie) - 1)
+                        conn_local(4,l) = (G%intma( i,jj, k,ie) - 1)
+                        conn_local(5,l) = (G%intma( i, j,kk,ie) - 1)
+                        conn_local(6,l) = (G%intma(ii, j,kk,ie) - 1)
+                        conn_local(7,l) = (G%intma(ii,jj,kk,ie) - 1)
+                        conn_local(8,l) = (G%intma( i,jj,kk,ie) - 1)
+                    endif
+                end do
+            end do
+        end do
+    end do
+
+    if (irank == irank0) allocate(conn_g_pts(b%CELL_CHILDREN, ncells))
+    call gather_connectivity(b, par, conn_g_pts, conn_local, ncells_local, ncells)
+    deallocate(conn_local)
+
+
     eta(:, 1:inp%nlayers) = q_gg(5,:,1:inp%nlayers)
     eta(:, inp%nlayers+1) = zbot_g
 
@@ -144,11 +205,20 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
         call check(nf90_put_att(ncid, NF90_GLOBAL, "npoin", "Number of points in the mesh"))
         call check(nf90_put_att(ncid, NF90_GLOBAL, "zi", "Number of interfaces"))
 
+        call check(nf90_def_dim(ncid, 'cell', ncells, cell_dimid))
+        call check(nf90_def_dim(ncid, 'corner', b%CELL_CHILDREN, corner_dimid))
+        call check(nf90_def_var(ncid, 'connectivity', NF90_INT, (/corner_dimid, cell_dimid/), conn_varid))
+        call check(nf90_put_att(ncid, conn_varid, 'start_index', 0))
+        call check(nf90_def_var(ncid, 'time_seconds', NF90_DOUBLE, time_varid))
+        call check(nf90_put_att(ncid, time_varid, 'units', 's'))
+        call check(nf90_put_att(ncid, NF90_GLOBAL, 'node_layout', 'Separate DG nodes; no face averaging'))
+        call check(nf90_def_var(ncid, 'z', NF90_DOUBLE, npoin_dimid, z_varid))
+        call check(nf90_put_att(ncid, z_varid, 'units', 'm'))
         ! Name each variable
-        call check(nf90_def_var(ncid, DT_NAME,     NF90_DOUBLE, 1,          dt_varid))
+        call check(nf90_def_var(ncid, DT_NAME,     NF90_DOUBLE, dt_varid))
         call check(nf90_put_att(ncid, dt_varid,     "name", "Baroclinic time step"))
         call check(nf90_put_att(ncid, dt_varid,     "units", "seconds"))
-        call check(nf90_def_var(ncid, DT_BTP_NAME, NF90_DOUBLE, 1,          dt_btp_varid))
+        call check(nf90_def_var(ncid, DT_BTP_NAME, NF90_DOUBLE, dt_btp_varid))
         call check(nf90_put_att(ncid, dt_btp_varid, "name", "Barotropic time step"))
         call check(nf90_put_att(ncid, dt_btp_varid, "units", "seconds"))
         call check(nf90_def_var(ncid, X_NAME, NF90_DOUBLE, npoin_dimid, x_varid))
@@ -208,6 +278,9 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
         call check(nf90_enddef(ncid))
 
         ! Write data
+        call check(nf90_put_var(ncid, conn_varid, conn_g_pts))
+        call check(nf90_put_var(ncid, time_varid, time))
+        call check(nf90_put_var(ncid, z_varid, coord_dg_gathered(3,:)))
         call check(nf90_put_var(ncid, dt_varid,     inp%dt))
         call check(nf90_put_var(ncid, dt_btp_varid, inp%dt_btp))
         call check(nf90_put_var(ncid, x_varid,    coord_dg_gathered(1,:)))
@@ -232,6 +305,8 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
 
     end if
 
+    if (allocated(conn_g_pts)) deallocate(conn_g_pts)
+
     contains
 
     !-----------------------!
@@ -247,3 +322,5 @@ subroutine diagnostics_nc(G, inp, b, init, gg, par, tsp, q, q_df, qb, itime, ido
     end subroutine check
 
 end subroutine diagnostics_nc
+
+#endif

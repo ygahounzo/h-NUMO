@@ -299,7 +299,7 @@ end subroutine bcl_create_postcommunicator_sphere
 subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, init, ref, mpic, rhs)
 
    use mod_grid,             only: grid
-   use mod_input,            only: input
+   use mod_input,            only: input, is_sphere_geometry
    use mod_basis,            only: basis
    use mod_face,             only: face_CS
    use mod_parallel,         only: parallel_CS
@@ -332,7 +332,7 @@ subroutine bcl_create_postcommunicator_continuity(G, inp, b, mf, par, btp, init,
    call unpack_data_dg_general_bcl(G, b, inp, par, ref%q_send_bcl, ref%q_recv_bcl, ref%send_data_bcl, ref%recv_data_bcl, ref%nboun_valid)
 
    !Build Inviscid Fluxes On Element Boundary
-   if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
+   if (is_sphere_geometry(inp%geometry_type)) then
       call create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)
    else
       call create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, init, rhs, ref%q_send_bcl, ref%q_recv_bcl, 0)

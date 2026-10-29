@@ -115,6 +115,8 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a,es14.6,t55,a)') 'FILTER_S0 = ', inp%filter_s0, '! sensor threshold, log10(E_top/E_all)'
    write(fu,'(a,es14.6,t55,a)') 'FILTER_KAPPA = ', inp%filter_kappa, '! sensor ramp half-width'
    write(fu,'(a,es14.6,t55,a)') 'DRY_CUTOFF = ',      inp%dry_cutoff,     '! [m] minimum layer thickness (wetting/drying)'
+   write(fu,'(a,l1,t55,a)') 'LICO_MESH_EXTERNAL = ', inp%lico_mesh_external, '! use supplied EXTERNAL_MESH.inp instead of generating ico grid'
+   write(fu,'(a,l1,t55,a)') 'LSECTOR_MESH_EXTERNAL = ', inp%lsector_mesh_external, '! use supplied EXTERNAL_MESH.inp instead of generating sector grid'
    write(fu,'(a,es14.6,t55,a)') 'H_CUTOFF1 = ',       inp%h_cutoff1,      '! [m] lower health-check thickness threshold'
    write(fu,'(a,es14.6,t55,a)') 'H_CUTOFF2 = ',       inp%h_cutoff2,      '! [m] upper health-check thickness threshold'
    write(fu,'(a,i0,t55,a)')     'ADJUST_H_VERTICAL_SUM = ', inp%adjust_H_vertical_sum, &

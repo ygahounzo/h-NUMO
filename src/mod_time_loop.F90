@@ -146,6 +146,12 @@ contains
             if(inp%dump_data) then
                 if(trim(inp%out_type) == 'txt') then
                     call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, itime, idone)
+                elseif(trim(inp%out_type) == 'nc' .or. trim(inp%out_type) == 'netcd') then
+#ifndef NO_NETCDF
+                    call diagnostics_nc(G, inp, b, init, gg, par, tsp, qout_mlswe, bcl%q_df, btp%qb_df, itime, idone, time)
+#else
+                    error stop 'NetCDF output requires a build without NO_NETCDF'
+#endif
                 elseif(trim(inp%out_type) == 'vtk') then
                     do l = 1, inp%nlayers
                         ifnp = l
@@ -331,6 +337,12 @@ contains
 
                 if(trim(inp%out_type) == 'txt') then
                     call diagnostics(G, inp, gg, par, init, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone)
+                elseif(trim(inp%out_type) == 'nc' .or. trim(inp%out_type) == 'netcd') then
+#ifndef NO_NETCDF
+                    call diagnostics_nc(G, inp, b, init, gg, par, tsp, qout_mlswe, bcl%q_df, btp%qb_df, inorm, idone, time)
+#else
+                    error stop 'NetCDF output requires a build without NO_NETCDF'
+#endif
                 elseif(trim(inp%out_type) == 'vtk') then
                     do l = 1, inp%nlayers
                         ifnp = l

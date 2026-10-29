@@ -146,9 +146,9 @@ module mod_initial
     
         if(inp%is_mlswe) then
 
-            if (trim(inp%geometry_type) == 'sphere_hex' .or. trim(inp%geometry_type) == 'sphere_ico') then
+            if (is_sphere_geometry(inp%geometry_type)) then
                 call initial_conditions_sphere(init%q_df, init%pbprime_df, init%qb_df, &
-                    init%alpha_mlswe, init%pbprime_df_face, init%zbot_df, init%kvector, &
+                    init%alpha_mlswe, init%pbprime_df_face, init%zbot_df, init%tau_wind_df, init%kvector, &
                     nlayers, b, G, inp, mf)
                 ! Build reference interface heights.
                 ! z_interface_initial(:,k) = bottom of layer k-1 = top of layer k.
@@ -211,7 +211,7 @@ module mod_initial
         integer :: ip
         real    :: radius
 
-        if (geometry_type == 'sphere_hex' .or. geometry_type == 'sphere_ico') then
+        if (is_sphere_geometry(geometry_type)) then
             do ip = 1, npoin
                 radius = sqrt(dot_product(coord(:,ip), coord(:,ip)))
                 if (radius > 0.0) then

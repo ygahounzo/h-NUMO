@@ -145,8 +145,11 @@ subroutine compute_runtime_energy(G, inp, tsp, init, q_df, energy_global)
         do i = 1, G%npoin
             h = (init%alpha_mlswe(k)/gravity)*q_df(1,i,k)
             height(i) = height(i)+h
+            speed2 = 0.0
+            if (q_df(1,i,k) /= 0.0) then
             speed2 = (q_df(2,i,k)/q_df(1,i,k))**2 + (q_df(3,i,k)/q_df(1,i,k))**2
             if (inp%nvar_bcl == 4) speed2 = speed2 + (q_df(4,i,k)/q_df(1,i,k))**2
+            end if
             energy_local(1) = energy_local(1)+0.5*tsp%wjac_df(i)*rho*h*speed2
             energy_local(2) = energy_local(2)+0.5*tsp%wjac_df(i)*gravity*drho* &
                              (height(i)-means_global(k+1))**2
