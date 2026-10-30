@@ -264,13 +264,6 @@ subroutine initial_conditions(inp, G, b, mf, init)
    ! Optional input override of the layer densities (rho_layers in input_nml).
    if (inp%rho_layers(1) > 0.0) init%alpha_mlswe(1:inp%nlayers) = 1.0/inp%rho_layers(1:inp%nlayers)
 
-   if (inp%bcl_diss_fac > 0.0) then
-      if (any(.not. (init%alpha_mlswe > 0.0 .and. init%alpha_mlswe <= huge(1.0)))) &
-         error stop "bcl_diss_fac requires finite positive layer specific volumes"
-      if (any(init%alpha_mlswe(2:inp%nlayers) > init%alpha_mlswe(1:inp%nlayers-1))) &
-         error stop "bcl_diss_fac requires density nondecreasing from top to bottom"
-   end if
-
    ! Layer interface at the equilibrium state
    do k = 2, inp%nlayers+1
       z_interface_equil(k) = z_interface_equil(k-1) - layer_dz_eq(k-1)
@@ -391,7 +384,6 @@ subroutine initial_conditions(inp, G, b, mf, init)
    end do
 
    init%z_interface_initial = init%z_interface
-
 
    ! Compute the degrees of freedom for  p'_b  in each cell.
    ! In each cell, the computation of degrees of freedom uses

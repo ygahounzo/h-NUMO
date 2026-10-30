@@ -142,7 +142,6 @@ contains
 
       ! mod_variables (btp_CS)
       !$acc enter data copyin(btp)
-      !$acc enter data create(btp%bd_left, btp%bd_right, btp%bd_penalty)
       !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
       !$acc enter data create(btp%nu_smag)
       !$acc enter data create(btp%qb0_df, btp%qb2_df)
@@ -175,7 +174,7 @@ contains
       !$acc enter data create(bcl%q0_df, bcl%q1_df, bcl%uv_df, bcl%qbp_df)
       !$acc enter data create(bcl%nu_smag)
       !$acc enter data create(bcl%F_bcl)
-      !$acc enter data create(bcl%ev_dp, bcl%ev_max, bcl%ev_min, bcl%ev_bc,     &
+      !$acc enter data create(bcl%ev_dp, bcl%ev_max, bcl%ev_bc,                 &
       !$acc                   bcl%ev_ctd, bcl%ev_mdp, bcl%ev_r)
       !$acc enter data create(bcl%sf_z, bcl%sf_pep, bcl%sf_pem, bcl%sf_zep,    &
       !$acc                   bcl%sf_zem, bcl%sf_hl, bcl%sf_hr, bcl%sf_mdl,     &

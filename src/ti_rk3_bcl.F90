@@ -32,7 +32,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_ape,               only: ape_stage
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness, trace_stage, trace_bcl_stage
+  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
   use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
 
   implicit none
@@ -74,8 +74,6 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
 
   do ik = 1, inp%kstages_bcl
 
-    trace_bcl_stage = ik
-
     ! Read SSPRK coefficients on CPU; they become firstprivate scalars in kernels.
     dtt = inp%dt * init%ssprk_beta_bcl(ik)
     a1  = init%ssprk_a_bcl(ik,1)
@@ -113,7 +111,6 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, bcl%q1_df)
 
     ! GPU SSPRK combination: q_df = a1*q0 + a2*q1 + dt*rhs.
-#ifdef _OPENACC
     ! One thread per (layer, node): a k-outer "kernels" region would put
     ! one gang per layer (nlayers blocks for the whole update).
     !$acc parallel loop gang vector collapse(2) present(q_df, bcl%q0_df, bcl%q1_df, bcl%rhs_bcl) &
@@ -127,19 +124,6 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
       end do
     end do
     !$acc end parallel loop
-#else
-    !$acc kernels present(q_df, bcl%q0_df, bcl%q1_df, bcl%rhs_bcl)
-    do k = 1, inp%nlayers
-      q_df(1,:,k) = a1*bcl%q0_df(1,:,k) + a2*bcl%q1_df(1,:,k) + dtt*bcl%rhs_bcl(1,:,k)
-      q_df(2,:,k) = a1*bcl%q0_df(2,:,k) + a2*bcl%q1_df(2,:,k) + dtt*bcl%rhs_bcl(2,:,k)
-      q_df(3,:,k) = a1*bcl%q0_df(3,:,k) + a2*bcl%q1_df(3,:,k) + dtt*bcl%rhs_bcl(3,:,k)
-      if (has_w) q_df(4,:,k) = a1*bcl%q0_df(4,:,k) + a2*bcl%q1_df(4,:,k) + dtt*bcl%rhs_bcl(4,:,k)
-    end do
-    !$acc end kernels
-#endif
-
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_rk3_bcl_after_update', .false., 0, ik)
 
     ! Semi-implicit Coriolis rotation (GPU): flat always; sphere only when
     ! implicit_coriolis_sph, else Coriolis is explicit in the volume RHS. Same
@@ -200,18 +184,12 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     call layer_mom_boundary_df(G, inp, b, mf, init, q_df)
 
     ! Floor thickness before extract_velocity to prevent division by ~1e-20.
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_rk3_bcl_before_limit1', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_rk3_bcl_after_limit1', .false., 0, ik)
-
 
     ! GPU: extract baroclinic velocity (removes barotropic component).
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 
     ! GPU: reconstruct momentum from corrected velocity.
-#ifdef _OPENACC
     !$acc parallel loop gang vector collapse(2) present(q_df, bcl%uv_df) firstprivate(has_w)
     do k = 1, inp%nlayers
       do I = 1, G%npoin
@@ -221,25 +199,9 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
       end do
     end do
     !$acc end parallel loop
-#else
-    !$acc kernels present(q_df, bcl%uv_df)
-    do k = 1, inp%nlayers
-      q_df(2,:,k) = bcl%uv_df(1,:,k) * q_df(1,:,k)
-      q_df(3,:,k) = bcl%uv_df(2,:,k) * q_df(1,:,k)
-      if (has_w) q_df(4,:,k) = bcl%uv_df(3,:,k) * q_df(1,:,k)
-    end do
-    !$acc end kernels
-#endif
 
     ! GPU: Zhang-Shu positivity limiter (element-local, no cross-element races).
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_rk3_bcl_after_velocity', .false., 0, ik)
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_rk3_bcl_before_limit2', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_rk3_bcl_after_limit2', .false., 0, ik)
-
 
     call check_layer_thickness(b, G, inp, q_df, 'ti_rk3_bcl', ik)
 

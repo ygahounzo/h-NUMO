@@ -701,8 +701,6 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    use mod_ref,       only: mref
    use mod_constants, only: gravity
 
-   use mod_bcl_dissipation, only: internal_wave_penalty
-
    implicit none
 
    type(grid),        intent(in)    :: G
@@ -736,19 +734,13 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    real :: flux, flux_x, flux_y
    real, parameter :: eps1 = 1.0e-20
 
-   integer :: bd_ifq
-   real :: bd_factor, bd_dry
-
-   bd_factor = inp%bcl_diss_fac
-   bd_dry = inp%dry_cutoff
    ngl_f         = b%ngl
    nq_f          = b%nq
    nlayers_f     = inp%nlayers
    nvarb_f       = inp%nvar_bcl
    nboun_valid_f = ref%nboun_valid
 
-   !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              ref%face_pack_list, G%face, G%intma,                        &
+   !$acc data present(ref%face_pack_list, G%face, G%intma,                        &
    !$acc              mf%imapl, mf%normal_vector_q, mf%jac_faceq,                 &
    !$acc              b%psiq,                                                       &
    !$acc              btp%ope_face_ave, btp%uvb_face_ave, btp%ope2_face_ave,       &
@@ -758,7 +750,7 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    !$acc              q_send_bcl, q_recv_bcl, rhs)
 
    !$acc parallel loop gang                                                         &
-   !$acc   private(bd_ifq, ql, qr, alpha_over_g, g_over_alpha,                             &
+   !$acc   private(ql, qr, alpha_over_g, g_over_alpha,                             &
    !$acc           p_face, z_face, p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus, &
    !$acc           dp_flux, udp_flux, vdp_flux, H_face_q,                          &
    !$acc           dp_lr_l, dp_lr_r, udpl, udpr, vdpl, vdpr,                       &
@@ -770,7 +762,7 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
    !$acc           H_r_plus, H_r_minus, p_intersect_bot, p_intersect_top,          &
    !$acc           H_corr1, p_inc1, flux, flux_x, flux_y,                          &
    !$acc           kk, iquad, k, ktemp, n, ivar, iface, el, il, jl, kl, I)        &
-   !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
    do kk = 1, nboun_valid_f
 
       iface = ref%face_pack_list(kk)
@@ -826,29 +818,7 @@ subroutine create_nbhs_face_bcl(G, inp, b, mf, par, btp, init, ref, rhs, q_send_
             else
                dp_flux(2,k)  = vv * dpr;  udp_flux(2,k) = vv*(ur*dpr);  vdp_flux(2,k) = vv*(vr*dpr)
             end if
-             bd_ifq = (iface-1)*nq_f+iquad
-             if (bd_factor > 0.0) then
-                 btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                 btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                 btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
-                 btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
-             end if
          end do  ! k
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    dp_flux(1,k) = dp_flux(1,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(1,k) = udp_flux(1,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(1,k) = vdp_flux(1,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
-                    dp_flux(2,k) = dp_flux(2,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(2,k) = udp_flux(2,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(2,k) = vdp_flux(2,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
-                end do
-            end if
 
          uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:))
          uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:))
@@ -998,8 +968,6 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
    use mod_ref,       only: mref
    use mod_constants, only: gravity
 
-   use mod_bcl_dissipation, only: internal_wave_penalty
-
    implicit none
 
    type(grid),        intent(in)    :: G
@@ -1034,19 +1002,13 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
    real, parameter :: eps1 = 1.0e-20
    logical :: is_dry_l, is_dry_r
 
-   integer :: bd_ifq
-   real :: bd_factor, bd_dry
-
-   bd_factor = inp%bcl_diss_fac
-   bd_dry = inp%dry_cutoff
    ngl_f         = b%ngl
    nq_f          = b%nq
    nlayers_f     = inp%nlayers
    nvarb_f       = inp%nvar_bcl
    nboun_valid_f = ref%nboun_valid
 
-   !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              ref%face_pack_list, G%face, G%intma,                        &
+   !$acc data present(ref%face_pack_list, G%face, G%intma,                        &
    !$acc              mf%imapl, mf%normal_vector_q, mf%jac_faceq,                 &
    !$acc              b%psiq,                                                       &
    !$acc              btp%ope_face_ave, btp%uvb_face_ave, btp%ope2_face_ave,       &
@@ -1057,7 +1019,7 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
    !$acc              q_send_bcl, q_recv_bcl, rhs)
 
    !$acc parallel loop gang                                                         &
-   !$acc   private(bd_ifq, ql, qr, alpha_over_g, g_over_alpha,                             &
+   !$acc   private(ql, qr, alpha_over_g, g_over_alpha,                             &
    !$acc           p_face, z_face, p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus, &
    !$acc           dp_flux, udp_flux, vdp_flux, wdp_flux, H_face_q,                &
    !$acc           dp_lr_l, dp_lr_r, udpl, udpr, vdpl, vdpr, wdpl, wdpr,           &
@@ -1069,7 +1031,7 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
    !$acc           H_r_plus, H_r_minus, p_intersect_bot, p_intersect_top,          &
    !$acc           H_corr1, p_inc1, flux, flux_x, flux_y, flux_z,                  &
    !$acc           kk, iquad, k, ktemp, n, ivar, iface, el, il, jl, kl, I)        &
-   !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
    do kk = 1, nboun_valid_f
 
       iface = ref%face_pack_list(kk)
@@ -1161,36 +1123,7 @@ subroutine create_nbhs_face_bcl_sphere(G, inp, b, mf, par, btp, init, ref, rhs, 
                dp_flux(2,k)  = vv * dpr;  udp_flux(2,k) = vv*udpr(k);  vdp_flux(2,k) = vv*vdpr(k);  wdp_flux(2,k) = vv*wdpr(k)
                dp_flux(3,k)  = ww * dpr;  udp_flux(3,k) = ww*udpr(k);  vdp_flux(3,k) = ww*vdpr(k);  wdp_flux(3,k) = ww*wdpr(k)
             end if
-             bd_ifq = (iface-1)*nq_f+iquad
-             if (bd_factor > 0.0) then
-                 btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                 btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                 btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
-                 btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
-                 btp%bd_left(4,k,bd_ifq) = wdpl(k); btp%bd_right(4,k,bd_ifq) = wdpr(k)
-             end if
          end do  ! k
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    dp_flux(1,k) = dp_flux(1,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(1,k) = udp_flux(1,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(1,k) = vdp_flux(1,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
-                    wdp_flux(1,k) = wdp_flux(1,k) + nxl*btp%bd_penalty(4,k,bd_ifq)
-                    dp_flux(2,k) = dp_flux(2,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(2,k) = udp_flux(2,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(2,k) = vdp_flux(2,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
-                    wdp_flux(2,k) = wdp_flux(2,k) + nyl*btp%bd_penalty(4,k,bd_ifq)
-                    dp_flux(3,k) = dp_flux(3,k) + nzl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(3,k) = udp_flux(3,k) + nzl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(3,k) = vdp_flux(3,k) + nzl*btp%bd_penalty(3,k,bd_ifq)
-                    wdp_flux(3,k) = wdp_flux(3,k) + nzl*btp%bd_penalty(4,k,bd_ifq)
-                end do
-            end if
 
          uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:))
          uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:))
@@ -1354,10 +1287,7 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, init, r
    use mod_variables, only: btp_CS
    use mod_ref,       only: mref
 
-   use mod_constants, only: gravity
    use mod_initial, only: initial
-
-   use mod_bcl_dissipation, only: internal_wave_penalty
 
    implicit none
 
@@ -1389,11 +1319,6 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, init, r
    real, parameter :: eps = 1.0e-10
    integer :: ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f
 
-   integer :: bd_ifq
-   real :: bd_factor, bd_dry
-
-   bd_factor = inp%bcl_diss_fac
-   bd_dry = inp%dry_cutoff
    ngl_f         = b%ngl
    nq_f          = b%nq
    nlayers_f     = inp%nlayers
@@ -1404,17 +1329,16 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, init, r
    ! nboun_valid), matching how q_send/q_recv were actually packed in
    ! unpack_data_dg_general_bcl -- NOT the raw par%num_nbh/nbh_send_recv walk,
    ! which is only correct if every entry happens to satisfy the packing filter.
-   !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              ref%face_pack_list, G%face, G%intma,                     &
+   !$acc data present(ref%face_pack_list, G%face, G%intma,                     &
    !$acc               mf%imapl, mf%normal_vector_q, mf%jac_faceq, b%psiq,     &
    !$acc               init%alpha_mlswe, btp%ope_face_ave, btp%uvb_face_ave,                     &
    !$acc               btp%btp_mass_flux_face_ave, q_send, q_recv, rhs)
 
    !$acc parallel loop gang                                                     &
-   !$acc   private(bd_ifq, ql, qr, qbl, qbr, flux_edge_u, flux_edge_v, dp_lr, dp_deficit, &
+   !$acc   private(ql, qr, qbl, qbr, flux_edge_u, flux_edge_v, dp_lr, dp_deficit, &
    !$acc           k, iface, iquad, el, il, jl, I, kl, n, ivar, index,          &
    !$acc           wq, nxl, nyl, hi, dpl, dpr, uu, vv, flux, ul, ur, vl, vr, weight) &
-   !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
    do kk = 1, nboun_valid_f
 
       iface = ref%face_pack_list(kk)
@@ -1477,23 +1401,7 @@ subroutine create_nbhs_face_bcl_continuity(G, inp, b, mf, par, ref, btp, init, r
                flux_edge_v(iquad,k) = vv * dpr
             endif
 
-             bd_ifq = (iface-1)*nq_f+iquad
-             if (bd_factor > 0.0) then
-                 btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                 btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-             end if
          end do ! k
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    flux_edge_u(iquad,k) = flux_edge_u(iquad,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    flux_edge_v(iquad,k) = flux_edge_v(iquad,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                end do
-            end if
 
          dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_edge_u(iquad,:))
          dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(flux_edge_v(iquad,:))
@@ -1568,8 +1476,6 @@ subroutine create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, 
    use mod_ref,       only: mref
    use mod_constants, only: gravity
 
-   use mod_bcl_dissipation, only: internal_wave_penalty
-
    implicit none
 
    type(grid),        intent(in)    :: G
@@ -1603,11 +1509,6 @@ subroutine create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, 
    integer :: ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f
    real    :: dry_cutoff_l
 
-   integer :: bd_ifq
-   real :: bd_factor, bd_dry
-
-   bd_factor = inp%bcl_diss_fac
-   bd_dry = inp%dry_cutoff
    ngl_f         = b%ngl
    nq_f          = b%nq
    nlayers_f     = inp%nlayers
@@ -1619,18 +1520,17 @@ subroutine create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, 
    ! nboun_valid), matching how q_send/q_recv were actually packed in
    ! unpack_data_dg_general_bcl -- NOT the raw par%num_nbh/nbh_send_recv walk,
    ! which is only correct if every entry happens to satisfy the packing filter.
-   !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              ref%face_pack_list, G%face, G%intma,                     &
+   !$acc data present(ref%face_pack_list, G%face, G%intma,                     &
    !$acc               mf%imapl, mf%normal_vector_q, mf%jac_faceq, b%psiq,     &
    !$acc               init%alpha_mlswe, btp%ope_face_ave, btp%uvb_face_ave,   &
    !$acc               btp%btp_mass_flux_face_ave, q_send, q_recv, rhs)
 
    !$acc parallel loop gang                                                    &
-   !$acc   private(bd_ifq, ql, qr, qbl, qbr, dp_flux, dp_lr, dp_deficit, g_over_alpha, &
+   !$acc   private(ql, qr, qbl, qbr, dp_flux, dp_lr, dp_deficit, g_over_alpha, &
    !$acc           k, iface, iquad, el, il, jl, kl, I, n, ivar, index,         &
    !$acc           wq, nxl, nyl, nzl, hi, dpl, dpr, uu, vv, ww, un,            &
    !$acc           ul, ur, vl, vr, wl, wr, flux, weight, is_dry_l, is_dry_r)   &
-   !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f, dry_cutoff_l)
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f, dry_cutoff_l)
    do kk = 1, nboun_valid_f
 
       iface = ref%face_pack_list(kk)
@@ -1713,24 +1613,7 @@ subroutine create_nbhs_face_bcl_continuity_sphere(G, inp, b, mf, par, ref, btp, 
                dp_flux(3,iquad,k) = ww * dpr
             end if
 
-             bd_ifq = (iface-1)*nq_f+iquad
-             if (bd_factor > 0.0) then
-                 btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                 btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-             end if
          end do ! k
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    dp_flux(1,iquad,k) = dp_flux(1,iquad,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    dp_flux(2,iquad,k) = dp_flux(2,iquad,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    dp_flux(3,iquad,k) = dp_flux(3,iquad,k) + nzl*btp%bd_penalty(1,k,bd_ifq)
-                end do
-            end if
 
          dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,iquad,:))
          dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,iquad,:))
@@ -1791,8 +1674,6 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs
    use mod_ref,       only: mref
    use mod_constants, only: gravity
 
-   use mod_bcl_dissipation, only: internal_wave_penalty
-
    implicit none
 
    type(grid),        intent(in)    :: G
@@ -1834,11 +1715,6 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs
    real, dimension(b%nq,inp%nlayers) :: H_face, flux_ul, flux_vl
    integer :: ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f
 
-   integer :: bd_ifq
-   real :: bd_factor, bd_dry
-
-   bd_factor = inp%bcl_diss_fac
-   bd_dry = inp%dry_cutoff
    ngl_f         = b%ngl
    nq_f          = b%nq
    nlayers_f     = inp%nlayers
@@ -1849,8 +1725,7 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs
    ! nboun_valid), matching how q_send/q_recv were actually packed in
    ! unpack_data_dg_general_bcl -- NOT the raw par%num_nbh/nbh_send_recv walk,
    ! which is only correct if every entry happens to satisfy the packing filter.
-   !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              ref%face_pack_list, G%face, G%intma,                      &
+   !$acc data present(ref%face_pack_list, G%face, G%intma,                      &
    !$acc               mf%imapl, mf%normal_vector_q, mf%jac_faceq, b%psiq,      &
    !$acc               init%alpha_mlswe, init%zbot_face,                         &
    !$acc               btp%ope_face_ave, btp%uvb_face_ave, btp%ope2_face_ave,   &
@@ -1858,7 +1733,7 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs
    !$acc               btp%Qu_face_ave, btp%Qv_face_ave, q_send, q_recv, rhs)
 
    !$acc parallel loop gang                                                     &
-   !$acc   private(bd_ifq, alpha_over_g, g_over_alpha, p_face, z_face,                  &
+   !$acc   private(alpha_over_g, g_over_alpha, p_face, z_face,                  &
    !$acc           p_edge_plus, p_edge_minus, z_edge_plus, z_edge_minus,        &
    !$acc           ql, qr, qbl, qbr, iface, k, iquad, ktemp, I,                 &
    !$acc           z_intersect_top, z_intersect_bot, dz_intersect,              &
@@ -1869,7 +1744,7 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs
    !$acc           udpl, udpr, vdpl, vdpr, uu_dp_flux_deficit, vv_dp_flux_deficit, &
    !$acc           il, jl, kl, n, ivar, index, wq, hi, flux_x, flux_y,          &
    !$acc           udp_flux, vdp_flux, H_face, flux_ul, flux_vl)                &
-   !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
+   !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nvarb_f, nboun_valid_f)
    do kk = 1, nboun_valid_f
 
       iface = ref%face_pack_list(kk)
@@ -1943,27 +1818,7 @@ subroutine create_nbhs_face_bcl_momentum(G, inp, b, mf, par, ref, btp, init, rhs
                vdp_flux(2,iquad,k) = vv * (vr*dpr)
             endif
 
-             bd_ifq = (iface-1)*nq_f+iquad
-             if (bd_factor > 0.0) then
-                 btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                 btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                 btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
-                 btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
-             end if
          enddo !k
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    udp_flux(1,iquad,k) = udp_flux(1,iquad,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(1,iquad,k) = vdp_flux(1,iquad,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
-                    udp_flux(2,iquad,k) = udp_flux(2,iquad,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(2,iquad,k) = vdp_flux(2,iquad,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
-                end do
-            end if
 
          uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,iquad,:))
          uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,iquad,:))

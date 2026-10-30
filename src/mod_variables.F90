@@ -81,9 +81,6 @@ module mod_variables
       ! to rhs_btp by a second kernel in create_btp_fluxes_qdf_gpu.
       real, dimension(:,:),     allocatable :: flux_face_q   ! (nq*nface,4)
 
-      ! Internal-wave penalty workspace; contiguous (state,layer) face slices.
-      real, dimension(:,:,:), allocatable :: bd_left, bd_right, bd_penalty
-
    end type btp_CS
 
    !  Baroclinic control structure
@@ -123,10 +120,9 @@ module mod_variables
       real,    dimension(:,:,:,:), allocatable :: F_bcl ! (npoin_q,4,3,nlayers)
 
       ! Per-element layer work arrays of extract_velocity (GPU-thread index,
-      ! the element, first): element-mean dp / momentum, element max / min dp
-      ! (ev_min is no longer used; the pointwise weight is per node), tridiagonal
+      ! the element, first): element-mean dp / momentum, element max dp, tridiagonal
       ! diagonal / upper diagonal, rhs overwritten by the solution.
-      real, dimension(:,:),   allocatable :: ev_dp, ev_max, ev_min, ev_bc, ev_ctd ! (nelem,nlayers)
+      real, dimension(:,:),   allocatable :: ev_dp, ev_max, ev_bc, ev_ctd ! (nelem,nlayers)
       real, dimension(:,:,:), allocatable :: ev_mdp, ev_r                         ! (nelem,3,nlayers)
 
       ! Per-(face, quad point) layer work arrays of Apply_bcl_fluxes_sphere
@@ -298,50 +294,38 @@ contains
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (bcl)"
 
-#ifdef _OPENACC
-      ! GPU-only work arrays of the restructured kernels (not used by the CPU
-      ! code paths, so not allocated in CPU builds).
-      if (allocated(btp%F_vol)) then
-         deallocate(btp%F_vol, btp%qb_T, btp%flux_face_q,                   &
-            bcl%F_bcl,                                                    &
-            bcl%ev_dp, bcl%ev_max, bcl%ev_min, bcl%ev_bc, bcl%ev_ctd,      &
-            bcl%ev_mdp, bcl%ev_r,                                          &
-            bcl%sf_z, bcl%sf_mdl, bcl%sf_mdr, bcl%sf_H,                    &
-            bcl%sf_fdp, bcl%sf_fu, bcl%sf_fv, bcl%sf_fw,                   &
-            bcl%sf_pep, bcl%sf_pem, bcl%sf_zep, bcl%sf_zem,                &
-            bcl%sf_hl, bcl%sf_hr)
+      ! Work arrays of the GPU kernels (not used by the CPU routines).
+      if (inp%lgpu_kernels) then
+         if (allocated(btp%F_vol)) then
+            deallocate(btp%F_vol, btp%qb_T, btp%flux_face_q,                   &
+               bcl%F_bcl,                                                    &
+               bcl%ev_dp, bcl%ev_max, bcl%ev_bc, bcl%ev_ctd,                  &
+               bcl%ev_mdp, bcl%ev_r,                                          &
+               bcl%sf_z, bcl%sf_mdl, bcl%sf_mdr, bcl%sf_H,                    &
+               bcl%sf_fdp, bcl%sf_fu, bcl%sf_fv, bcl%sf_fw,                   &
+               bcl%sf_pep, bcl%sf_pem, bcl%sf_zep, bcl%sf_zem,                &
+               bcl%sf_hl, bcl%sf_hr)
+         end if
+         allocate(                                                               &
+            btp%F_vol(G%npoin_q,4,3),                                        &
+            btp%qb_T(G%nelem*b%ngly*b%nqx,max(inp%nvar_btp,8)),                &
+            btp%flux_face_q(b%nq*G%nface,4),                                   &
+            bcl%F_bcl(G%npoin_q,4,3,inp%nlayers),                                   &
+            bcl%ev_dp(G%nelem,inp%nlayers),   bcl%ev_max(G%nelem,inp%nlayers),      &
+            bcl%ev_bc(G%nelem,inp%nlayers),   bcl%ev_ctd(G%nelem,inp%nlayers),      &
+            bcl%ev_mdp(G%nelem,3,inp%nlayers), bcl%ev_r(G%nelem,3,inp%nlayers),     &
+            bcl%sf_z(b%nq*G%nface,2,inp%nlayers+1),                                 &
+            bcl%sf_pep(b%nq*G%nface,inp%nlayers+1), bcl%sf_pem(b%nq*G%nface,inp%nlayers+1), &
+            bcl%sf_zep(b%nq*G%nface,inp%nlayers+1), bcl%sf_zem(b%nq*G%nface,inp%nlayers+1), &
+            bcl%sf_hl(b%nq*G%nface,inp%nlayers),   bcl%sf_hr(b%nq*G%nface,inp%nlayers),     &
+            bcl%sf_mdl(b%nq*G%nface,3,inp%nlayers), bcl%sf_mdr(b%nq*G%nface,3,inp%nlayers), &
+            bcl%sf_H(b%nq*G%nface,2,inp%nlayers),                                   &
+            bcl%sf_fdp(b%nq*G%nface,3,inp%nlayers), bcl%sf_fu(b%nq*G%nface,3,inp%nlayers),  &
+            bcl%sf_fv(b%nq*G%nface,3,inp%nlayers),  bcl%sf_fw(b%nq*G%nface,3,inp%nlayers),  &
+            stat=stat)
+         if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (GPU work arrays)"
       end if
-      allocate(                                                               &
-         btp%F_vol(G%npoin_q,4,3),                                        &
-         btp%qb_T(G%nelem*b%ngly*b%nqx,max(inp%nvar_btp,8)),                &
-         btp%flux_face_q(b%nq*G%nface,4),                                   &
-         bcl%F_bcl(G%npoin_q,4,3,inp%nlayers),                                   &
-         bcl%ev_dp(G%nelem,inp%nlayers),   bcl%ev_max(G%nelem,inp%nlayers),      &
-         bcl%ev_min(G%nelem,inp%nlayers),  bcl%ev_bc(G%nelem,inp%nlayers),       &
-         bcl%ev_ctd(G%nelem,inp%nlayers),                                        &
-         bcl%ev_mdp(G%nelem,3,inp%nlayers), bcl%ev_r(G%nelem,3,inp%nlayers),     &
-         bcl%sf_z(b%nq*G%nface,2,inp%nlayers+1),                                 &
-         bcl%sf_pep(b%nq*G%nface,inp%nlayers+1), bcl%sf_pem(b%nq*G%nface,inp%nlayers+1), &
-         bcl%sf_zep(b%nq*G%nface,inp%nlayers+1), bcl%sf_zem(b%nq*G%nface,inp%nlayers+1), &
-         bcl%sf_hl(b%nq*G%nface,inp%nlayers),   bcl%sf_hr(b%nq*G%nface,inp%nlayers),     &
-         bcl%sf_mdl(b%nq*G%nface,3,inp%nlayers), bcl%sf_mdr(b%nq*G%nface,3,inp%nlayers), &
-         bcl%sf_H(b%nq*G%nface,2,inp%nlayers),                                   &
-         bcl%sf_fdp(b%nq*G%nface,3,inp%nlayers), bcl%sf_fu(b%nq*G%nface,3,inp%nlayers),  &
-         bcl%sf_fv(b%nq*G%nface,3,inp%nlayers),  bcl%sf_fw(b%nq*G%nface,3,inp%nlayers),  &
-         stat=stat)
-      if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (GPU work arrays)"
-#endif
       bcl%nu_smag  = 0.0
-
-      if (allocated(btp%bd_left)) deallocate(btp%bd_left, btp%bd_right, btp%bd_penalty)
-      if (inp%bcl_diss_fac > 0.0) then
-         allocate(btp%bd_left(4,inp%nlayers,b%nq*G%nface), &
-                  btp%bd_right(4,inp%nlayers,b%nq*G%nface), &
-                  btp%bd_penalty(4,inp%nlayers,b%nq*G%nface))
-      else
-         ! Tiny placeholders keep device descriptors valid when disabled.
-         allocate(btp%bd_left(4,1,1), btp%bd_right(4,1,1), btp%bd_penalty(4,1,1))
-      end if
 
    end subroutine mod_allocate_mlswe
 

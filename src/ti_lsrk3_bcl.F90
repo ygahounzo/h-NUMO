@@ -25,7 +25,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_ape,               only: ape_stage
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
-  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness, trace_stage, trace_bcl_stage
+  use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
   use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
 
   implicit none
@@ -69,8 +69,6 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
 
   do ik = 1, 3
 
-    trace_bcl_stage = ik
-
     dtt = inp%dt * lsrk3_beta(ik)
 
     ! GPU: compute baroclinic primed variables from the current stage state.
@@ -100,7 +98,6 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     call create_rhs_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%rhs_bcl, bcl%qprime_df, q_df)
 
     ! GPU LSRK3 update: q = q0 + dt * rhs.
-#ifdef _OPENACC
     ! One thread per (layer, node): a k-outer "kernels" region would put
     ! one gang per layer (nlayers blocks for the whole update).
     !$acc parallel loop gang vector collapse(2) present(q_df, bcl%q0_df, bcl%rhs_bcl) &
@@ -114,19 +111,6 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       end do
     end do
     !$acc end parallel loop
-#else
-    !$acc kernels present(q_df, bcl%q0_df, bcl%rhs_bcl)
-    do k = 1, inp%nlayers
-      q_df(1,:,k) = bcl%q0_df(1,:,k) + dtt * bcl%rhs_bcl(1,:,k)
-      q_df(2,:,k) = bcl%q0_df(2,:,k) + dtt * bcl%rhs_bcl(2,:,k)
-      q_df(3,:,k) = bcl%q0_df(3,:,k) + dtt * bcl%rhs_bcl(3,:,k)
-      if (has_w) q_df(4,:,k) = bcl%q0_df(4,:,k) + dtt * bcl%rhs_bcl(4,:,k)
-    end do
-    !$acc end kernels
-#endif
-
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_lsrk3_bcl_after_update', .false., 0, ik)
 
     ! Semi-implicit Coriolis rotation (flat always; sphere only when
     ! implicit_coriolis_sph, else Coriolis is explicit in the volume RHS). Applies
@@ -186,18 +170,12 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     ! Floor thickness before extract_velocity: if q_df(1) went negative from the
     ! RK update, the division by thickness inside extract_velocity would produce
     ! astronomical velocities, corrupting momentum and triggering a NaN cascade.
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_lsrk3_bcl_before_limit1', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_lsrk3_bcl_after_limit1', .false., 0, ik)
-
 
     ! Extract baroclinic velocity.
     call extract_velocity(G, inp, b, mt, tsp, init, bcl, bcl%uv_df, q_df, qb_df)
 
     ! Reconstruct momentum from corrected velocity.
-#ifdef _OPENACC
     !$acc parallel loop gang vector collapse(2) present(q_df, bcl%uv_df) firstprivate(has_w)
     do k = 1, inp%nlayers
       do I = 1, G%npoin
@@ -207,25 +185,9 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       end do
     end do
     !$acc end parallel loop
-#else
-    !$acc kernels present(q_df, bcl%uv_df)
-    do k = 1, inp%nlayers
-      q_df(2,:,k) = bcl%uv_df(1,:,k) * q_df(1,:,k)
-      q_df(3,:,k) = bcl%uv_df(2,:,k) * q_df(1,:,k)
-      if (has_w) q_df(4,:,k) = bcl%uv_df(3,:,k) * q_df(1,:,k)
-    end do
-    !$acc end kernels
-#endif
 
     ! Positivity limiter.
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_lsrk3_bcl_after_velocity', .false., 0, ik)
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_lsrk3_bcl_before_limit2', .false., 0, ik)
     call poslimiter(b, G, inp, mt, q_df, init%alpha_mlswe)
-    call trace_stage(b, G, inp, tsp, init%alpha_mlswe, q_df, qb_df, &
-        'ti_lsrk3_bcl_after_limit2', .false., 0, ik)
-
 
     call check_layer_thickness(b, G, inp, q_df, 'ti_lsrk3_bcl', ik)
 

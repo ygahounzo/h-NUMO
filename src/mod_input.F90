@@ -67,7 +67,6 @@ module mod_input
       real(kind=r8) :: f0
       real(kind=r8) :: beta
       real(kind=r8) :: dry_cutoff
-      real(kind=r8) :: bcl_diss_fac
       real(kind=r8) :: c_APE
       real(kind=r8) :: h_cutoff1, h_cutoff2
 
@@ -165,6 +164,7 @@ module mod_input
       logical :: lread_external_grid
       logical :: lsector_mesh_external
       logical :: lico_mesh_external
+      logical :: lgpu_kernels      ! run the GPU routines (*_gpu); always true in OpenACC builds
       logical :: lread_bc
       logical :: lserial_grid_creation
       logical :: lparallel_grid_creation
@@ -183,7 +183,6 @@ module mod_input
       logical :: dump_data
       logical :: lcheck_conserved
       integer :: ienergy_runtime
-      logical :: ltrace_stages
 
       real :: time_scale_in
       real :: dam_depth_in
@@ -278,7 +277,6 @@ module mod_input
       real(kind=r8) :: max_shear_dz = 0.0
       real(kind=r8) :: f0 = 0.0
       real(kind=r8) :: beta = 0.0
-      real(kind=r8) :: bcl_diss_fac = 0.0
       real(kind=r8) :: c_APE = 0.0          ! Chen (2025) APE coefficient nu [m^2] on interior interfaces (0 = off)
       real(kind=r8) :: dry_cutoff = 1.0e-10
       real(kind=r8) :: h_cutoff1 = 0.0, h_cutoff2 = 0.0
@@ -380,6 +378,7 @@ module mod_input
       logical :: lzstretch      = .false.
       logical :: lgrid_only     = .false.
       logical :: lico_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_ico
+      logical :: lgpu_kernels = .false.       ! run the *_gpu routines on the host (testing); forced on in OpenACC builds
       logical :: lsector_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_sector
       logical :: lread_external_grid = .false.
       logical :: lread_bc       = .false.
@@ -399,7 +398,6 @@ module mod_input
       logical :: is_mlswe = .true.  
       logical :: dg_integ_exact = .true. 
       logical :: dump_data = .true. 
-      logical :: ltrace_stages = .false.
       logical :: lcheck_conserved = .false. 
       integer :: ienergy_runtime = 0   ! energy_runtime.csv every N BCL steps (0 = at output times)
 
@@ -468,10 +466,10 @@ module mod_input
          imass, &
          ad_mlswe, cd_mlswe, dp_tau_bot, dp_tau_wind, dt_btp,method_visc,&
          visc_mlswe, max_shear_dz, adjust_H_vertical_sum, botfr, &
-         dg_integ_exact, dump_data, lcheck_conserved, ienergy_runtime, ltrace_stages, adjust_bcl_mom_flux, &
-         f0, beta, dry_cutoff, bcl_diss_fac, c_APE, h_cutoff1, h_cutoff2, &
+         dg_integ_exact, dump_data, lcheck_conserved, ienergy_runtime, adjust_bcl_mom_flux, &
+         f0, beta, dry_cutoff, c_APE, h_cutoff1, h_cutoff2, &
          bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, rho_layers, &
-         C_smag, lwrite_vorticity
+         C_smag, lwrite_vorticity, lgpu_kernels
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -656,9 +654,6 @@ module mod_input
       inp%max_shear_dz                   = max_shear_dz
       inp%f0                             = f0
       inp%beta                           = beta
-      if (.not. (bcl_diss_fac >= 0.0 .and. bcl_diss_fac <= huge(bcl_diss_fac))) &
-         error stop "bcl_diss_fac must be finite and nonnegative"
-      inp%bcl_diss_fac                   = bcl_diss_fac
       if (.not. (c_APE >= 0.0 .and. c_APE <= huge(c_APE))) &
          error stop "c_APE must be finite and nonnegative"
       inp%c_APE                          = c_APE
@@ -757,6 +752,12 @@ module mod_input
       inp%lystretch                      = lystretch
       inp%lzstretch                      = lzstretch
       inp%lgrid_only                     = lgrid_only
+      ! OpenACC builds keep the state on the device, where only the *_gpu
+      ! routines can reach it. This is the only compile-time switch of the code path.
+#ifdef _OPENACC
+      lgpu_kernels = .true.
+#endif
+      inp%lgpu_kernels                   = lgpu_kernels
       inp%lico_mesh_external             = lico_mesh_external
       if(lico_mesh_external.and.trim(geometry_type)/="sphere_ico") &
          error stop "lico_mesh_external requires sphere_ico"
@@ -777,7 +778,6 @@ module mod_input
       inp%is_mlswe                       = is_mlswe
       inp%dg_integ_exact                 = dg_integ_exact
       inp%dump_data                      = dump_data
-      inp%ltrace_stages                  = ltrace_stages
       inp%lcheck_conserved               = lcheck_conserved
       inp%ienergy_runtime                = ienergy_runtime
       inp%time_scale_in                  = time_scale_in

@@ -73,11 +73,9 @@ program numo3d
 
   rhs_time = 0
 
-#ifdef _OPENACC
   ! Face node -> global node index table for the GPU face kernels
   ! (mesh, faces and boundaries final)
-  call mod_face_build_node_index(G, b, mf)
-#endif
+  if (inp%lgpu_kernels) call mod_face_build_node_index(G, b, mf)
 
   !   Perform Time-Integration
   time1 = wtime()

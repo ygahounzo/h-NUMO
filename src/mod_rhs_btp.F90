@@ -44,19 +44,14 @@ contains
       ! 1. MPI halo exchange (host).
       call btp_create_precommunicator(G, inp, b, mf, init, par, ref, mpic, qb_df, qprime_df, inp%nvar_btp)
 
-      ! 2. GPU volume kernel — zeros rhs_btp on device, accumulates volume contribution.
-#ifdef _OPENACC
-      call create_rhs_btp_volume_qdf_qp_gpu(G, b, inp, init, btp, tsp, mt, rhs_btp, qb_df)
-#else
-      call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
-#endif
-
-      ! 3. GPU face kernel — accumulates local face fluxes into device rhs_btp.
-#ifdef _OPENACC
-      call create_btp_fluxes_qdf_gpu(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
-#else
-      call create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
-#endif
+      ! 2. Volume terms (zeros rhs_btp), then 3. local face fluxes.
+      if (inp%lgpu_kernels) then
+         call create_rhs_btp_volume_qdf_qp_gpu(G, b, inp, init, btp, tsp, mt, rhs_btp, qb_df)
+         call create_btp_fluxes_qdf_gpu(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
+      else
+         call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
+         call create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
+      end if
 
       ! 4. Post-communicator: mpi_waitall → unpack → upload q_recv to GPU →
       !    GPU create_nbhs_face_df adds MPI boundary fluxes into device rhs_btp
@@ -664,8 +659,8 @@ contains
 
    subroutine create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
       !===========================================================================
-      !  CPU version of create_rhs_btp_volume_qdf_qp_gpu (used when built without
-      !  OpenACC). Same physics, one pass over quad points with a direct scatter
+      !  CPU version of create_rhs_btp_volume_qdf_qp_gpu (used when inp%lgpu_kernels is false).
+      !  Same physics, one pass over quad points with a direct scatter
       !  into rhs_btp: on the CPU the scatter needs no atomics, so this avoids the
       !  F_vol pass and basis recomputation the GPU version uses to remove them.
       !
@@ -1324,8 +1319,8 @@ contains
 
    subroutine create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb, qprime_df)
       !===========================================================================
-      !  CPU version of create_btp_fluxes_qdf_gpu (used when built without
-      !  OpenACC). Same physics, one face at a time with its node indices cached
+      !  CPU version of create_btp_fluxes_qdf_gpu (used when inp%lgpu_kernels is false).
+      !  Same physics, one face at a time with its node indices cached
       !  once per face; the GPU version instead runs one thread per (face,
       !  quadrature point) and looks the indices up where they are used.
       !

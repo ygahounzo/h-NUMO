@@ -20,7 +20,6 @@ module mod_create_rhs_mlswe
     use mod_ref,              only: mref
     use mod_mpi_communicator, only: mpi_communicator
 
-    use mod_bcl_dissipation, only: internal_wave_penalty
     use mod_ape,             only: ape_on, ape_force
 
     implicit none
@@ -474,23 +473,44 @@ contains
         type(initial),   intent(in)    :: init
         type(tensor_CS), intent(in)    :: tsp
         type(metrics),   intent(in)    :: mt
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
+
+        if (inp%lgpu_kernels) then
+            call create_rhs_dynamics_volume_bcl_sphere_gpu(G, inp, b, btp, bcl, init, tsp, mt, rhs, qprime_df, q_df)
+        else
+            call create_rhs_dynamics_volume_bcl_sphere_cpu(G, inp, b, btp, bcl, init, tsp, mt, rhs, qprime_df, q_df)
+        end if
+
+    end subroutine create_rhs_dynamics_volume_bcl_sphere
+
+    subroutine create_rhs_dynamics_volume_bcl_sphere_gpu(G, inp, b, btp, bcl, init, tsp, mt, rhs, qprime_df, q_df)
+
+        implicit none
+
+        type(grid),      intent(in)    :: G
+        type(input),     intent(in)    :: inp
+        type(basis),     intent(in)    :: b
+        type(btp_CS),    intent(in)    :: btp
+        type(bcl_CS),    intent(inout) :: bcl
+        type(initial),   intent(in)    :: init
+        type(tensor_CS), intent(in)    :: tsp
+        type(metrics),   intent(in)    :: mt
 
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
         real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
 
         real :: wq, hi, dhdx, dhdy, dhdz, tau_wind_u, tau_wind_v, temp1
-        real :: Hq, source_x, source_y, source_z, Pstress, Pbstress
+        real :: Hq, source_x, source_y, source_z
         integer :: k, I, Iq, ip
         ! Layer arrays of the CPU loop (automatic, any nlayers). The GPU
         ! kernels below use no per-thread layer arrays at all.
-        real :: pprime_temp(inp%nlayers+1), z(inp%nlayers+1), p_tmp(inp%nlayers+1)
-        real :: tempbot, weight, acceleration, pbq
+        real :: pprime_temp(inp%nlayers+1), p_tmp(inp%nlayers+1)
+        real :: tempbot, weight, pbq
         real :: qp(4), qb(4)
-        real :: dp(inp%nlayers), dpp(inp%nlayers), udp(inp%nlayers), vdp(inp%nlayers), wdp(inp%nlayers)
-        real :: H_tmp(inp%nlayers)
-        real :: temp_uu(inp%nlayers), temp_vv(inp%nlayers), temp_ww(inp%nlayers)
-        real :: u_udp(3,inp%nlayers), v_vdp(3,inp%nlayers), w_wdp(3,inp%nlayers)
+        real :: dp(inp%nlayers)
         real :: uu_dp_deficitq(3), vv_dp_deficitq(3), ww_dp_deficitq(3)
         real :: gradz(3, inp%nlayers+1)
         real :: u, v, w, weightq, weight_dp
@@ -499,9 +519,9 @@ contains
         real, parameter :: eps1 = 1.0e-20
         logical :: is_dry
 
-        integer :: npoin_q_l, npts_l, nlayers_l
+        integer :: npts_l, nlayers_l
         ! GPU path: element/quad-point indexing and contravariant metric terms
-        integer :: ie, ijq, n, m, iqx, iqy, nelem_l, npts_q_l, nglx_l, nqx_l, ngly_l, nqy_l
+        integer :: ie, n, m, iqx, iqy, nelem_l, nglx_l, nqx_l, ngly_l, nqy_l
         real    :: h_e, h_n, kx, ky, kz, ex, ey, ez, zx, zy, zz, r1, r2, r3, r4
         ! GPU kernel A: running layer state (scalars / fixed-size only)
         real    :: s_ope2, alpha_k, dry_k, c_k, p_k, p_k1, pp_k, pp_k1, H_k, sum_H
@@ -513,11 +533,9 @@ contains
         real    :: cfx, cfy, cfz, cor_fac_l
         logical :: ape_l
 
-        npoin_q_l = G%npoin_q
         npts_l    = b%npts
         nlayers_l = inp%nlayers
         nelem_l   = G%nelem
-        npts_q_l  = b%npts_quad
         nglx_l    = b%nglx
         nqx_l     = b%nqx
         ngly_l    = b%ngly
@@ -546,9 +564,8 @@ contains
         !$acc              mt%etaq_z, mt%zetaq_x, mt%zetaq_y, mt%zetaq_z, bcl%F_bcl,    &
         !$acc              G%intma, G%intma_dg_quad, ape_force)
 
-#ifdef _OPENACC
         ! ---- Kernel A: physics at each quad point (one thread per point) ------
-        ! Same physics as the CPU loop below, but instead of scattering into
+        ! Same physics as the _cpu routine, but instead of scattering into
         ! rhs with atomics it stores, per layer and equation row, the weighted
         ! coefficients of psi, dpsi/dxi and dpsi/deta in bcl%F_bcl. Basis
         ! values come from the 1D tables and the metric terms from mt (the
@@ -653,7 +670,7 @@ contains
                 end do
                 Gsum(1) = Gsum(1) + Gc(1);  Gsum(2) = Gsum(2) + Gc(2);  Gsum(3) = Gsum(3) + Gc(3)
 
-                ! Dry-cell protection: see the CPU loop below for the rationale.
+                ! Dry-cell protection: see the _cpu routine for the rationale.
                 dry_k  = (gravity/alpha_k) * inp%dry_cutoff
                 is_dry = (qp(1) * qb(1) < dry_k)
                 if (is_dry) qp(1) = dry_k
@@ -883,25 +900,72 @@ contains
             end do
         end do
         !$acc end parallel loop
-#else
-        !$acc kernels present(rhs)
+
+        !$acc end data
+
+    end subroutine create_rhs_dynamics_volume_bcl_sphere_gpu
+
+    subroutine create_rhs_dynamics_volume_bcl_sphere_cpu(G, inp, b, btp, bcl, init, tsp, mt, rhs, qprime_df, q_df)
+
+        implicit none
+
+        type(grid),      intent(in)    :: G
+        type(input),     intent(in)    :: inp
+        type(basis),     intent(in)    :: b
+        type(btp_CS),    intent(in)    :: btp
+        type(bcl_CS),    intent(inout) :: bcl
+        type(initial),   intent(in)    :: init
+        type(tensor_CS), intent(in)    :: tsp
+        type(metrics),   intent(in)    :: mt
+
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(out) :: rhs
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: q_df
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)  :: qprime_df
+
+        real :: wq, hi, dhdx, dhdy, dhdz, tau_wind_u, tau_wind_v, temp1
+        real :: Hq, source_x, source_y, source_z
+        integer :: k, I, Iq, ip
+        ! Layer arrays of the CPU loop (automatic, any nlayers). The GPU
+        ! kernels below use no per-thread layer arrays at all.
+        real :: pprime_temp(inp%nlayers+1), z(inp%nlayers+1), p_tmp(inp%nlayers+1)
+        real :: tempbot, weight, acceleration, pbq
+        real :: qp(4), qb(4)
+        real :: dp(inp%nlayers), dpp(inp%nlayers), udp(inp%nlayers), vdp(inp%nlayers), wdp(inp%nlayers)
+        real :: H_tmp(inp%nlayers)
+        real :: temp_uu(inp%nlayers), temp_vv(inp%nlayers), temp_ww(inp%nlayers)
+        real :: u_udp(3,inp%nlayers), v_vdp(3,inp%nlayers), w_wdp(3,inp%nlayers)
+        real :: uu_dp_deficitq(3), vv_dp_deficitq(3), ww_dp_deficitq(3)
+        real :: gradz(3, inp%nlayers+1)
+        real :: u, v, w, weightq, weight_dp
+        real :: one_over_sumuq, one_over_sumvq, one_over_sumwq
+        real :: flux(3,4)
+        real, parameter :: eps1 = 1.0e-20
+        logical :: is_dry
+
+        integer :: npoin_q_l, npts_l, nlayers_l
+        ! GPU path: element/quad-point indexing and contravariant metric terms
+        ! GPU kernel A: running layer state (scalars / fixed-size only)
+        real    :: Pstress_l, Pbstress_l
+        real    :: cfx, cfy, cfz, cor_fac_l
+        logical :: ape_l
+
+        npoin_q_l = G%npoin_q
+        npts_l    = b%npts
+        nlayers_l = inp%nlayers
+        Pstress_l  = (gravity/init%alpha_mlswe(1))           * 50.0
+        Pbstress_l = (gravity/init%alpha_mlswe(inp%nlayers)) * 10.0
+        ! Explicit Coriolis here unless the semi-implicit nodal rotation in the
+        ! ti_*_bcl integrators handles it (implicit_coriolis_sph) -- never both.
+        cor_fac_l  = merge(0.0, 1.0, inp%implicit_coriolis_sph)
+        ! Chen APE force per layer at the quad points (mod_ape, c_APE > 0).
+        ape_l      = ape_on
+
+        bcl%sum_layer_mass_flux = 0.0
+
         rhs = 0.0
-        !$acc end kernels
 
         ! One thread per quadrature point; every inner (layer, basis) loop is
         ! sequential within the thread.
-        !$acc parallel loop gang vector                                                   &
-        !$acc   private(pprime_temp, z, p_tmp, qp, qb, gradz, flux,                      &
-        !$acc           dp, dpp, udp, vdp, wdp, H_tmp,                                  &
-        !$acc           temp_uu, temp_vv, temp_ww,                                       &
-        !$acc           u_udp, v_vdp, w_wdp,                                             &
-        !$acc           uu_dp_deficitq, vv_dp_deficitq, ww_dp_deficitq,                 &
-        !$acc           u, v, w, wq, hi, dhdx, dhdy, dhdz,              &
-        !$acc           pbq, Hq, source_x, source_y, source_z, cfx, cfy, cfz,           &
-        !$acc           temp1, tau_wind_u, tau_wind_v, tempbot,                          &
-        !$acc           weight, acceleration, weight_dp, weightq,                        &
-        !$acc           one_over_sumuq, one_over_sumvq, one_over_sumwq, k, I, ip, is_dry)  &
-        !$acc   firstprivate(Pstress_l, Pbstress_l, npoin_q_l, npts_l, nlayers_l, cor_fac_l, ape_l)
         do Iq = 1, npoin_q_l
 
             cfx = cor_fac_l*init%coriolis_3d_quad(1,Iq)
@@ -916,10 +980,8 @@ contains
             !  Layer loop 1: interpolate primed state, compute velocities
             !  and momentum-flux tensor entries.
             ! ---------------------------------------------------------------
-            !$acc loop seq
             do k = 1, nlayers_l
                 qp = 0.0
-                !$acc loop seq
                 do ip = 1, npts_l
                     I  = tsp%indexq(ip,Iq)
                     hi = tsp%psih(ip,Iq)
@@ -988,11 +1050,9 @@ contains
             !  Sphere curvature corrections: dh/dx_i += dpsidz * dz/dx_i.
             ! ---------------------------------------------------------------
             gradz(:,1:nlayers_l+1) = 0.0;  pbq = 0.0
-            !$acc loop seq
             do ip = 1, npts_l
                 I = tsp%indexq(ip,Iq)
                 z(nlayers_l+1) = init%zbot_df(I)
-                !$acc loop seq
                 do k = nlayers_l, 1, -1
                     z(k) = z(k+1) + (init%alpha_mlswe(k)/gravity) * &
                            (sqrt(btp%ope2_ave_df(I))*qprime_df(1,I,k))
@@ -1030,7 +1090,6 @@ contains
             ! ---------------------------------------------------------------
             !  Layer loop 2: assemble fluxes and accumulate into global rhs.
             ! ---------------------------------------------------------------
-            !$acc loop seq
             do k = 1, nlayers_l
 
                 ! Distribute deficit to each layer proportionally -- but only
@@ -1112,31 +1171,22 @@ contains
                 ! here — applied once per full timestep by
                 ! bcl_apply_implicit_vertical_viscosity instead.
 
-                !$acc loop seq
                 do ip = 1, npts_l
                     I    = tsp%indexq(ip,Iq)
                     hi   = tsp%psih(ip,Iq)
                     dhdx = tsp%dpsidx(ip,Iq) + tsp%dpsidz_x(ip,Iq)
                     dhdy = tsp%dpsidy(ip,Iq) + tsp%dpsidz_y(ip,Iq)
                     dhdz = tsp%dpsidz(ip,Iq) + tsp%dpsidz_z(ip,Iq)
-                    !$acc atomic update
                     rhs(1,I,k) = rhs(1,I,k) + wq*(dhdx*flux(1,1) + dhdy*flux(2,1) + dhdz*flux(3,1))
-                    !$acc atomic update
                     rhs(2,I,k) = rhs(2,I,k) + wq*(hi*source_x + dhdx*flux(1,2) + dhdy*flux(2,2) + dhdz*flux(3,2))
-                    !$acc atomic update
                     rhs(3,I,k) = rhs(3,I,k) + wq*(hi*source_y + dhdx*flux(1,3) + dhdy*flux(2,3) + dhdz*flux(3,3))
-                    !$acc atomic update
                     rhs(4,I,k) = rhs(4,I,k) + wq*(hi*source_z + dhdx*flux(1,4) + dhdy*flux(2,4) + dhdz*flux(3,4))
                 end do
 
             end do
         end do
-        !$acc end parallel loop
-#endif
 
-        !$acc end data
-
-    end subroutine create_rhs_dynamics_volume_bcl_sphere
+    end subroutine create_rhs_dynamics_volume_bcl_sphere_cpu
 
     subroutine Apply_bcl_fluxes(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
 
@@ -1174,18 +1224,12 @@ contains
         real :: dp_lr(2,inp%nlayers)
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
-        integer :: bd_ifq
-        real :: bd_factor, bd_dry
-
-        bd_factor = inp%bcl_diss_fac
-        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
 
-        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              G%face, G%face_type, G%intma,                                              &
+        !$acc data present(G%face, G%face_type, G%intma,                                              &
         !$acc              mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq,                     &
         !$acc              b%psiq,                                                                     &
         !$acc              init%alpha_mlswe, init%zbot_face,                                          &
@@ -1195,7 +1239,7 @@ contains
         !$acc              qprime_df, rhs)
 
         !$acc parallel loop gang                                                                       &
-        !$acc   private(bd_ifq, alpha_over_g, g_over_alpha,                                                   &
+        !$acc   private(alpha_over_g, g_over_alpha,                                                   &
         !$acc           ql, qr, qbl, qbr,                                                             &
         !$acc           p_face, z_face,                                                               &
         !$acc           p_edge_plus, p_edge_minus, p2l, p2r,                                          &
@@ -1311,29 +1355,7 @@ contains
                     vdp_flux(2,k,iquad) = vv * (vr*dpr)
                 end if
 
-                bd_ifq = (iface-1)*nq_f+iquad
-                if (bd_factor > 0.0) then
-                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                    btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
-                    btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
-                end if
             end do
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    dp_flux(1,k,iquad) = dp_flux(1,k,iquad) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(1,k,iquad) = udp_flux(1,k,iquad) + nxl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(1,k,iquad) = vdp_flux(1,k,iquad) + nxl*btp%bd_penalty(3,k,bd_ifq)
-                    dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(2,k,iquad) = udp_flux(2,k,iquad) + nyl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(2,k,iquad) = vdp_flux(2,k,iquad) + nyl*btp%bd_penalty(3,k,bd_ifq)
-                end do
-            end if
 
             uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,:,iquad))
             uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,:,iquad))
@@ -1536,9 +1558,30 @@ contains
     ! sphere_hex counterpart of Apply_bcl_fluxes: 4-wide (mass,u,v,w) local
     ! face Riemann fluxes with nzl normal and two-sided H_face(1,:,:)/H_face(2,:,:)
     ! interface-elevation correction, mirroring create_btp_fluxes_qdf's structure.
-#ifdef _OPENACC
-    ! GPU version of Apply_bcl_fluxes_sphere; the original CPU version is below (#else).
+    ! Baroclinic face fluxes on the sphere: GPU and CPU versions, chosen by inp%lgpu_kernels.
     subroutine Apply_bcl_fluxes_sphere(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
+
+        implicit none
+
+        type(grid),    intent(in)    :: G
+        type(input),   intent(in)    :: inp
+        type(basis),   intent(in)    :: b
+        type(face_CS), intent(in)    :: mf
+        type(btp_CS),  intent(inout)    :: btp
+        type(bcl_CS),  intent(inout) :: bcl
+        type(initial), intent(in)    :: init
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(inout) :: rhs
+        real, dimension(inp%nvar_bcl, G%npoin, inp%nlayers), intent(in)    :: qprime_df
+
+        if (inp%lgpu_kernels) then
+            call Apply_bcl_fluxes_sphere_gpu(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
+        else
+            call Apply_bcl_fluxes_sphere_cpu(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
+        end if
+
+    end subroutine Apply_bcl_fluxes_sphere
+
+    subroutine Apply_bcl_fluxes_sphere_gpu(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
 
         implicit none
 
@@ -1574,19 +1617,13 @@ contains
         real :: wq, hi, flux_xl, flux_xr, flux_yl, flux_yr, flux_zl, flux_zr, hl, hr
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
-        integer :: bd_ifq
-        real :: bd_factor, bd_dry
-
-        bd_factor = inp%bcl_diss_fac
-        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
         nfq       = nface_f*nq_f
 
-        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              G%face, G%face_type,                                                       &
+        !$acc data present(G%face, G%face_type,                                                       &
         !$acc              mf%face_I, mf%normal_vector_q, mf%jac_faceq,                              &
         !$acc              b%psiq,                                                                     &
         !$acc              init%alpha_mlswe, init%zbot_face,                                          &
@@ -1601,8 +1638,8 @@ contains
 
         ! One thread per (face, quadrature point). Each point is independent:
         ! its contributions are scattered with atomics at the end of the body.
-        !$acc parallel loop gang vector firstprivate(bd_factor, bd_dry)                                 &
-        !$acc   private(bd_ifq, qbl, qbr, ql, qr, pfl, pfr, pfl1, pfr1, iv, s_fdp, s_fu, s_fv, s_fw,                                       &
+        !$acc parallel loop gang vector                                 &
+        !$acc   private(qbl, qbr, ql, qr, pfl, pfr, pfl1, pfr1, iv, s_fdp, s_fu, s_fv, s_fw,                                       &
         !$acc           s_adl, s_adr, s_aul, s_aur, s_avl, s_avr, s_awl, s_awr,                      &
         !$acc           uu_dp_flux_deficit, vv_dp_flux_deficit, ww_dp_flux_deficit, dp_deficit,      &
         !$acc           iface, el, er, k, iquad, ktemp, I, il, jl, ir, jr, kl, kr, n,                &
@@ -1775,36 +1812,7 @@ contains
                     bcl%sf_fw(ifq,3,k) = ww * bcl%sf_mdr(ifq,3,k)
                 end if
 
-                bd_ifq = (iface-1)*nq_f+iquad
-                if (bd_factor > 0.0) then
-                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                    btp%bd_left(2,k,bd_ifq) = bcl%sf_mdl(ifq,1,k); btp%bd_right(2,k,bd_ifq) = bcl%sf_mdr(ifq,1,k)
-                    btp%bd_left(3,k,bd_ifq) = bcl%sf_mdl(ifq,2,k); btp%bd_right(3,k,bd_ifq) = bcl%sf_mdr(ifq,2,k)
-                    btp%bd_left(4,k,bd_ifq) = bcl%sf_mdl(ifq,3,k); btp%bd_right(4,k,bd_ifq) = bcl%sf_mdr(ifq,3,k)
-                end if
             end do
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    bcl%sf_fdp(ifq,1,k) = bcl%sf_fdp(ifq,1,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    bcl%sf_fu(ifq,1,k) = bcl%sf_fu(ifq,1,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
-                    bcl%sf_fv(ifq,1,k) = bcl%sf_fv(ifq,1,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
-                    bcl%sf_fw(ifq,1,k) = bcl%sf_fw(ifq,1,k) + nxl*btp%bd_penalty(4,k,bd_ifq)
-                    bcl%sf_fdp(ifq,2,k) = bcl%sf_fdp(ifq,2,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    bcl%sf_fu(ifq,2,k) = bcl%sf_fu(ifq,2,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
-                    bcl%sf_fv(ifq,2,k) = bcl%sf_fv(ifq,2,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
-                    bcl%sf_fw(ifq,2,k) = bcl%sf_fw(ifq,2,k) + nyl*btp%bd_penalty(4,k,bd_ifq)
-                    bcl%sf_fdp(ifq,3,k) = bcl%sf_fdp(ifq,3,k) + nzl*btp%bd_penalty(1,k,bd_ifq)
-                    bcl%sf_fu(ifq,3,k) = bcl%sf_fu(ifq,3,k) + nzl*btp%bd_penalty(2,k,bd_ifq)
-                    bcl%sf_fv(ifq,3,k) = bcl%sf_fv(ifq,3,k) + nzl*btp%bd_penalty(3,k,bd_ifq)
-                    bcl%sf_fw(ifq,3,k) = bcl%sf_fw(ifq,3,k) + nzl*btp%bd_penalty(4,k,bd_ifq)
-                end do
-            end if
 
             ! Column sums over the layers (ascending k, as the former sum()s).
             s_fdp(1:3) = 0.0;  s_fu(1:3) = 0.0;  s_fv(1:3) = 0.0;  s_fw(1:3) = 0.0
@@ -2055,9 +2063,9 @@ contains
         !$acc end parallel loop
         !$acc end data
 
-    end subroutine Apply_bcl_fluxes_sphere
-#else
-    subroutine Apply_bcl_fluxes_sphere(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
+    end subroutine Apply_bcl_fluxes_sphere_gpu
+
+    subroutine Apply_bcl_fluxes_sphere_cpu(G, inp, b, mf, btp, bcl, init, rhs, qprime_df)
 
         implicit none
 
@@ -2099,46 +2107,13 @@ contains
         real :: dp_lr(2,inp%nlayers)
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
-        integer :: bd_ifq
-        real :: bd_factor, bd_dry
-
-        bd_factor = inp%bcl_diss_fac
-        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
 
-        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              G%face, G%face_type, G%intma,                                              &
-        !$acc              mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq,                     &
-        !$acc              b%psiq,                                                                     &
-        !$acc              init%alpha_mlswe, init%zbot_face,                                          &
-        !$acc              btp%ope_face_ave, btp%uvb_face_ave, btp%ope2_face_ave,                     &
-        !$acc              btp%one_plus_eta_edge_2_ave, btp%H_face_ave,                               &
-        !$acc              btp%btp_mass_flux_face_ave, btp%Qu_face_ave, btp%Qv_face_ave,              &
-        !$acc              btp%Qw_face_ave,                                                           &
-        !$acc              qprime_df, rhs)
-
         ! One thread per (face, quadrature point). Each point is independent:
         ! its contributions are scattered with atomics at the end of the body.
-        !$acc parallel loop gang vector                                                                &
-        !$acc   private(bd_ifq, alpha_over_g, g_over_alpha,                                                   &
-        !$acc           ql, qr, qbl, qbr,                                                             &
-        !$acc           p_face, z_face,                                                               &
-        !$acc           p_edge_plus, p_edge_minus, p2l, p2r,                                          &
-        !$acc           z_edge_plus, z_edge_minus,                                                    &
-        !$acc           H_face, udp_flux, vdp_flux, dp_flux, wdp_flux, dp_lr,                        &
-        !$acc           udpl, udpr, vdpl, vdpr, wdpl, wdpr,                                          &
-        !$acc           uu_dp_flux_deficit, vv_dp_flux_deficit, ww_dp_flux_deficit, dp_deficit,      &
-        !$acc           iface, el, er, k, iquad, ktemp, I, il, jl, ir, jr, kl, kr, n,                &
-        !$acc           nxl, nyl, nzl, wq, hi, uu, vv, ww, un,                                       &
-        !$acc           flux_xl, flux_xr, flux_yl, flux_yr, flux_zl, flux_zr, hl, hr,                &
-        !$acc           dpl, dpr, ul, ur, vl, vr, wl, wr, ope_l, ope_r, one_plus_eta_edge,           &
-        !$acc           weight, acceleration, is_dry_l, is_dry_r,                                     &
-        !$acc           H_r_plus, H_r_minus, z_intersect_top, z_intersect_bot, dz_intersect,          &
-        !$acc           p_intersect_bot, p_intersect_top,                                             &
-        !$acc           H_corr1, p_inc1, H_corr2, p_inc2)
         do ifq = 1, nface_f*nq_f
 
             iface = (ifq - 1)/nq_f + 1
@@ -2149,7 +2124,6 @@ contains
             el = G%face(7,iface)
             er = G%face(8,iface)
 
-            !$acc loop seq
             do k = 1, nlayers_f
                 alpha_over_g(k) = init%alpha_mlswe(k) / gravity
                 g_over_alpha(k) = gravity / init%alpha_mlswe(k)
@@ -2169,10 +2143,8 @@ contains
             nzl = mf%normal_vector_q(3,iquad,1,iface)
 
             ql(:,1:nlayers_f) = 0.0; qr(:,1:nlayers_f) = 0.0
-            !$acc loop seq
             do k = 1, nlayers_f
 
-                !$acc loop seq
                 do n = 1, ngl_f
                     il = mf%imapl(1,n,1,iface)
                     jl = mf%imapl(2,n,1,iface)
@@ -2186,7 +2158,6 @@ contains
                 end do
 
                 if (er > 0) then
-                    !$acc loop seq
                     do n = 1, ngl_f
                         ir = mf%imapr(1,n,1,iface)
                         jr = mf%imapr(2,n,1,iface)
@@ -2306,36 +2277,7 @@ contains
                     wdp_flux(3,k) = ww * wdpr(k)
                 end if
 
-                bd_ifq = (iface-1)*nq_f+iquad
-                if (bd_factor > 0.0) then
-                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                    btp%bd_left(2,k,bd_ifq) = udpl(k); btp%bd_right(2,k,bd_ifq) = udpr(k)
-                    btp%bd_left(3,k,bd_ifq) = vdpl(k); btp%bd_right(3,k,bd_ifq) = vdpr(k)
-                    btp%bd_left(4,k,bd_ifq) = wdpl(k); btp%bd_right(4,k,bd_ifq) = wdpr(k)
-                end if
             end do
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    dp_flux(1,k) = dp_flux(1,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(1,k) = udp_flux(1,k) + nxl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(1,k) = vdp_flux(1,k) + nxl*btp%bd_penalty(3,k,bd_ifq)
-                    wdp_flux(1,k) = wdp_flux(1,k) + nxl*btp%bd_penalty(4,k,bd_ifq)
-                    dp_flux(2,k) = dp_flux(2,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(2,k) = udp_flux(2,k) + nyl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(2,k) = vdp_flux(2,k) + nyl*btp%bd_penalty(3,k,bd_ifq)
-                    wdp_flux(2,k) = wdp_flux(2,k) + nyl*btp%bd_penalty(4,k,bd_ifq)
-                    dp_flux(3,k) = dp_flux(3,k) + nzl*btp%bd_penalty(1,k,bd_ifq)
-                    udp_flux(3,k) = udp_flux(3,k) + nzl*btp%bd_penalty(2,k,bd_ifq)
-                    vdp_flux(3,k) = vdp_flux(3,k) + nzl*btp%bd_penalty(3,k,bd_ifq)
-                    wdp_flux(3,k) = wdp_flux(3,k) + nzl*btp%bd_penalty(4,k,bd_ifq)
-                end do
-            end if
 
             uu_dp_flux_deficit(1) = btp%Qu_face_ave(1,iquad,iface) - sum(udp_flux(1,1:nlayers_f))
             uu_dp_flux_deficit(2) = btp%Qu_face_ave(2,iquad,iface) - sum(udp_flux(2,1:nlayers_f))
@@ -2351,7 +2293,6 @@ contains
             dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,1:nlayers_f))
             dp_deficit(3) = btp%btp_mass_flux_face_ave(3,iquad,iface) - sum(dp_flux(3,1:nlayers_f))
 
-            !$acc loop seq
             do k = 1, nlayers_f
 
                 weight = dp_lr(1,k) / (sum(abs(dp_lr(1,1:nlayers_f))+eps1))
@@ -2391,7 +2332,6 @@ contains
             ope_r = sqrt(btp%ope2_face_ave(2,iquad,iface))
             p_face(1,1) = 0.0
             p_face(2,1) = 0.0
-            !$acc loop seq
             do k = 1, nlayers_f
                 p_face(1,k+1) = p_face(1,k) + ope_l * ql(1,k)
                 p_face(2,k+1) = p_face(2,k) + ope_r * qr(1,k)
@@ -2402,7 +2342,6 @@ contains
             z_face(2,nlayers_f+1)    = init%zbot_face(2,iquad,iface)
             z_edge_plus(nlayers_f+1) = init%zbot_face(1,iquad,iface)
             z_edge_minus(nlayers_f+1)= init%zbot_face(2,iquad,iface)
-            !$acc loop seq
             do k = nlayers_f, 1, -1
                 z_face(1,k)    = z_face(1,k+1)    + alpha_over_g(k) * (ope_l * ql(1,k))
                 z_face(2,k)    = z_face(2,k+1)    + alpha_over_g(k) * (ope_r * qr(1,k))
@@ -2412,19 +2351,16 @@ contains
 
             p_edge_plus(2)  = one_plus_eta_edge * ql(1,1)
             p_edge_minus(2) = one_plus_eta_edge * qr(1,1)
-            !$acc loop seq
             do k = 2, nlayers_f
                 p_edge_plus(k+1)  = p_edge_plus(k)  + one_plus_eta_edge * ql(1,k)
                 p_edge_minus(k+1) = p_edge_minus(k) + one_plus_eta_edge * qr(1,k)
             end do
 
-            !$acc loop seq
             do k = 1, nlayers_f
 
                 H_r_plus = 0.5*init%alpha_mlswe(k)*(p_edge_plus(k+1)**2 - p_edge_plus(k)**2)
 
                 H_r_minus = 0.0
-                !$acc loop seq
                 do ktemp = 1, nlayers_f
                     z_intersect_top = min(z_edge_minus(ktemp),   z_edge_plus(k))
                     z_intersect_bot = max(z_edge_minus(ktemp+1), z_edge_plus(k+1))
@@ -2443,7 +2379,6 @@ contains
                 H_r_minus = 0.5*init%alpha_mlswe(k)*(p_edge_minus(k+1)**2 - p_edge_minus(k)**2)
 
                 H_r_plus = 0.0
-                !$acc loop seq
                 do ktemp = 1, nlayers_f
                     z_intersect_top = min(z_edge_plus(ktemp),   z_edge_minus(k))
                     z_intersect_bot = max(z_edge_plus(ktemp+1), z_edge_minus(k+1))
@@ -2462,7 +2397,6 @@ contains
 
             if(er == -4) then
                 p2l(1:nlayers_f+1) = 0.0; p2r(1:nlayers_f+1) = 0.0
-                !$acc loop seq
                 do k = 1, nlayers_f
                     p2l(k+1) = p_face(1,k+1)
                     H_face(1,k) = 0.5*init%alpha_mlswe(k)*(p2l(k+1)**2 - p2l(k)**2)
@@ -2472,7 +2406,6 @@ contains
             end if
 
             if(er > 0) then
-                !$acc loop seq
                 do k = 1, nlayers_f-1
                     p_inc1  = p_face(1,k+1) + g_over_alpha(k)*(z_face(1,k+1) - z_edge_plus(k+1))
                     H_corr1 = 0.5*init%alpha_mlswe(k)*(p_inc1**2 - p_face(1,k+1)**2)
@@ -2507,7 +2440,6 @@ contains
 
             wq = mf%jac_faceq(iquad,1,iface)
 
-            !$acc loop seq
             do k = 1, nlayers_f
 
                 hl = H_face(1,k)
@@ -2520,49 +2452,36 @@ contains
                 flux_zl = nxl*wdp_flux(1,k) + nyl*wdp_flux(2,k) + nzl*(wdp_flux(3,k) + hl)
                 flux_zr = nxl*wdp_flux(1,k) + nyl*wdp_flux(2,k) + nzl*(wdp_flux(3,k) + hr)
 
-                !$acc loop seq
                 do n = 1, ngl_f
                     hi = b%psiq(n,iquad)
                     il = mf%imapl(1,n,1,iface)
                     jl = mf%imapl(2,n,1,iface)
                     kl = mf%imapl(3,n,1,iface)
                     I  = G%intma(il,jl,kl,el)
-                    !$acc atomic update
                     rhs(1,I,k) = rhs(1,I,k) - wq*hi*(nxl*dp_flux(1,k) + nyl*dp_flux(2,k) + nzl*dp_flux(3,k))
-                    !$acc atomic update
                     rhs(2,I,k) = rhs(2,I,k) - wq*hi*flux_xl
-                    !$acc atomic update
                     rhs(3,I,k) = rhs(3,I,k) - wq*hi*flux_yl
-                    !$acc atomic update
                     rhs(4,I,k) = rhs(4,I,k) - wq*hi*flux_zl
                 end do
 
                 if(er > 0) then
-                    !$acc loop seq
                     do n = 1, ngl_f
                         hi = b%psiq(n,iquad)
                         ir = mf%imapr(1,n,1,iface)
                         jr = mf%imapr(2,n,1,iface)
                         kr = mf%imapr(3,n,1,iface)
                         I  = G%intma(ir,jr,kr,er)
-                        !$acc atomic update
                         rhs(1,I,k) = rhs(1,I,k) + wq*hi*(nxl*dp_flux(1,k) + nyl*dp_flux(2,k) + nzl*dp_flux(3,k))
-                        !$acc atomic update
                         rhs(2,I,k) = rhs(2,I,k) + wq*hi*flux_xr
-                        !$acc atomic update
                         rhs(3,I,k) = rhs(3,I,k) + wq*hi*flux_yr
-                        !$acc atomic update
                         rhs(4,I,k) = rhs(4,I,k) + wq*hi*flux_zr
                     end do
                 end if
             end do
 
         end do  ! ifq
-        !$acc end parallel loop
-        !$acc end data
 
-    end subroutine Apply_bcl_fluxes_sphere
-#endif
+    end subroutine Apply_bcl_fluxes_sphere_cpu
 
     subroutine create_layers_volume_mass(G, inp, b, btp, bcl, init, tsp, dp_advec, qprime_df)
 
@@ -2671,11 +2590,6 @@ contains
         real :: flux_u, flux_v
         integer :: ngl_f, nq_f, nlayers_f, nface_f
 
-        integer :: bd_ifq
-        real :: bd_factor, bd_dry
-
-        bd_factor = inp%bcl_diss_fac
-        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
@@ -2683,18 +2597,17 @@ contains
 
         bcl%sum_layer_mass_flux_face = 0.0
 
-        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              G%face, G%face_type, G%intma,                          &
+        !$acc data present(G%face, G%face_type, G%intma,                          &
         !$acc               mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq, &
         !$acc               b%psiq, init%alpha_mlswe, btp%ope_face_ave, btp%uvb_face_ave,           &
         !$acc               btp%btp_mass_flux_face_ave, qprime_df, dp_advec)
 
         !$acc parallel loop gang                                                  &
-        !$acc   private(bd_ifq, flux_edge_u, flux_edge_v, flux_dp, dp_lr, ql, qr, qbl, qbr, &
+        !$acc   private(flux_edge_u, flux_edge_v, flux_dp, dp_lr, ql, qr, qbl, qbr, &
         !$acc           el, er, k, iquad, il, jl, ir, jr, I, kl, kr, n,            &
         !$acc           wq, nxl, nyl, hi, dpl, dpr, uu, vv, flux, un,              &
         !$acc           ul, ur, vl, vr, weight, dp_deficit, flux_u, flux_v)        &
-        !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nface_f)
+        !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nface_f)
         do iface = 1, nface_f
 
             if (G%face_type(iface) == 2) cycle
@@ -2782,23 +2695,7 @@ contains
 
                 flux_dp(iquad,k) = nxl*flux_edge_u(iquad,k) + nyl*flux_edge_v(iquad,k)
 
-                bd_ifq = (iface-1)*nq_f+iquad
-                if (bd_factor > 0.0) then
-                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                end if
             end do
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    flux_edge_u(iquad,k) = flux_edge_u(iquad,k) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    flux_edge_v(iquad,k) = flux_edge_v(iquad,k) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                end do
-            end if
 
             dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(flux_edge_u(iquad,:))
             dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(flux_edge_v(iquad,:))
@@ -3007,31 +2904,25 @@ contains
         integer :: ngl_f, nq_f, nlayers_f, nface_f
         real    :: dry_cutoff_l
 
-        integer :: bd_ifq
-        real :: bd_factor, bd_dry
-
-        bd_factor = inp%bcl_diss_fac
-        bd_dry = inp%dry_cutoff
         ngl_f     = b%ngl
         nq_f      = b%nq
         nlayers_f = inp%nlayers
         nface_f   = G%nface
         dry_cutoff_l = inp%dry_cutoff
 
-        !$acc data present(btp%bd_left, btp%bd_right, btp%bd_penalty, &
-        !$acc              G%face, G%face_type, G%intma,                          &
+        !$acc data present(G%face, G%face_type, G%intma,                          &
         !$acc               mf%imapl, mf%imapr, mf%normal_vector_q, mf%jac_faceq, &
         !$acc               b%psiq, init%alpha_mlswe, btp%ope_face_ave,           &
         !$acc               btp%uvb_face_ave, btp%btp_mass_flux_face_ave,         &
         !$acc               qprime_df, dp_advec)
 
         !$acc parallel loop gang                                                  &
-        !$acc   private(bd_ifq, dp_flux, dp_lr, ql, qr, qbl, qbr, g_over_alpha,           &
+        !$acc   private(dp_flux, dp_lr, ql, qr, qbl, qbr, g_over_alpha,           &
         !$acc           el, er, k, iquad, il, jl, ir, jr, I, kl, kr, n,           &
         !$acc           wq, nxl, nyl, nzl, hi, dpl, dpr, uu, vv, ww, un,          &
         !$acc           ul, ur, vl, vr, wl, wr, dp_deficit, weight,               &
         !$acc           is_dry_l, is_dry_r)                                       &
-        !$acc   firstprivate(bd_factor, bd_dry, ngl_f, nq_f, nlayers_f, nface_f, dry_cutoff_l)
+        !$acc   firstprivate(ngl_f, nq_f, nlayers_f, nface_f, dry_cutoff_l)
         do iface = 1, nface_f
 
             if (G%face_type(iface) == 2) cycle
@@ -3145,24 +3036,7 @@ contains
                     dp_flux(3,k,iquad) = ww * dpr
                 end if
 
-                bd_ifq = (iface-1)*nq_f+iquad
-                if (bd_factor > 0.0) then
-                    btp%bd_left(:,k,bd_ifq) = 0.0; btp%bd_right(:,k,bd_ifq) = 0.0
-                    btp%bd_left(1,k,bd_ifq) = dpl; btp%bd_right(1,k,bd_ifq) = dpr
-                end if
             end do
-
-            ! Internal-wave penalty; column reconciliation follows below.
-            if (bd_factor > 0.0) then
-                call internal_wave_penalty(nlayers_f, init%alpha_mlswe, btp%bd_left(:,:,bd_ifq), btp%bd_right(:,:,bd_ifq), &
-                                           bd_factor, bd_dry, gravity, btp%bd_penalty(:,:,bd_ifq))
-                !$acc loop seq
-                do k = 1, nlayers_f
-                    dp_flux(1,k,iquad) = dp_flux(1,k,iquad) + nxl*btp%bd_penalty(1,k,bd_ifq)
-                    dp_flux(2,k,iquad) = dp_flux(2,k,iquad) + nyl*btp%bd_penalty(1,k,bd_ifq)
-                    dp_flux(3,k,iquad) = dp_flux(3,k,iquad) + nzl*btp%bd_penalty(1,k,bd_ifq)
-                end do
-            end if
 
             dp_deficit(1) = btp%btp_mass_flux_face_ave(1,iquad,iface) - sum(dp_flux(1,:,iquad))
             dp_deficit(2) = btp%btp_mass_flux_face_ave(2,iquad,iface) - sum(dp_flux(2,:,iquad))
