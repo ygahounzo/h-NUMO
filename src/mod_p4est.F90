@@ -347,6 +347,7 @@ contains
 
     G%is_sphere = (is_sphere_geometry(inp%geometry_type) .or. &
                    trim(inp%geometry_type) == 'sphere_lonlat')
+    G%lradial_normal = G%is_sphere .and. inp%lradial_sphere_normal
 
     !adjust coordinates based on geometry type
     if (trim(inp%geometry_type) /= 'cartesian' .and. &

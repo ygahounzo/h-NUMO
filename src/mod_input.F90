@@ -165,6 +165,7 @@ module mod_input
       logical :: lsector_mesh_external
       logical :: lico_mesh_external
       logical :: lgpu_kernels      ! run the GPU routines (*_gpu); always true in OpenACC builds
+      logical :: lradial_sphere_normal ! sphere: metric/normal zeta = exact radial direction
       logical :: lread_bc
       logical :: lserial_grid_creation
       logical :: lparallel_grid_creation
@@ -379,6 +380,7 @@ module mod_input
       logical :: lgrid_only     = .false.
       logical :: lico_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_ico
       logical :: lgpu_kernels = .false.       ! run the *_gpu routines on the host (testing); forced on in OpenACC builds
+      logical :: lradial_sphere_normal = .false. ! sphere: zeta = radial direction, so face normals match across faces
       logical :: lsector_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_sector
       logical :: lread_external_grid = .false.
       logical :: lread_bc       = .false.
@@ -469,7 +471,7 @@ module mod_input
          dg_integ_exact, dump_data, lcheck_conserved, ienergy_runtime, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, c_APE, h_cutoff1, h_cutoff2, &
          bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, rho_layers, &
-         C_smag, lwrite_vorticity, lgpu_kernels
+         C_smag, lwrite_vorticity, lgpu_kernels, lradial_sphere_normal
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -758,6 +760,7 @@ module mod_input
       lgpu_kernels = .true.
 #endif
       inp%lgpu_kernels                   = lgpu_kernels
+      inp%lradial_sphere_normal          = lradial_sphere_normal
       inp%lico_mesh_external             = lico_mesh_external
       if(lico_mesh_external.and.trim(geometry_type)/="sphere_ico") &
          error stop "lico_mesh_external requires sphere_ico"

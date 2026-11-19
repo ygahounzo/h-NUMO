@@ -69,6 +69,7 @@ subroutine write_parameter_doc(gg, inp, b, numproc)
    write(fu,'(a,es14.6,t55,a)') 'DT_BTP = ',          inp%dt_btp,         '! [s] barotropic time step'
    write(fu,'(a,a,t55,a)')      'TI_METHOD_BTP = "',  trim(inp%ti_method_btp)//'"',  '! barotropic time integration method'
    write(fu,'(a,a,t55,a)')      'BCL_TIME_METHOD = "',trim(inp%bcl_time_method)//'"', '! baroclinic time integration method'
+   write(fu,'(a,l1,t55,a)')     'LRADIAL_SPHERE_NORMAL = ', inp%lradial_sphere_normal, '! sphere: metric/normal zeta = exact radial direction'
    write(fu,'(a,i0,t55,a)')     'KSTAGES_BTP = ',     inp%kstages,        '! barotropic RK stages'
    write(fu,'(a,i0,t55,a)')     'KSTAGES_BCL = ',     inp%kstages_bcl,    '! baroclinic RK stages'
    write(fu,'(a,l1,t55,a)')     'RK_BCL_FS = ',            inp%rk_bcl_FS,            '! baroclinic free-surface coupling flag'

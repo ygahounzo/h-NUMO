@@ -31,6 +31,7 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
 
     real xj
     real xn, yn, zn, rnorm   ! surface normal (cross product) for nqz==1 case
+    integer rn, rm
     integer ie, i, j, k
     integer ip, ndim
 
@@ -102,6 +103,23 @@ subroutine metrics_quad(ksiq_x,ksiq_y,ksiq_z,etaq_x,etaq_y,etaq_z,zetaq_x,zetaq_
                             z_zetaq(i,j,k) = zn / rnorm
                         else
                             x_zetaq(i,j,k) = 0.0; y_zetaq(i,j,k) = 0.0; z_zetaq(i,j,k) = 1.0
+                        end if
+                        ! lradial_sphere_normal: zeta = exact radial direction (position interpolated
+                        ! to the quadrature point), as in numa_bonev_tsunami. Shared by both elements
+                        ! of a face, so face normals are equal and opposite across local and MPI faces.
+                        if (G%lradial_normal) then
+                            xn = 0.0; yn = 0.0; zn = 0.0
+                            do rm = 1, b%ngly
+                                do rn = 1, b%nglx
+                                    xn = xn + b%psiqx(rn,i)*b%psiqy(rm,j)*x(rn,rm,1)
+                                    yn = yn + b%psiqx(rn,i)*b%psiqy(rm,j)*y(rn,rm,1)
+                                    zn = zn + b%psiqx(rn,i)*b%psiqy(rm,j)*z(rn,rm,1)
+                                end do
+                            end do
+                            rnorm = sqrt(xn*xn + yn*yn + zn*zn)
+                            x_zetaq(i,j,k) = xn / rnorm
+                            y_zetaq(i,j,k) = yn / rnorm
+                            z_zetaq(i,j,k) = zn / rnorm
                         end if
                     endif
               

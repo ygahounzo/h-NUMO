@@ -49,6 +49,7 @@ module mod_grid
         integer :: npoin_q = 0
         logical :: do_1dIMEX = .false.
         logical :: is_sphere  = .false.
+        logical :: lradial_normal = .false. ! sphere: zeta = exact radial direction (lradial_sphere_normal)
         integer, dimension(12)  :: edge_limit = 0
         integer, dimension(2,6) :: face_limit = 0
     end type grid

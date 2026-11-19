@@ -102,6 +102,15 @@ subroutine create_normals(nv,jac_face,face,nface, b, G)
                             else
                                 x_zeta(i,j,k) = 0.0; y_zeta(i,j,k) = 0.0; z_zeta(i,j,k) = 1.0
                             end if
+                            ! lradial_sphere_normal: zeta = exact radial direction (node position), as in
+                            ! numa_bonev_tsunami. Shared by both elements of a face, so face normals are
+                            ! equal and opposite across local and MPI faces.
+                            if (G%lradial_normal) then
+                                rnorm = sqrt(x(i,j,k)**2 + y(i,j,k)**2 + z(i,j,k)**2)
+                                x_zeta(i,j,k) = x(i,j,k) / rnorm
+                                y_zeta(i,j,k) = y(i,j,k) / rnorm
+                                z_zeta(i,j,k) = z(i,j,k) / rnorm
+                            end if
                         endif
                     enddo
                 enddo
