@@ -166,6 +166,8 @@ module mod_input
       logical :: lico_mesh_external
       logical :: lgpu_kernels      ! run the GPU routines (*_gpu); always true in OpenACC builds
       logical :: lradial_sphere_normal ! sphere: metric/normal zeta = exact radial direction
+      logical :: btp_collocation   ! barotropic RHS by GLL collocation + eta_cor column correction (CPU prototype)
+      logical :: btp_colloc_diag     ! measure and report |p_b - sum dp_k|/p_b (any btp scheme)
       logical :: lread_bc
       logical :: lserial_grid_creation
       logical :: lparallel_grid_creation
@@ -381,6 +383,8 @@ module mod_input
       logical :: lico_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_ico
       logical :: lgpu_kernels = .false.       ! run the *_gpu routines on the host (testing); forced on in OpenACC builds
       logical :: lradial_sphere_normal = .false. ! sphere: zeta = radial direction, so face normals match across faces
+      logical :: btp_collocation = .false.       ! barotropic RHS at the GLL nodes (mod_btp_colloc, CPU prototype)
+      logical :: btp_colloc_diag = .false.       ! measure and report |p_b - sum dp_k|/p_b (any btp scheme)
       logical :: lsector_mesh_external = .false. ! preserve supplied EXTERNAL_MESH.inp for sphere_sector
       logical :: lread_external_grid = .false.
       logical :: lread_bc       = .false.
@@ -471,7 +475,7 @@ module mod_input
          dg_integ_exact, dump_data, lcheck_conserved, ienergy_runtime, adjust_bcl_mom_flux, &
          f0, beta, dry_cutoff, c_APE, h_cutoff1, h_cutoff2, &
          bcl_time_method, rk_bcl_FS, implicit_coriolis_sph, rho_layers, &
-         C_smag, lwrite_vorticity, lgpu_kernels, lradial_sphere_normal
+         C_smag, lwrite_vorticity, lgpu_kernels, lradial_sphere_normal, btp_collocation, btp_colloc_diag
  
      namelist /gridnl/ nelx, nely, nelz, nopx, nopy, nopz, xdims, ydims, ztop, zbottom, &
          geometry_type, &
@@ -761,6 +765,8 @@ module mod_input
 #endif
       inp%lgpu_kernels                   = lgpu_kernels
       inp%lradial_sphere_normal          = lradial_sphere_normal
+      inp%btp_collocation                = btp_collocation
+      inp%btp_colloc_diag                = btp_colloc_diag
       inp%lico_mesh_external             = lico_mesh_external
       if(lico_mesh_external.and.trim(geometry_type)/="sphere_ico") &
          error stop "lico_mesh_external requires sphere_ico"

@@ -25,6 +25,7 @@ module mod_time_loop
     use mod_openacc_utilities, only: openacc_initialize, openacc_enter_data
     use mod_initial_mlswe,    only: bcl_itime
     use mod_bcl_filter,       only: bcl_filter_init, bcl_filter_apply, bcl_filter_report
+    use mod_btp_colloc,       only: btp_colloc_check, btp_colloc_report
     use mod_ape,              only: ape_init, ape_energy
 
     implicit none
@@ -84,6 +85,9 @@ contains
         real, dimension(3, G%npoin)              :: qb_df_read
 
         call mpi_comm_rank(mpi_comm_world, irank, ierr)
+
+        ! Stop before any output if btp_collocation is combined with unsupported options
+        call btp_colloc_check(inp)
 
         ! Setup Number of Time-steps
         time  = 0
@@ -272,6 +276,9 @@ contains
             else
               call ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, bcl%q_df, btp%qb_df)
             endif
+
+            ! Diagnostic: largest layer/column mismatch since the last report.
+            if (inp%btp_colloc_diag .and. mod(itime, irestart) == 0) call btp_colloc_report(inp, itime)
 
             ! Optional modal filter of the layer and barotropic states.
             if (inp%ifilter > 0) then

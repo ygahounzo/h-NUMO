@@ -21,6 +21,7 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   use mod_tensor,            only: tensor_CS
   use mod_variables,         only: bcl_CS, btp_CS
   use mod_splitting,         only: create_rhs_bcl
+  use mod_btp_colloc,        only: btp_colloc_set_etacor, btp_colloc_measure
   use mod_rk_mlswe,          only: ti_barotropic_ssprk_mlswe
   use mod_barotropic_terms,  only: btp_bcl_coeffs_qdf
   use mod_ape,               only: ape_stage
@@ -67,6 +68,10 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
   bcl%q0_df = q_df
   !$acc end kernels
 
+  ! Collocated BTP with eta_cor (MOM6 bt_mass_source): mismatch sum_k dp_k - p_b at the
+  ! start of the step becomes a constant BTP mass source over this step's sub-cycles.
+  if (inp%btp_collocation) call btp_colloc_set_etacor(G, inp, mt, btp, q_df, qb_df)
+
   do ik = 1, 3
 
     dtt = inp%dt * lsrk3_beta(ik)
@@ -74,7 +79,10 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
     ! GPU: compute baroclinic primed variables from the current stage state.
     call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, q_df, qb_df)
     ! GPU: compute bcl/btp coefficient arrays (fused single kernel).
-    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+    ! Not needed with the collocated BTP (btp_colloc_begin builds its nodal
+    ! coefficients), except for the viscosity, which still uses them.
+    if (.not. inp%btp_collocation .or. inp%method_visc > 0) &
+      call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
     ! Chen APE force (c_APE > 0) from the stage state, shared by the BTP subcycle and the BCL rhs.
     call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, q_df)
 
@@ -111,6 +119,9 @@ subroutine ti_lsrk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, 
       end do
     end do
     !$acc end parallel loop
+
+    ! Diagnostic: layer/column mismatch |p_b - sum_k dp_k| / p_b.
+    if (inp%btp_colloc_diag) call btp_colloc_measure(G, inp, q_df, qb_df)
 
     ! Semi-implicit Coriolis rotation (flat always; sphere only when
     ! implicit_coriolis_sph, else Coriolis is explicit in the volume RHS). Applies

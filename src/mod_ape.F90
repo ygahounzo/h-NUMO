@@ -29,6 +29,10 @@
 !> = barotropic forcing exactly and the layer/barotropic momentum
 !> consistency is unaffected.
 !>
+!> With the collocated barotropic solver (btp_collocation) the same column sum
+!> is also stored at the DG nodes (ape_force_btp_df), from the nodal dp_k and
+!> G_L,j, and added by the collocated barotropic volume kernel.
+!>
 !> All kernels run on the device; MPI faces use their own GPU-direct
 !> exchange (same face list and message layout as the bcl Laplacian).
 !-----------------------------------------------------------------------
@@ -45,11 +49,12 @@ module mod_ape
     implicit none
 
     private
-    public :: ape_init, ape_stage, ape_energy, ape_on, ape_force, ape_force_btp
+    public :: ape_init, ape_stage, ape_energy, ape_on, ape_force, ape_force_btp, ape_force_btp_df
 
     logical :: ape_on = .false.
     real, allocatable :: ape_force(:,:,:)     ! layer force at quad points (3,npoin_q,nlayers)
     real, allocatable :: ape_force_btp(:,:)   ! its column sum (3,npoin_q)
+    real, allocatable :: ape_force_btp_df(:,:) ! column sum at the DG nodes (3,npoin), collocated BTP only
 
     integer :: nint = 0                       ! interior interfaces (nlayers-1)
     real, allocatable :: zf(:,:)              ! z_{j+1} at DG nodes (npoin,nint)
@@ -83,8 +88,8 @@ contains
 
         if (.not. ape_on) then
             ! Placeholders so the rhs kernels can name them in present clauses.
-            allocate(ape_force(3,1,1), ape_force_btp(3,1))
-            ape_force = 0.0;  ape_force_btp = 0.0
+            allocate(ape_force(3,1,1), ape_force_btp(3,1), ape_force_btp_df(3,1))
+            ape_force = 0.0;  ape_force_btp = 0.0;  ape_force_btp_df = 0.0
             !$acc enter data copyin(ape_force, ape_force_btp)
             return
         end if
@@ -98,6 +103,14 @@ contains
             drho(j) = 1.0/alpha_mlswe(j+1) - 1.0/alpha_mlswe(j)
         end do
         ape_force = 0.0;  ape_force_btp = 0.0
+
+        ! Nodal column sum for the collocated barotropic solver (CPU only)
+        if (inp%btp_collocation) then
+            allocate(ape_force_btp_df(3,G%npoin))
+        else
+            allocate(ape_force_btp_df(3,1))
+        end if
+        ape_force_btp_df = 0.0
 
         !$acc enter data copyin(ape_force, ape_force_btp, drho) create(zf, qf, lf, gf, sbuf, rbuf)
 
@@ -187,6 +200,37 @@ contains
         end do
         end do
         !$acc end parallel loop
+
+        ! Collocated barotropic solver: the same column sum at the DG nodes,
+        ! from the nodal dp_k and G_L,j (no interpolation)
+        if (inp%btp_collocation) then
+            do I = 1, G%npoin
+
+                ax = 0.0
+                ay = 0.0
+                az = 0.0
+                sx = 0.0
+                sy = 0.0
+                sz = 0.0
+
+                do k = 1, nlayers_l
+                    dp = q_df(1,I,k)
+                    sx = sx + c_g*alpha_mlswe(k)*dp*ax
+                    sy = sy + c_g*alpha_mlswe(k)*dp*ay
+                    sz = sz + c_g*alpha_mlswe(k)*dp*az
+                    if (k < nlayers_l) then
+                        ax = ax + drho(k)*gf(1,I,k)
+                        ay = ay + drho(k)*gf(2,I,k)
+                        az = az + drho(k)*gf(3,I,k)
+                    end if
+                end do
+
+                ape_force_btp_df(1,I) = sx
+                ape_force_btp_df(2,I) = sy
+                ape_force_btp_df(3,I) = sz
+
+            end do
+        end if
 
     end subroutine ape_stage
 

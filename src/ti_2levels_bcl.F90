@@ -26,6 +26,7 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    use mod_layer_terms,      only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
    use mod_create_rhs_mlswe, only: layer_mass_rhs, bcl_apply_implicit_vertical_viscosity
    use mod_initial_mlswe,    only: check_layer_thickness, poslimiter
+   use mod_btp_colloc,       only: btp_colloc_set_etacor, btp_colloc_measure
 
    implicit none
 
@@ -71,13 +72,19 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    bcl%qbp_df = qb_df
    !$acc end kernels
 
+   ! Collocated BTP with eta_cor: mismatch sum_k dp_k - p_b at the start of the step
+   ! becomes a constant BTP mass source for the predictor and corrector sub-cycles.
+   if (inp%btp_collocation) call btp_colloc_set_etacor(G, inp, mt, btp, q_df, qb_df)
+
    call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, q_df, bcl%qbp_df)
 
    !$acc kernels present(qprime_df_n, bcl%qprime_df)
    qprime_df_n = bcl%qprime_df
    !$acc end kernels
 
-   call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+   ! Not needed with the collocated BTP, except for the viscosity
+   if (.not. inp%btp_collocation .or. inp%method_visc > 0) &
+      call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
    ! Chen APE force (c_APE > 0): predictor from q^n, corrector from the predicted state.
    call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, q_df)
 
@@ -158,7 +165,9 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    bcl%qprime_df = 0.5*(qprime_df_pred + bcl%qprime_df)
    !$acc end kernels
 
-   call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+   ! Not needed with the collocated BTP, except for the viscosity
+   if (.not. inp%btp_collocation .or. inp%method_visc > 0) &
+      call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
    call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, q_df_pred)
    call ti_barotropic_ssprk_mlswe(G, inp, b, mf, par, init, ref, mpic, mt, tsp, btp, qb_df, bcl%qprime_df, inp%dt_btp)
 
@@ -181,6 +190,9 @@ subroutine ti_2levels_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt
    q_df(1,:,:)=q_df_temp(1,:,:)
    !$acc end kernels
    call check_layer_thickness(b, G, inp, q_df, 'ti_2levels_bcl', 0)
+
+   ! Diagnostic: layer/column mismatch |p_b - sum_k dp_k| / p_b.
+   if (inp%btp_colloc_diag) call btp_colloc_measure(G, inp, q_df, qb_df)
 
    ! One thread per node (sequential over layers): a k-outer "kernels"
    ! region would put one gang per layer.

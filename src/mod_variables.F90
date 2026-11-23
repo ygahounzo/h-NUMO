@@ -62,6 +62,26 @@ module mod_variables
       real, dimension(:,:),     allocatable :: bcl_btp_flux  ! (nvar_bcl,npoin_q) bottom-layer (dp,u*dp,v*dp[,w*dp])
       real, dimension(:),       allocatable :: pbq           ! (npoin_q) background pressure
 
+      ! Collocated BTP (btp_collocation, mod_btp_colloc): nodal (_df, npoin) counterparts
+      ! of bcl_* and of the volume time averages, and face-node (ngl,nface) counterparts
+      ! of the *_face_ave. Allocated only when btp_collocation is on. The nodal
+      ! (1+eta)^2 and velocity averages are ope2_ave_df and uvb_ave_df above.
+      real, dimension(:),       allocatable :: bcl_H_df, ope_ave_df                          ! (npoin)
+      real, dimension(:,:,:),   allocatable :: bcl_flux_df                                  ! (n,n,npoin)
+      real, dimension(:,:),     allocatable :: bcl_btp_flux_df                              ! (nvar_bcl,npoin)
+      real, dimension(:,:),     allocatable :: Qu_ave_df, Qv_ave_df, Qw_ave_df              ! (nvar_btp-2,npoin)
+      real, dimension(:,:),     allocatable :: tau_bot_ave_df, btp_mass_flux_ave_df         ! (nvar_btp-2,npoin)
+      real, dimension(:,:,:),   allocatable :: btp_mass_flux_face_ave_df                    ! (nvar_btp-2,ngl,nface)
+      real, dimension(:,:,:),   allocatable :: Qu_face_ave_df, Qv_face_ave_df, Qw_face_ave_df ! (nvar_btp-2,ngl,nface)
+      real, dimension(:,:,:),   allocatable :: ope_face_ave_df, ope2_face_ave_df            ! (2,ngl,nface)
+      real, dimension(:,:),     allocatable :: one_plus_eta_edge_2_ave_df                   ! (ngl,nface)
+      real, dimension(:,:,:,:), allocatable :: uvb_face_ave_df                              ! (nvar_btp-2,2,ngl,nface)
+      real, dimension(:),       allocatable :: etacor_src_df       ! (npoin) eta_cor BTP mass source, before M^-1
+      ! Split-form (well-balanced) pressure: interface pressures A_2..A_{L+1} and beta_m/2
+      real, dimension(:,:),     allocatable :: bcl_A_df             ! (nlayers,npoin)
+      real, dimension(:),       allocatable :: bcl_beta             ! (nlayers)
+      real, dimension(:,:,:,:), allocatable :: bcl_A_face_df        ! (nlayers,2,ngl,nface) A_m left/right at face nodes
+
       ! Weighted flux/source coefficients of the BTP volume integral at each quad
       ! point, written and read within create_rhs_btp_volume_qdf_qp_gpu.
       ! F_vol(Iq,r,j): equation row r (mass, u, v, w); coefficient of j = 1 psi,
@@ -182,6 +202,15 @@ contains
             btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
             btp%pbq)
       end if
+      if (allocated(btp%bcl_H_df)) then
+         deallocate(btp%bcl_H_df, btp%bcl_flux_df, btp%bcl_btp_flux_df,                     &
+            btp%Qu_ave_df, btp%Qv_ave_df, btp%Qw_ave_df, btp%tau_bot_ave_df,  &
+            btp%ope_ave_df, btp%btp_mass_flux_ave_df,                                       &
+            btp%btp_mass_flux_face_ave_df, btp%Qu_face_ave_df,           &
+            btp%Qv_face_ave_df, btp%Qw_face_ave_df, btp%ope_face_ave_df,                    &
+            btp%ope2_face_ave_df, btp%one_plus_eta_edge_2_ave_df, btp%uvb_face_ave_df,      &
+            btp%etacor_src_df, btp%bcl_A_df, btp%bcl_beta, btp%bcl_A_face_df)
+      end if
 
       ! 1-D volume arrays
       allocate(                                                               &
@@ -251,6 +280,33 @@ contains
          btp%pbq(G%npoin_q),                                                &
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp bcl precomp)"
+
+      ! Collocated BTP (mod_btp_colloc): nodal and face-node arrays, only when used.
+      if (inp%btp_collocation) then
+         allocate(                                                                     &
+            btp%bcl_H_df(G%npoin),                                                     &
+            btp%bcl_flux_df(inp%nvar_btp-2,inp%nvar_btp-2,G%npoin),                    &
+            btp%bcl_btp_flux_df(inp%nvar_bcl,G%npoin),                                 &
+            btp%ope_ave_df(G%npoin),                            &
+            btp%Qu_ave_df(inp%nvar_btp-2,G%npoin), btp%Qv_ave_df(inp%nvar_btp-2,G%npoin), &
+            btp%Qw_ave_df(inp%nvar_btp-2,G%npoin),                                     &
+            btp%tau_bot_ave_df(inp%nvar_btp-2,G%npoin),                                &
+            btp%btp_mass_flux_ave_df(inp%nvar_btp-2,G%npoin),                          &
+            btp%btp_mass_flux_face_ave_df(inp%nvar_btp-2,b%ngl,G%nface),               &
+            btp%Qu_face_ave_df(inp%nvar_btp-2,b%ngl,G%nface),                          &
+            btp%Qv_face_ave_df(inp%nvar_btp-2,b%ngl,G%nface),                          &
+            btp%Qw_face_ave_df(inp%nvar_btp-2,b%ngl,G%nface),                          &
+            btp%ope_face_ave_df(2,b%ngl,G%nface), btp%ope2_face_ave_df(2,b%ngl,G%nface), &
+            btp%one_plus_eta_edge_2_ave_df(b%ngl,G%nface),                             &
+            btp%uvb_face_ave_df(inp%nvar_btp-2,2,b%ngl,G%nface),                       &
+            btp%etacor_src_df(G%npoin),                                                &
+            btp%bcl_A_df(inp%nlayers,G%npoin), btp%bcl_beta(inp%nlayers),              &
+            btp%bcl_A_face_df(inp%nlayers,2,b%ngl,G%nface),                            &
+            stat=stat)
+         btp%etacor_src_df = 0.0
+         btp%bcl_A_face_df = 0.0
+         if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp collocation)"
+      end if
 
       ! =========================================================
       !  bcl_CS

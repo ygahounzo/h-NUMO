@@ -32,6 +32,7 @@ contains
       use mod_tensor,            only: tensor_CS
       use mod_rhs_btp,           only: create_rhs_btp
       use mod_barotropic_terms,  only: btp_mom_boundary_df
+      use mod_btp_colloc,        only: btp_colloc_begin, create_rhs_btp_colloc, btp_colloc_to_quad
       use mod_laplacian_quad,    only: btp_create_laplacian
 
       implicit none
@@ -53,7 +54,7 @@ contains
       real,                                               intent(in)    :: dt_btp_in
 
       integer :: mstep, ik, I, iv, nvarb_f
-      real    :: N_inv, a0, a1, a2, dtt, visc_term, inv_qb1
+      real    :: N_inv, a0, a1, a2, dtt, visc_term, inv_qb1, wst_l
 
       nvarb_f = inp%nvar_btp
 
@@ -88,6 +89,9 @@ contains
       btp%rhs_btp_visc            = 0.0;  btp%nu_smag             = 0.0
       !$acc end kernels
 
+      ! Collocated BTP (CPU): reset the nodal accumulators, build the layer coefficients
+      if (inp%btp_collocation) call btp_colloc_begin(G, inp, b, init, btp, qprime_df)
+
       ! Time loop for the barotropic solver, with SSPRK time integration.
       do mstep = 1, init%N_btp
 
@@ -101,9 +105,17 @@ contains
             a1  = init%ssprk_a(ik,2)
             a2  = init%ssprk_a(ik,3)
             dtt = dt_btp_in * init%ssprk_beta(ik)
+            ! Stage weight of the averages: 1 (equal weights) unless collocated BTP.
+            wst_l = 1.0
+            if (inp%btp_collocation) wst_l = real(inp%kstages) * init%ssprk_w(ik)
 
+            if (inp%btp_collocation) then
+               call create_rhs_btp_colloc(G, inp, b, mf, par, btp, init, ref, mpic, tsp, mt, ik, &
+                  btp%rhs_btp, qb_df, qprime_df)
+            else
             call create_rhs_btp(G, inp, b, mf, par, btp, init, ref, mpic, mt, tsp, &
                btp%rhs_btp, qb_df, qprime_df)
+            end if
 
             if (inp%method_visc > 0) then
                !$acc wait(1)
@@ -114,9 +126,9 @@ contains
             !$acc parallel loop async(1) present(btp%qb0_df, btp%qb2_df, btp%rhs_btp_visc,        &
             !$acc                        btp%ope2_ave_df, btp%uvb_ave_df, btp%rhs_btp,   &
             !$acc                        init%pbprime_df, mt%massinv, qb_df)             &
-            !$acc    private(iv, visc_term, inv_qb1) firstprivate(a0, a1, a2, dtt, nvarb_f)
+            !$acc    private(iv, visc_term, inv_qb1) firstprivate(a0, a1, a2, dtt, nvarb_f, wst_l)
             do I = 1, G%npoin
-               btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + (1.0 + qb_df(2,I)/init%pbprime_df(I))**2
+               btp%ope2_ave_df(I) = btp%ope2_ave_df(I) + wst_l*(1.0 + qb_df(2,I)/init%pbprime_df(I))**2
 
                ! Momentum components: u,v[,w] -> uvb_ave_df(1..nvarb_f-2), rhs_btp(2..nvarb_f-1),
                ! rhs_btp_visc(1..nvarb_f-2) (one viscosity row per momentum component).
@@ -125,7 +137,7 @@ contains
                inv_qb1 = 1.0 / qb_df(1,I)
                !$acc loop seq
                do iv = 3, nvarb_f
-                  btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + qb_df(iv,I) * inv_qb1
+                  btp%uvb_ave_df(iv-2,I) = btp%uvb_ave_df(iv-2,I) + wst_l*(qb_df(iv,I) * inv_qb1)
                   visc_term = btp%rhs_btp_visc(iv-2,I)
                   qb_df(iv,I) = a0*btp%qb0_df(iv,I) + a1*qb_df(iv,I) + a2*btp%qb2_df(iv,I) &
                                + dtt * (mt%massinv(I) * (btp%rhs_btp(iv-1,I) + visc_term))
@@ -153,6 +165,9 @@ contains
       !$acc kernels async(1) present(btp%tau_wind_ave, init%tau_wind)
       btp%tau_wind_ave = init%tau_wind
       !$acc end kernels
+
+      ! Collocated barotropic RHS: map the nodal accumulators to the quad arrays.
+      if (inp%btp_collocation) call btp_colloc_to_quad(G, inp, b, tsp, btp)
 
       ! Normalise accumulators on GPU — no host round-trip needed.
       N_inv = 1.0 / real(inp%kstages * init%N_btp)

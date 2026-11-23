@@ -84,6 +84,7 @@ SOURCEF += mod_laplacian_quad.F90
 SOURCEF += mod_rk_mlswe.F90
 SOURCEF += mod_splitting.F90
 SOURCEF += mod_rhs_btp.F90
+SOURCEF += mod_btp_colloc.F90
 SOURCEF += mod_create_rhs_mlswe.F90
 SOURCEF += ti_2levels_bcl.F90
 SOURCEF += ti_rk3_bcl.F90

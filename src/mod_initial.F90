@@ -43,6 +43,7 @@ module mod_initial
 
         real, dimension(:,:), allocatable :: ssprk_a, ssprk_a_bcl
         real, dimension(:),   allocatable :: ssprk_beta, ssprk_beta_bcl, alpha_mlswe
+        real, dimension(:),   allocatable :: ssprk_w  ! effective stage weights b_i of the BTP SSPRK step (sum 1)
 
         real, dimension(:,:), allocatable :: z_init_flag, z_interface_initial, z_init_flag_elem
         real, dimension(:),   allocatable :: zbot_df_init
@@ -114,7 +115,7 @@ module mod_initial
             init%qb_df, init%alpha_mlswe, init%tau_wind, init%coriolis_quad, &
             init%coriolis_df, init%coriolis_3d_quad, init%zbot, init%zbot_df, init%zbot_face, &
             init%grad_zbot_quad, init%tau_wind_df,&
-            init%ssprk_a,init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl, init%grad_zbot_df, &
+            init%ssprk_a,init%ssprk_beta, init%ssprk_w, init%ssprk_a_bcl, init%ssprk_beta_bcl, init%grad_zbot_df, &
             init%pbprime_df_face, init%z_interface, &
             init%z_init_flag, init%z_interface_initial,                     &
             init%z_init_flag_elem, init%zbot_df_init)
@@ -126,7 +127,7 @@ module mod_initial
             init%grad_zbot_df(inp%ngrd_var,npoin), &
             init%fdt_bcl(npoin), init%fdt2_bcl(npoin), init%a_bcl(npoin), &
             init%b_bcl(npoin), &
-            init%tau_wind_df(2,npoin), init%ssprk_a(kstages,3), init%ssprk_beta(kstages), &
+            init%tau_wind_df(2,npoin), init%ssprk_a(kstages,3), init%ssprk_beta(kstages), init%ssprk_w(kstages), &
             init%ssprk_a_bcl(inp%kstages_bcl,3), init%ssprk_beta_bcl(inp%kstages_bcl), &
             init%pbprime_df_face(2,b%ngl,nface),init%z_interface(npoin,nlayers+1), &
             init%z_init_flag(npoin,nlayers), init%z_interface_initial(npoin,nlayers+1),  &
@@ -170,6 +171,9 @@ module mod_initial
                 call compute_gradient_df(G, inp, b, mt, init%grad_zbot_df, init%zbot_df)
             end if
 
+            ! Collocated BTP: keep dt_btp at most 98% of its estimated stability limit
+            if (inp%btp_collocation) call btp_colloc_dt_limit(inp, b, G, init)
+
             init%N_btp = ceiling(inp%dt/inp%dt_btp)
             inp%dt_btp = inp%dt/real(init%N_btp)
 
@@ -183,7 +187,7 @@ module mod_initial
 
             call  wind_stress_coriolis(b, G, inp, init%tau_wind, init%coriolis_df, init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
                 init%a_bcl, init%b_bcl, init%tau_wind_df, init%coriolis_3d_quad, init%kvector)
-            call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta, init%ssprk_a_bcl, init%ssprk_beta_bcl)
+            call ssprk_coefficients(inp, init%ssprk_a, init%ssprk_beta, init%ssprk_w, init%ssprk_a_bcl, init%ssprk_beta_bcl)
 
         endif
 
@@ -194,6 +198,79 @@ module mod_initial
         inp%write_restart_time = inp%write_restart_time*inp%time_scale
 
     end subroutine mod_initial_create
+
+    subroutine btp_colloc_dt_limit(inp, b, G, init)
+
+        ! Stability limit of the collocated barotropic solver (SSPRK(5,3), GLL nodes):
+        ! nodal Courant number 1, dt_lim = min over elements of
+        !     (smallest GLL node spacing) / max sqrt(alpha_L * p_b),
+        ! with sqrt(alpha_L p_b) the barotropic gravity-wave speed (as in the Rusanov flux).
+        ! Calibrated on the Cartesian bump (N = 4): estimate 1.74 s, measured limit 1.76 s.
+        ! dt_btp is reduced to 98% of dt_lim if larger; a smaller dt_btp is kept.
+
+        use mod_mpi_utilities, only: irank, irank0, MPI_PRECISION
+        use mpi
+
+        implicit none
+
+        type(input),   intent(inout) :: inp
+        type(basis),   intent(in)    :: b
+        type(grid),    intent(in)    :: G
+        type(initial), intent(in)    :: init
+
+        integer :: ie, i, m, n, I00, IN0, I0N, ierr
+        real    :: gap_x, gap_y, dx_len, dy_len, ds, c, dt_e, dt_loc, dt_lim
+
+        ! Smallest GLL node gap as a fraction of the element edge
+        gap_x = 1.0
+        do i = 1, b%nglx - 1
+            gap_x = min(gap_x, 0.5 * (b%xglx(i+1) - b%xglx(i)))
+        end do
+        gap_y = 1.0
+        do i = 1, b%ngly - 1
+            gap_y = min(gap_y, 0.5 * (b%xgly(i+1) - b%xgly(i)))
+        end do
+
+        dt_loc = huge(1.0)
+        do ie = 1, G%nelem
+
+            ! Element edge lengths from the corner nodes
+            I00 = G%intma(1, 1, 1, ie)
+            IN0 = G%intma(b%nglx, 1, 1, ie)
+            I0N = G%intma(1, b%ngly, 1, ie)
+            dx_len = sqrt(sum((G%coord(:,IN0) - G%coord(:,I00))**2))
+            dy_len = sqrt(sum((G%coord(:,I0N) - G%coord(:,I00))**2))
+            ds     = min(gap_x * dx_len, gap_y * dy_len)
+
+            ! Largest barotropic gravity-wave speed in the element
+            c = 0.0
+            do m = 1, b%ngly
+                do n = 1, b%nglx
+                    c = max(c, sqrt(init%alpha_mlswe(inp%nlayers) * init%pbprime_df(G%intma(n, m, 1, ie))))
+                end do
+            end do
+
+            if (c > 0.0) then
+                dt_e   = ds / c
+                dt_loc = min(dt_loc, dt_e)
+            end if
+
+        end do
+
+        call mpi_allreduce(dt_loc, dt_lim, 1, MPI_PRECISION, MPI_MIN, MPI_COMM_WORLD, ierr)
+
+        if (irank == irank0) then
+            print '(a,es11.4,a,es11.4,a)', ' btp_collocation: estimated dt_btp limit ', dt_lim, &
+                                           ' s (98%: ', 0.98*dt_lim, ' s)'
+        end if
+
+        if (inp%dt_btp > 0.98 * dt_lim) then
+            if (irank == irank0) print '(a,es11.4,a,es11.4,a)', ' btp_collocation: dt_btp reduced from ', &
+                                                                inp%dt_btp, ' to ', 0.98*dt_lim, ' s'
+            inp%dt_btp = 0.98 * dt_lim
+        end if
+
+    end subroutine btp_colloc_dt_limit
 
     !----------------------------------------------------------------------!
     !>@brief This subroutine constructs the KVECTOR on the sphere

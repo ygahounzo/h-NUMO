@@ -258,14 +258,18 @@ module mod_initial_mlswe
 
     end subroutine wind_stress_coriolis
 
-    subroutine ssprk_coefficients(inp, ssprk_a, ssprk_beta, ssprk_a_bcl, ssprk_beta_bcl)
+    subroutine ssprk_coefficients(inp, ssprk_a, ssprk_beta, ssprk_w, ssprk_a_bcl, ssprk_beta_bcl)
         implicit none
 
         type(input), intent(in) :: inp
         real, dimension(inp%kstages,3),       intent(out) :: ssprk_a
         real, dimension(inp%kstages),         intent(out) :: ssprk_beta
+        real, dimension(inp%kstages),         intent(out) :: ssprk_w
         real, dimension(inp%kstages_bcl,3),   intent(out) :: ssprk_a_bcl
         real, dimension(inp%kstages_bcl),     intent(out) :: ssprk_beta_bcl
+
+        real, dimension(inp%kstages) :: y2c
+        integer :: is
 
         if(inp%ti_method_btp == 'lsrk') then
 
@@ -347,6 +351,17 @@ module mod_initial_mlswe
             end select
         endif
 
+        ! Effective weight b_i of BTP stage i in one SSPRK sub-step of
+        ! ti_barotropic_ssprk_mlswe (sum_i b_i = 1): the coefficient of dt*R_i after
+        ! y_i = a0*y_0 + a1*y_{i-1} + a2*y_2 + beta_i*R_i, with y_2 kept after stage 2
+        ! when kstages = 5. Used to weight the BTP time averages (btp_collocation).
+        ssprk_w = 0.0;  y2c = 0.0
+        do is = 1, inp%kstages
+            ssprk_w = ssprk_a(is,2)*ssprk_w + ssprk_a(is,3)*y2c
+            ssprk_w(is) = ssprk_w(is) + ssprk_beta(is)
+            if (inp%kstages == 5 .and. is == 2) y2c = ssprk_w
+        end do
+
         select case (inp%kstages_bcl)
         case (2)    ! SSP(2,2)
             ssprk_a_bcl(1,1)=1.0;       ssprk_a_bcl(1,2)=0.0;     ssprk_a_bcl(1,3)=0.0; ssprk_beta_bcl(1)=1.0
@@ -383,6 +398,10 @@ module mod_initial_mlswe
         integer :: nvar_l, npoin_l
         real    :: dry_cutoff_l
         logical :: has_w, has_nan_e
+        integer :: iq, jq
+        real    :: s
+        ! Thickness interpolated in x to the quadrature points (sum-factorised minimum)
+        real    :: T(b%nqx, b%ngly)
 
         nelem_l      = G%nelem
         nlayers_l    = inp%nlayers
@@ -419,7 +438,7 @@ module mod_initial_mlswe
         !$acc    present(G%intma, b%psiqx, b%psiqy, mt%jac, q) &
         !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nglz_l, nqx_l, nqy_l, nvar_l, npoin_l, has_w) &
         !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, &
-        !$acc            d1, d2, d3, d4, hn, I, k, kc, n, m, ipass, has_nan_e)
+        !$acc            d1, d2, d3, d4, hn, I, k, kc, n, m, ipass, has_nan_e, iq, jq, s, T)
         do e = 1, nelem_l
             !$acc loop seq
             do ipass = 1, 2
@@ -455,8 +474,42 @@ module mod_initial_mlswe
                     vavg = vavg / wsum
                     if (has_w) wavg = wavg / wsum
 
-                    pmin = layer_min_e(q, nvar_l, npoin_l, nlayers_l, k, G%intma, nglx_l, ngly_l, nglz_l, &
-                                       nelem_l, e, b%psiqx, b%psiqy, nqx_l, nqy_l)
+                    ! Minimum over the GLL nodes and the quadrature points, sum-factorised:
+                    ! interpolate in x, then in y
+                    pmin = huge(1.0)
+                    !$acc loop seq
+                    do m = 1, ngly_l
+                        !$acc loop seq
+                        do n = 1, nglx_l
+                            pmin = min(pmin, q(1,G%intma(n,m,1,e),k))
+                        end do
+                    end do
+
+                    !$acc loop seq
+                    do m = 1, ngly_l
+                        !$acc loop seq
+                        do iq = 1, nqx_l
+                            s = 0.0
+                            !$acc loop seq
+                            do n = 1, nglx_l
+                                s = s + b%psiqx(n,iq) * q(1,G%intma(n,m,1,e),k)
+                            end do
+                            T(iq,m) = s
+                        end do
+                    end do
+
+                    !$acc loop seq
+                    do jq = 1, nqy_l
+                        !$acc loop seq
+                        do iq = 1, nqx_l
+                            s = 0.0
+                            !$acc loop seq
+                            do m = 1, ngly_l
+                                s = s + b%psiqy(m,jq) * T(iq,m)
+                            end do
+                            pmin = min(pmin, s)
+                        end do
+                    end do
 
                     if (pavg <= threshold .or. pavg /= pavg .or. has_nan_e) then
                         ! Entire element dry (or NaN) -- clamp to minimum, zero momentum.
@@ -523,44 +576,6 @@ module mod_initial_mlswe
 
     end subroutine poslimiter
 
-    ! Minimum of layer k's thickness q(1,:,k) over element e: the GLL nodes, the
-    ! nqx x nqy volume quadrature points, and the quadrature points on the four
-    ! element edges (interpolated from the edge nodes; GLL includes the endpoints).
-    function layer_min_e(q, nvar, npoin, nlay, k, intma, nglx, ngly, nglz, nelem, e, &
-                         psiqx, psiqy, nqx, nqy) result(pmin)
-
-        !$acc routine seq
-
-        implicit none
-
-        integer, intent(in) :: nvar, npoin, nlay, k, nglx, ngly, nglz, nelem, e, nqx, nqy
-        real,    intent(in) :: q(nvar,npoin,nlay)
-        integer, intent(in) :: intma(nglx,ngly,nglz,nelem)
-        real,    intent(in) :: psiqx(nglx,nqx), psiqy(ngly,nqy)
-        real :: pmin
-
-        integer :: n, m, iq, jq
-        real    :: s, sx
-
-        pmin = 1.0e20
-        do m = 1, ngly
-            do n = 1, nglx
-                pmin = min(pmin, q(1,intma(n,m,1,e),k))
-            end do
-        end do
-        do jq = 1, nqy
-            do iq = 1, nqx
-                s = 0.0
-                do m = 1, ngly
-                    do n = 1, nglx
-                        s = s + psiqx(n,iq) * psiqy(m,jq) * q(1,intma(n,m,1,e),k)
-                    end do
-                end do
-                pmin = min(pmin, s)
-            end do
-        end do
-
-    end function layer_min_e
 
     !------------------------------------------------------------------!
     ! Classify each element per layer:

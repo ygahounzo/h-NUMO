@@ -34,6 +34,7 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   use mod_layer_terms,       only: extract_qprime_df_face, layer_mom_boundary_df, extract_velocity
   use mod_initial_mlswe,    only: poslimiter, check_layer_thickness
   use mod_create_rhs_mlswe, only: bcl_apply_implicit_vertical_viscosity
+  use mod_btp_colloc,        only: btp_colloc_set_etacor, btp_colloc_measure
 
   implicit none
 
@@ -66,6 +67,10 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
   bcl%qbp_df = qb_df
   !$acc end kernels
 
+  ! Collocated BTP with eta_cor (MOM6 bt_mass_source): mismatch sum_k dp_k - p_b at the
+  ! start of the step becomes a constant BTP mass source over this step's sub-cycles.
+  if (inp%btp_collocation) call btp_colloc_set_etacor(G, inp, mt, btp, q_df, qb_df)
+
   ! Initialise stage arrays on device.
   !$acc kernels present(bcl%q0_df, bcl%q1_df, q_df)
   bcl%q0_df = q_df
@@ -84,7 +89,10 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     call extract_qprime_df_face(G, inp, b, mt, tsp, init, bcl, bcl%qprime_df, bcl%q1_df, qb_df)
 
     ! GPU: compute bcl/btp coefficient arrays (dpp_graduv, dpprime_visc, etc.).
-    call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
+    ! Not needed with the collocated BTP (btp_colloc_begin builds its nodal
+    ! coefficients), except for the viscosity, which still uses them.
+    if (.not. inp%btp_collocation .or. inp%method_visc > 0) &
+      call btp_bcl_coeffs_qdf(G, inp, b, tsp, bcl, btp, bcl%qprime_df, init%alpha_mlswe, init%pbprime_df)
     ! Chen APE force (c_APE > 0) from the stage state, shared by the BTP subcycle and the BCL rhs.
     call ape_stage(G, b, inp, mf, par, ref, tsp, init%alpha_mlswe, init%zbot_df, bcl%q1_df)
 
@@ -211,6 +219,9 @@ subroutine ti_rk3_bcl(G, inp, b, mf, par, btp, bcl, init, ref, mpic, tsp, mt, q_
     !$acc end kernels
 
   end do
+
+  ! Diagnostic: layer/column mismatch |p_b - sum_k dp_k| / p_b.
+  if (inp%btp_colloc_diag) call btp_colloc_measure(G, inp, q_df, qb_df)
 
   ! Inter-layer (ad_mlswe) vertical viscosity, applied implicitly once per
   ! full step rather than embedded in the RHS above.
