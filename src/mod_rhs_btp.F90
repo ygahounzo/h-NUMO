@@ -49,7 +49,7 @@ contains
          call create_rhs_btp_volume_qdf_qp_gpu(G, b, inp, init, btp, tsp, mt, rhs_btp, qb_df)
          call create_btp_fluxes_qdf_gpu(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
       else
-         call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
+         call create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, mt, rhs_btp, qb_df)
          call create_btp_fluxes_qdf(G, b, inp, mf, init, btp, rhs_btp, qb_df, qprime_df)
       end if
 
@@ -657,19 +657,15 @@ contains
 
    end subroutine create_rhs_btp_volume_qdf_qp_gpu
 
-   subroutine create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, rhs_btp, qb_df)
+   subroutine create_rhs_btp_volume_qdf_qp(G, b, inp, init, btp, tsp, mt, rhs_btp, qb_df)
       !===========================================================================
-      !  CPU version of create_rhs_btp_volume_qdf_qp_gpu (used when inp%lgpu_kernels is false).
-      !  Same physics, one pass over quad points with a direct scatter
-      !  into rhs_btp: on the CPU the scatter needs no atomics, so this avoids the
-      !  F_vol pass and basis recomputation the GPU version uses to remove them.
-      !
-      !  Volume contribution — v1 physics.
-      !  BCL layer integrals (H_b, sum_up2, etc.) are precomputed once per RK
-      !  stage by btp_bcl_coeffs_qdf into btp%bcl_* arrays; only qb_df
-      !  interpolation is done per substep.
-      !  Gang-parallel over do Iq = 1, npoin_q; scatter uses !$acc atomic because
-      !  multiple Iq within the same element share DG DOF nodes.
+      !  Barotropic volume term, CPU (the GPU version is create_rhs_btp_volume_qdf_qp_gpu).
+      !  Over-integrated (2N+1 quadrature points per direction), sum-factorised: the
+      !  nodes -> quadrature-point interpolation and the projection onto the test
+      !  functions are done one direction at a time per element (psiqx/psiqy,
+      !  dpsiqx/dpsiqy) instead of with the 25-term tensor tables.
+      !  BCL layer integrals (H_b, sum_up2, etc.) are precomputed once per RK stage by
+      !  btp_bcl_coeffs_qdf into btp%bcl_* arrays.
       !===========================================================================
       use mod_grid,      only: grid
       use mod_basis,     only: basis
@@ -680,6 +676,7 @@ contains
       use mod_tensor,    only: tensor_CS
       use mod_initial_mlswe, only: check_btp_thickness
       use mod_ape,       only: ape_on, ape_force_btp
+      use mod_metrics,   only: metrics
 
       implicit none
 
@@ -689,6 +686,7 @@ contains
       type(initial),   intent(in)    :: init
       type(btp_CS),    intent(inout) :: btp
       type(tensor_CS), intent(in)    :: tsp
+      type(metrics),   intent(in)    :: mt
 
       real, dimension(inp%nvar_btp,G%npoin),   intent(in)  :: qb_df
       real, dimension(inp%nvar_btp-1,G%npoin), intent(out) :: rhs_btp
@@ -699,7 +697,13 @@ contains
       real :: pp_k, up_k, vp_k, wp_k
       real :: sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww, sum_wu, sum_wv
       real :: cfx, cfy, cfz
-      integer :: I, Iq, ip
+      integer :: I, Iq, ie, n, m, kq, lq, neq, nvb
+      real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
+      real    :: F(3,4), S(4)
+      ! Element work arrays: automatic (stack), sized by the basis; no allocation.
+      real :: V(inp%nvar_btp, b%nglx, b%ngly), T(inp%nvar_btp, b%nqx, b%ngly), Qd(inp%nvar_btp, b%nqx, b%nqy)
+      real :: Ge(4, b%nqx, b%nqy), Gn(4, b%nqx, b%nqy), Gc(4, b%nqx, b%nqy)
+      real :: Ae(4, b%nqx, b%ngly), An(4, b%nqx, b%ngly)
       integer :: npts_l, botfr_l
       real    :: cd_l, alpha_bot_l
       logical :: has_w, ape_l
@@ -711,185 +715,214 @@ contains
       has_w       = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
       ape_l       = ape_on        ! Chen APE: column sum of the layer forces (mod_ape)
 
-      !$acc data present(init, tsp, btp, ape_force_btp,                              &
-      !$acc               rhs_btp, qb_df,                                            &
-      !$acc               init%grad_zbot_quad, init%tau_wind, tsp%psih,             &
-      !$acc               tsp%dpsidx, tsp%dpsidy, tsp%dpsidz,                       &
-      !$acc               tsp%dpsidz_x, tsp%dpsidz_y, tsp%dpsidz_z,                &
-      !$acc               tsp%indexq, tsp%wjac,                                     &
-      !$acc               init%coriolis_3d_quad,                                     &
-      !$acc               btp%tau_bot_ave, btp%H_ave, btp%Qu_ave,                   &
-      !$acc               btp%Qv_ave, btp%Qw_ave, btp%ope_ave,                     &
-      !$acc               btp%uvb_ave, btp%btp_mass_flux_ave, btp%ope2_ave,        &
-      !$acc               btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
 
-      !$acc kernels
       rhs_btp = 0.0
-      !$acc end kernels
 
       ! Abort with element/rank diagnostics rather than SIGFPE-ing on ub=udp/dp
       ! below if the barotropic depth has gone negative or NaN (e.g. interface
       ! outcropping near steep topography feeding through into qb_df).
       call check_btp_thickness(b, G, inp, qb_df, 'create_rhs_btp_volume_qdf_qp')
 
-      !$acc parallel loop gang                                                       &
-      !$acc   private(dp, dpp, udp, vdp, wdp, pbq, H_b, Hq, wq, ub, vb, wb,       &
-      !$acc           ubot, vbot, wbot, spd, tb_u, tb_v, tb_w,                    &
-      !$acc           cfx, cfy, cfz, sc_x, sc_y, sc_z, ope, ope2,                 &
-      !$acc           pp_k, up_k, vp_k, wp_k,                                      &
-      !$acc           sum_up2, sum_uv, sum_vu, sum_vp2, sum_uw, sum_vw, sum_ww,  &
-      !$acc           qu, quv, qvu, qv, quz, qvz, qwu, qwv, qw,                   &
-      !$acc           hi, dhdx, dhdy, dhdz, I)                                     &
-      !$acc   firstprivate(npts_l, botfr_l, cd_l, alpha_bot_l, has_w, ape_l)
-      do Iq = 1, G%npoin_q
+      nvb = inp%nvar_btp
+      neq = 3
+      if (has_w) neq = 4
 
-         dp = 0.0;  dpp = 0.0;  udp = 0.0;  vdp = 0.0;  wdp = 0.0
+      do ie = 1, G%nelem
 
-         ! Barotropic interpolation to quad point.
-         !$acc loop seq
-         do ip = 1, npts_l
-            I   = tsp%indexq(ip, Iq)
-            hi  = tsp%psih(ip, Iq)
-            dp  = dp  + hi * qb_df(1, I)
-            dpp = dpp + hi * qb_df(2, I)
-            udp = udp + hi * qb_df(3, I)
-            vdp = vdp + hi * qb_df(4, I)
-            if (has_w) wdp = wdp + hi * qb_df(5, I)
+         ! Load the nodal values of the element
+         do m = 1, b%ngly
+            do n = 1, b%nglx
+               V(:, n, m) = qb_df(1:nvb, G%intma(n, m, 1, ie))
+            end do
          end do
 
-         ! Load BCL layer integrals precomputed once per RK stage.
-         H_b     = btp%bcl_H(Iq)
-         sum_up2 = btp%bcl_flux(1,1,Iq)
-         sum_uv  = btp%bcl_flux(1,2,Iq)
-         sum_vu  = btp%bcl_flux(2,1,Iq)
-         sum_vp2 = btp%bcl_flux(2,2,Iq)
-         pp_k    = btp%bcl_btp_flux(1,Iq)
-         up_k    = btp%bcl_btp_flux(2,Iq)
-         vp_k    = btp%bcl_btp_flux(3,Iq)
-         pbq     = btp%pbq(Iq)
-
-         sum_uw = 0.0;  sum_vw = 0.0;  sum_ww = 0.0;  wp_k = 0.0
-         sum_wu = 0.0;  sum_wv = 0.0
-         if (has_w) then
-            sum_uw = btp%bcl_flux(3,1,Iq)
-            sum_vw = btp%bcl_flux(3,2,Iq)
-            sum_wu = btp%bcl_flux(1,3,Iq)
-            sum_wv = btp%bcl_flux(2,3,Iq)
-            sum_ww = btp%bcl_flux(3,3,Iq)
-            wp_k   = btp%bcl_btp_flux(4,Iq)
-         end if
-
-         wq = tsp%wjac(Iq)
-         ub = udp / dp;  vb = vdp / dp;  wb = wdp / dp
-
-         ! 3D Coriolis vector (f * r̂); reduces to the f-plane pair (0,0,f) on
-         ! cartesian since kvector=(0,0,1) there — see wind_stress_coriolis.
-         cfx = init%coriolis_3d_quad(1, Iq)
-         cfy = init%coriolis_3d_quad(2, Iq)
-         cfz = init%coriolis_3d_quad(3, Iq)
-
-         tb_u = 0.0;  tb_v = 0.0;  tb_w = 0.0
-         if (botfr_l == 1) then
-            ubot = up_k + ub;  vbot = vp_k + vb;  wbot = wp_k + wb
-            spd  = (cd_l / gravity) * pp_k
-            tb_u = spd * ubot;  tb_v = spd * vbot;  tb_w = spd * wbot
-         elseif (botfr_l == 2) then
-            ubot = up_k + ub;  vbot = vp_k + vb;  wbot = wp_k + wb
-            spd  = (cd_l / alpha_bot_l) * sqrt(ubot**2 + vbot**2 + wbot**2)
-            tb_u = spd * ubot;  tb_v = spd * vbot;  tb_w = spd * wbot
-         end if
-
-         ! Source terms (3D Coriolis cross-product -f×p*u; reduces exactly to
-         ! the old f-plane form on cartesian since cfx=cfy=0 and wdp=0 there).
-         sc_x = -(cfy*wdp - cfz*vdp)                                  &
-            + gravity * (init%tau_wind(1, Iq) - tb_u)                 &
-            - gravity * dp * init%grad_zbot_quad(1, Iq)
-         sc_y = -(cfz*udp - cfx*wdp)                                  &
-            + gravity * (init%tau_wind(2, Iq) - tb_v)                 &
-            - gravity * dp * init%grad_zbot_quad(2, Iq)
-
-         ope  = 1.0 + (dpp / pbq)
-         ope2 = ope * ope
-         Hq   = ope2 * H_b
-
-         qu  = ub * udp + ope * sum_up2
-         quv = vb * udp + ope * sum_uv
-         qvu = ub * vdp + ope * sum_vu
-         qv  = vb * vdp + ope * sum_vp2
-
-         ! Time-average accumulators (each Iq is unique per gang — no race).
-         btp%H_ave(Iq)    = btp%H_ave(Iq)    + Hq
-         btp%Qu_ave(1,Iq) = btp%Qu_ave(1,Iq) + qu
-         btp%Qu_ave(2,Iq) = btp%Qu_ave(2,Iq) + quv
-         btp%Qv_ave(1,Iq) = btp%Qv_ave(1,Iq) + qvu
-         btp%Qv_ave(2,Iq) = btp%Qv_ave(2,Iq) + qv
-
-         btp%tau_bot_ave(1,Iq)       = btp%tau_bot_ave(1,Iq)       + tb_u
-         btp%tau_bot_ave(2,Iq)       = btp%tau_bot_ave(2,Iq)       + tb_v
-         btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope
-         btp%ope2_ave(Iq)            = btp%ope2_ave(Iq)            + ope2
-         btp%btp_mass_flux_ave(1,Iq) = btp%btp_mass_flux_ave(1,Iq) + udp
-         btp%btp_mass_flux_ave(2,Iq) = btp%btp_mass_flux_ave(2,Iq) + vdp
-         btp%uvb_ave(1,Iq)           = btp%uvb_ave(1,Iq)           + ub
-         btp%uvb_ave(2,Iq)           = btp%uvb_ave(2,Iq)           + vb
-
-         ! Sphere-only: z-momentum flux/source terms and their time averages.
-         sc_z = 0.0;  quz = 0.0;  qvz = 0.0;  qwu = 0.0;  qwv = 0.0;  qw = 0.0
-         if (has_w) then
-            sc_z = -(cfx*vdp - cfy*udp)                                &
-                 - gravity * tb_w                                        &
-                 - gravity * dp * init%grad_zbot_quad(3, Iq)
-
-            quz = wb * udp + ope * sum_uw
-            qvz = wb * vdp + ope * sum_vw
-            qwu = ub * wdp + ope * sum_wu
-            qwv = vb * wdp + ope * sum_wv
-            qw  = wb * wdp + ope * sum_ww
-
-            btp%Qu_ave(3,Iq)            = btp%Qu_ave(3,Iq)            + quz
-            btp%Qv_ave(3,Iq)            = btp%Qv_ave(3,Iq)            + qvz
-            btp%Qw_ave(1,Iq)            = btp%Qw_ave(1,Iq)            + qwu
-            btp%Qw_ave(2,Iq)            = btp%Qw_ave(2,Iq)            + qwv
-            btp%Qw_ave(3,Iq)            = btp%Qw_ave(3,Iq)            + qw
-            btp%tau_bot_ave(3,Iq)       = btp%tau_bot_ave(3,Iq)       + tb_w
-            btp%btp_mass_flux_ave(3,Iq) = btp%btp_mass_flux_ave(3,Iq) + wdp
-            btp%uvb_ave(3,Iq)           = btp%uvb_ave(3,Iq)           + wb
-         end if
-
-         if (ape_l) then
-            sc_x = sc_x + ape_force_btp(1, Iq)
-            sc_y = sc_y + ape_force_btp(2, Iq)
-            sc_z = sc_z + ape_force_btp(3, Iq)
-         end if
-
-         ! Scatter: atomics handle cross-gang races on shared DOF nodes.
-         !$acc loop seq
-         do ip = 1, npts_l
-            I    = tsp%indexq(ip, Iq)
-            hi   = tsp%psih(ip, Iq)
-            dhdx = tsp%dpsidx(ip, Iq)
-            dhdy = tsp%dpsidy(ip, Iq)
-            dhdz = 0.0
-            if (has_w) then
-               dhdx = dhdx + tsp%dpsidz_x(ip, Iq)
-               dhdy = dhdy + tsp%dpsidz_y(ip, Iq)
-               dhdz = tsp%dpsidz(ip, Iq) + tsp%dpsidz_z(ip, Iq)
-            end if
-            !$acc atomic update
-            rhs_btp(1, I) = rhs_btp(1, I) + wq * (dhdx*udp + dhdy*vdp + dhdz*wdp)
-            !$acc atomic update
-            rhs_btp(2, I) = rhs_btp(2, I) + wq * (hi*sc_x + dhdx*(Hq+qu) + dhdy*quv + dhdz*quz)
-            !$acc atomic update
-            rhs_btp(3, I) = rhs_btp(3, I) + wq * (hi*sc_y + dhdx*qvu    + dhdy*(Hq+qv) + dhdz*qvz)
-            if (has_w) then
-               !$acc atomic update
-               rhs_btp(4, I) = rhs_btp(4, I) + wq * (hi*sc_z + dhdx*qwu + dhdy*qwv + dhdz*(Hq+qw))
-            end if
+         ! Interpolate to the quadrature points in x
+         T = 0.0
+         do m = 1, b%ngly
+            do kq = 1, b%nqx
+               do n = 1, b%nglx
+                  T(:, kq, m) = T(:, kq, m) + b%psiqx(n, kq) * V(:, n, m)
+               end do
+            end do
          end do
 
+         ! Interpolate in y
+         Qd = 0.0
+         do lq = 1, b%nqy
+            do m = 1, b%ngly
+               Qd(:, :, lq) = Qd(:, :, lq) + b%psiqy(m, lq) * T(:, :, m)
+            end do
+         end do
+
+         ! Physics at the quadrature points
+         do lq = 1, b%nqy
+            do kq = 1, b%nqx
+               Iq = G%intma_dg_quad(kq, lq, 1, ie)
+
+               dp  = Qd(1, kq, lq)
+               dpp = Qd(2, kq, lq)
+               udp = Qd(3, kq, lq)
+               vdp = Qd(4, kq, lq)
+               wdp = 0.0
+               if (has_w) wdp = Qd(5, kq, lq)
+
+               ! Load BCL layer integrals precomputed once per RK stage.
+               H_b     = btp%bcl_H(Iq)
+               sum_up2 = btp%bcl_flux(1,1,Iq)
+               sum_uv  = btp%bcl_flux(1,2,Iq)
+               sum_vu  = btp%bcl_flux(2,1,Iq)
+               sum_vp2 = btp%bcl_flux(2,2,Iq)
+               pp_k    = btp%bcl_btp_flux(1,Iq)
+               up_k    = btp%bcl_btp_flux(2,Iq)
+               vp_k    = btp%bcl_btp_flux(3,Iq)
+               pbq     = btp%pbq(Iq)
+
+               sum_uw = 0.0;  sum_vw = 0.0;  sum_ww = 0.0;  wp_k = 0.0
+               sum_wu = 0.0;  sum_wv = 0.0
+               if (has_w) then
+                  sum_uw = btp%bcl_flux(3,1,Iq)
+                  sum_vw = btp%bcl_flux(3,2,Iq)
+                  sum_wu = btp%bcl_flux(1,3,Iq)
+                  sum_wv = btp%bcl_flux(2,3,Iq)
+                  sum_ww = btp%bcl_flux(3,3,Iq)
+                  wp_k   = btp%bcl_btp_flux(4,Iq)
+               end if
+
+               wq = tsp%wjac(Iq)
+               ub = udp / dp;  vb = vdp / dp;  wb = wdp / dp
+
+               ! 3D Coriolis vector (f * r̂); reduces to the f-plane pair (0,0,f) on
+               ! cartesian since kvector=(0,0,1) there — see wind_stress_coriolis.
+               cfx = init%coriolis_3d_quad(1, Iq)
+               cfy = init%coriolis_3d_quad(2, Iq)
+               cfz = init%coriolis_3d_quad(3, Iq)
+
+               tb_u = 0.0;  tb_v = 0.0;  tb_w = 0.0
+               if (botfr_l == 1) then
+                  ubot = up_k + ub;  vbot = vp_k + vb;  wbot = wp_k + wb
+                  spd  = (cd_l / gravity) * pp_k
+                  tb_u = spd * ubot;  tb_v = spd * vbot;  tb_w = spd * wbot
+               elseif (botfr_l == 2) then
+                  ubot = up_k + ub;  vbot = vp_k + vb;  wbot = wp_k + wb
+                  spd  = (cd_l / alpha_bot_l) * sqrt(ubot**2 + vbot**2 + wbot**2)
+                  tb_u = spd * ubot;  tb_v = spd * vbot;  tb_w = spd * wbot
+               end if
+
+               ! Source terms (3D Coriolis cross-product -f×p*u; reduces exactly to
+               ! the old f-plane form on cartesian since cfx=cfy=0 and wdp=0 there).
+               sc_x = -(cfy*wdp - cfz*vdp)                                  &
+                  + gravity * (init%tau_wind(1, Iq) - tb_u)                 &
+                  - gravity * dp * init%grad_zbot_quad(1, Iq)
+               sc_y = -(cfz*udp - cfx*wdp)                                  &
+                  + gravity * (init%tau_wind(2, Iq) - tb_v)                 &
+                  - gravity * dp * init%grad_zbot_quad(2, Iq)
+
+               ope  = 1.0 + (dpp / pbq)
+               ope2 = ope * ope
+               Hq   = ope2 * H_b
+
+               qu  = ub * udp + ope * sum_up2
+               quv = vb * udp + ope * sum_uv
+               qvu = ub * vdp + ope * sum_vu
+               qv  = vb * vdp + ope * sum_vp2
+
+               ! Time-average accumulators
+               btp%H_ave(Iq)    = btp%H_ave(Iq)    + Hq
+               btp%Qu_ave(1,Iq) = btp%Qu_ave(1,Iq) + qu
+               btp%Qu_ave(2,Iq) = btp%Qu_ave(2,Iq) + quv
+               btp%Qv_ave(1,Iq) = btp%Qv_ave(1,Iq) + qvu
+               btp%Qv_ave(2,Iq) = btp%Qv_ave(2,Iq) + qv
+
+               btp%tau_bot_ave(1,Iq)       = btp%tau_bot_ave(1,Iq)       + tb_u
+               btp%tau_bot_ave(2,Iq)       = btp%tau_bot_ave(2,Iq)       + tb_v
+               btp%ope_ave(Iq)             = btp%ope_ave(Iq)             + ope
+               btp%ope2_ave(Iq)            = btp%ope2_ave(Iq)            + ope2
+               btp%btp_mass_flux_ave(1,Iq) = btp%btp_mass_flux_ave(1,Iq) + udp
+               btp%btp_mass_flux_ave(2,Iq) = btp%btp_mass_flux_ave(2,Iq) + vdp
+               btp%uvb_ave(1,Iq)           = btp%uvb_ave(1,Iq)           + ub
+               btp%uvb_ave(2,Iq)           = btp%uvb_ave(2,Iq)           + vb
+
+               ! Sphere-only: z-momentum flux/source terms and their time averages.
+               sc_z = 0.0;  quz = 0.0;  qvz = 0.0;  qwu = 0.0;  qwv = 0.0;  qw = 0.0
+               if (has_w) then
+                  sc_z = -(cfx*vdp - cfy*udp)                                &
+                       - gravity * tb_w                                        &
+                       - gravity * dp * init%grad_zbot_quad(3, Iq)
+
+                  quz = wb * udp + ope * sum_uw
+                  qvz = wb * vdp + ope * sum_vw
+                  qwu = ub * wdp + ope * sum_wu
+                  qwv = vb * wdp + ope * sum_wv
+                  qw  = wb * wdp + ope * sum_ww
+
+                  btp%Qu_ave(3,Iq)            = btp%Qu_ave(3,Iq)            + quz
+                  btp%Qv_ave(3,Iq)            = btp%Qv_ave(3,Iq)            + qvz
+                  btp%Qw_ave(1,Iq)            = btp%Qw_ave(1,Iq)            + qwu
+                  btp%Qw_ave(2,Iq)            = btp%Qw_ave(2,Iq)            + qwv
+                  btp%Qw_ave(3,Iq)            = btp%Qw_ave(3,Iq)            + qw
+                  btp%tau_bot_ave(3,Iq)       = btp%tau_bot_ave(3,Iq)       + tb_w
+                  btp%btp_mass_flux_ave(3,Iq) = btp%btp_mass_flux_ave(3,Iq) + wdp
+                  btp%uvb_ave(3,Iq)           = btp%uvb_ave(3,Iq)           + wb
+               end if
+
+               if (ape_l) then
+                  sc_x = sc_x + ape_force_btp(1, Iq)
+                  sc_y = sc_y + ape_force_btp(2, Iq)
+                  sc_z = sc_z + ape_force_btp(3, Iq)
+               end if
+
+               ! Weak-form weights at this point: grad(psi_J).F = h_e (grad xi.F) +
+               ! h_n (grad eta.F) + hi (zeta.F); store w*(...) for the factorised
+               ! projection.
+               wq  = mt%jacq(kq, lq, 1, ie)
+               e_x = mt%ksiq_x(kq,lq,1,ie);  e_y = mt%ksiq_y(kq,lq,1,ie);  e_z = mt%ksiq_z(kq,lq,1,ie)
+               n_x = mt%etaq_x(kq,lq,1,ie);  n_y = mt%etaq_y(kq,lq,1,ie);  n_z = mt%etaq_z(kq,lq,1,ie)
+
+               ! Fluxes F(direction, equation) and sources S(equation): mass, u, v, w
+               F(1,1) = udp;       F(2,1) = vdp;       F(3,1) = wdp
+               F(1,2) = Hq + qu;   F(2,2) = quv;       F(3,2) = quz
+               F(1,3) = qvu;       F(2,3) = Hq + qv;   F(3,3) = qvz
+               F(1,4) = qwu;       F(2,4) = qwv;       F(3,4) = Hq + qw
+
+               S(1) = 0.0;  S(2) = sc_x;  S(3) = sc_y;  S(4) = sc_z
+
+               if (has_w) then
+                  c_x = mt%zetaq_x(kq,lq,1,ie);  c_y = mt%zetaq_y(kq,lq,1,ie);  c_z = mt%zetaq_z(kq,lq,1,ie)
+                  Ge(1:neq,kq,lq) = wq * (e_x*F(1,1:neq) + e_y*F(2,1:neq) + e_z*F(3,1:neq))
+                  Gn(1:neq,kq,lq) = wq * (n_x*F(1,1:neq) + n_y*F(2,1:neq) + n_z*F(3,1:neq))
+                  Gc(1:neq,kq,lq) = wq * (c_x*F(1,1:neq) + c_y*F(2,1:neq) + c_z*F(3,1:neq) + S(1:neq))
+               else
+                  Ge(1:neq,kq,lq) = wq * (e_x*F(1,1:neq) + e_y*F(2,1:neq))
+                  Gn(1:neq,kq,lq) = wq * (n_x*F(1,1:neq) + n_y*F(2,1:neq))
+                  Gc(1:neq,kq,lq) = wq * S(1:neq)
+               end if
+
+            end do
+         end do
+
+         ! Projection onto the test functions, one direction at a time.
+         ! Contract over y: dHde and dHdc Terms with psiqy, dHdn Terms with dpsiqy
+         Ae = 0.0
+         An = 0.0
+         do lq = 1, b%nqy
+            do m = 1, b%ngly
+               Ae(1:neq, :, m) = Ae(1:neq, :, m) + b%psiqy(m, lq) * Ge(1:neq, :, lq)
+               An(1:neq, :, m) = An(1:neq, :, m) + b%dpsiqy(m, lq) * Gn(1:neq, :, lq) &
+                                                 + b%psiqy(m, lq)  * Gc(1:neq, :, lq)
+            end do
+         end do
+
+         ! Contract over x: dHde Terms with dpsiqx, dHdn and dHdc Terms with psiqx
+         do m = 1, b%ngly
+            do n = 1, b%nglx
+               I = G%intma(n, m, 1, ie)
+               do kq = 1, b%nqx
+                  rhs_btp(1:neq, I) = rhs_btp(1:neq, I) + b%dpsiqx(n, kq) * Ae(1:neq, kq, m) &
+                                                        + b%psiqx(n, kq)  * An(1:neq, kq, m)
+               end do
+            end do
+         end do
       end do
-      !$acc end parallel loop
-      !$acc end data
 
    end subroutine create_rhs_btp_volume_qdf_qp
 
