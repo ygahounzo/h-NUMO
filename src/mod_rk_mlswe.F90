@@ -119,7 +119,7 @@ contains
 
             if (inp%method_visc > 0) then
                !$acc wait(1)
-               call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, &
+               call btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, mt, &
                                          btp%rhs_btp_visc, qb_df)
             end if
 

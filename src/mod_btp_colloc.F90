@@ -121,9 +121,9 @@ contains
       ! Split-form pressure weights beta_m/2 (interface m = k+1):
       ! beta_m = alpha_{m-1} - alpha_m, beta_{L+1} = alpha_L, so H_b = sum_m (beta_m/2) A_m^2
       do k = 1, inp%nlayers - 1
-         btp%bcl_beta(k) = 0.5 * (init%alpha_mlswe(k) - init%alpha_mlswe(k+1))
+         btp%bcl_dalpha(k) = 0.5 * (init%alpha_mlswe(k) - init%alpha_mlswe(k+1))
       end do
-      btp%bcl_beta(inp%nlayers) = 0.5 * init%alpha_mlswe(inp%nlayers)
+      btp%bcl_dalpha(inp%nlayers) = 0.5 * init%alpha_mlswe(inp%nlayers)
 
       ! Layer coefficients at the nodes
       do I = 1, G%npoin
@@ -154,7 +154,7 @@ contains
 
             pprime_k1 = pprime_k + pp_k
             H_b = H_b + 0.5 * init%alpha_mlswe(k) * (pprime_k1**2 - pprime_k**2)
-            btp%bcl_A_df(k,I) = pprime_k1
+            btp%bcl_pprime_df(k,I) = pprime_k1
 
             flux(1,1) = flux(1,1) + up_k*(pp_k*up_k)
             flux(2,1) = flux(2,1) + vp_k*(pp_k*up_k)
@@ -269,8 +269,8 @@ contains
       real :: Qs(2, b%nqx,  b%nqy),  Qv(inp%nvar_btp-2, 6, b%nqx,  b%nqy)
 
       ! Interface pressures A_m: nodes, interpolated in x, at the quadrature points
-      real :: Wa(inp%nlayers, b%nglx, b%ngly), Ta(inp%nlayers, b%nqx, b%ngly), Qa(inp%nlayers, b%nqx, b%nqy)
-      real :: AL(inp%nlayers), AR(inp%nlayers)
+      real :: Vp(inp%nlayers, b%nglx, b%ngly), Tp(inp%nlayers, b%nqx, b%ngly), Qp(inp%nlayers, b%nqx, b%nqy)
+      real :: pprime_ql(inp%nlayers), pprime_qr(inp%nlayers)
 
       integer :: Iq, I, iface, iquad, n, m, ie, kq, lq
       real    :: hi
@@ -289,20 +289,20 @@ contains
                Wv(:, 4, n, m) = btp%tau_bot_ave_df(:,I)
                Wv(:, 5, n, m) = btp%btp_mass_flux_ave_df(:,I)
                Wv(:, 6, n, m) = btp%uvb_ave_df(:,I)
-               Wa(:, n, m)    = btp%bcl_A_df(:,I)
+               Vp(:, n, m)    = btp%bcl_pprime_df(:,I)
             end do
          end do
 
          ! Interpolate in x
          Ts = 0.0
          Tv = 0.0
-         Ta = 0.0
+         Tp = 0.0
          do m = 1, b%ngly
             do kq = 1, b%nqx
                do n = 1, b%nglx
                   Ts(:, kq, m)    = Ts(:, kq, m)    + b%psiqx(n, kq) * Ws(:, n, m)
                   Tv(:, :, kq, m) = Tv(:, :, kq, m) + b%psiqx(n, kq) * Wv(:, :, n, m)
-                  Ta(:, kq, m)    = Ta(:, kq, m)    + b%psiqx(n, kq) * Wa(:, n, m)
+                  Tp(:, kq, m)    = Tp(:, kq, m)    + b%psiqx(n, kq) * Vp(:, n, m)
                end do
             end do
          end do
@@ -310,12 +310,12 @@ contains
          ! Interpolate in y
          Qs = 0.0
          Qv = 0.0
-         Qa = 0.0
+         Qp = 0.0
          do lq = 1, b%nqy
             do m = 1, b%ngly
                Qs(:, :, lq)    = Qs(:, :, lq)    + b%psiqy(m, lq) * Ts(:, :, m)
                Qv(:, :, :, lq) = Qv(:, :, :, lq) + b%psiqy(m, lq) * Tv(:, :, :, m)
-               Qa(:, :, lq)    = Qa(:, :, lq)    + b%psiqy(m, lq) * Ta(:, :, m)
+               Qp(:, :, lq)    = Qp(:, :, lq)    + b%psiqy(m, lq) * Tp(:, :, m)
             end do
          end do
 
@@ -325,7 +325,7 @@ contains
                Iq = G%intma_dg_quad(kq, lq, 1, ie)
                ! H_b is fixed in the sub-cycle: H_ave = ope2_ave * H_b, with H_b from the
                ! interface pressures interpolated to this point (as the layers build theirs)
-               btp%H_ave(Iq)               = Qs(2, kq, lq) * sum(btp%bcl_beta(:) * Qa(:, kq, lq)**2)
+               btp%H_ave(Iq)               = Qs(2, kq, lq) * sum(btp%bcl_dalpha(:) * Qp(:, kq, lq)**2)
                btp%ope_ave(Iq)             = Qs(1, kq, lq)
                btp%ope2_ave(Iq)            = Qs(2, kq, lq)
                btp%Qu_ave(:,Iq)            = Qv(:, 1, kq, lq)
@@ -377,16 +377,16 @@ contains
       do iface = 1, G%nface
          do iquad = 1, b%nq
 
-            AL = 0.0
-            AR = 0.0
+            pprime_ql = 0.0
+            pprime_qr = 0.0
             do n = 1, b%ngl
                hi = b%psiq(n, iquad)
-               AL = AL + hi * btp%bcl_A_face_df(:,1,n,iface)
-               AR = AR + hi * btp%bcl_A_face_df(:,2,n,iface)
+               pprime_ql = pprime_ql + hi * btp%bcl_pprime_face_df(:,1,n,iface)
+               pprime_qr = pprime_qr + hi * btp%bcl_pprime_face_df(:,2,n,iface)
             end do
 
             btp%H_face_ave(iquad,iface) = btp%one_plus_eta_edge_2_ave(iquad,iface) &
-                                        * 0.5 * sum(btp%bcl_beta(:) * (AL**2 + AR**2))
+                                        * 0.5 * sum(btp%bcl_dalpha(:) * (pprime_ql**2 + pprime_qr**2))
 
          end do
       end do
@@ -516,11 +516,11 @@ contains
       integer :: I, Iq, ie, kx, ky, l, neq
       real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
       real    :: F(3,4), S(4), Fe(4), Fn(4), Fc(4)
-      ! Split-form pressure: element node values (Wopa = ope * A_m), metrics and the
+      ! Split-form pressure: element node values (ope_pp_e = ope * A_m), metrics and the
       ! antisymmetric pair weights h_e(i,j) = w_j D_ji - w_i D_ij (h_n likewise)
-      real    :: Wopa(inp%nlayers, b%nglx, b%ngly), Je(3, b%nglx, b%ngly), Jn(3, b%nglx, b%ngly)
+      real    :: ope_pp_e(inp%nlayers, b%nglx, b%ngly), jac_e(3, b%nglx, b%ngly), jac_n(3, b%nglx, b%ngly)
       real    :: h_e(b%nglx, b%nglx), h_n(b%ngly, b%ngly)
-      real    :: G_ij, f_ij, t_ij, jac
+      real    :: H_bcl_qij, f_ij, t_ij, jac
       integer :: nv, m, ic, Il
       integer :: npts_l, botfr_l
       real    :: cd_l, alpha_bot_l
@@ -680,10 +680,10 @@ contains
                ! J grad xi and J grad eta
                jac = wq / (b%wglx(kx) * b%wgly(ky))
                do m = 1, inp%nlayers
-                  Wopa(m,kx,ky) = ope * btp%bcl_A_df(m,Iq)
+                  ope_pp_e(m,kx,ky) = ope * btp%bcl_pprime_df(m,Iq)
                end do
-               Je(1,kx,ky) = jac * e_x;  Je(2,kx,ky) = jac * e_y;  Je(3,kx,ky) = jac * e_z
-               Jn(1,kx,ky) = jac * n_x;  Jn(2,kx,ky) = jac * n_y;  Jn(3,kx,ky) = jac * n_z
+               jac_e(1,kx,ky) = jac * e_x;  jac_e(2,kx,ky) = jac * e_y;  jac_e(3,kx,ky) = jac * e_z
+               jac_n(1,kx,ky) = jac * n_x;  jac_n(2,kx,ky) = jac * n_y;  jac_n(3,kx,ky) = jac * n_z
 
                ! Fluxes F(direction, equation) and sources S(equation): mass, u, v, w.
                ! The pressure Hq is not in F: it enters in split form below (xi, eta)
@@ -729,9 +729,9 @@ contains
          end do
 
          ! Pressure in split form (well-balanced at rest). For each node pair (i,j) on a
-         ! line: (w_j D_ji - w_i D_ij) {J grad xi}_ij ope_i ope_j G_ij, with
-         ! G_ij = sum_m (beta_m/2) A_m,i A_m,j (docs/redesign/btp_collocation_wellbalanced).
-         ! The weight is antisymmetric and G_ij and the metric average are symmetric, so
+         ! line: (w_j D_ji - w_i D_ij) {J grad xi}_ij H_bcl_qij, with
+         ! H_bcl_qij = sum_m (beta_m/2) (ope A_m)_i (ope A_m)_j (docs/redesign/btp_collocation_wellbalanced).
+         ! The weight is antisymmetric and H_bcl_qij and the metric average are symmetric, so
          ! each pair is formed once: added to node i, subtracted from node j.
 
          ! dHde Terms: pairs on each xi line
@@ -741,14 +741,14 @@ contains
                do l = kx + 1, b%nglx
                   Il = G%intma(l, ky, 1, ie)
 
-                  G_ij = 0.0
+                  H_bcl_qij = 0.0
                   do m = 1, inp%nlayers
-                     G_ij = G_ij + btp%bcl_beta(m) * Wopa(m,kx,ky) * Wopa(m,l,ky)
+                     H_bcl_qij = H_bcl_qij + btp%bcl_dalpha(m) * ope_pp_e(m,kx,ky) * ope_pp_e(m,l,ky)
                   end do
-                  f_ij = 0.5 * b%wgly(ky) * h_e(kx,l) * G_ij
+                  f_ij = 0.5 * b%wgly(ky) * h_e(kx,l) * H_bcl_qij
 
                   do ic = 1, nv
-                     t_ij = f_ij * (Je(ic,kx,ky) + Je(ic,l,ky))
+                     t_ij = f_ij * (jac_e(ic,kx,ky) + jac_e(ic,l,ky))
                      rhs_btp(ic+1, I)  = rhs_btp(ic+1, I)  + t_ij
                      rhs_btp(ic+1, Il) = rhs_btp(ic+1, Il) - t_ij
                   end do
@@ -764,14 +764,14 @@ contains
                do l = ky + 1, b%ngly
                   Il = G%intma(kx, l, 1, ie)
 
-                  G_ij = 0.0
+                  H_bcl_qij = 0.0
                   do m = 1, inp%nlayers
-                     G_ij = G_ij + btp%bcl_beta(m) * Wopa(m,kx,ky) * Wopa(m,kx,l)
+                     H_bcl_qij = H_bcl_qij + btp%bcl_dalpha(m) * ope_pp_e(m,kx,ky) * ope_pp_e(m,kx,l)
                   end do
-                  f_ij = 0.5 * b%wglx(kx) * h_n(ky,l) * G_ij
+                  f_ij = 0.5 * b%wglx(kx) * h_n(ky,l) * H_bcl_qij
 
                   do ic = 1, nv
-                     t_ij = f_ij * (Jn(ic,kx,ky) + Jn(ic,kx,l))
+                     t_ij = f_ij * (jac_n(ic,kx,ky) + jac_n(ic,kx,l))
                      rhs_btp(ic+1, I)  = rhs_btp(ic+1, I)  + t_ij
                      rhs_btp(ic+1, Il) = rhs_btp(ic+1, Il) - t_ij
                   end do
@@ -819,7 +819,7 @@ contains
       real    :: c_minus, c_plus
       real    :: ul, ur, vl, vr, wl, wr, opl, opr
       real    :: oe2_Hql, oe2_Hqr
-      real    :: G_lr      ! split-form pressure: sum_m (beta_m/2) A_m,L A_m,R
+      real    :: H_bcl_qlr   ! split-form pressure: sum_m (beta_m/2) A_m,L A_m,R
       real    :: Qu_ql1, Qu_ql2, Qu_ql3, Qu_qr1, Qu_qr2, Qu_qr3
       real    :: Qv_ql1, Qv_ql2, Qv_ql3, Qv_qr1, Qv_qr2, Qv_qr3
       real    :: Qw_ql1, Qw_ql2, Qw_ql3, Qw_qr1, Qw_qr2, Qw_qr3
@@ -948,7 +948,7 @@ contains
                Qw_ql1 = ul * qbl(5);  Qw_ql2 = vl * qbl(5);  Qw_ql3 = wl * qbl(5)
                Qw_qr1 = ur * qbr(5);  Qw_qr2 = vr * qbr(5);  Qw_qr3 = wr * qbr(5)
             end if
-            G_lr      = 0.0
+            H_bcl_qlr = 0.0
             pprime_lk = 0.0;  pprime_rk = 0.0
 
             ! Layer projection + flux accumulation
@@ -1032,9 +1032,9 @@ contains
 
                pprime_lk1 = pprime_lk + pkl
                pprime_rk1 = pprime_rk + pkr
-               G_lr       = G_lr + btp%bcl_beta(k) * pprime_lk1 * pprime_rk1
-               btp%bcl_A_face_df(k,1,iquad,iface) = pprime_lk1
-               btp%bcl_A_face_df(k,2,iquad,iface) = pprime_rk1
+               H_bcl_qlr  = H_bcl_qlr + btp%bcl_dalpha(k) * pprime_lk1 * pprime_rk1
+               btp%bcl_pprime_face_df(k,1,iquad,iface) = pprime_lk1
+               btp%bcl_pprime_face_df(k,2,iquad,iface) = pprime_rk1
                pprime_lk  = pprime_lk1
                pprime_rk  = pprime_rk1
 
@@ -1077,9 +1077,9 @@ contains
             end if
 
             ! Momentum fluxes
-            ! Pressure part of the face flux in split form: 0.5*(oe2_Hql + oe2_Hqr) = one_eta2*G_lr
-            oe2_Hql = one_eta2 * G_lr
-            oe2_Hqr = one_eta2 * G_lr
+            ! Pressure part of the face flux in split form: 0.5*(oe2_Hql + oe2_Hqr) = one_eta2*H_bcl_qlr
+            oe2_Hql = one_eta2 * H_bcl_qlr
+            oe2_Hqr = one_eta2 * H_bcl_qlr
 
             Qu_ql1 = Qu_ql1 + oe2_Hql
             Qu_qr1 = Qu_qr1 + oe2_Hqr
@@ -1167,7 +1167,7 @@ subroutine btp_colloc_nbhs_faces(G, inp, b, mf, par, btp, init, ref, rhs)
    real, dimension(inp%nlayers+1) :: pprime_l, pprime_r
    real :: flux_pb, flux_u, flux_v, flux_w, fxl, fxr
    real :: oe2_Hql, oe2_Hqr
-   real :: G_lr      ! split-form pressure: sum_m (beta_m/2) A_m,L A_m,R
+   real :: H_bcl_qlr   ! split-form pressure: sum_m (beta_m/2) A_m,L A_m,R
    real :: flux_edge_x, flux_edge_y, flux_edge_z
    real, dimension(3) :: Qu_ql, Qu_qr, Qv_ql, Qv_qr, Qw_ql, Qw_qr
    integer :: nq_f, ngl_f, nlayers_f, nvarb_f, bcl_stride_f, pb_idx_f
@@ -1236,7 +1236,7 @@ subroutine btp_colloc_nbhs_faces(G, inp, b, mf, par, btp, init, ref, rhs)
          end if
 
          pprime_l(:) = 0.0; pprime_r(:) = 0.0
-         G_lr        = 0.0
+         H_bcl_qlr        = 0.0
 
          do k = 1, nlayers_f
             ppl = 0.0; ppr = 0.0; upl = 0.0; upr = 0.0; vpl = 0.0; vpr = 0.0
@@ -1294,9 +1294,9 @@ subroutine btp_colloc_nbhs_faces(G, inp, b, mf, par, btp, init, ref, rhs)
             pprime_l(k+1) = pprime_l(k) + ppl
             pprime_r(k+1) = pprime_r(k) + ppr
 
-            G_lr     = G_lr + btp%bcl_beta(k) * pprime_l(k+1) * pprime_r(k+1)
-            btp%bcl_A_face_df(k,1,iquad,iface) = pprime_l(k+1)
-            btp%bcl_A_face_df(k,2,iquad,iface) = pprime_r(k+1)
+            H_bcl_qlr     = H_bcl_qlr + btp%bcl_dalpha(k) * pprime_l(k+1) * pprime_r(k+1)
+            btp%bcl_pprime_face_df(k,1,iquad,iface) = pprime_l(k+1)
+            btp%bcl_pprime_face_df(k,2,iquad,iface) = pprime_r(k+1)
          end do
 
          flux_edge_x  = 0.5*(qbl(3)+qbr(3)) + (0.5*clam)*(nxl*qbl(2)+nxr*qbr(2))
@@ -1306,8 +1306,8 @@ subroutine btp_colloc_nbhs_faces(G, inp, b, mf, par, btp, init, ref, rhs)
          flux(1,iquad) = nxl*flux_edge_x + nyl*flux_edge_y + nzl*flux_edge_z
 
          ! Pressure part of the face flux in split form
-         oe2_Hql = (one_eta**2) * G_lr
-         oe2_Hqr = (one_eta**2) * G_lr
+         oe2_Hql = (one_eta**2) * H_bcl_qlr
+         oe2_Hqr = (one_eta**2) * H_bcl_qlr
 
          btp%btp_mass_flux_face_ave_df(1,iquad,iface) = btp%btp_mass_flux_face_ave_df(1,iquad,iface) + wst*(flux_edge_x)
          btp%btp_mass_flux_face_ave_df(2,iquad,iface) = btp%btp_mass_flux_face_ave_df(2,iquad,iface) + wst*(flux_edge_y)

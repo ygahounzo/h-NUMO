@@ -48,6 +48,7 @@ module mod_variables
       ! RHS and state buffers
       real, dimension(:,:),     allocatable :: rhs_btp       ! (3,npoin)
       real, dimension(:,:),     allocatable :: rhs_btp_visc  ! (nvar_btp-2,npoin): u,v[,w]
+      real, dimension(:,:,:),   allocatable :: lap_flux_df   ! (3,3,npoin): weighted viscous fluxes (xi,eta,zeta; u,v,w), GPU Laplacian
       real, dimension(:),       allocatable :: nu_smag        ! (npoin): Smagorinsky eddy viscosity
       real, dimension(:,:),     allocatable :: qb_df         ! (nvar_btp,npoin)
 
@@ -78,9 +79,9 @@ module mod_variables
       real, dimension(:,:,:,:), allocatable :: uvb_face_ave_df                              ! (nvar_btp-2,2,ngl,nface)
       real, dimension(:),       allocatable :: etacor_src_df       ! (npoin) eta_cor BTP mass source, before M^-1
       ! Split-form (well-balanced) pressure: interface pressures A_2..A_{L+1} and beta_m/2
-      real, dimension(:,:),     allocatable :: bcl_A_df             ! (nlayers,npoin)
-      real, dimension(:),       allocatable :: bcl_beta             ! (nlayers)
-      real, dimension(:,:,:,:), allocatable :: bcl_A_face_df        ! (nlayers,2,ngl,nface) A_m left/right at face nodes
+      real, dimension(:,:),     allocatable :: bcl_pprime_df        ! (nlayers,npoin) A_2..A_{L+1}
+      real, dimension(:),       allocatable :: bcl_dalpha           ! (nlayers) beta_m/2 = (alpha_k - alpha_{k+1})/2
+      real, dimension(:,:,:,:), allocatable :: bcl_pprime_face_df   ! (nlayers,2,ngl,nface) left/right at face nodes
 
       ! Weighted flux/source coefficients of the BTP volume integral at each quad
       ! point, written and read within create_rhs_btp_volume_qdf_qp_gpu.
@@ -196,7 +197,7 @@ contains
             btp%Qu_face_ave,        btp%Qv_face_ave,   btp%Qw_face_ave,   &
             btp%uvb_face_ave,                                              &
             btp%btp_graduv_dpp_face, btp%graduvb_face_ave,                 &
-            btp%rhs_btp,            btp%rhs_btp_visc,       btp%nu_smag, &
+            btp%rhs_btp,            btp%rhs_btp_visc,       btp%nu_smag, btp%lap_flux_df, &
             btp%qb_df,  &
             btp%qb0_df,             btp%qb2_df,                         &
             btp%bcl_H,              btp%bcl_flux,  btp%bcl_btp_flux,    &
@@ -209,7 +210,7 @@ contains
             btp%btp_mass_flux_face_ave_df, btp%Qu_face_ave_df,           &
             btp%Qv_face_ave_df, btp%Qw_face_ave_df, btp%ope_face_ave_df,                    &
             btp%ope2_face_ave_df, btp%one_plus_eta_edge_2_ave_df, btp%uvb_face_ave_df,      &
-            btp%etacor_src_df, btp%bcl_A_df, btp%bcl_beta, btp%bcl_A_face_df)
+            btp%etacor_src_df, btp%bcl_pprime_df, btp%bcl_dalpha, btp%bcl_pprime_face_df)
       end if
 
       ! 1-D volume arrays
@@ -272,6 +273,13 @@ contains
          stat=stat)
       if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp buffers)"
 
+      ! Work array of the GPU barotropic Laplacian (one node otherwise)
+      if (inp%method_visc > 0 .and. inp%lgpu_kernels) then
+         allocate(btp%lap_flux_df(3,3,G%npoin))
+      else
+         allocate(btp%lap_flux_df(3,3,1))
+      end if
+
       ! Precomputed BCL layer integrals at quad points
       allocate(                                                               &
          btp%bcl_H(G%npoin_q),                                              &
@@ -300,11 +308,11 @@ contains
             btp%one_plus_eta_edge_2_ave_df(b%ngl,G%nface),                             &
             btp%uvb_face_ave_df(inp%nvar_btp-2,2,b%ngl,G%nface),                       &
             btp%etacor_src_df(G%npoin),                                                &
-            btp%bcl_A_df(inp%nlayers,G%npoin), btp%bcl_beta(inp%nlayers),              &
-            btp%bcl_A_face_df(inp%nlayers,2,b%ngl,G%nface),                            &
+            btp%bcl_pprime_df(inp%nlayers,G%npoin), btp%bcl_dalpha(inp%nlayers),       &
+            btp%bcl_pprime_face_df(inp%nlayers,2,b%ngl,G%nface),                       &
             stat=stat)
          btp%etacor_src_df = 0.0
-         btp%bcl_A_face_df = 0.0
+         btp%bcl_pprime_face_df = 0.0
          if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp collocation)"
       end if
 

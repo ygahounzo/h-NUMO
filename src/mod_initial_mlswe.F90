@@ -400,8 +400,9 @@ module mod_initial_mlswe
         logical :: has_w, has_nan_e
         integer :: iq, jq
         real    :: s
-        ! Thickness interpolated in x to the quadrature points (sum-factorised minimum)
-        real    :: T(b%nqx, b%ngly)
+        ! Thickness interpolated in x to the quadrature points (sum-factorised minimum),
+        ! one slice per element so the GPU gangs need no private array
+        real    :: T(b%nqx, b%ngly, G%nelem)
 
         nelem_l      = G%nelem
         nlayers_l    = inp%nlayers
@@ -433,12 +434,13 @@ module mod_initial_mlswe
         ! case where the compensation pushes a neighbour below its threshold.
         !
         ! DG elements own their nodes exclusively -- no cross-element races on q.
+        !$acc data create(T)
         !$acc parallel loop gang &
         !$acc    copyin(threshold_k) &
-        !$acc    present(G%intma, b%psiqx, b%psiqy, mt%jac, q) &
+        !$acc    present(G%intma, b%psiqx, b%psiqy, mt%jac, q, T) &
         !$acc    firstprivate(nelem_l, nlayers_l, nglx_l, ngly_l, nglz_l, nqx_l, nqy_l, nvar_l, npoin_l, has_w) &
         !$acc    private(pmin, pavg, uavg, vavg, wavg, wsum, wjac, threshold, theta, denom, &
-        !$acc            d1, d2, d3, d4, hn, I, k, kc, n, m, ipass, has_nan_e, iq, jq, s, T)
+        !$acc            d1, d2, d3, d4, hn, I, k, kc, n, m, ipass, has_nan_e, iq, jq, s)
         do e = 1, nelem_l
             !$acc loop seq
             do ipass = 1, 2
@@ -494,7 +496,7 @@ module mod_initial_mlswe
                             do n = 1, nglx_l
                                 s = s + b%psiqx(n,iq) * q(1,G%intma(n,m,1,e),k)
                             end do
-                            T(iq,m) = s
+                            T(iq,m,e) = s
                         end do
                     end do
 
@@ -505,7 +507,7 @@ module mod_initial_mlswe
                             s = 0.0
                             !$acc loop seq
                             do m = 1, ngly_l
-                                s = s + b%psiqy(m,jq) * T(iq,m)
+                                s = s + b%psiqy(m,jq) * T(iq,m,e)
                             end do
                             pmin = min(pmin, s)
                         end do
@@ -573,6 +575,7 @@ module mod_initial_mlswe
             end do !ipass
         end do !e
         !$acc end parallel loop
+        !$acc end data
 
     end subroutine poslimiter
 

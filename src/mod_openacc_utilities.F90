@@ -143,7 +143,7 @@ contains
       ! mod_variables (btp_CS)
       !$acc enter data copyin(btp)
       !$acc enter data copyin(btp%qb_df, btp%rhs_btp, btp%rhs_btp_visc)
-      !$acc enter data create(btp%nu_smag)
+      !$acc enter data create(btp%nu_smag, btp%lap_flux_df)
       !$acc enter data create(btp%qb0_df, btp%qb2_df)
       !$acc enter data copyin(btp%ope_ave, btp%H_ave, btp%Qu_ave, btp%Qv_ave, &
       !$acc                   btp%Qw_ave,                                      &

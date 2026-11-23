@@ -93,7 +93,7 @@ contains
 
    end subroutine diagnose_min_grid_scale
 
-   subroutine btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, rhs_btp_visc, qb_df)
+   subroutine btp_create_laplacian(G, inp, b, mf, par, btp, init, ref, mpic, tsp, mt, rhs_btp_visc, qb_df)
 
       use mod_grid,             only: grid
       use mod_input,            only: input
@@ -105,6 +105,7 @@ contains
       use mod_ref,              only: mref
       use mod_mpi_communicator, only: mpi_communicator
       use mod_tensor,           only: tensor_CS
+      use mod_metrics,          only: metrics
 
       implicit none
 
@@ -118,15 +119,15 @@ contains
       type(mref),             intent(inout) :: ref
       type(mpi_communicator), intent(inout) :: mpic
       type(tensor_CS),        intent(in)    :: tsp
+      type(metrics),          intent(in)    :: mt
 
       real, intent(out) :: rhs_btp_visc(inp%nvar_btp-2,G%npoin)
       real, dimension(inp%nvar_btp,G%npoin), intent(in) :: qb_df
 
       real, dimension(inp%nvar_btp-2,G%npoin) :: Uk
       real, dimension(inp%ngraduvw_var,G%npoin) :: graduv
-      integer :: I, Iq, ip, iw, nw_btp_l
-      real    :: dhdx, dhdy, dhdz, A_H_btp, visc_btp_l
-      real    :: du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, dw_dx, dw_dy, dw_dz
+      integer :: I, iw, nw_btp_l
+      real    :: A_H_btp, visc_btp_l
       logical :: has_w
 
       has_w = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
@@ -142,51 +143,12 @@ contains
       end do
       !$acc end parallel loop
 
-      ! Compute velocity gradient (inlined from compute_gradient_uv), using the
-      ! same shell-embedding correction (dpsidz_df_x/y/z, from mt%zeta_x/y/z)
-      ! as btp_bcl_coeffs_qdf so graduv/dpp_graduvw stay index-consistent.
-      !$acc kernels present(graduv)
-      graduv = 0.0
-      !$acc end kernels
-
-      !$acc parallel loop present(graduv, Uk, tsp, b, G) &
-      !$acc    private(dhdx, dhdy, dhdz, du_dx, du_dy, du_dz, dv_dx, dv_dy, dv_dz, &
-      !$acc            dw_dx, dw_dy, dw_dz, I) firstprivate(has_w)
-      do Iq = 1, G%npoin
-         du_dx = 0.0; du_dy = 0.0; du_dz = 0.0
-         dv_dx = 0.0; dv_dy = 0.0; dv_dz = 0.0
-         dw_dx = 0.0; dw_dy = 0.0; dw_dz = 0.0
-         !$acc loop seq
-         do ip = 1, b%npts
-            I    = tsp%index_df(ip,Iq)
-            dhdx = tsp%dpsidx_df(ip,Iq)
-            dhdy = tsp%dpsidy_df(ip,Iq)
-            dhdz = 0.0
-            if (has_w) then
-               dhdx = dhdx + tsp%dpsidz_df_x(ip,Iq)
-               dhdy = dhdy + tsp%dpsidz_df_y(ip,Iq)
-               dhdz = tsp%dpsidz_df(ip,Iq) + tsp%dpsidz_df_z(ip,Iq)
-            end if
-            du_dx = du_dx + dhdx*Uk(1,I)
-            du_dy = du_dy + dhdy*Uk(1,I)
-            dv_dx = dv_dx + dhdx*Uk(2,I)
-            dv_dy = dv_dy + dhdy*Uk(2,I)
-            if (has_w) then
-               du_dz = du_dz + dhdz*Uk(1,I)
-               dv_dz = dv_dz + dhdz*Uk(2,I)
-               dw_dx = dw_dx + dhdx*Uk(3,I)
-               dw_dy = dw_dy + dhdy*Uk(3,I)
-               dw_dz = dw_dz + dhdz*Uk(3,I)
-            end if
-         end do
-         graduv(1,Iq) = du_dx; graduv(2,Iq) = du_dy
-         graduv(3,Iq) = dv_dx; graduv(4,Iq) = dv_dy
-         if (has_w) then
-            graduv(5,Iq) = du_dz; graduv(6,Iq) = dv_dz
-            graduv(7,Iq) = dw_dx; graduv(8,Iq) = dw_dy; graduv(9,Iq) = dw_dz
-         end if
-      end do
-      !$acc end parallel loop
+      ! Velocity gradient at the nodes: GPU and CPU versions, chosen by inp%lgpu_kernels
+      if (inp%lgpu_kernels) then
+         call btp_compute_gradient_uv_gpu(G, inp, b, mt, graduv, Uk)
+      else
+         call btp_compute_gradient_uv_cpu(G, inp, b, mt, graduv, Uk)
+      end if
 
       ! Smagorinsky eddy viscosity
       if (inp%C_smag > 0.0) &
@@ -232,7 +194,12 @@ contains
 
       call btp_lap_create_precommunicator(G, b, mf, init, par, btp, ref, mpic, graduv, inp%ngraduvw_var)
 
-      call btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, graduv)
+      ! Volume Laplacian: GPU and CPU versions, chosen by inp%lgpu_kernels
+      if (inp%lgpu_kernels) then
+         call btp_compute_laplacian_qp_gpu(G, inp, b, btp, mt, tsp, rhs_btp_visc, graduv)
+      else
+         call btp_compute_laplacian_qp_cpu(G, inp, b, btp, mt, tsp, rhs_btp_visc, graduv)
+      end if
       call create_rhs_laplacian_flux(G, inp, b, mf, btp, tsp, rhs_btp_visc, graduv)
 
       call create_rhs_lap_postcommunicator_df(G, inp, b, mf, par, btp, ref, mpic, tsp, rhs_btp_visc, inp%nvar_btp-2)
@@ -241,6 +208,274 @@ contains
       !$acc end data
 
    end subroutine btp_create_laplacian
+
+   subroutine btp_compute_gradient_uv_gpu(G, inp, b, mt, graduv, Uk)
+
+      ! Barotropic velocity gradient at the nodes (GPU). Same algorithm as the CPU
+      ! version: each node reads its xi row (dpsix), its eta column (dpsiy) and, on the
+      ! sphere, itself (zeta); one thread per node, no shared writes.
+
+      use mod_grid,    only: grid
+      use mod_input,   only: input
+      use mod_basis,   only: basis
+      use mod_metrics, only: metrics
+
+      implicit none
+
+      type(grid),    intent(in) :: G
+      type(input),   intent(in) :: inp
+      type(basis),   intent(in) :: b
+      type(metrics), intent(in) :: mt
+
+      real, dimension(inp%ngraduvw_var,G%npoin), intent(out) :: graduv
+      real, dimension(inp%nvar_btp-2,G%npoin),   intent(in)  :: Uk
+
+      integer :: ie, kx, ky, l, I, Iq, iv, nv, nelem_l, nglx_l, ngly_l
+      real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
+      real    :: dU_e(3), dU_n(3), dU(3,3)
+      logical :: has_w
+
+      has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      nv      = inp%nvar_btp - 2
+      nelem_l = G%nelem
+      nglx_l  = b%nglx
+      ngly_l  = b%ngly
+
+      !$acc parallel loop gang vector collapse(3)                                       &
+      !$acc    present(G%intma, b%dpsix, b%dpsiy, Uk, graduv,                            &
+      !$acc            mt%ksi_x, mt%ksi_y, mt%ksi_z, mt%eta_x, mt%eta_y, mt%eta_z,       &
+      !$acc            mt%zeta_x, mt%zeta_y, mt%zeta_z)                                  &
+      !$acc    private(Iq, I, l, iv, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z,        &
+      !$acc            dU_e, dU_n, dU) firstprivate(nv, has_w, nglx_l, ngly_l)
+      do ie = 1, nelem_l
+         do ky = 1, ngly_l
+            do kx = 1, nglx_l
+
+               Iq = G%intma(kx, ky, 1, ie)
+
+               ! Derivatives along the xi row and the eta column of this node
+               dU_e = 0.0
+               dU_n = 0.0
+               !$acc loop seq
+               do l = 1, nglx_l
+                  I = G%intma(l, ky, 1, ie)
+                  !$acc loop seq
+                  do iv = 1, nv
+                     dU_e(iv) = dU_e(iv) + b%dpsix(l, kx) * Uk(iv, I)
+                  end do
+               end do
+               !$acc loop seq
+               do l = 1, ngly_l
+                  I = G%intma(kx, l, 1, ie)
+                  !$acc loop seq
+                  do iv = 1, nv
+                     dU_n(iv) = dU_n(iv) + b%dpsiy(l, ky) * Uk(iv, I)
+                  end do
+               end do
+
+               ! Nodal metrics
+               e_x = mt%ksi_x(kx,ky,1,ie);  e_y = mt%ksi_y(kx,ky,1,ie);  e_z = mt%ksi_z(kx,ky,1,ie)
+               n_x = mt%eta_x(kx,ky,1,ie);  n_y = mt%eta_y(kx,ky,1,ie);  n_z = mt%eta_z(kx,ky,1,ie)
+
+               ! Physical derivatives dU(component, direction); zeta term on the sphere
+               !$acc loop seq
+               do iv = 1, nv
+                  dU(iv,1) = e_x*dU_e(iv) + n_x*dU_n(iv)
+                  dU(iv,2) = e_y*dU_e(iv) + n_y*dU_n(iv)
+                  dU(iv,3) = 0.0
+               end do
+               if (has_w) then
+                  c_x = mt%zeta_x(kx,ky,1,ie);  c_y = mt%zeta_y(kx,ky,1,ie);  c_z = mt%zeta_z(kx,ky,1,ie)
+                  !$acc loop seq
+                  do iv = 1, nv
+                     dU(iv,1) = dU(iv,1) + c_x*Uk(iv, Iq)
+                     dU(iv,2) = dU(iv,2) + c_y*Uk(iv, Iq)
+                     dU(iv,3) = e_z*dU_e(iv) + n_z*dU_n(iv) + c_z*Uk(iv, Iq)
+                  end do
+               end if
+
+               ! Store: du/dx, du/dy, dv/dx, dv/dy [, du/dz, dv/dz, dw/dx, dw/dy, dw/dz]
+               graduv(1,Iq) = dU(1,1);  graduv(2,Iq) = dU(1,2)
+               graduv(3,Iq) = dU(2,1);  graduv(4,Iq) = dU(2,2)
+               if (has_w) then
+                  graduv(5,Iq) = dU(1,3);  graduv(6,Iq) = dU(2,3)
+                  graduv(7,Iq) = dU(3,1);  graduv(8,Iq) = dU(3,2);  graduv(9,Iq) = dU(3,3)
+               end if
+
+            end do
+         end do
+      end do
+      !$acc end parallel loop
+
+   end subroutine btp_compute_gradient_uv_gpu
+
+   subroutine btp_compute_gradient_uv_cpu(G, inp, b, mt, graduv, Uk)
+
+      ! Barotropic velocity gradient at the nodes (CPU). At the GLL nodes the basis is 1
+      ! at its own node and 0 at the others, so only the node's xi row (dpsix), its eta
+      ! column (dpsiy) and, on the sphere, the node itself (zeta) contribute. Same
+      ! result as the nodal tables of the GPU version, to round-off.
+
+      use mod_grid,    only: grid
+      use mod_input,   only: input
+      use mod_basis,   only: basis
+      use mod_metrics, only: metrics
+
+      implicit none
+
+      type(grid),    intent(in) :: G
+      type(input),   intent(in) :: inp
+      type(basis),   intent(in) :: b
+      type(metrics), intent(in) :: mt
+
+      real, dimension(inp%ngraduvw_var,G%npoin), intent(out) :: graduv
+      real, dimension(inp%nvar_btp-2,G%npoin),   intent(in)  :: Uk
+
+      integer :: ie, kx, ky, l, I, Iq, nv
+      real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
+      real    :: dU_e(3), dU_n(3), dU(3,3)
+      logical :: has_w
+
+      has_w = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      nv    = inp%nvar_btp - 2
+
+      graduv = 0.0
+
+      do ie = 1, G%nelem
+         do ky = 1, b%ngly
+            do kx = 1, b%nglx
+
+               Iq = G%intma(kx, ky, 1, ie)
+
+               ! Derivatives along the xi row and the eta column of this node
+               dU_e = 0.0
+               dU_n = 0.0
+               do l = 1, b%nglx
+                  I = G%intma(l, ky, 1, ie)
+                  dU_e(1:nv) = dU_e(1:nv) + b%dpsix(l, kx) * Uk(1:nv, I)
+               end do
+               do l = 1, b%ngly
+                  I = G%intma(kx, l, 1, ie)
+                  dU_n(1:nv) = dU_n(1:nv) + b%dpsiy(l, ky) * Uk(1:nv, I)
+               end do
+
+               ! Nodal metrics
+               e_x = mt%ksi_x(kx,ky,1,ie);  e_y = mt%ksi_y(kx,ky,1,ie);  e_z = mt%ksi_z(kx,ky,1,ie)
+               n_x = mt%eta_x(kx,ky,1,ie);  n_y = mt%eta_y(kx,ky,1,ie);  n_z = mt%eta_z(kx,ky,1,ie)
+
+               ! Physical derivatives dU(component, direction); zeta term on the sphere
+               dU(1:nv,1) = e_x*dU_e(1:nv) + n_x*dU_n(1:nv)
+               dU(1:nv,2) = e_y*dU_e(1:nv) + n_y*dU_n(1:nv)
+               if (has_w) then
+                  c_x = mt%zeta_x(kx,ky,1,ie);  c_y = mt%zeta_y(kx,ky,1,ie);  c_z = mt%zeta_z(kx,ky,1,ie)
+                  dU(1:nv,1) = dU(1:nv,1) + c_x*Uk(1:nv, Iq)
+                  dU(1:nv,2) = dU(1:nv,2) + c_y*Uk(1:nv, Iq)
+                  dU(1:nv,3) = e_z*dU_e(1:nv) + n_z*dU_n(1:nv) + c_z*Uk(1:nv, Iq)
+               end if
+
+               ! Store: du/dx, du/dy, dv/dx, dv/dy [, du/dz, dv/dz, dw/dx, dw/dy, dw/dz]
+               graduv(1,Iq) = dU(1,1);  graduv(2,Iq) = dU(1,2)
+               graduv(3,Iq) = dU(2,1);  graduv(4,Iq) = dU(2,2)
+               if (has_w) then
+                  graduv(5,Iq) = dU(1,3);  graduv(6,Iq) = dU(2,3)
+                  graduv(7,Iq) = dU(3,1);  graduv(8,Iq) = dU(3,2);  graduv(9,Iq) = dU(3,3)
+               end if
+
+            end do
+         end do
+      end do
+
+   end subroutine btp_compute_gradient_uv_cpu
+
+   subroutine btp_compute_laplacian_qp_cpu(G, inp, b, btp, mt, tsp, rhs_btp_visc, grad_dpuvp)
+
+      ! Barotropic Laplacian volume term at the nodes (CPU). The viscous flux at each
+      ! node is projected onto the test functions along its xi row (dHde), its eta
+      ! column (dHdn) and, on the sphere, at the node itself (dHdc). Same result as the
+      ! nodal tables of the GPU version, to round-off.
+
+      use mod_grid,      only: grid
+      use mod_input,     only: input
+      use mod_basis,     only: basis
+      use mod_variables, only: btp_CS
+      use mod_metrics,   only: metrics
+      use mod_tensor,    only: tensor_CS
+
+      implicit none
+
+      type(grid),      intent(in)  :: G
+      type(input),     intent(in)  :: inp
+      type(basis),     intent(in)  :: b
+      type(btp_CS),    intent(in)  :: btp
+      type(metrics),   intent(in)  :: mt
+      type(tensor_CS), intent(in)  :: tsp
+
+      real, intent(out) :: rhs_btp_visc(inp%nvar_btp-2,G%npoin)
+      real, dimension(inp%ngraduvw_var,G%npoin), intent(in) :: grad_dpuvp
+
+      integer :: ie, kx, ky, l, I, Iq, nv, nw
+      real    :: wq, qq(9), F(3,3), Fe(3), Fn(3), Fc(3)
+      real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
+      logical :: has_w
+
+      has_w = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      nv    = inp%nvar_btp - 2
+      nw    = inp%ngraduvw_var
+
+      rhs_btp_visc = 0.0
+
+      do ie = 1, G%nelem
+         do ky = 1, b%ngly
+            do kx = 1, b%nglx
+
+               Iq = G%intma(kx, ky, 1, ie)
+               wq = tsp%wjac_df(Iq)
+
+               ! Viscous flux A_H (dp grad u + baroclinic part) at this node
+               qq(1:nw) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(1:nw,Iq) + btp%btp_dpp_graduvw_scaled(1:nw,Iq)
+
+               ! Fluxes F(direction, component): u, v [, w]
+               F = 0.0
+               F(1,1) = qq(1);  F(2,1) = qq(2)
+               F(1,2) = qq(3);  F(2,2) = qq(4)
+               if (has_w) then
+                  F(3,1) = qq(5);  F(3,2) = qq(6)
+                  F(1,3) = qq(7);  F(2,3) = qq(8);  F(3,3) = qq(9)
+               end if
+
+               ! Nodal metrics
+               e_x = mt%ksi_x(kx,ky,1,ie);  e_y = mt%ksi_y(kx,ky,1,ie);  e_z = mt%ksi_z(kx,ky,1,ie)
+               n_x = mt%eta_x(kx,ky,1,ie);  n_y = mt%eta_y(kx,ky,1,ie);  n_z = mt%eta_z(kx,ky,1,ie)
+
+               ! Weighted contravariant fluxes
+               Fe(1:nv) = wq * (e_x*F(1,1:nv) + e_y*F(2,1:nv) + e_z*F(3,1:nv))
+               Fn(1:nv) = wq * (n_x*F(1,1:nv) + n_y*F(2,1:nv) + n_z*F(3,1:nv))
+               Fc(1:nv) = 0.0
+               if (has_w) then
+                  c_x = mt%zeta_x(kx,ky,1,ie);  c_y = mt%zeta_y(kx,ky,1,ie);  c_z = mt%zeta_z(kx,ky,1,ie)
+                  Fc(1:nv) = wq * (c_x*F(1,1:nv) + c_y*F(2,1:nv) + c_z*F(3,1:nv))
+               end if
+
+               ! dHde Terms: nodes on the xi line through this node
+               do l = 1, b%nglx
+                  I = G%intma(l, ky, 1, ie)
+                  rhs_btp_visc(1:nv, I) = rhs_btp_visc(1:nv, I) - b%dpsix(l, kx) * Fe(1:nv)
+               end do
+
+               ! dHdn Terms: nodes on the eta line through this node
+               do l = 1, b%ngly
+                  I = G%intma(kx, l, 1, ie)
+                  rhs_btp_visc(1:nv, I) = rhs_btp_visc(1:nv, I) - b%dpsiy(l, ky) * Fn(1:nv)
+               end do
+
+               ! dHdc Terms: this node only
+               rhs_btp_visc(1:nv, Iq) = rhs_btp_visc(1:nv, Iq) - Fc(1:nv)
+
+            end do
+         end do
+      end do
+
+   end subroutine btp_compute_laplacian_qp_cpu
 
    subroutine bcl_create_laplacian(G, inp, b, mf, par, btp, bcl, ref, mpic, mt, tsp, rhs_lap)
 
@@ -408,91 +643,133 @@ contains
 
    end subroutine btp_compute_laplacian
 
-   subroutine btp_compute_laplacian_qp(G, inp, b, btp, tsp, rhs_btp_visc, grad_dpuvp)
+   subroutine btp_compute_laplacian_qp_gpu(G, inp, b, btp, mt, tsp, rhs_btp_visc, grad_dpuvp)
+
+      ! Barotropic Laplacian volume term at the nodes (GPU), in gather form:
+      ! 1. each node stores its weighted contravariant viscous fluxes (xi, eta, zeta)
+      !    in btp%lap_flux_df;
+      ! 2. each node collects its xi row (dHde), its eta column (dHdn) and its own
+      !    zeta term (dHdc). One thread per node and no shared writes, so no atomics.
+      ! Same projection as the CPU version (which adds along rows and columns instead).
 
       use mod_grid,      only: grid
       use mod_input,     only: input
       use mod_basis,     only: basis
       use mod_variables, only: btp_CS
+      use mod_metrics,   only: metrics
       use mod_tensor,    only: tensor_CS
 
       implicit none
 
-      type(grid),      intent(in)  :: G
-      type(input),     intent(in)  :: inp
-      type(basis),     intent(in)  :: b
-      type(btp_CS),    intent(in)  :: btp
-      type(tensor_CS), intent(in)  :: tsp
+      type(grid),      intent(in)    :: G
+      type(input),     intent(in)    :: inp
+      type(basis),     intent(in)    :: b
+      type(btp_CS),    intent(inout) :: btp
+      type(metrics),   intent(in)    :: mt
+      type(tensor_CS), intent(in)    :: tsp
 
       real, intent(out) :: rhs_btp_visc(inp%nvar_btp-2,G%npoin)
       real, dimension(inp%ngraduvw_var,G%npoin), intent(in) :: grad_dpuvp
 
-      integer :: Iq, I, ip
-      real :: wq, qq(9), dhdx, dhdy, dhdz
-      integer :: npoin_l, npts_l
+      integer :: ie, kx, ky, l, I, Iq, iv, nv, nw, nelem_l, nglx_l, ngly_l
+      real    :: wq, qq(9), F(3,3), r
+      real    :: e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z
       logical :: has_w
 
-      npoin_l = G%npoin
-      npts_l  = b%npts
       has_w   = (inp%nvar_btp == 5) ! w (vertical momentum) is only carried on sphere_hex
+      nv      = inp%nvar_btp - 2
+      nw      = inp%ngraduvw_var
+      nelem_l = G%nelem
+      nglx_l  = b%nglx
+      ngly_l  = b%ngly
 
-      !$acc data present(tsp%wjac_df, tsp%dpsidx_df, tsp%dpsidy_df, tsp%index_df,  &
-      !$acc              tsp%dpsidz_df, tsp%dpsidz_df_x, tsp%dpsidz_df_y, tsp%dpsidz_df_z, &
-      !$acc              btp%pbprime_visc_scaled, btp%btp_dpp_graduvw_scaled, grad_dpuvp, &
-      !$acc              rhs_btp_visc)
+      ! 1. Weighted contravariant fluxes lap_flux_df(direction, component, node)
+      !$acc parallel loop gang vector collapse(3)                                       &
+      !$acc    present(G%intma, tsp%wjac_df, btp%pbprime_visc_scaled,                    &
+      !$acc            btp%btp_dpp_graduvw_scaled, grad_dpuvp, btp%lap_flux_df,          &
+      !$acc            mt%ksi_x, mt%ksi_y, mt%ksi_z, mt%eta_x, mt%eta_y, mt%eta_z,       &
+      !$acc            mt%zeta_x, mt%zeta_y, mt%zeta_z)                                  &
+      !$acc    private(Iq, iv, wq, qq, F, e_x, e_y, e_z, n_x, n_y, n_z, c_x, c_y, c_z)   &
+      !$acc    firstprivate(nv, nw, has_w, nglx_l, ngly_l)
+      do ie = 1, nelem_l
+         do ky = 1, ngly_l
+            do kx = 1, nglx_l
 
-      !$acc kernels present(rhs_btp_visc)
-      rhs_btp_visc = 0.0
-      !$acc end kernels
+               Iq = G%intma(kx, ky, 1, ie)
+               wq = tsp%wjac_df(Iq)
 
-      !$acc parallel loop gang                                     &
-      !$acc   private(qq, wq, I, ip, dhdx, dhdy, dhdz)              &
-      !$acc   firstprivate(npoin_l, npts_l, has_w)
-      do Iq = 1, npoin_l
+               ! Viscous flux A_H (dp grad u + baroclinic part) at this node
+               !$acc loop seq
+               do iv = 1, nw
+                  qq(iv) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(iv,Iq) + btp%btp_dpp_graduvw_scaled(iv,Iq)
+               end do
 
-         wq    = tsp%wjac_df(Iq)
-         qq(1) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(1,Iq) + btp%btp_dpp_graduvw_scaled(1,Iq)
-         qq(2) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(2,Iq) + btp%btp_dpp_graduvw_scaled(2,Iq)
-         qq(3) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(3,Iq) + btp%btp_dpp_graduvw_scaled(3,Iq)
-         qq(4) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(4,Iq) + btp%btp_dpp_graduvw_scaled(4,Iq)
-         if (has_w) then
-            qq(5) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(5,Iq) + btp%btp_dpp_graduvw_scaled(5,Iq)
-            qq(6) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(6,Iq) + btp%btp_dpp_graduvw_scaled(6,Iq)
-            qq(7) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(7,Iq) + btp%btp_dpp_graduvw_scaled(7,Iq)
-            qq(8) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(8,Iq) + btp%btp_dpp_graduvw_scaled(8,Iq)
-            qq(9) = btp%pbprime_visc_scaled(Iq)*grad_dpuvp(9,Iq) + btp%btp_dpp_graduvw_scaled(9,Iq)
-         end if
+               ! Fluxes F(direction, component): u, v [, w]
+               F = 0.0
+               F(1,1) = qq(1);  F(2,1) = qq(2)
+               F(1,2) = qq(3);  F(2,2) = qq(4)
+               if (has_w) then
+                  F(3,1) = qq(5);  F(3,2) = qq(6)
+                  F(1,3) = qq(7);  F(2,3) = qq(8);  F(3,3) = qq(9)
+               end if
 
-         !$acc loop seq
-         do ip = 1, npts_l
-            I = tsp%index_df(ip,Iq)
-            dhdx = tsp%dpsidx_df(ip,Iq)
-            dhdy = tsp%dpsidy_df(ip,Iq)
-            dhdz = 0.0
-            if (has_w) then
-               dhdx = dhdx + tsp%dpsidz_df_x(ip,Iq)
-               dhdy = dhdy + tsp%dpsidz_df_y(ip,Iq)
-               dhdz = tsp%dpsidz_df(ip,Iq) + tsp%dpsidz_df_z(ip,Iq)
-            end if
-            !$acc atomic update
-            rhs_btp_visc(1,I) = rhs_btp_visc(1,I) - wq*(dhdx*qq(1) + dhdy*qq(2))
-            !$acc atomic update
-            rhs_btp_visc(2,I) = rhs_btp_visc(2,I) - wq*(dhdx*qq(3) + dhdy*qq(4))
-            if (has_w) then
-               !$acc atomic update
-               rhs_btp_visc(1,I) = rhs_btp_visc(1,I) - wq*dhdz*qq(5)
-               !$acc atomic update
-               rhs_btp_visc(2,I) = rhs_btp_visc(2,I) - wq*dhdz*qq(6)
-               !$acc atomic update
-               rhs_btp_visc(3,I) = rhs_btp_visc(3,I) - wq*(dhdx*qq(7) + dhdy*qq(8) + dhdz*qq(9))
-            end if
+               ! Nodal metrics
+               e_x = mt%ksi_x(kx,ky,1,ie);  e_y = mt%ksi_y(kx,ky,1,ie);  e_z = mt%ksi_z(kx,ky,1,ie)
+               n_x = mt%eta_x(kx,ky,1,ie);  n_y = mt%eta_y(kx,ky,1,ie);  n_z = mt%eta_z(kx,ky,1,ie)
+               c_x = 0.0;  c_y = 0.0;  c_z = 0.0
+               if (has_w) then
+                  c_x = mt%zeta_x(kx,ky,1,ie);  c_y = mt%zeta_y(kx,ky,1,ie);  c_z = mt%zeta_z(kx,ky,1,ie)
+               end if
+
+               !$acc loop seq
+               do iv = 1, nv
+                  btp%lap_flux_df(1,iv,Iq) = wq * (e_x*F(1,iv) + e_y*F(2,iv) + e_z*F(3,iv))
+                  btp%lap_flux_df(2,iv,Iq) = wq * (n_x*F(1,iv) + n_y*F(2,iv) + n_z*F(3,iv))
+                  btp%lap_flux_df(3,iv,Iq) = wq * (c_x*F(1,iv) + c_y*F(2,iv) + c_z*F(3,iv))
+               end do
+
+            end do
          end do
       end do
       !$acc end parallel loop
 
-      !$acc end data
+      ! 2. Each node collects its row (dHde), column (dHdn) and own zeta term (dHdc)
+      !$acc parallel loop gang vector collapse(3)                                       &
+      !$acc    present(G%intma, b%dpsix, b%dpsiy, btp%lap_flux_df, rhs_btp_visc)         &
+      !$acc    private(Iq, I, l, iv, r) firstprivate(nv, nglx_l, ngly_l)
+      do ie = 1, nelem_l
+         do ky = 1, ngly_l
+            do kx = 1, nglx_l
 
-   end subroutine btp_compute_laplacian_qp
+               Iq = G%intma(kx, ky, 1, ie)
+
+               !$acc loop seq
+               do iv = 1, nv
+
+                  r = -btp%lap_flux_df(3,iv,Iq)
+
+                  !$acc loop seq
+                  do l = 1, nglx_l
+                     I = G%intma(l, ky, 1, ie)
+                     r = r - b%dpsix(kx, l) * btp%lap_flux_df(1,iv,I)
+                  end do
+
+                  !$acc loop seq
+                  do l = 1, ngly_l
+                     I = G%intma(kx, l, 1, ie)
+                     r = r - b%dpsiy(ky, l) * btp%lap_flux_df(2,iv,I)
+                  end do
+
+                  rhs_btp_visc(iv, Iq) = r
+
+               end do
+
+            end do
+         end do
+      end do
+      !$acc end parallel loop
+
+   end subroutine btp_compute_laplacian_qp_gpu
 
    ! Compute Smagorinsky eddy viscosity ν_s = (C_s·Δ)²·|S| at every BCL DOF node.
    ! Uses the velocity gradient already assembled in bcl%dpp_graduvw by the
