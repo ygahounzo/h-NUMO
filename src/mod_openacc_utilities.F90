@@ -118,7 +118,7 @@ contains
       !$acc                   init%qb_df)
       !$acc enter data copyin(init%alpha_mlswe, init%pbprime_df_face,          &
       !$acc                   init%zbot_df, init%tau_wind_df, init%zbot_face,  &
-      !$acc                   init%grad_zbot_quad,                             &
+      !$acc                   init%grad_zbot_quad, init%grad_zbot_df,          &
       !$acc                   init%coriolis_3d_quad, init%z_interface_initial)
       !$acc enter data copyin(init%tau_wind, init%coriolis_df,                 &
       !$acc                   init%coriolis_quad, init%fdt_bcl, init%fdt2_bcl, &
@@ -162,6 +162,19 @@ contains
       !$acc enter data copyin(btp%graduvb_ave, btp%graduvb_face_ave)
       !$acc enter data create(btp%bcl_H, btp%bcl_flux, btp%bcl_btp_flux, btp%pbq)
       !$acc enter data create(btp%F_vol, btp%qb_T, btp%flux_face_q)
+      ! Collocated BTP (btp_collocation): nodal and face-node arrays
+      if (allocated(btp%bcl_H_df)) then
+         !$acc enter data create(btp%bcl_H_df, btp%bcl_flux_df, btp%bcl_btp_flux_df,          &
+         !$acc                   btp%ope_ave_df, btp%Qu_ave_df, btp%Qv_ave_df, btp%Qw_ave_df, &
+         !$acc                   btp%tau_bot_ave_df, btp%btp_mass_flux_ave_df,                &
+         !$acc                   btp%btp_mass_flux_face_ave_df, btp%Qu_face_ave_df,           &
+         !$acc                   btp%Qv_face_ave_df, btp%Qw_face_ave_df,                      &
+         !$acc                   btp%ope_face_ave_df, btp%ope2_face_ave_df,                   &
+         !$acc                   btp%one_plus_eta_edge_2_ave_df, btp%uvb_face_ave_df,         &
+         !$acc                   btp%bcl_pprime_df, btp%bcl_dalpha,                           &
+         !$acc                   btp%colloc_flux_df, btp%ope_pp_df)
+         !$acc enter data copyin(btp%etacor_src_df, btp%bcl_pprime_face_df)
+      end if
 
       ! mod_variables (bcl_CS)
       !$acc enter data copyin(bcl)

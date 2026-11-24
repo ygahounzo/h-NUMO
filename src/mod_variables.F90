@@ -82,6 +82,9 @@ module mod_variables
       real, dimension(:,:),     allocatable :: bcl_pprime_df        ! (nlayers,npoin) A_2..A_{L+1}
       real, dimension(:),       allocatable :: bcl_dalpha           ! (nlayers) beta_m/2 = (alpha_k - alpha_{k+1})/2
       real, dimension(:,:,:,:), allocatable :: bcl_pprime_face_df   ! (nlayers,2,ngl,nface) left/right at face nodes
+      ! GPU volume kernel (two passes): weighted fluxes and ope*A_m at the nodes
+      real, dimension(:,:,:),   allocatable :: colloc_flux_df       ! (3,4,npoin) xi, eta, node term; mass, u, v, w
+      real, dimension(:,:),     allocatable :: ope_pp_df            ! (nlayers,npoin) ope * A_m
 
       ! Weighted flux/source coefficients of the BTP volume integral at each quad
       ! point, written and read within create_rhs_btp_volume_qdf_qp_gpu.
@@ -210,7 +213,8 @@ contains
             btp%btp_mass_flux_face_ave_df, btp%Qu_face_ave_df,           &
             btp%Qv_face_ave_df, btp%Qw_face_ave_df, btp%ope_face_ave_df,                    &
             btp%ope2_face_ave_df, btp%one_plus_eta_edge_2_ave_df, btp%uvb_face_ave_df,      &
-            btp%etacor_src_df, btp%bcl_pprime_df, btp%bcl_dalpha, btp%bcl_pprime_face_df)
+            btp%etacor_src_df, btp%bcl_pprime_df, btp%bcl_dalpha, btp%bcl_pprime_face_df,    &
+            btp%colloc_flux_df, btp%ope_pp_df)
       end if
 
       ! 1-D volume arrays
@@ -314,6 +318,13 @@ contains
          btp%etacor_src_df = 0.0
          btp%bcl_pprime_face_df = 0.0
          if (stat /= 0) stop "** Not Enough Memory – mod_allocate_mlswe (btp collocation)"
+
+         ! Work arrays of the GPU volume kernel (one node otherwise)
+         if (inp%lgpu_kernels) then
+            allocate(btp%colloc_flux_df(3,4,G%npoin), btp%ope_pp_df(inp%nlayers,G%npoin))
+         else
+            allocate(btp%colloc_flux_df(3,4,1), btp%ope_pp_df(1,1))
+         end if
       end if
 
       ! =========================================================
